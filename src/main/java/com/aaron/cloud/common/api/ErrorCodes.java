@@ -1,0 +1,46 @@
+package com.aaron.cloud.common.api;
+
+import lombok.AccessLevel;
+import lombok.NoArgsConstructor;
+
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
+public final class ErrorCodes {
+
+    public static final String TENANT_REQUIRED = "TENANT_REQUIRED";
+    public static final String NOT_FOUND = "NOT_FOUND";
+    public static final String VALIDATION = "VALIDATION";
+    public static final String FORBIDDEN = "FORBIDDEN";
+    /** 开放登录：账号状态非 ACTIVE */
+    public static final String LOGIN_ACCOUNT_DISABLED = "LOGIN_ACCOUNT_DISABLED";
+    /** 开放登录：无 ACTIVE 的租户成员关系（或成员 status 无法映射为 ACTIVE） */
+    public static final String LOGIN_NO_ACTIVE_MEMBERSHIP = "LOGIN_NO_ACTIVE_MEMBERSHIP";
+    /** 切换管理端工作与角色：与成员关系不符或无权使用该角色。 */
+    public static final String ADMIN_CONTEXT_DENIED = "ADMIN_CONTEXT_DENIED";
+    /** API 响应 {@code code}：邀请时目标用户在该租户下已有 ACTIVE 成员行（HTTP 409，由 GlobalExceptionHandler 映射）。 */
+    public static final String TENANT_MEMBER_ALREADY_ACTIVE = "TENANT_MEMBER_ALREADY_ACTIVE";
+    /** API 响应 {@code code}：改角色/移除等要求成员行为 ACTIVE（HTTP 400，由 GlobalExceptionHandler 映射）。 */
+    public static final String TENANT_MEMBER_INACTIVE = "TENANT_MEMBER_INACTIVE";
+    /**
+     * 仅供 {@code IllegalStateException#getMessage()} 使用，且须与 {@code GlobalExceptionHandler} 分支字符串完全一致；见 {@code
+     * PROJECT.md}「成员状态与业务错误」。
+     */
+    public static final String EX_MSG_TENANT_MEMBER_ALREADY_ACTIVE = "tenant member already active";
+
+    /**
+     * 仅供 {@code IllegalArgumentException#getMessage()} 使用，且须与 {@code GlobalExceptionHandler} 分支字符串完全一致。
+     */
+    public static final String EX_MSG_TENANT_MEMBER_INACTIVE = "inactive tenant membership";
+
+    public static final String CONFLICT = "CONFLICT";
+    public static final String INTERNAL = "INTERNAL";
+
+    /**
+     * 仅供 {@link IllegalStateException#getMessage()} 使用，且须与 {@code GlobalExceptionHandler} 分支字符串完全一致（管理端创建/改登录名冲突）。
+     */
+    public static final String EX_MSG_LOGIN_NAME_CONFLICT = "login_name_conflict";
+
+    public static final String LOGIN_NAME_CONFLICT = "LOGIN_NAME_CONFLICT";
+
+    /** 模型共用 token 等配额已用尽 */
+    public static final String QUOTA_EXCEEDED = "QUOTA_EXCEEDED";
+}

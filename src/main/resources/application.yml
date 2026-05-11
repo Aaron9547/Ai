@@ -1,0 +1,165 @@
+# Ai 运行时配置
+# - 覆盖：环境变量与 ${ENV:默认值} 同名时优先。
+# - 桥接：AiEnvironmentBridgePostProcessor 写入 spring.cloud.discovery / eureka.client.enabled、rocketmq.name-server、
+#   spring.security.oauth2.resourceserver.jwt.issuer-uri、management.health.elasticsearch.enabled（仅 MANAGEMENT_HEALTH_ELASTICSEARCH_ENABLED）等；勿在 yml 重复定义这些官方键。
+# - 架构与 API：.cursorrules；版本：PROJECT.md。
+
+server:
+  # HTTP 端口；覆盖：SERVER_PORT
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: ly-ai-application-svc
+  jackson:
+    # API 与库表时间展示时区
+    time-zone: Asia/Shanghai
+  servlet:
+    multipart:
+      max-file-size: 16MB
+      max-request-size: 160MB
+  datasource:
+    # MySQL；须带 connectionTimeZone=UTC 等与 DDL 一致；覆盖：MYSQL_URL / MYSQL_USERNAME / MYSQL_PASSWORD
+    url: ${MYSQL_URL:jdbc:mysql://192.168.2.37:3306/test_ai?useUnicode=true&characterEncoding=utf8&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true}
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:37621040}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  data:
+    redis:
+      # 连接参数；总开关见 ai.redis.enabled / AI_REDIS_ENABLED
+      host: ${SPRING_DATA_REDIS_HOST:192.168.37.17}
+      port: ${SPRING_DATA_REDIS_PORT:26379}
+      password: ${SPRING_DATA_REDIS_PASSWORD:37621040}
+      timeout: ${SPRING_DATA_REDIS_TIMEOUT:3s}
+  cloud:
+    openfeign:
+      circuitbreaker:
+        # Feign 与 Resilience4j 熔断集成
+        enabled: true
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    default-enum-type-handler: com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler
+  global-config:
+    db-config:
+      id-type: auto
+  type-enums-package: com.aaron.cloud.common.api.enums
+
+eureka:
+  client:
+    service-url:
+      # Eureka Server；覆盖：EUREKA_DEFAULT_ZONE（client.enabled 与 spring.cloud.discovery 由 EPP 跟 ai.discovery 同步）
+      defaultZone: ${EUREKA_DEFAULT_ZONE:http://192.168.35.210:1200/eureka/}
+  instance:
+    prefer-ip-address: true
+
+ai:
+  # 服务发现：true=Eureka 注册与拉取（会连 eureka.client.service-url / EUREKA_DEFAULT_ZONE）。关「注册中心」只停服务端，本进程仍会连 unless 此处为 false。
+  # 若未在 yml 写 true 仍见 DiscoveryClient 连 Eureka，请查 IDE Run 环境变量、系统环境或父进程是否设置了 AI_DISCOVERY_ENABLED=true。
+  discovery:
+    enabled: ${AI_DISCOVERY_ENABLED:false}
+  # Redis：false=排除 Redis 自动配置、不建连（AI_REDIS_ENABLED）；用量队列等随之不可用。
+  redis:
+    enabled: ${AI_REDIS_ENABLED:true}
+  # 模型用量事件：写 Redis 队列；可与 RocketMQ 投递联动（见 ai.rocketmq）。
+  llm-usage:
+    redis-queue-key: ${AI_LLM_USAGE_REDIS_QUEUE:ai:queue:llm-usage}
+    redis-poll-ms: ${AI_LLM_USAGE_REDIS_POLL_MS:250}
+  # 租户运行时表 ten_runtime_setting 读穿缓存 TTL（秒）；无 Redis 时直读库。
+  tenant-runtime-settings:
+    cache-ttl-seconds: ${AI_TENANT_RUNTIME_SETTINGS_CACHE_TTL:600}
+  # RocketMQ：enabled=true 导入 starter 并启用 Job/用量消费者；name-server、producer-group 由 EPP 映射到 rocketmq.*。
+  rocketmq:
+    enabled: ${AI_ROCKETMQ_ENABLED:false}
+    name-server: ${ROCKETMQ_NAME_SRV:192.168.37.16:9999;192.168.37.17:9999}
+    producer-group: ${ROCKETMQ_PRODUCER_GROUP:ai-producer}
+    job-topic: ${AI_ROCKETMQ_JOB_TOPIC:ai-job-dispatch}
+    job-consumer-group: ${AI_ROCKETMQ_CONSUMER_GROUP:ai-job-consumer}
+    llm-usage-topic: ${AI_ROCKETMQ_LLM_USAGE_TOPIC:ai-llm-usage}
+    llm-usage-consumer-group: ${AI_ROCKETMQ_LLM_USAGE_CONSUMER_GROUP:ai-llm-usage-consumer}
+  # remoting.mode：local=本进程大模型编排（默认）；remote=通过 Feign 调独立模型服务（model-base-url）。
+  remoting:
+    mode: ${AI_REMOTING_MODE:local}
+    model-base-url: ${AI_MODEL_BASE_URL:http://127.0.0.1:8080}
+  providers:
+    # auth：permit=免 JWT（仅联调）；jwt-local=管理端/业务 JWT；oauth2-resource=OAuth2 Resource Server，须配 jwt-issuer-uri。
+    auth: ${AI_PROVIDERS_AUTH:jwt-local}
+    oauth2-resource-server:
+      # oauth2-resource 时必填 Issuer；覆盖：AI_OAUTH2_JWT_ISSUER_URI（由 EPP 写入 spring.security...）
+      jwt-issuer-uri: ${AI_OAUTH2_JWT_ISSUER_URI:}
+    # vector-store：milvus=向量库 RAG/检索；local=不接 Milvus，相关写向量与检索路径关闭。
+    vector-store: ${AI_PROVIDERS_VECTOR_STORE:milvus}
+    # file-storage：minio=对象存储；local=本机占位。
+    file-storage: ${AI_PROVIDERS_FILE_STORAGE:local}
+    # notification：local=占位；http=预留 HTTP 通知。
+    notification: ${AI_PROVIDERS_NOTIFICATION:local}
+    # infra-via-discovery：true 且 Eureka 可用时 Milvus/MinIO 优先用注册实例（与 ai.discovery 独立，默认 false）。
+    infra-via-discovery: ${AI_INFRA_VIA_DISCOVERY:false}
+    milvus:
+      service-id: ${AI_MILVUS_EUREKA_SERVICE_ID:milvus}
+      host: ${AI_MILVUS_HOST:192.168.37.17}
+      port: ${AI_MILVUS_PORT:19530}
+      token: ${AI_MILVUS_TOKEN:}
+      database: ${AI_MILVUS_DATABASE:default}
+      secure: ${AI_MILVUS_SECURE:false}
+      # 须与向量模型输出维数、库表 llm_model 配置一致
+      vector-dimension: ${AI_MILVUS_VECTOR_DIM:2048}
+    minio:
+      service-id: ${AI_MINIO_EUREKA_SERVICE_ID:minio}
+      endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:9000}
+      access-key: ${MINIO_ACCESS_KEY:minioadmin}
+      secret-key: ${MINIO_SECRET_KEY:minioadmin}
+      region: ${MINIO_REGION:}
+  rag:
+    # retrieval-mode：milvus=仅向量；milvus_es_hybrid=Milvus+ES 关键词混合（ES 不可用时仅 Milvus）。见 RagRetrievalMode。
+    retrieval-mode: ${AI_RAG_RETRIEVAL_MODE:milvus}
+    # 向量化：模型在库表 llm_model（VECTOR）。local_deploy=true 时走本地嵌入 Feign：关 Eureka 时必须配直连 base-url（见下行）。
+    local-embed-feign:
+      # 直连 ly-ai-rag 网关根路径（与 RAG 工程 aiengine.domain 一致，如 http://192.168.37.31/ly-ai-rag）。优先 AI_RAG_LOCAL_EMBED_FEIGN_BASE_URL，否则 AI_RAG_ENGINE_BASE_URL。
+      base-url: ${AI_RAG_LOCAL_EMBED_FEIGN_BASE_URL:${AI_RAG_ENGINE_BASE_URL:}}
+      service-id: ${AI_RAG_LOCAL_EMBED_FEIGN_SERVICE_ID:ly-ai-rag-svc}
+    elasticsearch:
+      # 与 ly-ai-rag-svc「elasticsearch」同形：enabled=false 不装配 ES；混合检索时 enabled=true 并填 config.host-ports（无单独 uris）。
+      enabled: ${AI_RAG_ES_ENABLED:true}
+      config:
+        cluster-name: ${AI_RAG_ES_CLUSTER_NAME:es-test}
+        host-ports: ${AI_RAG_ES_HOST_PORTS:192.168.37.17:19201;192.168.37.17:19202}
+        user-name: ${AI_RAG_ES_USERNAME:elastic}
+        password: ${AI_RAG_ES_PASSWORD:admin123}
+      index-name: ${AI_RAG_ES_INDEX:ai_rag_chunk}
+  # jwt-local 签名密钥；须足够长，勿提交生产明文。
+  auth:
+    jwt-local:
+      secret: ${AI_AUTH_JWT_LOCAL_SECRET:change-me-please-use-32bytes-minimum!!}
+  tenant:
+    # 访客或未解析租户时的默认 tenantId（与业务种子一致即可）
+    default-id: ${AI_DEFAULT_TENANT_ID:1}
+  chat:
+    input-guard:
+      # 对话发送前同步护栏总开关；细项默认见 AiChatInputGuardProperties（敏感词主库 guardrail_sensitive_term）。
+      enabled: ${AI_CHAT_INPUT_GUARD_ENABLED:true}
+  # 管理端 llm_model API Key 等 AES-GCM 加密；须配置随机密钥。可选 ai.cors.fallback-when-no-enabled-rows：库表无启用 CORS 行时的兜底 Origin 列表。
+  llm-model:
+    api-key-encryption-secret: ${AI_LLM_MODEL_KEY_SECRET:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      default:
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        permittedNumberOfCallsInHalfOpenState: 3
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] %logger{40} - %msg%n%wEx"
+  level:
+    root: INFO
+    com.aaron.cloud: ${LOGGING_LEVEL_COM_AARON_CLOUD:INFO}

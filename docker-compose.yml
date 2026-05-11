@@ -1,0 +1,33 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: ai
+      MYSQL_USER: ai
+      MYSQL_PASSWORD: ai
+    ports:
+      - "3306:3306"
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+
+  rocketmq-namesrv:
+    image: apache/rocketmq:5.3.0
+    ports:
+      - "9876:9876"
+    command: ["sh", "mqnamesrv"]
+
+  rocketmq-broker:
+    image: apache/rocketmq:5.3.0
+    ports:
+      - "10909:10909"
+      - "10911:10911"
+      - "10912:10912"
+    environment:
+      NAMESRV_ADDR: rocketmq-namesrv:9876
+    depends_on:
+      - rocketmq-namesrv
+    command: ["sh", "mqbroker"]
+
+# Eureka Server 未内置：可自建 Spring Boot + spring-cloud-starter-netflix-eureka-server（8761），
+# 需要 Eureka 时：业务服务设置 AI_DISCOVERY_ENABLED=true 与 EUREKA_DEFAULT_ZONE（仓库 application 默认关发现，避免无 Server 时刷屏）。
+# Milvus/MinIO 地址若要从 Eureka 解析，另设 AI_INFRA_VIA_DISCOVERY=true（与仅注册发现独立）。

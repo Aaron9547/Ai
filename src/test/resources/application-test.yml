@@ -1,0 +1,7 @@
+# 与主配置一致；集成测试需 MySQL 已建库并执行 db/mysql/schema_v1.sql
+# 运行：mvn test -Dai.integration=true
+spring:
+  datasource:
+    url: ${MYSQL_URL:jdbc:mysql://127.0.0.1:3306/ai?useUnicode=true&characterEncoding=utf8&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true}
+    username: ${MYSQL_USERNAME:ai}
+    password: ${MYSQL_PASSWORD:ai}

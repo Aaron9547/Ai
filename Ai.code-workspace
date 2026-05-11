@@ -1,0 +1,19 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../ly-ai-rag-svc"
+		},
+		{
+			"path": "../ly-ai-application-svc"
+		}
+	],
+	"settings": {
+		"java.configuration.updateBuildConfiguration": "automatic",
+		"terminal.integrated.env.windows": {
+			"PATH": "C:\\Program Files\\nodejs;C:\\Program Files (x86)\\nodejs;${env:PATH}"
+		}
+	}
+}

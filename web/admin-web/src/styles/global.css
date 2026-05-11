@@ -1,0 +1,348 @@
+html,
+body {
+  margin: 0;
+  height: 100%;
+  font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
+    sans-serif;
+  background: #f4f6fb;
+  color: #1e293b;
+}
+
+#app {
+  min-height: 100%;
+}
+
+.admin-shell.el-container {
+  height: 100vh;
+  min-height: 100vh;
+}
+
+/* 侧栏右侧主列（aside 后的 el-container）占满剩余宽度与视高 */
+.admin-shell > .el-aside + .el-container {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.admin-shell .el-aside.admin-aside {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  box-sizing: border-box;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-right: 1px solid rgba(51, 65, 85, 0.6);
+}
+
+/* 侧栏菜单区单独滚动，避免整栏出现系统默认粗滚动条 */
+.admin-shell .admin-aside-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.42) transparent;
+}
+
+/* Chromium / WebKit：细轨道、无上下三角按钮、胶囊形滑块 */
+.admin-shell .admin-aside-scroll::-webkit-scrollbar {
+  width: 7px;
+}
+
+.admin-shell .admin-aside-scroll::-webkit-scrollbar-button {
+  display: none;
+  height: 0;
+  width: 0;
+}
+
+.admin-shell .admin-aside-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.admin-shell .admin-aside-scroll::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background: rgba(148, 163, 184, 0.42);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.admin-shell .admin-aside-scroll:hover::-webkit-scrollbar-thumb {
+  background: rgba(186, 198, 216, 0.55);
+  background-clip: padding-box;
+}
+
+.admin-shell .brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 16px 18px;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.55);
+}
+
+.admin-shell .brand-mark {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  background: linear-gradient(145deg, #6366f1 0%, #4f46e5 55%, #4338ca 100%);
+  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35);
+}
+
+.admin-shell .brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.admin-shell .brand-title {
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+  color: #f1f5f9;
+}
+
+.admin-shell .brand-sub {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.admin-shell .el-menu {
+  border-right: none;
+  background: transparent;
+}
+
+/* 侧栏分组与条目：统一靛蓝系，避免多组高亮颜色冲突 */
+.admin-shell .side-menu.el-menu,
+.admin-shell .el-menu--vertical.side-menu {
+  --el-menu-hover-bg-color: rgba(99, 102, 241, 0.12);
+  --el-menu-active-color: #e0e7ff;
+}
+
+.admin-shell .el-sub-menu__title {
+  margin: 2px 8px;
+  border-radius: 8px;
+  font-weight: 500;
+  color: #cbd5e1 !important;
+}
+
+.admin-shell .el-sub-menu__title:hover {
+  background-color: rgba(99, 102, 241, 0.1) !important;
+  color: #e2e8f0 !important;
+}
+
+.admin-shell .el-menu-item {
+  border-radius: 8px;
+  margin: 2px 8px 2px 4px;
+  height: 42px;
+  line-height: 42px;
+}
+
+.admin-shell .el-menu-item:hover {
+  background-color: rgba(99, 102, 241, 0.12) !important;
+  color: #e2e8f0 !important;
+}
+
+.admin-shell .el-menu-item.is-active {
+  background: rgba(99, 102, 241, 0.22) !important;
+  color: #e0e7ff !important;
+  font-weight: 500;
+}
+
+.admin-shell .el-menu-item .el-icon,
+.admin-shell .el-sub-menu__title .el-icon {
+  color: #818cf8;
+}
+
+.admin-shell .el-menu-item.is-active .el-icon {
+  color: #a5b4fc;
+}
+
+.admin-shell .el-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(180deg, #ffffff 0%, #fafbfc 100%);
+  border-bottom: 1px solid #e5e7eb;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+  padding: 0 22px;
+}
+
+.admin-shell .crumb {
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.admin-shell .el-main {
+  padding: 20px 22px 28px;
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 路由页面根节点：横向占满 main 内容区，纵向占满剩余高度 */
+.admin-shell .el-main > * {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 单卡片业务页：卡片与 body 可伸缩，表体区域滚动 */
+.admin-shell .el-main > .page > .el-card.panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-shell .el-main > .page > .el-card.panel > .el-card__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.admin-shell .el-main > .page > .el-card.panel > .el-card__body > .el-table {
+  flex: 1;
+  min-height: 0;
+}
+
+.admin-shell .el-main > .page > .el-card.panel > .el-card__body > .pager {
+  flex-shrink: 0;
+}
+
+/* 用户管理：多卡片纵向滚动，末张表体吃掉剩余视高 */
+.admin-shell .el-main > .users {
+  overflow-y: auto;
+}
+
+.admin-shell .el-main > .users > .el-alert {
+  flex-shrink: 0;
+}
+
+.admin-shell .el-main > .users > .el-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.admin-shell .el-main > .users > .el-card:not(:last-of-type) {
+  flex: 0 0 auto;
+}
+
+.admin-shell .el-main > .users > .el-card:last-of-type {
+  flex: 1 1 auto;
+  min-height: 280px;
+}
+
+.admin-shell .el-main > .users > .el-card > .el-card__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-shell .el-main > .users > .el-card > .el-card__body > .el-table {
+  flex: 1;
+  min-height: 0;
+}
+
+/* 知识中心布局：面包屑下子路由占满剩余高度 */
+.admin-shell .el-main > .kc-page > .kc-router-body > * {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 知识中心子页根为 .page 时，与「el-main 直连 .page」一致拉伸卡片与表体 */
+.admin-shell .el-main > .kc-page > .kc-router-body > .page {
+  min-height: 0;
+}
+
+.admin-shell .el-main > .kc-page > .kc-router-body > .page > .el-alert {
+  flex-shrink: 0;
+}
+
+.admin-shell .el-main > .kc-page > .kc-router-body > .page > .el-card.panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-shell .el-main > .kc-page > .kc-router-body > .page > .el-card.panel > .el-card__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-shell .el-main > .kc-page > .kc-router-body > .page > .el-card.panel > .el-card__body > .el-table {
+  flex: 1;
+  min-height: 0;
+}
+
+.admin-shell .el-main > .kc-page > .kc-router-body > .page > .el-card.panel > .el-card__body > .pager {
+  flex-shrink: 0;
+}
+
+/* 知识库首页：卡片内左右分栏占满可滚动区 */
+.admin-shell .el-main > .kc-page > .kc-router-body > .page > .el-card.panel > .el-card__body > .kc-hub-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 分片页：卡片内主从分栏可滚动 */
+.admin-shell .el-main > .kc-page > .kc-router-body > .page > .el-card.panel > .el-card__body > .dc-split {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  gap: 20px;
+}
+
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(1200px 600px at 10% -10%, rgba(45, 212, 191, 0.35), transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, rgba(59, 130, 246, 0.35), transparent 50%), linear-gradient(165deg, #0f172a, #111827 55%, #0b1220);
+}
+
+.login-page .glow {
+  position: absolute;
+  inset: auto auto 10% 50%;
+  transform: translateX(-50%);
+  width: 520px;
+  height: 220px;
+  background: radial-gradient(ellipse, rgba(94, 234, 212, 0.22), transparent 70%);
+  pointer-events: none;
+}
+
+.login-card {
+  width: min(420px, 100%);
+  border-radius: 16px !important;
+  border: 1px solid rgba(148, 163, 184, 0.2) !important;
+  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.06) inset !important;
+}

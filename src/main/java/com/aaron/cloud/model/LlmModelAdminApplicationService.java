@@ -1,0 +1,179 @@
+package com.aaron.cloud.model;
+
+import com.aaron.cloud.common.api.enums.LlmAnonymousAccess;
+import com.aaron.cloud.common.api.enums.LlmModelKind;
+import com.aaron.cloud.common.api.enums.LlmModelStatus;
+import com.aaron.cloud.common.api.enums.LlmThinkingCapability;
+import com.aaron.cloud.common.api.enums.LlmVectorBackend;
+import com.aaron.cloud.common.context.TenantContextHolder;
+import com.aaron.cloud.common.modelcfg.SysLlmModelRepository;
+import com.aaron.cloud.common.modelcfg.quota.LlmTokenQuotaCoordinator;
+import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
+import com.aaron.cloud.common.security.crypto.AesSecretCipher;
+import com.aaron.cloud.model.dto.LlmModelAdminDtos.CreateLlmModelRequest;
+import com.aaron.cloud.model.dto.LlmModelAdminDtos.LlmModelAdminView;
+import com.aaron.cloud.model.dto.LlmModelAdminDtos.UpdateLlmModelRequest;
+import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+
+@Service
+@RequiredArgsConstructor
+public class LlmModelAdminApplicationService {
+
+    private final SysLlmModelRepository llmModelRepository;
+    private final AesSecretCipher aesSecretCipher;
+    private final LlmTokenQuotaCoordinator llmTokenQuotaCoordinator;
+
+    public List<LlmModelAdminView> list() {
+        return list(null);
+    }
+
+    /** @param modelKind 非空时仅返回该类型（管理端 Tab）。 */
+    public List<LlmModelAdminView> list(LlmModelKind modelKind) {
+        long tenantId = TenantContextHolder.require().getTenantId();
+        return llmModelRepository.listAllForAdmin(tenantId, modelKind).stream().map(this::toView).toList();
+    }
+
+    public LlmModelAdminView create(CreateLlmModelRequest req) throws Exception {
+        long tenantId = TenantContextHolder.require().getTenantId();
+        String alias = req.getAlias().trim();
+        validateAlias(alias);
+        if (llmModelRepository.existsAlias(tenantId, alias, null)) {
+            throw new IllegalStateException("alias 已存在");
+        }
+        var row = new SysLlmModel();
+        row.setTenantId(tenantId);
+        row.setAlias(alias);
+        row.setDisplayName(req.getDisplayName().trim());
+        row.setOpenaiBaseUrl(req.getOpenaiBaseUrl().trim());
+        row.setOpenaiModelId(req.getOpenaiModelId().trim());
+        LlmModelKind kind = req.getModelKind() != null ? req.getModelKind() : LlmModelKind.LANGUAGE;
+        row.setModelKind(kind);
+        row.setVectorBackend(
+                kind == LlmModelKind.VECTOR && req.getVectorBackend() != null
+                        ? req.getVectorBackend()
+                        : LlmVectorBackend.OPENAI_COMPATIBLE);
+        String apiKeyRaw = req.getApiKey() == null ? "" : req.getApiKey().trim();
+        if (kind != LlmModelKind.VECTOR && apiKeyRaw.isEmpty()) {
+            throw new IllegalArgumentException("API Key 不能为空");
+        }
+        row.setApiKeyCipher(apiKeyRaw.isEmpty() ? null : aesSecretCipher.encryptToBase64(apiKeyRaw));
+        row.setAllowAnonymous(
+                req.isAllowAnonymous() ? LlmAnonymousAccess.ALLOWED : LlmAnonymousAccess.DISALLOWED);
+        row.setMaxAttachments(clampMax(req.getMaxAttachments()));
+        row.setSupportsThinking(
+                req.isSupportsThinking() ? LlmThinkingCapability.SUPPORTED : LlmThinkingCapability.NONE);
+        row.setStatus(req.isEnabled() ? LlmModelStatus.ACTIVE : LlmModelStatus.DISABLED);
+        row.setSortOrder(req.getSortOrder() == null ? 0 : req.getSortOrder());
+        row.setTokenQuotaTotal(req.getTokenQuotaTotal());
+        row.setTokensUsed(0L);
+        row.setLocalDeploy(Boolean.TRUE.equals(req.getLocalDeploy()));
+        llmModelRepository.insert(row);
+        var created = llmModelRepository.findById(tenantId, row.getId()).orElseThrow();
+        llmTokenQuotaCoordinator.onModelConfigChanged(created);
+        return toView(created);
+    }
+
+    public LlmModelAdminView update(long id, UpdateLlmModelRequest req) throws Exception {
+        long tenantId = TenantContextHolder.require().getTenantId();
+        SysLlmModel row =
+                llmModelRepository.findById(tenantId, id).orElseThrow(() -> new IllegalArgumentException("not found"));
+        if (req.getDisplayName() != null) {
+            row.setDisplayName(req.getDisplayName().trim());
+        }
+        if (req.getOpenaiBaseUrl() != null) {
+            row.setOpenaiBaseUrl(req.getOpenaiBaseUrl().trim());
+        }
+        if (req.getOpenaiModelId() != null) {
+            row.setOpenaiModelId(req.getOpenaiModelId().trim());
+        }
+        if (req.getModelKind() != null) {
+            row.setModelKind(req.getModelKind());
+        }
+        if (req.getVectorBackend() != null) {
+            row.setVectorBackend(req.getVectorBackend());
+        }
+        if (req.getApiKey() != null && !req.getApiKey().isBlank()) {
+            row.setApiKeyCipher(aesSecretCipher.encryptToBase64(req.getApiKey().trim()));
+        } else if (Boolean.TRUE.equals(req.getClearApiKey())) {
+            row.setApiKeyCipher(null);
+        }
+        if (req.getAllowAnonymous() != null) {
+            row.setAllowAnonymous(
+                    req.getAllowAnonymous() ? LlmAnonymousAccess.ALLOWED : LlmAnonymousAccess.DISALLOWED);
+        }
+        if (req.getMaxAttachments() != null) {
+            row.setMaxAttachments(clampMax(req.getMaxAttachments()));
+        }
+        if (req.getSupportsThinking() != null) {
+            row.setSupportsThinking(
+                    req.getSupportsThinking() ? LlmThinkingCapability.SUPPORTED : LlmThinkingCapability.NONE);
+        }
+        if (req.getEnabled() != null) {
+            row.setStatus(req.getEnabled() ? LlmModelStatus.ACTIVE : LlmModelStatus.DISABLED);
+        }
+        if (req.getSortOrder() != null) {
+            row.setSortOrder(req.getSortOrder());
+        }
+        if (Boolean.TRUE.equals(req.getTokenQuotaUnlimited())) {
+            row.setTokenQuotaTotal(null);
+        } else if (req.getTokenQuotaTotal() != null) {
+            row.setTokenQuotaTotal(req.getTokenQuotaTotal());
+        }
+        if (req.getLocalDeploy() != null) {
+            row.setLocalDeploy(req.getLocalDeploy());
+        }
+        llmModelRepository.updateById(row);
+        var saved = llmModelRepository.findById(tenantId, id).orElseThrow();
+        llmTokenQuotaCoordinator.onModelConfigChanged(saved);
+        return toView(saved);
+    }
+
+    public void delete(long id) {
+        long tenantId = TenantContextHolder.require().getTenantId();
+        SysLlmModel row =
+                llmModelRepository.findById(tenantId, id).orElseThrow(() -> new IllegalArgumentException("not found"));
+        if ("mock".equalsIgnoreCase(row.getAlias())) {
+            throw new IllegalArgumentException("不可删除保留别名");
+        }
+        llmModelRepository.delete(tenantId, id);
+        llmTokenQuotaCoordinator.invalidateQuotaCache(tenantId, id);
+    }
+
+    private LlmModelAdminView toView(SysLlmModel m) {
+        boolean hasKey = m.getApiKeyCipher() != null && !m.getApiKeyCipher().isBlank();
+        return new LlmModelAdminView(
+                m.getId(),
+                m.getAlias(),
+                m.getDisplayName(),
+                m.getOpenaiBaseUrl(),
+                m.getOpenaiModelId(),
+                m.getModelKind() != null ? m.getModelKind() : LlmModelKind.LANGUAGE,
+                m.getModelKind() == LlmModelKind.VECTOR
+                        ? (m.getVectorBackend() != null ? m.getVectorBackend() : LlmVectorBackend.OPENAI_COMPATIBLE)
+                        : null,
+                hasKey,
+                m.getAllowAnonymous() == LlmAnonymousAccess.ALLOWED,
+                m.getMaxAttachments() == null ? 10 : m.getMaxAttachments(),
+                m.getSupportsThinking() == LlmThinkingCapability.SUPPORTED,
+                m.getStatus() == LlmModelStatus.ACTIVE,
+                m.getSortOrder(),
+                m.getTokenQuotaTotal(),
+                m.getTokensUsed() == null ? 0L : m.getTokensUsed(),
+                Boolean.TRUE.equals(m.getLocalDeploy()));
+    }
+
+    private static void validateAlias(String alias) {
+        if (alias == null || alias.isBlank() || "mock".equalsIgnoreCase(alias.trim())) {
+            throw new IllegalArgumentException("非法别名（mock 为系统保留）");
+        }
+    }
+
+    private static int clampMax(Integer v) {
+        if (v == null) {
+            return 10;
+        }
+        return Math.max(0, Math.min(10, v));
+    }
+}

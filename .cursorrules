@@ -1,0 +1,372 @@
+# 项目：Ai（com.aaron.cloud）— Cursor 规则（仅本项目）
+
+## 1. 项目定位与优先级
+- 核心产品形态：**以 AI 对话为主**（多轮会话、上下文、流式输出、会话管理为首要能力）。
+- **多租户（SaaS）**：数据与配额默认按租户隔离；跨租户访问属于严重缺陷，设计与代码审查时必须显式考虑。
+- 非对话类功能（报表、复杂 CRUD 等）除非用户明确要求，否则**不主动扩展**，避免稀释对话主线。**例外**：**管理端 / 平台必备能力**（租户、**用户管理**、审计、计量、网关策略、身份联邦等）属中台基座，**不**视为「稀释对话主线」的横向扩展，须在 **`web/admin-web`** 与 **`common`** 中完整落地。
+- 变更原则：**最小必要改动**；不为了“整洁”做大范围重构；新增代码需可测试、可观测（日志/指标在合理范围内）。
+- **业务码与枚举**：凡**状态、类型、阶段、级别、来源、结果**等**有限集合（封闭语义）**的取值，**尽量使用 `common.api.enums` 等集中枚举类**表达；**禁止**在业务代码中**写死**魔法数字、裸字符串承担上述语义（细则见 **§4.1.3**）。
+- **中台能力蓝图**（对话、模型、RAG、智能体、画像与记忆等）见 **§1.5**，实现时与 **§4.1** 包边界对齐，避免另起炉灶。
+
+### 1.5 中台产品能力蓝图（与实现对齐）
+以下为本项目 **AI 中台** 目标能力清单；**不新增顶层 Java 包**，通过 **§4.1** 既有域组合落地。
+
+| 能力 | 产品要求 | 主要落地包 / 持久化 |
+|------|----------|---------------------|
+| **完整对话与多轮** | 流式输出、会话列表、上下文窗口可控、可中断重试 | **`chat`** 编排；会话/消息表在 **`common`** |
+| **流行大模型接入** | 多厂商、可配置路由与降级；密钥句柄化 | **`model`**；计量回写 **`common.metering`** |
+| **多任务并行** | 异步索引、评测、通知等可与对话并行；任务可观测 | **`job`** + **`common.jobmeta`**；与 **`rag`/`notification`** 协作 |
+| **意图识别** | 每轮或按需识别用户意图，驱动路由（知识检索 / 工具 / 闲聊） | **`chat`** 编排 + **`model`**（分类或小模型调用）；**禁止**在网关层做业务意图分叉 |
+| **一句话办事** | 自然语言触发可编排工具流或单步 API，幂等与审计 | **`chat`** + **`mcp`**（工具白名单）；流水与审计 **`common.audit`** |
+| **一键 RAG 网页导入** | 单条 URL 触发**同域名**爬取，**默认深度 3 层**（可配置），文章/资讯入库为 **Markdown**，再 **向量化** 写入向量库 | **`rag`** 编排爬取与切块；**`job`** 执行爬取/解析/Embedding 流水线；正文与 MD 走 **`file`/`common.filemeta`**；向量写入 **Milvus**（见 **§2**） |
+| **知识中心** | 租户内文档检索，结果可注入对话引用（citation） | **`rag`** + **`chat`**；元数据与权限 **`common`** |
+| **长记忆** | 跨会话摘要、主题记忆、与向量检索结合的「慢记忆」层 | **`common.memory`**（或等价子包）：指针、摘要、版本；具体召回逻辑在 **`chat`** + **`rag`**/`model` |
+| **用户画像（含未登录）** | 未登录也可对话；**`deviceId`** 为前端 UUID + **`X-Device-Id`**（见 **§4.0**）；注册时绑定设备，画像与会话归并到用户 | **`common.profile`**（或 **`common.tenant`** 下子域）：设备主体、画像片段、合并策略；**`chat`** 消费画像上下文 |
+| **智能体中心与定制智能体** | 可配置智能体（系统提示、工具集、知识库绑定、模型路由别名） | **`chat`**（智能体编排与运行态）+ **`mcp`**（工具/MCP 接入）+ **`common`**（智能体定义、版本、租户可见性）；**不**单独新增 `agent` 顶层包 |
+
+**合规与质量（爬取与对公网）**：爬取须尊重 **`robots.txt`**、站点速率、**目标站点服务条款（ToS）与著作权**；**禁止**在未经授权下抓取需登录方可访问的第三方非公开内容、**禁止**突破付费墙或鉴权；**默认**仅同注册域（含子域策略在配置中显式定义）；失败与跳过原因写入任务日志（**`common.jobmeta`**），供管理端 **`job`** 分块展示。
+
+## 2. 技术栈与版本约束（硬约束）
+### 后端（Java）
+- **JDK：25**（与 `pom.xml` 中 `maven.compiler.source` / `target` 保持一致；新增 API/语法默认按 JDK 25 可用特性考虑）。
+- 构建：**Maven**；包根命名空间：`com.aaron.cloud`。
+- **Web 与集成栈（写死）**：**Spring Boot**（版本与 JDK 25 兼容矩阵以官方为准）；对外与跨服务接口一律 **REST + JSON**；AI 流式输出使用 **SSE**。
+- **跨进程协作（写死）**：**Spring Cloud Netflix Eureka Client** 做服务注册与发现；**OpenFeign** 声明式 HTTP 客户端；**Spring Cloud LoadBalancer** 做客户端负载均衡；**Resilience4j**（`spring-cloud-starter-circuitbreaker-resilience4j`）做 Feign 超时、重试与熔断；**禁止**在本项目中使用 gRPC 作为服务间主协议。
+- **异步消息（写死）**：跨模块异步事件与削峰使用 **Apache RocketMQ**，通过 **`rocketmq-spring-boot-starter`** 接入。
+- **RAG 向量库（写死）**：向量检索与写入统一使用 **Milvus**（官方 Java SDK / 项目统一封装），**禁止**在同一产品路径下并列引入第二套向量库（如 Elasticsearch 向量、PGVector）除非经 ADR 迁移。
+- 编码：**UTF-8**；时间/时区：**UTC 存储 + 明确时区策略**（API 文档中说明）。
+
+### 前端（Vue）
+- **Vue 3**；默认 **`<script setup>` + Composition API**。
+- 语言：**TypeScript**（新文件）；状态管理优先 **Pinia**；路由 **Vue Router**；HTTP 客户端 **axios** 并在项目中统一。
+- UI：在引入组件库前先与现有代码风格一致；避免混用多套 CSS 方案（如同时大规模引入 Tailwind + 另一套原子化方案）除非有迁移计划。
+
+## 3. 仓库与目录规划（前后端同仓 + 打包隔离）
+### 3.1 总体结构
+- **前后端集成在同一仓库**；后端仍为 Maven 标准 `src/main/java`、`src/main/resources`、`src/test/java`（或见 **§4.2** 多模块演进）。
+- **前端统一放在与 `src` 同级的 `web/` 目录下**（与 `pom.xml` 同层），**用户端与后台管理端**各为独立 SPA：
+  - `web/user-web/`：用户端（C 端对话等产品能力）
+  - `web/admin-web/`：后台管理端（运营/配置/审计等）
+- 每个前端目录各自包含独立 `package.json`、独立构建配置；**不要**将 `node_modules`、构建产物提交进仓库。
+- **禁止**将任一前端的源码或 `dist` 打进后端 `src/main/resources`（除非有显式、可审查的静态托管方案且仍满足下条「后端制品不含前端」）。
+
+### 3.2 后端打包必须「屏蔽」前端
+- Maven 打出的 **JAR/WAR 制品不得包含** `web/user-web/`、`web/admin-web/` 下任何前端源码与构建产物。
+- 实现上优先：**前端目录永不进入 `src/main/resources`**；若存在拷贝静态资源的构建步骤，必须在 `pom.xml` 中显式限定资源路径，并对前端目录做排除/不引用。
+- CI/发布脚本中：后端构建与前端构建**分步执行**，避免误把前端目录当作 Java 资源打包。
+
+### 3.3 前端打包必须「屏蔽」后端
+- 前端构建（如 Vite）**工作区仅限各自 `web/user-web/`、`web/admin-web/` 目录**；不得从 Java 源码树（`src/main/java` 等）引用或打包进 `dist`。
+- 前后端协作仅通过 **HTTP/OpenAPI 契约**与环境变量中的 API 基址；禁止在仓库内用「相对路径依赖」把后端代码拉进前端 bundle。
+
+### 3.4 共享契约与环境
+- 契约以 **OpenAPI 3** 规范为源（YAML/JSON）；**Swagger UI** 仅作联调展示；DTO 与错误码与 **§6** 对齐；**禁止**靠「口头字段名」长期协作。
+- **HTTP 路径与鉴权**：对外 REST 的 **`/open/**`（免 JWT）与 `/api/**`（须 JWT）** 划分见 **§6.0**；后端 **`rest.open` / `rest.api`** 分包与 **`AbstractOpenV1Controller` / `AbstractApiV1Controller`** 继承约定同条；OpenAPI 与前端 **`src/api/**`** 须与之一致。
+- 密钥（LLM API Key、数据库密码等）只走环境变量或本地忽略的配置文件，**禁止**写入仓库。
+
+### 3.5 前端页面与目录分块（与后端 **§4.1** 顶层包对齐）
+前端按**与后端领域包同名或同义**的边界划分目录、路由与构建懒加载块，便于联调、权限裁剪与后期拆仓库；**后端顶层包以 §4.1 固定清单为准**，每个包在 **§3.5** 中已有对应前端分块映射；若仅在既有包内新增子域能力，优先落在既有 `views/<domain>` 内子路由，避免新建顶层前端域。
+
+#### 命名与根目录（每个 SPA 内）
+- 建议在各自应用内采用统一骨架（示例，可按脚手架微调但**领域名保持一致**）：
+  - `src/views/<domain>/`：页面级路由组件，`<domain>` 与 **§4.1** 顶层包语义对齐：`chat`、`rag`、`mcp`、`profile`、`gateway`、`identity`、`model`、`job`、`file`、`notification`、`eval`、`tenant`（租户与成员）、**`users`（管理端用户管理，见 §3.6）**、`system`（登录/个人设置等横切页）等。
+  - `src/api/<domain>/`：对该领域 HTTP 的封装（axios 实例、路径前缀与 **§6** 错误码解析）。
+  - `src/stores/<domain>.ts` 或 `src/composables/<domain>/`：该领域状态与可复用逻辑。
+  - `src/components/<domain>/`：仅该领域复用的展示组件；**跨领域**复用组件放在 `src/components/shared/`（或 `common`），**禁止**在 `chat` 目录下堆叠 `rag` 专用大组件。
+- **路由**：Vue Router 中按领域划分 **route module**（如 `router/modules/chat.ts`），`path` 前缀建议与领域一致；**`web/user-web`** 对话入口为 **`/{租户编码}/chat`**（与 **`sys_tenant.code`** 一致，见 **`PROJECT.md`**「★ 用户端路由与租户」），**`web/admin-web`** 例如 `/rag`、`/mcp`、`/gateway`、`/tenant` 等。
+- **代码分割**：对重型领域页面使用 **路由级懒加载**（`() => import('...')`），使 **Vite chunk 与领域边界一致**，避免单一巨型 bundle；共享依赖留在 `vendor` 策略由构建配置统一处理即可。
+
+#### `web/user-web/`（用户端）— 与后端映射
+| 前端分块（目录/路由前缀） | 主要对应后端包 | 说明 |
+|---------------------------|----------------|------|
+| **`chat`** | `com.aaron.cloud.chat` | 会话列表、对话页、流式、多轮、意图/一句话办事交互、智能体运行态入口。 |
+| **`rag`** | `com.aaron.cloud.rag` | **知识中心**：检索、引用片段、知识库选择；一键 URL 导入入口（进度在 **`job`** 侧展示时可跳转）。 |
+| **`mcp`** | `com.aaron.cloud.mcp` | 工具/MCP 授权、**智能体中心**（定制智能体与工具绑定的 C 端入口，配置来自后端）。 |
+| **`profile`** | `common.profile` + `chat` | 用户画像摘要、设备绑定说明、隐私与偏好（未登录依赖 **deviceId**）。 |
+| **`system`** | `common`（安全/租户上下文）+ **`identity`**（OAuth/OIDC 回调与用户联邦入口，见 **§4.1**） | 登录回调、个人资料、当前租户/工作区切换入口；**不**承载业务 CRUD 大屏。 |
+
+#### `web/admin-web/`（管理端）— 与后端映射
+| 前端分块（目录/路由前缀） | 主要对应后端包 / 能力 | 说明 |
+|---------------------------|------------------------|------|
+| **`tenant`** | `common`（租户持久化）+ 租户管理 API | 租户生命周期、成员与角色、应用方（client）凭证等。 |
+| **`gateway`** | `com.aaron.cloud.gateway` | URL/应用方限流策略、黑白名单、秒级/分钟级配额规则配置与观测。 |
+| **`chat`** | `com.aaron.cloud.chat` | 运营侧会话抽检、系统提示模板、模型参数策略（若由管理端配置）。 |
+| **`rag`** | `com.aaron.cloud.rag` | 知识库、语料、**Milvus** collection 映射、索引任务、**一键爬取导入**策略（深度默认 3、同域规则）、检索参数与质量配置。 |
+| **`mcp`** | `com.aaron.cloud.mcp` | MCP Server 注册、租户可见性、密钥与连接健康；**定制智能体**绑定的工具/MCP 策略。 |
+| **`identity`** | **`com.aaron.cloud.identity`** | OAuth/OIDC 客户端、回调路由、外部 IdP 联邦、JWK 轮换等运维配置。 |
+| **`audit`** | **`com.aaron.cloud.common.audit`**（**§4.1**） | 审计检索、导出（权限严格控制）。 |
+| **`billing`** | **`com.aaron.cloud.common.metering` / `common.billing`**（**§4.1**） | 套餐、计量、配额与账单相关管理页。 |
+| **`model`** | **`com.aaron.cloud.model`** | 模型路由、厂商密钥句柄、降级策略等运维配置（不落明文密钥）；**租户可配置 OpenAI 兼容端点**持久化在 **`common.modelcfg` / `llm_model`**，API Key **AES-GCM 密文**存储，详见 **`PROJECT.md`** 与 **`ai.llm-model.*`**。 |
+| **`file`** | **`com.aaron.cloud.file`** | 存储桶、生命周期、扫描策略、预签名策略等。 |
+| **`notification`** | **`com.aaron.cloud.notification`** | Webhook 订阅、模板、投递失败与重试运维。 |
+| **`job`** | **`com.aaron.cloud.job`** | 异步任务、队列积压、失败重试运维界面。 |
+| **`eval`** | **`com.aaron.cloud.eval`** | 内容安全/评测管线配置、异步审查任务与结果抽检（与 `common.guardrail` 规则配合）。 |
+| **`profile`** | **`common.profile`** + **`chat`** | 租户内用户画像运营、设备主体与登录合并审计、标签规则（不含 C 端隐私原文展示）。 |
+| **`users`** | **`common.tenant`** + **`common.security`** + **`identity`** | **用户管理**：账号 CRUD、启停、角色、重置密码；与 **§3.6** 一致。 |
+| **`system`** | 横切 | 管理端布局、菜单权限、字典/全局配置等。 |
+
+#### 与后端固定架构同步
+- **§4.1** 所列每个**独立顶层包**在 **`web/admin-web`** 内均应有对应 `views/<domain>` + `api/<domain>`（上表已列）；若某能力对 C 端开放，再在 **`web/user-web`** 增加同名分块（如 `file` 上传页、`notification` 用户订阅管理等，按产品需要启用路由即可）。
+- **`common` 子域**（`audit`、`metering`、`billing`、`guardrail` 等）**不**单独建 `views/common/` 业务大屏，统一使用 **`audit`/`billing`** 等上表分块名。
+- **`com.aaron.cloud.common`** 不单独做「业务大屏」；其横切能力体现在 **system** 分块、全局请求拦截（租户头、错误处理）与类型定义中。
+- **管理端 UI（`web/admin-web`）**：**访问日志**等 **`gateway` 观测页**须以 **表格列表** 展示结构化字段，**行级详情**用 **弹窗/抽屉**（可附可复制 JSON）；**禁止**以整页原始 JSON 作为默认主视图。**`model`/`mcp`/`rag`** 等 **§4.1 顶域**须在侧栏具备**分组菜单**与 **`views/<domain>`** 路由入口；**`model`（可配置 LLM）、`mcp`（MCP Server 注册）、`rag`（知识库）** 等**配置类页面必须以持久化数据为真源**，提供与 **`/api/v1/admin/...`** 或域内 **`rest.api`** 对齐的 **列表 + 增删改（及 RAG 索引任务下发等必要写操作）**，**禁止**长期仅以说明文案或只读列表冒充「管理」交付。
+
+### 3.6 前端应用壳与常规页面（`web/user-web` / `web/admin-web`）
+- **应用壳（两栈各自一致）**：`src/layouts/`（默认布局、空布局、管理端侧栏布局）、`src/router/`（`index` + `modules/*.ts` 按域拆分）、`src/plugins/`（axios 实例、权限指令、全局错误处理）、`src/assets/`、`src/styles/`；入口 **`main.ts`** 仅做引导与全局插件注册。
+- **领域页面**：仍以 **`src/views/<domain>/`** + **`§3.5`** 映射为主；**常规运营能力**在管理端单独成域，**不**塞进 `system` 大杂烩。
+- **`web/admin-web` 常规页（须实现）**：
+  - **`users`**：**平台用户管理**（账号列表、启用/禁用、角色分配、重置密码触发、按租户筛选）；数据面 **`common.tenant` + `common.security`**，认证配置联动 **`identity`**。路由前缀建议 `/users`。
+  - 与 **`tenant`** 分工：**`tenant`** 侧重租户/工作区与应用方；**`users`** 侧重**自然人账号**在租户内的生命周期（若单租户多成员模型合并，则在 UI 上用 Tab 或子路由区分，后端仍按 **`common`** 表拆分）。
+- **`web/user-web` 常规页**：**账户与安全**（改密、绑定手机/邮箱、注销申请）放在 **`system`** 子路由（如 `/settings/account`）；**对话历史列表**属 **`chat`**（`/{租户编码}/chat` 下子路由如 `history`，若启用），与 **§5.11** 一致。
+
+## 4. 后端领域划分、多租户与微服务演进
+### 4.0 多租户（横切约束）
+- **租户标识**：已登录请求须解析出 **`tenantId`**（或租户编码）；解析顺序（JWT 声明、Header、子域等）需在安全设计里写清，**禁止**隐式默认租户落库。
+- **访客与设备码**：允许**未登录**使用对话能力；须绑定稳定 **`deviceId`**。Web 端**无法**可靠获取跨浏览器不变的「硬件唯一码」（且无特权 API）；**本项目规定**：**`deviceId` = 首次访问时由前端生成 UUID v4**，存入 **`localStorage`（或 IndexedDB）**，之后每个请求经 **`X-Device-Id`**（或约定 Header）上送，服务端在 **`common.profile`** 登记为**设备主体**并与 **`tenantId`（含访客租户）** 组成隔离键。可选使用**浏览器指纹类库**仅作**风控辅助**（非主键、须隐私告知），**禁止**单独用指纹替代 `deviceId` 主键。画像、长记忆、**对话记录**等匿名数据均须同时带 **`deviceId`** 与 **`tenantId`**。用户**在同一设备上完成注册**时须携带同一 **`deviceId`**，服务端在事务内执行 **「用户账号 ↔ 设备主体」绑定**，并将该设备上的**匿名会话、画像标签、长记忆指针**归并到 **`userId`**（冲突与幂等在 **`common.profile`/`common.tenant`** 建模并写 **`common.audit`**）。
+- **隔离策略**：默认 **共享库 + 行级租户字段**；若未来单租户独立库/Schema，迁移时仍以「租户上下文」为唯一边界，不在业务包内硬编码连接串。
+- **上下文传播**：网关鉴权后注入租户上下文，在同步 Web 与异步任务/消息消费链路中**一致传递**；定时任务、批处理必须显式指定目标租户或分片策略，禁止无租户扫描全表。
+- **限流与配额**：与 **§4.1** 中的 **`gateway`** 及 **`common.metering` / `common.billing`** 对齐时，维度需包含 **租户 + 应用方（客户端/调用方标识）**。
+
+### 4.1 完整后端架构与持久化边界（固定顶层包集）
+本节为**全量架构约定**：后端顶层 Java 包**仅限下表清单**（共 **11** 个顶层域：`common` + **10** 个独立包）。新能力优先落在既有包内 **子包** 或通过 **common** 门面扩展；**禁止**在无 ADR 评审的情况下新增 `com.aaron.cloud.<新顶层域>` 包，避免架构再度分裂。
+
+#### 4.1.1 `com.aaron.cloud.common`（公共内核 + 全部持久化）
+- **职责**：租户与成员、凭证与角色、计量/套餐/账单、审计、护栏规则、文件元数据与 ACL、异步任务状态、Webhook 订阅与投递日志、跨域 DTO/错误码、**全部 ORM/Mapper/Repository/SQL**（技术栈与写法见 **§4.1.3**）、事务中与数据库交互的代码；对外暴露各域可用的**仓储与应用服务门面**（由本包实现）。
+- **推荐子包划分**（**仓库以左列包名为准**；仅允许在 **ADR** 中重命名，**禁止**同语义第三套并列包名）：
+  - **`common.tenant`**：租户/成员/应用方（client）实体与生命周期、租户上下文解析辅助。
+  - **`common.security`**：API Key、服务账号、RBAC、JWT 声明解析与鉴权辅助（与 `identity` 协议层协作）。
+  - **`common.metering`** / **`common.billing`**：用量事件、配额、套餐、账单规则与流水；供 `gateway` 与 `chat`/`model` 回写扣减。
+  - **`common.audit`**：合规与**业务级**审计（配置变更、管理员操作、敏感导出、工具调用关键步骤等）append-only 写入与查询服务。
+  - **`common.accesslog`**（或等价名）：**HTTP 接口访问日志**结构化落库（路径、方法、状态码、耗时、`tenantId`、`userId`/`deviceId`、客户端 IP、`traceId` 等）；**禁止**与 **`common.audit`** 混为一张表；由 **`gateway`**（或统一 Servlet Filter）采集后经 **`common`** 门面异步写入，**正文与 query 脱敏**（见 **§5.12**）。
+  - **`common.guardrail`**：轻量策略（关键词、正则、调用第三方审查 API 的同步/短超时封装）；与 **`eval`** 编排协作时由 **`eval`** 触发异步重任务，**策略版本与流水**仍落 **common**。
+  - **`common.filemeta`**（或等价名）：文件/附件元数据、租户 ACL、病毒扫描结果字段；**对象流与云 SDK**在 **`file`** 包。
+  - **`common.jobmeta`**（或等价名）：异步任务、队列游标、DLQ 元数据；**消费者线程与监听**在 **`job`** 包。
+  - **`common.notifymeta`**（或等价名）：Webhook 订阅、投递日志、死信；**投递引擎**在 **`notification`** 包。
+  - **`common.profile`**（或置于 `common.tenant` 下等价命名）：**用户画像**片段、**设备主体**与登录账号的绑定/合并、偏好标签；供 **`chat`** 注入系统提示或路由。
+  - **`common.memory`**（或等价名）：**长记忆**条目（摘要、主题、向量外键 id、过期策略），与 **Milvus** collection 元数据对应关系；具体 Embedding 与召回在 **`rag`/`model`**。
+  - **`common.observability`**：MDC/Trace 约定、日志脱敏与指标命名等**极小基础设施**（不单列为业务域）。
+  - **`common.api`**：跨包稳定 DTO、端口接口、错误码常量；**与数据库状态/类型列对应的码值**须以 **`com.aaron.cloud.common.api.enums`**（或经 **ADR** 批准的单一集中包）下的 **Java 枚举**统一表达，**禁止**再并列使用 `contract` 等第二套命名根包。
+
+#### 4.1.2 独立顶层领域包（职责与「无 DB」边界）
+以下包**禁止**包含 JDBC/MyBatis/JPA 等直连数据库实现；读写的表一律经 **`common`** 已定义的门面或仓储接口完成。
+
+| 顶层包 | 职责 |
+|--------|------|
+| **`com.aaron.cloud.gateway`** | 本地网关：URL/路由、应用方维度的访问控制；**秒级/分钟级**限流；租户/调用方上下文注入；**接口访问日志采集入口**（与 **§5.12** 一致）；限流与黑白名单**规则落库**时仅调用 **common** 门面。 |
+| **`com.aaron.cloud.identity`** | OAuth2/OIDC 协议适配、授权端点/回调、外部 IdP 联邦、JWK 轮换；**用户/客户端/授权码与 refresh 等关系数据**的持久化仍在 **common**。 |
+| **`com.aaron.cloud.chat`** | 对话编排、会话与消息应用服务、流式输出、与 `model`/`mcp`/`rag`/`file`/`eval` 的编排协作。 |
+| **`com.aaron.cloud.rag`** | 知识库编排、检索与重排、**Milvus** 读写封装、索引与 **一键 URL 爬取导入**编排（深度默认 **3**、同域策略、MD 落库与向量化任务下发，与 **`job`/`file`** 协作）；**索引元数据、爬取任务状态**在 **common**。 |
+| **`com.aaron.cloud.mcp`** | MCP 工具/资源发现、外部 MCP Server 连接与健康、租户可见性；**连接配置持久化**在 **common**。 |
+| **`com.aaron.cloud.model`** | 多厂商 LLM 接入、路由、重试/降级/熔断；密钥仅存**句柄**，解析走配置或外部密钥服务；**计量回写**调用 **common.metering** 门面。 |
+| **`com.aaron.cloud.job`** | 消息监听、定时批处理、索引/Embedding/解析等异步编排；**必须携带租户上下文**；状态/DLQ 经 **common.jobmeta**。 |
+| **`com.aaron.cloud.file`** | 对象存储 SDK、流式上传下载、预签名 URL、病毒扫描钩子编排；元数据经 **common.filemeta**。 |
+| **`com.aaron.cloud.notification`** | Webhook/通知模板、签名、重试退避、投递引擎；订阅与日志经 **common.notifymeta**。 |
+| **`com.aaron.cloud.eval`** | 重内容安全/评测管线（异步审核、复杂策略编排、调用外部 **HTTP** 推理/审核服务）；**持久化结果与版本指针**经 **common**（与 **`common.guardrail`** 分工：规则与轻量同步在 `guardrail`，重异步在 `eval`）。 |
+
+#### 4.1.3 持久化硬约束（全局）
+- **所有数据库操作**（实体映射、Repository/Mapper、SQL、事务边界发起处中与 DB 交互的代码）必须位于 **`com.aaron.cloud.common` 及其子包内**。
+- **`gateway`、`identity`、`chat`、`rag`、`mcp`、`model`、`job`、`file`、`notification`、`eval`** 均**不得**新增第二套直连数据库路径；一律通过 **common** 暴露的接口完成。
+- **ORM 与 SQL 载体（写死）**：**所有**数据库访问基于 **MyBatis-Plus** 与 **MyBatis-Join**（含分页、条件构造、多表关联等）；在 **Java 代码** 中通过 Wrapper、Join API、类型安全的 Lambda 条件等**拼接与组装**，**禁止**使用 **MyBatis XML Mapper**（包括但不限于 `src/main/resources/mapper/**/*.xml`、`classpath*:mapper/**/*.xml` 等）承载或维护业务 SQL；**禁止**在业务路径上以手写 JDBC、字符串拼接裸 SQL 或大量 `@Select`/`@Update` 注解替代上述约定（框架回调、一次性数据迁移脚本等须在 CR/ADR 中显式说明且不得成为常态）。
+- **MySQL 物理建模（仓库约定）**：**禁止**在 DDL 与线上库使用 **`FOREIGN KEY` 物理外键**（不依赖 InnoDB 级联删除/引用检查）。表间关系一律用**业务 id 列**与**显式中间表**表达：**多对多**须用关联表（如 `sec_role_permission`、`mcp_tenant_server`、`sys_tenant_member`）；**一对多**中需在库侧独立维护的从属关系（如会话↔消息、知识库↔文档、文档↔分块）使用约定前缀 **`lnk_*`** 的中间表，**禁止**用物理外键替代该语义。孤儿行清理、级联语义在**应用服务或受控批任务**中完成，关键删除须 **`common.audit`** 可追溯。索引与 **`tenant_id` 行级隔离**仍须在 DDL 中显式声明；`db/mysql` 下脚本与本条对齐。
+- **业务码值：枚举优先，禁止写死（写死禁止）**：凡在代码路径中承载**业务语义**且取值为**有限集合**的概念——包括但不限于 **状态、类型、阶段、级别、来源、结果、渠道、扫描结论、规则种类**等——无论出现在**数据库列**、**实体/DTO**、**OpenAPI 出入参**还是 **MQ 消息 JSON** 字段中，在 Java 侧**应尽量**定义为 **`com.aaron.cloud.common.api.enums`**（默认）或经 **ADR** 备案的 **`common` 子包内唯一**集中位置下的**枚举**；持久化字段用 **`@EnumValue`**（推荐）或项目统一 **TypeHandler** 与 DDL 存储值一致。**禁止**在 `chat`/`rag`/`common` 等各包的业务、编排与持久化代码中，用**魔法数字、裸字符串**表达上述语义的分支、比较或赋值（含 `Wrapper.eq("status", 1)`、`Wrapper.in("type", Arrays.asList("a","b"))`、对业务码的 `if (x == 0)` / `switch ("PENDING")` 等）；**禁止**仅靠注释或口头约定维护码表。**库列**为 TINYINT/SMALLINT/VARCHAR 等时，枚举与 **DDL** 注释及列定义须一一对应。例外：**纯技术常量**（如 HTTP 状态码、框架枚举）、**一次性数据迁移脚本**（须在 CR/ADR 中标注且不得扩散为常态业务写法）可不受本条约束。
+- 租户字段、索引与防跨租户查询策略在 **common 持久化层**统一体现（拦截器、Filter、显式 WHERE 等）。
+- **MySQL 物理表名与索引命名（写死）**：
+  - **一律**小写 **`snake_case`**；**禁止**驼峰、混合大小写、无意义缩写堆砌。
+  - **主表**：**`{域前缀}_{实体}`** 两段式（必要时实体段可含 `_` 连接复合词），域前缀与 **§4.1.2** 业务域对齐，使表名自解释。推荐前缀对照（新表须从下列选用，**禁止**再造同义第三前缀）：
+    - **`ten_`**：租户主数据（存量 **`sys_tenant`** 在迁移前保留；新表优先 **`ten_*`**）。
+    - **`sec_`**：自然人账号、登录凭证（如 **`sec_user_account`**）。
+    - **`sys_`**：仅用于**跨多业务线共用**且不宜归入单一域的平台表（如 **`sys_http_access_log`**、**`sys_audit_event`**）；**禁止**用 **`sys_`** 承载单一域独占配置（LLM 端点等须用域前缀）。
+    - **`cht_` 或 `chat_`**：对话与会话消息（本项目存量为 **`chat_*`**，新表与 **`chat_*`** 保持一致）。
+    - **`llm_`**：租户可配置大模型端点、路由句柄等（如 **`llm_model`**）；**密钥密文列**仍须服务端加密，禁止明文。
+    - **`rag_`**：知识库、文档、分块等 RAG 主实体。
+    - **`mcp_`**：MCP Server 注册与租户可见性等。
+    - **`job_`**：异步任务（如 **`job_task`**）。
+    - **`fil_` 或 `file_`**：文件元数据（存量 **`file_object_meta`**）。
+    - **`meter_` 或 `metering_`**：计量流水（存量 **`metering_usage_event`**；新表优先 **`meter_*`**）。
+    - **`guardrail_`**、**`eval_`**、**`notification_`**：与各自子域语义一致。
+    - **`gw_`**：**本地网关**侧持久化（限流规则、路由/策略元数据等），与 **`gateway`** Java 包语义对齐；**禁止**用 **`sys_`** 承载网关域独占表。
+  - **关联表**：**唯一前缀 `lnk_`**，格式 **`lnk_{左简}_{右简}`**（如 **`lnk_rag_kb_document`**、`lnk_chat_conversation_message`）；**禁止**用物理外键替代 **`lnk_*`** 语义。
+  - **索引名**：**`uk_{表简或全名}_{列简}`**（唯一）、**`idx_{表简}_{列简}`**（非唯一）；须与表同文件 DDL 注释说明用途。
+  - **存量表**：与上列不一致的，以 **`db/mysql/migrate_*.sql`**（若确需单次增量）渐进重命名并在 **`PROJECT.md`** 记录，或**直接修正 `schema_v1.sql`** 作为新库真源；**Java `@TableName` 与实体须同步**，禁止代码与库长期分裂。
+- **`db/mysql` 脚本体系（写死）**：
+  - **`schema_v1.sql`（权威全量）**：**新库初始化**与**结构文档对齐**的首选唯一文件；须含 **`CREATE TABLE` 每列 `COMMENT`**、**表级 `COMMENT`**，以及**幂等**种子（`INSERT IGNORE` 等）。**禁止**长期维持多份分散 **`seed_*.sql`** 与 **`schema_v1` 真源漂移**；新增/调整表结构应合入 **`schema_v1.sql`** 并在 **`PROJECT.md`** 说明。
+  - **`README.md`**：位于 **`db/mysql/README.md`**，说明空库执行方式、**勿对已有数据整文件重跑**、以及附录运维语句位置。
+  - **增量 `migrate_*`（可选）**：仅当**已上线库**必须在两次发布间做单次 **`ALTER`/数据修正**、且不宜回头改 **`schema_v1`** 时使用；须命名 **`migrate_0_1_{patch}_{slug}.sql`** 且 **`{patch}`** 与 **`pom`/`PROJECT`** 补丁位一致，并在 **`PROJECT.md` 该版本**写清执行顺序（多文件时）。
+  - **接口目录 `gw_api_endpoint`（管理端「接口与限流」快捷选择）**：对外 REST 路径变更时，除 **`schema_v1.sql`** 中表结构/必要幂等种子外，须在固定文件 **`db/mysql/gw_api_endpoint_catalog_inserts.sql` 末尾追加**一行 **`INSERT IGNORE INTO gw_api_endpoint (...)`**（`path_pattern` / `http_method` 与运行时 **Ant** 匹配一致，`display_name` 为简短中文业务名，`enabled` 默认 ON，`sort_order` 取未占用递增值）；**禁止**仅改 Java 而不留可执行的目录增量。全量接口清单以该文件为协作真源；新库可执行该文件补全与 **`schema_v1.sql`** 种子重复的 **`INSERT IGNORE`** 安全跳过。
+  - **执行顺序（推荐）**：**`schema_v1.sql`** 为设计真源；存量环境 **按需执行 `migrate_*`（若有）** 或摘取片段手工对齐。
+  - **新表前缀**：除存量历史表外，**新建表名**只能从本条「域前缀 / `lnk_*`」清单择一，**禁止**再造无前缀或与既有前缀同义的第三套命名；网关域独占数据一律 **`gw_*`**。
+
+#### 4.1.4 依赖方向（固定，禁止循环）
+- **`common`**：**不得**依赖 `gateway`、`identity`、`chat`、`rag`、`mcp`、`model`、`job`、`file`、`notification`、`eval`。
+- **`gateway`、`identity`**：仅依赖 **`common`**（及框架基础设施）。
+- **`model`、`file`、`notification`**：依赖 **`common`**；可被 **`chat`、`rag`、`job`** 调用。
+- **`chat`、`rag`、`mcp`**：依赖 **`common`**；可按编排需要依赖 **`model`/`file`/`eval`** 等对外暴露的应用接口（须避免环：通过事件或单向接口拆分）。
+- **`job`**：依赖 **`common`**，并可依赖 **`chat`/`rag`/`file`/`model`/`notification`** 的**应用服务接口**（禁止反向依赖形成环）。
+- **`eval`**：依赖 **`common`**，可被 **`chat`**（前后钩子）与 **`common.guardrail`** 触发。
+
+业务包之间以 **RocketMQ 消息** 或 **单向应用接口** 解耦；跨包 DTO 与端口接口一律放在 **`common.api`**。
+
+### 4.2 工程目录演进（单模块 → 多模块）
+- **现阶段（刻意约定）**：
+  - **逻辑子模块 = `com.aaron.cloud` 下的 Java 包（目录）边界**，与 **§4.1** 顶层域一一对应（如 `common`、`chat`、`gateway` 等平级子包）；**暂不**拆成多个 **Maven 子模块**，单一 `pom`、单一 **`@SpringBootApplication` 启动类**聚合全部领域 Bean，与 **§4.3** **`ai.remoting.mode=local`** 的「单进程聚合」语义一致。
+  - **演进友好（可搬迁）**：各域代码与配置应**内聚在对应包目录**内，跨域仅通过 **`common.api`** 端口、Spring 注入、事件等可声明依赖；避免难以剥离的跨域静态耦合。日后项目变大时，可将 **`src/main/java/com/aaron/cloud/<域包>`** 整树复制到新 Maven 子模块或新仓库，**补全 `pom` 依赖与组件扫描**，即可独立或与其他模块联编运行，无需先完成拆分也能保持目录级「可剪切迁移」习惯。
+- **微服务化前**：父 `pom.xml` 拆为 Maven 多模块时，子模块与 **§4.1.2** 一一对应：`ai-common`、`ai-gateway`、`ai-identity`、`ai-chat`、`ai-rag`、`ai-mcp`、`ai-model`、`ai-job`、`ai-file`、`ai-notification`、`ai-eval`，并增加聚合启动模块 **`ai-bootstrap`**；**含 JDBC 的模块仅 `ai-common`**。
+- 无论单模块或多模块：**§3** 的打包隔离（后端制品不含前端）始终有效。
+
+### 4.3 跨模块调用（端口 + 部署形态）
+目标：**业务编排**只依赖 **`common.api`** 中的端口接口；**进程内**与**跨进程**的差异由 **Spring 装配**与 **`ai.remoting.mode` 配置**统一收口，**禁止**在 `chat`/`rag` 等领域类中手写 `if` 分支切换调用方式。
+
+#### 4.3.1 写死的技术选型（跨进程）
+- **服务注册与发现**：**Netflix Eureka**（`spring-cloud-starter-netflix-eureka-client`）；Eureka Server 由运维或单独进程/容器提供，本仓库仅客户端。
+- **同步 RPC 形态**：**OpenFeign** + **Spring Cloud LoadBalancer**，传输 **REST + JSON**，契约与 **OpenAPI** 对齐 **§3.4**。
+- **Feign 目标解析**：使用 Eureka 注册的 **`spring.application.name`**，与 **§4.2** 模块名一致（如 `ai-rag`、`ai-model`）；**禁止**在 Java 领域代码中写死 `http://host:port`（仅允许在 **`application-*.yml`** 或环境变量中配置 **Eureka Server**（如 **`EUREKA_DEFAULT_ZONE`**）等基础设施参数）。
+- **基建地址（可选）**：**`ai.providers.infra-via-discovery=true`**（**`AI_INFRA_VIA_DISCOVERY`**，与 **`ai.discovery.enabled` / `AI_DISCOVERY_ENABLED`** 注册总闸独立，见 **`application.yml`**）时，**Milvus / MinIO** 等可从 Eureka 按 **`service-id`** 解析实例地址；无实例时回退 **`application.yml`** 中的 **`host`/`endpoint`**。
+
+#### 4.3.2 端口与实现装配规则
+- 跨域协作依赖 **`common.api`** 内端口接口（如 `RagQueryPort`、`ModelInvokePort`）；各域若需对外暴露客户端契约，DTO 仍归 **`common.api`**。
+- **实现类命名**：提供方模块对外编排统一为 **`XxxApplicationService`** 命名风格的应用服务；消费方编写 **`LocalXxxAdapter`**（`@Service`，委托注入的提供方 Bean）与 **`RemoteXxxClient`**（`@FeignClient` 接口 + 配置类，路径与 OpenAPI 一致）。
+- **部署形态由配置锁定**（本项目约定，非多种方案并列）：
+  - **`ai.remoting.mode=local`**（**默认**，单进程 **`ai-bootstrap`** 聚合全部模块）：仅注册 **`Local*Adapter`**，**不启用**对外 Feign 远程 Bean；进程内直接 `@Autowired` 提供方服务。
+  - **`ai.remoting.mode=remote`**（各模块独立进程部署）：仅注册 **Feign 形式的 `Remote*Client`**；**Eureka Server** 必须可达；**禁止**与 `local` 模式在同一运行实例中同时注册两套端口实现（使用 `@ConditionalOnProperty(prefix = "ai.remoting", name = "mode", havingValue = "remote")` 与 `havingValue = "local"` 互斥装配）。
+
+#### 4.3.3 出站上下文（Feign）
+- 使用 **OpenFeign `RequestInterceptor`** 在出站请求头中附加 **租户标识、认证委托、W3C `traceparent`、自定义 `X-Request-Id`**；若上游请求为访客或未登录链路，**须透传 `X-Device-Id`**（与 **§4.0** 一致），以便下游 **`job`/`rag`/`chat`** 正确隔离与计费。分布式链路使用 **Micrometer Tracing**（Spring Boot 默认可观测栈）；**禁止**假定跨进程仍存在 ThreadLocal 租户。
+
+#### 4.3.4 熔断与超时
+- Feign 侧超时、重试与熔断使用 **Resilience4j**（`spring-cloud-starter-circuitbreaker-resilience4j` 与 Feign 集成），全局默认与 **§5.3** 可观测字段对齐；与 **§4.1.2 `model`** 包内「调用大模型厂商 API」的熔断配置分离命名空间，避免混用同一实例。
+
+#### 4.3.5 异步跨模块（RocketMQ）
+- 不要求同步返回的协作使用 **RocketMQ**（见 **§2**）；消息体 JSON **须**含 **`tenantId`**、**`traceId`/`traceparent`**；凡与**访客或未登录主体**相关的任务（如异步爬取、画像合并、设备侧通知），**还须**含 **`deviceId`**（或与 **`common.profile`** 对齐的 **`anonymousSubjectId`**）；消费者须 **幂等**（业务键去重或消费端幂等表，表在 **common** 持久化）。
+
+## 5. AI 对话域的设计约束（产品 + 工程）
+### 5.1 会话与消息模型
+- 明确区分：**会话（Conversation）**、**消息（Message）**、**角色（system/user/assistant/tool）**、**附件/多模态（若启用）**；每则请求须具备**可审计的隔离键**：已登录为 **`tenantId` + userId**；访客为 **`tenantId`（含访客租户）+ `deviceId`**，与 **§4.0** 一致。
+- 多轮上下文：**可控窗口**（按 token/条数/时间截断），截断策略需在代码或配置中可解释。
+- **流式响应**：前端需有取消/中断（AbortController）、重连或失败重试策略；后端需处理客户端断开。
+
+### 5.2 提示词与安全
+- 系统提示词/模板：**集中管理**（资源文件或配置），避免散落在业务代码各处。
+- **输入校验**：用户消息长度、频率、文件大小；对明显注入/越狱尝试在服务端做基础防护（不替代安全审计）。
+- **输出安全**：对敏感信息、工具调用结果做必要脱敏；工具调用（function calling）需白名单与参数校验。
+
+### 5.3 可观测性与成本
+- 记录：**requestId/traceId**、**tenantId**、**deviceId**（若访客）、模型名、token 用量（若可得）、耗时、错误类型（**不记录**用户隐私原文到日志，除非明确要求且合规）。
+- 费用相关：默认提供可切换的模型/参数（温度、max tokens）配置入口，避免硬编码。
+
+### 5.4 意图识别
+- 在 **`chat`** 编排层完成意图分类或路由（可调用 **`model`** 专用小模型或结构化输出）；意图结果用于选择 **RAG 检索 / MCP 工具 / 纯回复** 路径；须记录意图标签到可观测字段（**§5.3**），**禁止**将意图识别散落在 **`gateway`**。
+
+### 5.5 多任务与并行
+- CPU/IO 重任务（爬取、批量 Embedding、大文件解析）**必须**走 **`job`** 异步流水线，状态 **`common.jobmeta`**；与对话同进程时仍**禁止**阻塞 SSE 主线程；并行度与队列深度受 **`gateway`** 与 **`common.metering`** 约束。
+
+### 5.6 一句话办事（工具流）
+- 自然语言触发的工具调用须经 **`mcp`** 白名单与参数 JSON Schema 校验；多步编排使用显式**有向步骤**（状态机在 **`chat`** 或 **`common`** 持久化步骤表），每步**幂等键**与 **`common.audit`** 对齐 **§6**。
+
+### 5.7 一键 RAG 网页导入（Milvus）
+- 入口 API 在 **`rag`**；**默认爬取深度 = 3**，**同注册域**（子域规则配置化）；HTML → **Markdown** 规范化后入 **`file`/`common.filemeta`**，再 **Embedding** 写入 **Milvus**；collection 与 partition 命名须带 **`tenantId`**（及可选知识库 id），防止跨租户向量混用。
+- **失败可部分成功**：须返回已入库文档数、跳过原因摘要；任务进度通过 **`job`** 查询接口暴露。
+
+### 5.8 知识中心与对话引用
+- 检索结果以 **citation**（文档 id、片段、得分）注入 **`chat`** 上下文；**禁止**无引用时伪造来源；用户可见范围受租户与 ACL（**`common.filemeta`/`common.tenant`**）约束。
+
+### 5.9 用户画像与长记忆
+- **画像**：从对话与显式反馈中提取结构化标签，写入 **`common.profile`**，按 **`deviceId`/userId** 分区；合并与删除须可审计。
+- **长记忆**：冷热分层——热上下文仍在会话窗口内；冷记忆以 **`common.memory`** 摘要 + **Milvus** 或关键词检索召回，由 **`chat`** 在发模型前组装；过期与脱敏策略在配置中声明。
+- **隐私与合规**：须提供**用户侧**导出、删除或匿名化本人画像与关联记忆的能力（API + **`web/user-web`** 入口）；撤回同意、注销后的数据处置须写 **`common.audit`**；跨境与敏感标签收集遵循适用法律与隐私政策文本。
+
+### 5.10 智能体中心（定制智能体）
+- 智能体 = **系统提示模板 + 绑定模型路由 + 工具/MCP 列表 + 可选知识库** 的配置实体，持久化在 **`common`**（表结构由 **`chat`** 领域设计）；运行态由 **`chat`** 加载并由 **`mcp`/`rag`/`model`** 执行；**C 端**入口在 **`web/user-web`** 的 **`mcp`** 或 **`chat`** 子路由（产品统一一种导航即可）。
+
+### 5.11 对话记录（持久化与产品边界）
+- **存储**：会话头、消息行（含 token 元数据若可得）、工具调用摘要等一律在 **`common`** 由 **`chat`** 经门面写入；**禁止**仅存日志而无结构化消息表。
+- **访客会话**：须可关联 **`deviceId`**，以便 **§4.0** 注册合并后历史仍归属同一自然人。
+- **保留与删除**：默认保留策略、用户侧「删除对话」与**物理/逻辑删除**边界、导出格式须在隐私政策与 **`web/admin-web` `chat`** 运营配置中可配；**禁止**在未授权下跨租户导出对话。
+- **与日志区别**：**§5.12** 为**接口维度**访问日志；**本节**为**业务对话内容**生命周期，二者不可互相替代。
+
+### 5.12 接口访问日志（HTTP Access Log）
+- **定义**：每个对外 **REST** 请求一条结构化记录（至少：时间、`method`、`path` 模板化、**status**、**durationMs**、`tenantId`、`userId` 或 **`deviceId`**、客户端 IP、`traceId`/`requestId`、**user-agent**）；**不存**完整 request/response body；**query** 与 header 中敏感键须脱敏或丢弃。
+- **采集边界（与 `ai.remoting.mode` 一致）**：**`local`（聚合）**：在 **`gateway`** 或 **`ai-bootstrap` 全局 Filter** 统一采集南北向 HTTP 即可。**`remote`（多进程）**：**每个**对外暴露 HTTP 的可部署单元（含 **`ai-chat`、`ai-rag`** 等）**均须在进程入口**挂载等价 Filter 并写入 **`common.accesslog`**，**禁止**假设仅边缘 **`ai-gateway`** 可见全部业务流量（东西向 Feign 可不记 accesslog，以南北向为准）。
+- **实现**：持久化经 **`common.accesslog`**；高 QPS 路径可经 **RocketMQ** 异步落库或批量 flush；**失败须可告警**。
+- **保留与成本**：须配置**保留天数**、归档/冷存策略；极端流量路径允许**采样**（须在配置中显式开启并记录采样率），默认全量。
+- **查询**：**`web/admin-web`** 可提供 **`accesslog` 子路由**（挂在 **`gateway`** 分块或独立只读菜单），仅管理员且带审计；与 **`common.audit`** 的「谁在何时改了什么」**分开展示**。
+
+## 6. API 与错误处理约定
+
+### 6.0 路径前缀：`/open` 与 `/api`（鉴权边界，写死）
+- **`/open/**`**：**不要求** Bearer JWT（在 **`ai.providers.auth=jwt-local`** 与 **`oauth2-resource`** 下 Spring Security 均 **`permitAll`**，与 **`/actuator/**`**、**Swagger** 等横切白名单并列）。用于**访客可访问**能力：如 **C 端对话**（**`TenantContextFilter`** 仍从 **`X-Tenant-Id` / `X-Device-Id`** 等解析租户与设备）、**`POST /open/v1/auth/login`**（管理端换取令牌）、**只读上下文**（如 **`GET /open/v1/system/me`**）等。
+- **`/api/**`**：在 **`jwt-local`** / **`oauth2-resource`** 下默认 **`authenticated`**（须有效 **JWT** 或资源服务器约定令牌）。**管理端业务**、租户内受控 CRUD、**RAG/MCP/文件** 等一律落在 **`/api/v1/...`**。
+- **版本段**：对外 REST 路径中显式 **`/v1/`**（例如 **`/open/v1/chat/...`**、**`/api/v1/admin/...`**），避免无前缀裸路径。
+- **新增接口**：凡**无需鉴权**的对外 REST，**必须**注册在 **`/open/...`**；**禁止**在 **`/api/...`** 上再零星 **`permitAll`** 单点放行（横切白名单除外），以免安全规则分裂。
+- **CORS**：**`WebMvcConfiguration`** 对 **`/api/**` 与 `/open/**`** 使用与前端一致的 **`allowedOrigins`**（本地 **`5173`/`5174`** 等），避免浏览器预检失败。
+- **Java 分包（与鉴权语义一致）**：各业务顶层包（如 **`chat`、`identity`、`file`、`gateway`** 等）内，对外 **`@RestController`** 按鉴权分目录：**`…rest.open`** 仅放免 JWT 接口，**`…rest.api`** 仅放须 JWT 接口；**禁止**在**同一包**内混放 **`open`** 与 **`api`** 两种语义。
+- **类级前缀基类（写死）**：**`/open/v1`**、**`/api/v1`** 由 **`com.aaron.cloud.common.web.rest.AbstractOpenV1Controller`**、**`AbstractApiV1Controller`** 以 **`@RequestMapping`** 统一声明；具体控制器**继承**对应基类，**仅**在子类上写**资源段**（如 **`@RequestMapping("/chat")`**、**`@RequestMapping("/admin/users")`**），**禁止**在子类重复写完整 **`/open/v1`** 或 **`/api/v1`** 字面量，避免前缀漂移。若经 **ADR** 调整版本段，**只改**上述两基类一处即可。
+
+- HTTP 状态码语义正确；业务错误使用稳定 **错误码** + 可读 `message`（面向开发者/运维，不泄露内部栈信息给最终用户响应体）。
+- 分页/列表接口统一字段命名（如 `items` + `nextCursor` 或 `page/size/total`），前后端一致。
+- **幂等**：创建会话、扣费类、工具副作用接口需考虑幂等键或去重。
+
+### 6.1 全局异常处理（`@RestControllerAdvice`）
+- **统一入口**：对外 **REST** 的未处理异常须由 **`com.aaron.cloud.common.web.GlobalExceptionHandler`**（或经 **ADR** 明确、仍落在 **`common.web`** 的等价类）集中映射为 **`ApiErrorResponse`** + 正确 **HTTP 状态码**；**禁止**在各 `Controller` 内复制大段 try/catch 仅为了拼 JSON。
+- **必须打日志**：**每一个** `@ExceptionHandler` 方法在返回响应前**必须**写日志：预期内的客户端/业务问题用 **`WARN`**（含 **`ex`** 或至少 **`ex.getMessage()`**）；**未预料的**或**系统/依赖故障**用 **`ERROR`**，且**必须**以 **`log.error("...", ..., ex)`** 等形式传入 **`Throwable`**，保证**完整堆栈**输出到服务端日志（与 **`application.yml`** 中 **`logging.pattern.console`** 的 **`%wEx`** 等配置一致）。
+- **兜底 `Exception`**：映射为 **`INTERNAL`** + 对用户固定的 **`unexpected error`**（或经 **OpenAPI** 约定的等价文案）时，**仍须在服务端 `ERROR` 日志中**记录 **`ex.getClass().getName()`**、**`ex.getMessage()`** 与**堆栈**；**禁止**仅返回 JSON 而不打日志。
+- **与 §5.3 一致**：日志中**禁止**默认打印用户消息全文、完整 prompt、令牌、密钥；若必须记录片段，须脱敏并遵守合规要求。
+
+### 6.2 `catch` 与异常边界（写死）
+- **禁止空吞**：**禁止** `catch (Exception ignored) { }`、`catch (Exception e) { }` 等**无任何日志**的捕获；**禁止**仅 `printStackTrace()` 而无结构化日志（须用 **SLF4J**）。
+- **必须带上下文**：`catch` 中打日志须带**可定位信息**（如 **`tenantId` / `userId` / `deviceId` / 业务 id / 任务 id / 请求路径**等，在不含 PII 前提下尽量具体），并使用 **`log.warn`/`log.error(..., e)`** 输出**异常对象**。
+- **再抛出**：若捕获后包装为 **`RuntimeException`** / **`IllegalStateException`** 等再抛出，**在抛出前仍须 `log.error`/`warn`**（除非已在**唯一**上层 **`GlobalExceptionHandler`** 中保证会记录同一异常——仍推荐在包装点打一次，避免链路丢失中间语义）。
+- **预期可忽略的低风险场景**（如关闭资源、非关键旁路）：允许降级为 **`WARN`** 并写清原因；**若完全不打日志**，须在 **CR/ADR** 中逐条说明理由，且**默认不允许**。
+- **异步 / 虚拟线程 / 回调**：在 **`Runnable`**、**`Consumer`**、**`CompletableFuture`**、**SSE 回调**等中的 `catch`** 与同步代码**同等要求**，避免异常只在子线程中消失。
+
+## 7. 代码风格与质量门槛（Java + Vue）
+- Java：优先可读性；避免无意义的抽象层；**异常与 `catch` 须符合 §6.1–§6.2**（不要吞异常）；并发场景注意线程安全；**凡业务上的状态、类型、阶段等「通用码值」一律优先枚举**，须经 **`common.api.enums`**（或 **§4.1.3** 规定的唯一集中位置）表达，**禁止**用 int/String 字面量在分支与查询条件中散落承载语义（见 **§4.1.3**）。
+- Vue：组件拆分以「对话界面可维护」为准；避免巨型单文件组件；组合式函数（composables）抽取重复逻辑；**用户端与管理端各自维护**，避免为省事混成单仓单应用（除非后续有经评审的共享 UI 包方案）；**页面与 `src/api`/`views` 分块必须遵循 §3.5**，与后端领域同步演进。
+- 测试：`src/test/java` 对关键领域逻辑补测试；前端对关键 composable/store 做单元测试（视引入的测试栈而定）。
+
+### 7.1 用户可见文案（产品导向，`web/user-web` / `web/admin-web`）
+- **受众**：界面上的 **标题、说明、按钮、空状态、Toast/Alert、表单校验提示、操作失败提示** 等，默认面向**业务用户或运营人员**，不是面向本仓库开发者；**禁止**把联调/排障说明直接当作主文案展示（如环境变量名、**`permit`/`jwt-local`**、类名、包路径、**「检查后端 auth 模式」**、**「接口」** 等实现细节塞给用户）。
+- **错误提示**：先说**用户能感知的问题**（如账号密码、网络、服务繁忙），再给**可执行建议**（重试、联系管理员）；**区分**鉴权失败（401）、无权/冻结（403）、服务不可用（5xx/网络）；**禁止**用一句笼统的「登录失败（检查 xxx 配置）」代替分类文案。技术细节写入 **`console` 供开发排查**或走 **§5.3** 服务端日志，不在默认 UI 复述。
+- **成功与中性说明**：用业务语言（如「已保存」「已登录」「将跳转到…」）；**避免**默认展示 **Token/JWT/Header** 等术语，除非产品文档明确要求对管理员展示。
+- **C 端租户对人展示**：**`web/user-web`** 的 **`/{租户编码}/system/me`**（设备与登录）及同类「当前工作区」说明中，**用户可见**的租户标识须为 **`sys_tenant.code`（租户编码）**，与地址栏路径第一段一致；**禁止**将 **`sys_tenant.id`** 自增主键作为面向用户的主展示（持久化、JWT 与网关内部仍使用 **`tenantId`**，与 **§4.0** 不冲突）。
+- **禁止主界面回显裸数字主键 / 技术 ID**：**`web/user-web`** 与 **`web/admin-web`** 的**列表、卡片、详情主区、表单标签默认值**等用户或运营主视野中，**禁止**将 **`userId`、`tenantId`（自增）、`sec_user_account.id`、各业务表自增 `id`** 等仅具持久化/联表含义的数值或纯数字串作为**主标识**展示（含「用户 #123」「租户 1」等变相裸 ID）。须使用**业务可读字段**：如租户 **`sys_tenant.name` / `code`**、用户 **登录名 / 昵称（`displayName`）**、会话**标题**等；若接口仍返回 ID，仅允许置于**明确标注为排障/开发者**的次要行、折叠区、或「复制 JSON」等**非默认主路径**，且须有**语义化主展示**与之并列。
+- **开发专用开关**（如跳过登录、代理地址）：**只**写在 **`.env.example` / `PROJECT.md` / 内部 README**，或开发者菜单中的「环境信息」折叠区；**禁止**放在登录页、主流程 Alert 的显眼正文里。
+
+### 7.2 重点逻辑注释与规则真源（写死）
+- **「规则文档」在本仓库的指称**：以仓库根目录 **`.cursorrules`**（本文件）为 **Cursor / 人机协作的权威规则与约束真源**；**`PROJECT.md`** 用于产品概述、**版本变更记录**，以及**宜长文化、可版本归档的域约定**（例如某能力专节表格）；二者**互补**：本文件管**流程与硬性门槛**，`PROJECT.md` 管**对外说明与某域字段级契约**。实现代码中的 **「见规则文档」** 默认指向 **本文件**；若另有 **`PROJECT.md` 专节**，须**显式写出节名**避免歧义。
+- **何谓重点逻辑（须在实现处注释）**：包括但不限于 **多租户隔离与 `tenantId` 解析顺序**、**权限/角色分支与拒绝原因**、**状态机与在册/退出语义**、**幂等与冲突（含重复邀请、非 ACTIVE 禁止变更）**、**与 `GlobalExceptionHandler` 或错误码的字符串/枚举契约**（如 **`ErrorCodes.EX_MSG_*`** 与 `getMessage()` 精确匹配）、**审计/访问日志落库字段与 `detail_json` 键**、**与前端契约的查询参数默认值**。注释形式以 **类/方法 Javadoc** 与**关键分支上一行块注释**为主，写清**不变量与「为何」**；**禁止**把需求全文或接口文档整段贴进源码。
+- **逻辑变更时须同步更新注释（写死）**：凡修改上述重点逻辑（条件、分支顺序、错误码、HTTP 语义、审计字段、对外 API 行为、与 Handler 映射用的消息字面量），**同一变更集**内必须：
+  1. **更新**本文件/本方法/本分支旁**已有**的相关注释，或**删除**已失效注释，**禁止**留下与行为不符的说明；
+  2. 若该能力在 **`PROJECT.md`** 中有**专节或表格**（如「管理端租户成员与审计写入规则」），**须同步修订**该节，保持 **代码 ↔ 注释 ↔ `PROJECT.md` 专节** 一致；
+  3. 若变更上升为**跨域协作原则**，须在 **`.cursorrules` 对应条** 或 **ADR** 中体现，不得仅口头约定。
+- **审查自检**：提交前对 diff 做「注释 diff」扫一眼：改动的 `if`/`throw`/Repository 条件旁，注释是否仍成立。
+
+### 7.3 管理端「可配置模型」弹窗（`web/admin-web` · `views/model/llm` + **`LlmModelAdminUiMetaService`**）
+- **`FormFieldMeta.label`、列表列 `label`、`EnumOption.label`（下拉项）**：须**简短、对齐一致**（优先 **2～8 个中文字**或同级英文缩写）；**禁止**把长句说明、环境变量名、接口路径教程写在 **label** 上当主标题。
+- **长说明**：写入 **`placeholder`**、**`PROJECT.md`** 专节或折叠帮助；与 **§7.1** 一致，运营文案仍避免裸配置键作主句。
+- **布局**：**`LlmModelKindTabPanel`** 内 **`el-form`** 默认 **`label-position="left"`** + 统一 **`label-width`**（与短 **label** 配套）；**`el-dialog` 正文外包一层并设 `max-height` + `overflow-y: auto`**，控制弹窗总高度，避免字段多时整窗被撑得过长；**不推荐**一律 **`label-position="top"`**（易显冗长）。**`el-dialog` 标题**须体现当前 Tab 类型（如 **「编辑 · 向量模型（嵌入）」**），禁止仅用泛化「编辑模型」。
+- **元数据真源**：新增字段或改文案时**同步**本 **`LlmModelAdminUiMetaService`** 与前端 **`LlmModelFormFields`**（含 checkbox 等特例样式），避免仅改一端。
+
+## 8. 明确禁止 / 需要谨慎
+- 禁止：违反 **§7.1**（含**禁止主界面回显裸数字主键**条），在 **`web/user-web`/`web/admin-web`** 主流程界面使用**开发者向**文案替代**用户向**文案（含把 **`.env` / 鉴权模式名 / 接口调试说明** 作为登录页、错误 Toast 的主内容）。
+- 禁止：违反 **§6.2** 的**空吞异常**或无日志 `catch`（含异步/回调路径）。
+- 禁止：把密钥写进代码/配置并提交；在生产日志打印完整 prompt/PII。
+- 禁止：在 `gateway`/`identity`/`chat`/`rag`/`mcp`/`model`/`job`/`file`/`notification`/`eval` 等任一非 **`common`** 包内新增绕过 **common** 的数据库访问。
+- 禁止：**无 `tenantId` 且无有效访客租户上下文**的写操作，或跨租户读写（访客须使用**显式配置的访客租户** `tenantId`，见 **§4.0**）；禁止在日志中输出完整租户密钥或长期令牌。
+- 禁止：在 MySQL 中新增 **`FOREIGN KEY` 约束**（与 **§4.1.3**「无物理外键 + `lnk_*` 中间表」一致）。
+- 禁止：在与**库表状态/类型列**相关的业务与持久化逻辑中**写死魔法数字或裸字符串**作状态语义（须用 **§4.1.3** 枚举集中映射）。
+- 禁止：在 **DTO、应用服务、消息消费者、定时任务** 等任意层级，对**状态/类型/阶段等有限集合业务语义**使用**未在 `common.api.enums`（或 ADR 备案唯一处）定义**的数字或字符串字面量；应**先补枚举**再引用。
+- 谨慎：引入重量级中间件前先在规则/ADR 里写清动机；大范围依赖升级需说明兼容性与回滚。
+- 谨慎：`ai.remoting.mode=remote` 时跨服务调用**须经 Eureka 解析目标 + OpenFeign**；禁止在领域层直接 `new` HTTP Client 并写死对端地址。
+
+## 9. 与 AI 助手协作方式（对本仓库）
+- 修改前先阅读相关模块与现有约定；优先沿用项目已有模式（包结构、异常类型、DTO 命名）。
+- 生成代码时：**先对齐本文件的栈、目录、§1.5 中台能力、§4.1 完整包结构、§4.1.3（MyBatis-Plus + MyBatis-Join、禁止 XML Mapper、MySQL 无物理外键与 `lnk_*` 中间表、**`db/mysql/schema_v1.sql` 全量基线与列注释**、**可选 `migrate_*` 与版本对齐**、**域前缀表名（含 `gw_*`）统一**、**业务码值优先枚举、禁止写死状态/类型等通用字面量，须 `common.api.enums` 等集中映射**）、§4.3（Eureka + Feign + LoadBalancer + Resilience4j + RocketMQ）、§3.5–§3.6 前后端分块与常规页、§4.0 设备码、§5.1–§5.12、**§6.0（`/open` 与 `/api`、`rest.open`/`rest.api`、抽象前缀基类）**、**§6.1–§6.2 全局异常与 `catch` 日志**、**§7.1 用户可见文案**、**§7.2 重点逻辑注释与逻辑变更时同步更新注释/专节**、**§7.3 管理端可配置模型弹窗文案与布局**、多租户与持久化约束**；若需求与约束冲突，**明确指出冲突**并给出处理建议。
+- 默认回复语言：**简体中文**（若用户另有要求则跟随用户）。
+- **交付前必做（与 §10 一致）**：凡属 **§10** 定义的**实质编码迭代**，须同步更新 **`PROJECT.md`** 并递增 **`pom.xml`** 补丁版本；**仅规则/说明文档**的修订按 **§10** 处理，**不要求** bump。
+
+## 10. 项目说明文档与版本号（与 `pom.xml` 绑定）
+- **项目说明文件**：仓库根目录 **`PROJECT.md`**，用于项目概述、版本策略摘要及**变更记录**（版本历史）。
+- **版本号格式（开发线 0.1.x）**：以 **`pom.xml`** 的 `<version>` 为唯一权威；开发阶段使用 **`-SNAPSHOT`**。补丁位从 **0.1.0** 起，在**实质编码迭代**中按 `0.1.0` → `0.1.1` → `0.1.2` … 递增（示例：`0.1.1-SNAPSHOT`）。
+- **实质编码迭代（须 bump `pom` + 在 `PROJECT.md` 新增一节）**：变更涉及 **`src/main/java`**、**`src/test/java`**、**`web/user-web/`**、**`web/admin-web/`** 等业务代码；或 **`pom.xml` 生产依赖** 的新增/升级；或 **可运行配置**（如 `src/main/resources/application*.yml`）；或 **数据库迁移/可执行脚本** 等。同一变更集**一次**递增补丁位，**`PROJECT.md`** 新增对应版本小节。
+- **非编码迭代（不 bump `pom`）**：仅 **`.cursorrules`**、**`PROJECT.md`**、其它说明性 **`.md`**、ADR 纯文字 的修订；**必须**在 **`PROJECT.md`** 当前开发版本（如 **0.1.0**）下以「**修订说明**」追加要点，**禁止**为此单独升高 **`pom.xml`**。进入首次实质编码后，再开始按上条正常 bump。
+- **禁止**：已 bump **`pom.xml`** 但 **`PROJECT.md`** 无对应新版本小节；或在**非编码迭代**中擅自升高 **`pom.xml`** 补丁。

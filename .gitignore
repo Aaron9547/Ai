@@ -1,0 +1,96 @@
+# --- Maven / Java ---
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.kotlin/
+
+# mvnw（保留 wrapper jar）
+!.mvn/wrapper/maven-wrapper.jar
+
+# JVM 崩溃转储与日志
+hs_err_pid*
+replay_pid*
+*.log
+logs/
+
+# --- 密钥与本地覆盖配置（勿提交到远端）---
+# 环境变量（含嵌套前端目录）
+**/.env
+**/.env.local
+**/.env.*.local
+**/.env.production
+# 若团队需要共享开发默认值，可保留并提交 `.env.development` / `.env.example`；
+# 仅当其中不含密钥时再提交；含密钥时请改名为 `.env.development.local` 并走下方规则。
+**/.env.development.local
+
+# Spring Boot 本地/私密配置（相对仓库根）
+**/src/main/resources/application-local.yml
+**/src/main/resources/application-local.yaml
+**/src/main/resources/application-secret.yml
+**/src/main/resources/application-secret.yaml
+**/src/main/resources/application-private.yml
+**/src/main/resources/application-private.yaml
+
+# 常见凭据文件
+*.jks
+*.p12
+*.pfx
+*.pem
+*.keytab
+
+### IntelliJ IDEA ###
+# 整块忽略，避免 workspace、数据源等含本机路径或口令片段进入仓库
+.idea/
+*.iws
+*.iml
+*.ipr
+
+### Eclipse ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
+
+### macOS ###
+.DS_Store
+
+### Windows ###
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+### Frontend（Vue / Vite）###
+web/**/node_modules/
+web/**/dist/
+web/**/.vite/
+web/**/.output/
+web/**/coverage/
+web/**/*.tsbuildinfo
+
+### 测试与临时 ---
+.tmp/
+.temp/
+*.swp
+*.swo
+*~
