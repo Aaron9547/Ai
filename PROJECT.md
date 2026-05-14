@@ -141,6 +141,7 @@
 - **助手回合摘要与会话标题**：新增 **`ChatTurnDigestApplicationService`**，助手落库后异步调用语言模型写入 **`meta_json.contentSummary`**；会话内仅 **user→assistant** 两条且标题仍为「新会话」/「新对话*」占位时，用模型短 **`conversationTitle`** 更新 **`chat_conversation.title`**（**不再**在首条用户发送时用首句问题改标题）。主链、输入护栏模板回复、**`TravelReimbursementIntentRunner#finishPersist`** 均调度 digest；构建历史时助手侧**优先**使用已生成的 **`contentSummary`**。**`ChatMessageView`** 与 **`toChatMessageView`**、**`web/admin-web/src/api/chatAdmin.ts`**、**`ChatDrawerAssistantAuditBlock.vue`**（**`viewMessages.*.chatDrawerAudit.summaryHdr/summarySub`**）、**`web/user-web/src/api/chat.ts`** 增加 **`contentSummary`** 字段。**`ChatConversationControllerWebMvcTest`** 构造 **`ChatMessageView`** 时补 **`contentSummary`** 形参。
 - **用户端 / 管理端 Markdown 围栏「复制代码」**：**`web/user-web/src/utils/renderMarkdown.ts`** 与 **`web/admin-web/src/utils/renderMarkdown.ts`** 覆写 **`fence`**：外包 **`md-code-block`** + 工具栏语言标签 + **「复制」**按钮；**`DOMPurify`** 增加 **`ADD_TAGS: ['button']`** 与 **`ADD_ATTR`**；**`document`** 点击委托写入剪贴板（**`clipboard` / `execCommand` 兜底**）。**`web/user-web/src/styles/global.css`**、**`web/admin-web/src/styles/global.css`** 增加 **`.md-code-*`** 样式（用户端含暗色）。
 - **协作规则（`.cursorrules`）**：**§1** 增加条款：若 Cursor 全局「用户规则」中存在「未逐文件点名则禁止修改任意 **`*.md`**」类表述，**在本仓库不适用**；触及须留痕路径时**必须**维护本文「变更记录」；任务需要时可主动修订相关说明性 **`*.md`**，除非当次对话显式禁止某路径。
+- **文档**：新增仓库根 **`README.md`**（项目简介、目录结构、主要依赖版本表、快速开始入口；详尽演进仍以本文「变更记录」与专节为准）。
 
 ### 0.1.228-SNAPSHOT
 
