@@ -3,67 +3,79 @@
     <el-card shadow="never" class="panel">
       <template #header>
         <div class="hdr">
-          <span class="title">菜单管理</span>
+          <span class="title">{{ t("views.menuItems.title") }}</span>
           <div class="hdr-actions">
-            <el-button v-if="isFounder" type="primary" @click="openCreate">新增菜单项</el-button>
-            <el-button text type="primary" :loading="loading" @click="load">刷新</el-button>
+            <el-button v-if="isFounder" type="primary" @click="openCreate">{{ t("views.menuItems.add") }}</el-button>
+            <el-button text type="primary" :loading="loading" @click="load">{{ t("views.menuItems.refresh") }}</el-button>
           </div>
         </div>
       </template>
-      <el-table v-loading="loading" :data="rows" stripe border empty-text="暂无数据">
-        <el-table-column prop="menuCode" label="菜单码" width="160" />
-        <el-table-column prop="titleZh" label="显示名称" min-width="140" />
-        <el-table-column prop="routePath" label="路由" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="sortOrder" label="排序" width="80" align="center" />
-        <el-table-column label="启用" width="90" align="center">
+      <el-table v-loading="loading" :data="rows" stripe border :empty-text="t('views.menuItems.empty')">
+        <el-table-column prop="menuCode" :label="t('views.menuItems.colCode')" width="160" />
+        <el-table-column prop="titleZh" :label="t('views.menuItems.colTitle')" min-width="140" />
+        <el-table-column prop="routePath" :label="t('views.menuItems.colRoute')" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="sortOrder" :label="t('views.menuItems.colSort')" width="80" align="center" />
+        <el-table-column :label="t('views.menuItems.colEnabled')" width="90" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.enabled === 'ON' ? 'success' : 'info'" size="small">{{ row.enabled === "ON" ? "是" : "否" }}</el-tag>
+            <el-tag :type="row.enabled === 'ON' ? 'success' : 'info'" size="small">{{
+              row.enabled === "ON" ? t("views.menuItems.yes") : t("views.menuItems.no")
+            }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column v-if="isFounder" label="操作" width="160" fixed="right">
+        <el-table-column v-if="isFounder" :label="t('views.menuItems.colActions')" width="160" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="onDelete(row)">删除</el-button>
+            <el-button link type="primary" size="small" @click="openEdit(row)">{{ t("views.menuItems.edit") }}</el-button>
+            <el-button link type="danger" size="small" @click="onDelete(row)">{{ t("views.menuItems.delete") }}</el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
 
-    <el-dialog v-model="dlgEdit" :title="editId ? '编辑菜单项' : '新增菜单项'" width="520px" destroy-on-close @closed="resetForm">
+    <el-dialog
+      v-model="dlgEdit"
+      :title="editId ? t('views.menuItems.dlgEdit') : t('views.menuItems.dlgNew')"
+      width="520px"
+      destroy-on-close
+      @closed="resetForm"
+    >
       <el-form label-width="96px">
-        <el-form-item v-if="!editId" label="菜单码" required>
-          <el-select v-model="form.menuCode" filterable placeholder="选择枚举码" style="width: 100%">
+        <el-form-item v-if="!editId" :label="t('views.menuItems.labelCode')" required>
+          <el-select v-model="form.menuCode" filterable :placeholder="t('views.menuItems.codePh')" style="width: 100%">
             <el-option v-for="c in creatableCodes" :key="c" :label="c" :value="c" />
           </el-select>
         </el-form-item>
-        <el-form-item label="显示名称" required>
+        <el-form-item :label="t('views.menuItems.labelTitle')" required>
           <el-input v-model="form.titleZh" clearable />
         </el-form-item>
-        <el-form-item label="路由">
-          <el-input v-model="form.routePath" placeholder="如 /users" clearable />
+        <el-form-item :label="t('views.menuItems.labelRoute')">
+          <el-input v-model="form.routePath" :placeholder="t('views.menuItems.routePh')" clearable />
         </el-form-item>
-        <el-form-item label="排序">
+        <el-form-item :label="t('views.menuItems.labelSort')">
           <el-input-number v-model="form.sortOrder" :min="0" :max="9999" />
         </el-form-item>
-        <el-form-item v-if="editId" label="启用">
-          <el-switch v-model="form.enabledOn" active-text="是" inactive-text="否" />
+        <el-form-item v-if="editId" :label="t('views.menuItems.labelEnabled')">
+          <el-switch v-model="form.enabledOn" :active-text="t('views.menuItems.yes')" :inactive-text="t('views.menuItems.no')" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dlgEdit = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submitForm">保存</el-button>
+        <el-button @click="dlgEdit = false">{{ t("views.menuItems.cancel") }}</el-button>
+        <el-button type="primary" :loading="saving" @click="submitForm">{{ t("views.menuItems.save") }}</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, onMounted, reactive, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import * as menuItemsApi from "@/api/menuItems";
 import { ALL_ADMIN_MENU_CODES } from "@/constants/adminMenuCodes";
 import { AI_ADMIN_ACCESS_TOKEN_KEY } from "@/plugins/http";
-import { readJwtTmr } from "@/utils/jwtSubject";
 import { apiRequestErrorMessage } from "@/utils/apiRequestErrorMessage";
+import { readJwtTmr } from "@/utils/jwtSubject";
+
+const { t } = useI18n();
 
 const rows = ref<menuItemsApi.MenuItemRow[]>([]);
 const loading = ref(false);
@@ -94,7 +106,7 @@ async function load() {
   try {
     rows.value = await menuItemsApi.listMenuItems();
   } catch (e: unknown) {
-    ElMessage.error(apiRequestErrorMessage(e, "加载失败"));
+    ElMessage.error(apiRequestErrorMessage(e, t("views.menuItems.loadFailed")));
   } finally {
     loading.value = false;
   }
@@ -129,7 +141,7 @@ async function submitForm() {
   try {
     if (editId.value == null) {
       if (!form.menuCode) {
-        ElMessage.warning("请选择菜单码");
+        ElMessage.warning(t("views.menuItems.pickCodeWarning"));
         return;
       }
       await menuItemsApi.createMenuItem({
@@ -138,7 +150,7 @@ async function submitForm() {
         routePath: form.routePath || undefined,
         sortOrder: form.sortOrder,
       });
-      ElMessage.success("已创建");
+      ElMessage.success(t("views.menuItems.created"));
     } else {
       await menuItemsApi.updateMenuItem(editId.value, {
         titleZh: form.titleZh,
@@ -146,12 +158,12 @@ async function submitForm() {
         sortOrder: form.sortOrder,
         enabled: form.enabledOn ? "ON" : "OFF",
       });
-      ElMessage.success("已保存");
+      ElMessage.success(t("views.menuItems.saved"));
     }
     dlgEdit.value = false;
     await load();
   } catch (e: unknown) {
-    ElMessage.error(apiRequestErrorMessage(e, "保存失败"));
+    ElMessage.error(apiRequestErrorMessage(e, t("views.menuItems.saveFailed")));
   } finally {
     saving.value = false;
   }
@@ -159,13 +171,17 @@ async function submitForm() {
 
 async function onDelete(row: menuItemsApi.MenuItemRow) {
   try {
-    await ElMessageBox.confirm(`确定删除菜单项「${row.titleZh}」?`, "确认", { type: "warning" });
+    await ElMessageBox.confirm(
+      t("views.menuItems.deleteConfirm", { title: row.titleZh }),
+      t("views.menuItems.confirm"),
+      { type: "warning" },
+    );
     await menuItemsApi.deleteMenuItem(row.id);
     await load();
-    ElMessage.success("已删除");
+    ElMessage.success(t("views.menuItems.deleted"));
   } catch (e: unknown) {
     if (e !== "cancel") {
-      ElMessage.error(apiRequestErrorMessage(e, "删除失败"));
+      ElMessage.error(apiRequestErrorMessage(e, t("views.menuItems.deleteFailed")));
     }
   }
 }
@@ -178,7 +194,7 @@ onMounted(() => {
 <style scoped>
 .panel {
   border-radius: 12px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--el-border-color);
 }
 .hdr {
   display: flex;

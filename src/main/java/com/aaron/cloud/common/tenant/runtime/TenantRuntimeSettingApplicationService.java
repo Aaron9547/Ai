@@ -3,6 +3,8 @@ package com.aaron.cloud.common.tenant.runtime;
 import com.aaron.cloud.common.api.enums.TenantRuntimeSettingKey;
 import com.aaron.cloud.common.api.enums.TenantRuntimeSettingKey.SettingValueKind;
 import com.aaron.cloud.common.tenant.runtime.entity.TenRuntimeSetting;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -14,19 +16,170 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * 租户运行时键值配置：权威存储为 MySQL {@code ten_runtime_setting}（{@link TenRuntimeSettingRepository}）。
+ * 若装配了 {@link TenantRuntimeSettingRedisCache}，读路径可命中缓存；{@link #replace(long, List)} 写库前后对变更键各执行一次
+ * {@code evict}，避免「只改 Redis 不落库」的误解。
+ */
 @Service
 @RequiredArgsConstructor
 public class TenantRuntimeSettingApplicationService {
 
+    private static final int WEB_SEARCH_GROUNDING_ROUND_COUNT_MAX = 10;
+    private static final int RUNTIME_JSON_MAX_CHARS = 65_000;
+
     private final TenRuntimeSettingRepository repository;
     private final ObjectProvider<TenantRuntimeSettingRedisCache> redisCache;
+    private final ObjectMapper objectMapper;
 
     public boolean isAuthOpenRegistrationEnabled(long tenantId) {
         String raw = effectiveValueText(tenantId, TenantRuntimeSettingKey.AUTH_OPEN_REGISTRATION);
         return Boolean.parseBoolean(raw.trim());
     }
 
+    /** 出差报销意图：Coze 域名与两轮工作流密钥（与 ly {@code SystemConfigKey.TRAVEL_REIMBURSE_*} 对齐）。 */
+    public TravelCozeRuntimeConfig travelCozeRuntimeConfig(long tenantId) {
+        String domain = effectiveValueText(tenantId, TenantRuntimeSettingKey.TRAVEL_REIMBURSE_COZE_DOMAIN).trim();
+        String docKey = effectiveValueText(tenantId, TenantRuntimeSettingKey.TRAVEL_REIMBURSE_DOC_COZE_API_KEY).trim();
+        String docWf = effectiveValueText(tenantId, TenantRuntimeSettingKey.TRAVEL_REIMBURSE_DOC_WORKFLOW_ID).trim();
+        String planKey = effectiveValueText(tenantId, TenantRuntimeSettingKey.TRAVEL_REIMBURSE_PLAN_COZE_API_KEY).trim();
+        String planWf = effectiveValueText(tenantId, TenantRuntimeSettingKey.TRAVEL_REIMBURSE_PLAN_WORKFLOW_ID).trim();
+        return new TravelCozeRuntimeConfig(domain, docKey, docWf, planKey, planWf);
+    }
+
+    /** 用户记忆 Milvus 嵌入：{@code sys_llm_model.id}，未配置或非法时为空。 */
+    public java.util.Optional<Long> memoryEmbeddingVectorModelId(long tenantId) {
+        String raw = effectiveValueText(tenantId, TenantRuntimeSettingKey.MEMORY_EMBEDDING_VECTOR_MODEL_ID).trim();
+        if (raw.isEmpty()) {
+            return java.util.Optional.empty();
+        }
+        try {
+            return java.util.Optional.of(Long.parseLong(raw));
+        } catch (NumberFormatException e) {
+            return java.util.Optional.empty();
+        }
+    }
+
+    /**
+     * 联网前置多轮检索：轮数与每轮用户检索文本后缀（来自 {@code ten_runtime_setting}，免重启）。
+     */
+    public WebSearchGroundingMultiRoundConfig webSearchGroundingMultiRoundConfig(long tenantId) {
+        int rounds =
+                parseWebSearchGroundingRoundCount(
+                        effectiveValueText(tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT));
+        List<String> suffixes =
+                parseWebSearchGroundingRoundSuffixesJson(
+                        effectiveValueText(tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON),
+                        rounds);
+        return new WebSearchGroundingMultiRoundConfig(rounds, suffixes);
+    }
+
+    private static int parseWebSearchGroundingRoundCount(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return 3;
+        }
+        try {
+            int n = Integer.parseInt(raw.trim());
+            return Math.clamp(n, 1, WEB_SEARCH_GROUNDING_ROUND_COUNT_MAX);
+        } catch (NumberFormatException e) {
+            return 3;
+        }
+    }
+
+    private List<String> parseWebSearchGroundingRoundSuffixesJson(String raw, int rounds) {
+        ArrayList<String> out = new ArrayList<>(rounds);
+        for (int i = 0; i < rounds; i++) {
+            out.add("");
+        }
+        if (raw == null || raw.isBlank()) {
+            return List.copyOf(out);
+        }
+        try {
+            JsonNode root = objectMapper.readTree(raw);
+            if (!root.isArray()) {
+                return List.copyOf(out);
+            }
+            for (int i = 0; i < rounds && i < root.size(); i++) {
+                JsonNode el = root.get(i);
+                if (el != null && !el.isNull()) {
+                    if (el.isTextual()) {
+                        out.set(i, el.asText());
+                    } else if (el.isValueNode()) {
+                        out.set(i, el.asText());
+                    }
+                }
+            }
+            return List.copyOf(out);
+        } catch (Exception ignored) {
+            return List.copyOf(out);
+        }
+    }
+
+    public ChatPromptLimitsRuntime chatPromptLimits(long tenantId) {
+        String raw = effectiveValueText(tenantId, TenantRuntimeSettingKey.CHAT_PROMPT_LIMITS_JSON);
+        return ChatPromptLimitsRuntime.parse(raw, objectMapper);
+    }
+
+    public MemoryPolicyRuntime memoryPolicy(long tenantId) {
+        String raw = effectiveValueText(tenantId, TenantRuntimeSettingKey.MEMORY_POLICY_JSON);
+        return MemoryPolicyRuntime.parse(raw, objectMapper);
+    }
+
+    public ChatInputGuardRuntime chatInputGuardEffective(long tenantId) {
+        String raw = effectiveValueText(tenantId, TenantRuntimeSettingKey.CHAT_INPUT_GUARD_JSON);
+        return ChatInputGuardRuntime.parse(raw, objectMapper);
+    }
+
     public List<TenantRuntimeSettingRow> listEffectiveRows(long tenantId) {
+        return List.copyOf(buildAllRows(tenantId));
+    }
+
+    /**
+     * 管理端列表：关键词匹配「键 / 说明 / 值」子串（值与说明同时支持原文与 ASCII 小写匹配）；可选按 {@code valueKind}
+     *（{@code STRING} / {@code BOOLEAN}）筛选。分页字段与 MyBatis-Plus {@code Page} JSON 对齐。
+     */
+    public TenantRuntimeSettingsPage pageEffectiveRows(
+            long tenantId, long current, long size, String keyword, String valueKind) {
+        List<TenantRuntimeSettingRow> all = buildAllRows(tenantId);
+        String q = keyword == null ? "" : keyword.trim();
+        String qLower = q.toLowerCase(Locale.ROOT);
+        String kind = valueKind == null ? "" : valueKind.trim().toUpperCase(Locale.ROOT);
+        boolean kindFilter = "STRING".equals(kind) || "BOOLEAN".equals(kind);
+        List<TenantRuntimeSettingRow> filtered = new ArrayList<>();
+        for (TenantRuntimeSettingRow r : all) {
+            if (kindFilter && !kind.equals(r.valueKind())) {
+                continue;
+            }
+            if (!q.isEmpty() && !runtimeSettingRowMatchesKeyword(r, q, qLower)) {
+                continue;
+            }
+            filtered.add(r);
+        }
+        long total = filtered.size();
+        long sz = Math.min(100L, Math.max(1L, size));
+        long maxPage = total == 0 ? 1L : (total + sz - 1L) / sz;
+        long c = Math.max(1L, current);
+        if (c > maxPage) {
+            c = maxPage;
+        }
+        int from = (int) Math.min((c - 1L) * sz, Integer.MAX_VALUE);
+        int to = (int) Math.min(from + sz, total);
+        List<TenantRuntimeSettingRow> slice = from >= to ? List.of() : filtered.subList(from, to);
+        return new TenantRuntimeSettingsPage(List.copyOf(slice), total, sz, c);
+    }
+
+    private static boolean runtimeSettingRowMatchesKeyword(TenantRuntimeSettingRow r, String q, String qLower) {
+        String key = r.key() == null ? "" : r.key();
+        String desc = r.descriptionZh() == null ? "" : r.descriptionZh();
+        String vt = r.valueText() == null ? "" : r.valueText();
+        return key.toLowerCase(Locale.ROOT).contains(qLower)
+                || desc.contains(q)
+                || desc.toLowerCase(Locale.ROOT).contains(qLower)
+                || vt.contains(q)
+                || vt.toLowerCase(Locale.ROOT).contains(qLower);
+    }
+
+    private List<TenantRuntimeSettingRow> buildAllRows(long tenantId) {
         List<TenantRuntimeSettingRow> out = new ArrayList<>();
         for (TenantRuntimeSettingKey key : TenantRuntimeSettingKey.values()) {
             String vt = effectiveValueText(tenantId, key);
@@ -35,7 +188,8 @@ public class TenantRuntimeSettingApplicationService {
                             key.getStorage(),
                             vt,
                             key.getDescriptionZh(),
-                            key.getValueKind().name()));
+                            key.getValueKind().name(),
+                            key.isMaskSensitiveInAdminUi()));
         }
         return out;
     }
@@ -90,18 +244,18 @@ public class TenantRuntimeSettingApplicationService {
             }
         }
         String fromDb =
-                repository.find(tenantId, key).map(TenRuntimeSetting::getValueText).orElse(key.defaultValueText());
+                repository.find(tenantId, key).map(TenRuntimeSetting::getValueText).orElse(key.getDefaultValueText());
         if (cache != null) {
             cache.put(tenantId, key, fromDb);
         }
         return fromDb;
     }
 
-    private static String validateAndNormalize(TenantRuntimeSettingKey key, String valueText) {
-        if (valueText == null || valueText.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "valueText required for " + key.getStorage());
-        }
+    private String validateAndNormalize(TenantRuntimeSettingKey key, String valueText) {
         if (key.getValueKind() == SettingValueKind.BOOLEAN) {
+            if (valueText == null || valueText.isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "valueText required for " + key.getStorage());
+            }
             String t = valueText.trim().toLowerCase(Locale.ROOT);
             if (!"true".equals(t) && !"false".equals(t)) {
                 throw new ResponseStatusException(
@@ -109,11 +263,102 @@ public class TenantRuntimeSettingApplicationService {
             }
             return t;
         }
+        if (key == TenantRuntimeSettingKey.MEMORY_EMBEDDING_VECTOR_MODEL_ID) {
+            if (valueText == null || valueText.isBlank()) {
+                return "";
+            }
+            String t = valueText.trim();
+            if (!t.matches("[0-9]{1,19}")) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST, "MEMORY_EMBEDDING_VECTOR_MODEL_ID 须为数字主键或留空");
+            }
+            return t;
+        }
+        if (key == TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT) {
+            if (valueText == null || valueText.isBlank()) {
+                return "3";
+            }
+            String t = valueText.trim();
+            if (!t.matches("10|[1-9]")) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST, "WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT 须为 1～10 的整数");
+            }
+            return t;
+        }
+        if (key == TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON) {
+            if (valueText == null || valueText.isBlank()) {
+                return "[]";
+            }
+            String t = valueText.trim();
+            if (t.length() > RUNTIME_JSON_MAX_CHARS) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON 过长（上限 " + RUNTIME_JSON_MAX_CHARS + " 字符）");
+            }
+            try {
+                JsonNode n = objectMapper.readTree(t);
+                if (!n.isArray()) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST, "WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON 须为 JSON 数组");
+                }
+                for (JsonNode el : n) {
+                    if (el != null
+                            && !el.isNull()
+                            && !el.isTextual()
+                            && !el.isNumber()
+                            && !el.isBoolean()) {
+                        throw new ResponseStatusException(
+                                HttpStatus.BAD_REQUEST,
+                                "WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON 数组元素须为字符串或数字、布尔");
+                    }
+                }
+            } catch (ResponseStatusException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST, "WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON 非法 JSON");
+            }
+            return t;
+        }
+        if (key == TenantRuntimeSettingKey.CHAT_PROMPT_LIMITS_JSON
+                || key == TenantRuntimeSettingKey.MEMORY_POLICY_JSON
+                || key == TenantRuntimeSettingKey.CHAT_INPUT_GUARD_JSON) {
+            if (valueText == null || valueText.isBlank()) {
+                return "{}";
+            }
+            String t = valueText.trim();
+            if (t.length() > RUNTIME_JSON_MAX_CHARS) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST, key.getStorage() + " 过长（上限 " + RUNTIME_JSON_MAX_CHARS + " 字符）");
+            }
+            try {
+                JsonNode n = objectMapper.readTree(t);
+                if (!n.isObject()) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, key.getStorage() + " 须为 JSON 对象");
+                }
+            } catch (ResponseStatusException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, key.getStorage() + " 非法 JSON");
+            }
+            return t;
+        }
+        if (valueText == null) {
+            return "";
+        }
         return valueText.trim();
     }
 
+    /**
+     * @param sensitive 管理端「值」列是否建议默认遮罩（来自 {@link TenantRuntimeSettingKey#isMaskSensitiveInAdminUi()}）；API 仍返回明文
+     *     {@code valueText}，由前端决定是否展示。
+     */
     public record TenantRuntimeSettingRow(
-            String key, String valueText, String descriptionZh, String valueKind) {}
+            String key, String valueText, String descriptionZh, String valueKind, boolean sensitive) {}
+
+    /** 与前端 {@code MybatisPage} 字段对齐，便于复用分页条组件。 */
+    public record TenantRuntimeSettingsPage(
+            List<TenantRuntimeSettingRow> records, long total, long size, long current) {}
 
     @Data
     public static final class PutItem {

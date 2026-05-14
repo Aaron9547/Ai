@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.IOException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
@@ -22,7 +23,7 @@ public final class ChatIntentSseHelper {
             String mode,
             String status,
             String text)
-            throws JsonProcessingException {
+            throws JsonProcessingException, IOException {
         ObjectNode o = objectMapper.createObjectNode();
         o.put("segmentId", segmentId);
         if (title != null) {

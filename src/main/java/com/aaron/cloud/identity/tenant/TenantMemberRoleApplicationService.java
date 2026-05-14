@@ -12,6 +12,8 @@ import com.aaron.cloud.common.security.SysTenantMemberRepository;
 import com.aaron.cloud.common.security.entity.SecUserAccount;
 import com.aaron.cloud.common.security.entity.SysTenantMember;
 import com.aaron.cloud.common.tenant.SysTenantRepository;
+import com.aaron.cloud.common.time.BeijingTime;
+import com.aaron.cloud.identity.admin.UserAccessPresenceService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
@@ -39,6 +41,7 @@ public class TenantMemberRoleApplicationService {
     private final SysTenantRepository tenantRepository;
     private final SysAuditEventRepository auditEventRepository;
     private final ObjectMapper objectMapper;
+    private final UserAccessPresenceService userAccessPresenceService;
 
     /**
      * 管理端成员列表；创始人可传 {@code tenantId} 查任意租户，否则使用当前租户上下文。
@@ -74,22 +77,21 @@ public class TenantMemberRoleApplicationService {
         // 默认「仅在册」：传 ACTIVE 给仓储；includeInactive 时传 null 表示不按成员状态过滤（见 PROJECT.md 第 3 节与列表默认行为）。
         UserAccountStatus statusFilter = includeInactive ? null : UserAccountStatus.ACTIVE;
         List<SysTenantMember> rows = tenantMemberRepository.listByTenantAndRoleAndStatus(tid, role, statusFilter);
-        List<TenantMemberRow> out = new ArrayList<>();
+        List<SecUserAccount> accounts = new ArrayList<>();
+        List<SysTenantMember> memberRows = new ArrayList<>();
         for (SysTenantMember m : rows) {
             SecUserAccount u = userAccountRepository.findById(m.getUserId()).orElse(null);
             if (u == null) {
                 continue;
             }
-            out.add(
-                    new TenantMemberRow(
-                            m.getId(),
-                            u.getId(),
-                            u.getLoginName(),
-                            u.getDisplayName() == null ? "" : u.getDisplayName(),
-                            u.getStatus(),
-                            m.getTenantId(),
-                            m.getRoleCode(),
-                            m.getStatus()));
+            memberRows.add(m);
+            accounts.add(u);
+        }
+        List<Long> userIds = accounts.stream().map(SecUserAccount::getId).toList();
+        var online = userAccessPresenceService.onlineAmong(tid, userIds);
+        List<TenantMemberRow> out = new ArrayList<>(accounts.size());
+        for (int i = 0; i < accounts.size(); i++) {
+            out.add(toMemberRow(memberRows.get(i), accounts.get(i), online.contains(accounts.get(i).getId())));
         }
         return out;
     }
@@ -301,6 +303,15 @@ public class TenantMemberRoleApplicationService {
     }
 
     private TenantMemberRow toRow(SysTenantMember m, SecUserAccount u) {
+        boolean online =
+                userAccessPresenceService
+                        .onlineAmong(m.getTenantId(), java.util.List.of(u.getId()))
+                        .contains(u.getId());
+        return toMemberRow(m, u, online);
+    }
+
+    private TenantMemberRow toMemberRow(SysTenantMember m, SecUserAccount u, boolean sessionOnline) {
+        String lastLoginAt = BeijingTime.formatDisplay(u.getLastLoginAt());
         return new TenantMemberRow(
                 m.getId(),
                 u.getId(),
@@ -309,7 +320,11 @@ public class TenantMemberRoleApplicationService {
                 u.getStatus(),
                 m.getTenantId(),
                 m.getRoleCode(),
-                m.getStatus());
+                m.getStatus(),
+                sessionOnline,
+                lastLoginAt,
+                u.getLastLoginIp(),
+                u.getLastLoginRegion());
     }
 
     /**
@@ -345,5 +360,9 @@ public class TenantMemberRoleApplicationService {
             UserAccountStatus userStatus,
             long tenantId,
             TenantMemberRole role,
-            UserAccountStatus memberStatus) {}
+            UserAccountStatus memberStatus,
+            boolean sessionOnline,
+            String lastLoginAt,
+            String lastLoginIp,
+            String lastLoginRegion) {}
 }

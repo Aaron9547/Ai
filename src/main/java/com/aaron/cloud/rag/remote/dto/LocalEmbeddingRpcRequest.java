@@ -6,7 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * 与 ly-ai-rag-svc {@code PrivateModelService#callPrivateModel} 请求体一致：{@code model} + {@code input}（字符串数组）。
+ * 与对端 {@code PrivateModelService#callPrivateModel} 请求体一致：{@code model} + {@code input}（字符串数组）。
  */
 @Data
 @NoArgsConstructor

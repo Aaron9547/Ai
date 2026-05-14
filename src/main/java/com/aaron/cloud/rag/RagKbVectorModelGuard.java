@@ -14,7 +14,7 @@ import org.springframework.web.server.ResponseStatusException;
 /**
  * Milvus 路径下：知识库须绑定本租户已启用的 {@link LlmModelKind#VECTOR} 模型（llm_model），否则拒绝爬取/入库等写向量操作。
  *
- * <p>嵌入调用为 OpenAI 兼容 JSON；URL 由 {@code llm_model.vector_backend} 在 rag 嵌入服务中解析。内网免鉴权可不配置 API Key。
+ * <p>嵌入调用为 OpenAI 兼容 JSON；URL 由 {@code llm_model.integration_backend} 在 rag 嵌入服务中解析。内网免鉴权可不配置 API Key。
  */
 @Component
 @RequiredArgsConstructor

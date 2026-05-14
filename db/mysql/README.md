@@ -13,6 +13,6 @@
 
 - 将 `admin` 提升为某租户 **FOUNDER**、历史表 **`sys_llm_model` 重命名** 等一次性语句，已以注释形式写在 **`schema_v1.sql` 文件末尾附录**，按需手工执行。
 - **`migrate_0_1_80_sec_user_account_login_name_assign_id.sql`**：`sec_user_account` 登录列改名 **`login_name`**、主键去自增（与 **0.1.80** 代码一致）；已建库按需执行，与 **`pom.xml`/`PROJECT.md`** 补丁位对齐。
-- **`migrate_0_1_85_ten_profile_tag_rag_modes.sql`**：新增 **`ten_profile_tag`**（用户/设备画像标签，与 **0.1.85** 代码一致）；已含该表的空库可跳过。
+- **`migrate_0_1_212_profile_memory_device.sql`**：设备与用户绑定表、分层记忆抽象层/具体层表（与 **0.1.212** 代码一致）；新库以 **`schema_v1.sql`** 为准可跳过。
 - **`migrate_0_1_90_rag_knowledge_workspace.sql`**：知识库工作台（分片策略、模型绑定、文档/分片逻辑删除等列，与 **0.1.90** 代码一致）；空库以 **`schema_v1.sql`** 为准可跳过。
 - **`migrate_0_1_119_gw_api_endpoint.sql`**：网关 **`gw_api_endpoint`** 接口目录表及种子、相关 **`gw_api_rate_limit_rule`** 清单行（与 **0.1.119** 代码一致）；新库以 **`schema_v1.sql`** 为准可跳过。

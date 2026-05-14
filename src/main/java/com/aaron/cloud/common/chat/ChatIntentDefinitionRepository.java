@@ -39,18 +39,6 @@ public class ChatIntentDefinitionRepository {
                         .orderByAsc(ChatIntentDefinition::getId));
     }
 
-    /** {@code filterTenantId} 为 null 时返回全租户（仅管理端创始人全量列表使用）。 */
-    public List<ChatIntentDefinition> listForAdmin(Long filterTenantId) {
-        var q = Wrappers.<ChatIntentDefinition>lambdaQuery();
-        if (filterTenantId != null) {
-            q.eq(ChatIntentDefinition::getTenantId, filterTenantId);
-        }
-        return mapper.selectList(
-                q.orderByAsc(ChatIntentDefinition::getTenantId)
-                        .orderByDesc(ChatIntentDefinition::getSortOrder)
-                        .orderByAsc(ChatIntentDefinition::getId));
-    }
-
     /** 对话侧：仅启用意图，按 sort_order 降序（大者优先匹配）。 */
     public List<ChatIntentDefinition> listEnabledForRuntime(long tenantId) {
         return mapper.selectList(

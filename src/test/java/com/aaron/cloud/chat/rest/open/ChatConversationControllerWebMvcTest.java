@@ -50,7 +50,7 @@ class ChatConversationControllerWebMvcTest {
         when(chatApplicationService.listConversationMessages(eq(9L)))
                 .thenReturn(
                         List.of(
-                                new ChatMessageView(1L, "user", "hi", null, null, null, null, LocalDateTime.now(), null, null, null, null, null),
+                                new ChatMessageView(1L, "user", "hi", null, null, null, null, LocalDateTime.now(), null, null, null, null, null, null, null, null, List.of()),
                                 new ChatMessageView(
                                         2L,
                                         "assistant",
@@ -64,7 +64,11 @@ class ChatConversationControllerWebMvcTest {
                                         null,
                                         null,
                                         null,
-                                        null)));
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        List.of()));
         mockMvc.perform(
                         get("/open/v1/chat/conversations/9/messages")
                                 .header("X-Tenant-Id", "1")

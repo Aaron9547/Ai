@@ -90,10 +90,12 @@ CREATE TABLE IF NOT EXISTS chat_intent_keyword (
   id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
   tenant_id BIGINT NOT NULL COMMENT '租户隔离键',
   intent_id BIGINT NOT NULL COMMENT 'chat_intent_definition.id',
-  phrase VARCHAR(255) NOT NULL COMMENT '触发短语（子串包含匹配，trim 后落库）',
+  phrase VARCHAR(128) NOT NULL COMMENT '触发短语（子串包含匹配，trim 后落库；≤128 字符以兼容 utf8mb4 下 InnoDB 767 字节索引上限）',
   keyword_kind TINYINT NOT NULL DEFAULT 0 COMMENT 'ChatIntentKeywordKind：0=TRIGGER 首轮触发 1=PLAN_CONTINUE 行程阶段续办',
+  target_round VARCHAR(32) NULL COMMENT '可选；多轮流处理器轮次名（如 DOC、PLAN），为空时由处理器按 keyword_kind 推断',
   enabled TINYINT NOT NULL DEFAULT 1 COMMENT '0=OFF 1=ON',
   sort_order INT NOT NULL DEFAULT 0 COMMENT '展示排序',
+  hit_count BIGINT NOT NULL DEFAULT 0 COMMENT '配置关键词子串命中并进入意图 SSE 的累计次数（仅 intentHitKeywordId 对应行累加）',
   created_at DATETIME(3) NOT NULL COMMENT '创建时间 UTC',
   updated_at DATETIME(3) NOT NULL COMMENT '更新时间 UTC',
   PRIMARY KEY (id),
@@ -113,7 +115,7 @@ CREATE TABLE IF NOT EXISTS rag_knowledge_base (
   chunk_fixed_chars INT NOT NULL DEFAULT 800 COMMENT '固定字数分片目标长度',
   chunk_slide_overlap INT NOT NULL DEFAULT 120 COMMENT '滑动窗口重叠字符数',
   assigned_llm_model_id BIGINT NULL COMMENT '绑定的租户可配模型 llm_model.id（对话侧 LANGUAGE）',
-  assigned_embedding_model_id BIGINT NULL COMMENT '绑定的嵌入模型 llm_model.id（须 VECTOR；路径由 llm_model.vector_backend 决定）',
+  assigned_embedding_model_id BIGINT NULL COMMENT '绑定的嵌入模型 llm_model.id（须 VECTOR；路径由 llm_model.integration_backend 决定）',
   chat_retrieval_enabled TINYINT NOT NULL DEFAULT 1 COMMENT 'ToggleState：是否在对话编排中纳入本知识库检索（0=OFF 1=ON）',
   chat_vector_min_cosine_score DECIMAL(5,4) NOT NULL DEFAULT 0.6500 COMMENT '对话侧 Milvus COSINE 分数下限（按知识库配置，多库各自独立）；0=关闭该库向量阈值过滤',
   created_at DATETIME(3) NOT NULL COMMENT '创建时间 UTC',
@@ -233,7 +235,8 @@ CREATE TABLE IF NOT EXISTS sys_http_access_log (
   client_ip VARCHAR(64) NULL COMMENT '客户端 IP',
   created_at DATETIME(3) NOT NULL COMMENT '请求完成时间 UTC',
   PRIMARY KEY (id),
-  KEY idx_access_tenant_time (tenant_id, created_at)
+  KEY idx_access_tenant_time (tenant_id, created_at),
+  KEY idx_access_tenant_user_time (tenant_id, user_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='南北向 HTTP 访问日志（非业务对话内容）';
 
 CREATE TABLE IF NOT EXISTS sys_audit_event (
@@ -383,6 +386,9 @@ CREATE TABLE IF NOT EXISTS sec_user_account (
   password_hash VARCHAR(255) NOT NULL COMMENT 'BCrypt 等密码哈希',
   status TINYINT NOT NULL DEFAULT 1 COMMENT 'UserAccountStatus：0=DISABLED 1=ACTIVE',
   jwt_seq BIGINT NOT NULL DEFAULT 0 COMMENT 'JWT 代际；递增使此前签发的 access token 失效（踢下线/封禁）',
+  last_login_at DATETIME(3) NULL COMMENT '最近一次成功登录时间 UTC',
+  last_login_ip VARCHAR(64) NULL COMMENT '最近一次成功登录 IP',
+  last_login_region VARCHAR(128) NULL COMMENT '登录地区粗粒度（如 CF-IPCountry 国家码）',
   created_at DATETIME(3) NOT NULL COMMENT '创建时间 UTC',
   updated_at DATETIME(3) NOT NULL COMMENT '更新时间 UTC',
   PRIMARY KEY (id),
@@ -526,8 +532,8 @@ CREATE TABLE IF NOT EXISTS llm_model (
   display_name VARCHAR(128) NOT NULL COMMENT '展示名称',
   openai_base_url VARCHAR(512) NOT NULL COMMENT 'OpenAI 兼容 Chat Completions Base URL',
   openai_model_id VARCHAR(128) NOT NULL COMMENT '厂商模型 ID',
-  model_kind VARCHAR(32) NOT NULL DEFAULT 'LANGUAGE' COMMENT 'LlmModelKind：LANGUAGE/SPEECH/VISION/VECTOR/SMART_ROUTING',
-  vector_backend VARCHAR(32) NOT NULL DEFAULT 'OPENAI_COMPATIBLE' COMMENT 'LlmVectorBackend：仅 VECTOR；OPENAI_COMPATIBLE=服务根补 /v1/embeddings；VOLCENGINE_ARK=兼容根仅补 /embeddings；VOLCENGINE_ARK_MULTIMODAL=方舟多模态 /embeddings/multimodal',
+  model_kind VARCHAR(32) NOT NULL DEFAULT 'LANGUAGE' COMMENT 'LlmModelKind：LANGUAGE/SPEECH/VISION/VECTOR/SMART_ROUTING/WEB_SEARCH',
+  integration_backend VARCHAR(48) NOT NULL DEFAULT 'OPENAI_COMPATIBLE' COMMENT '按 model_kind：VECTOR=LlmVectorBackend 嵌入路径；WEB_SEARCH=LlmWebSearchProvider；其他默认 OPENAI_COMPATIBLE',
   local_deploy TINYINT NOT NULL DEFAULT 0 COMMENT '是否本地部署：1=向量嵌入经 Feign 调 RAG 网关（路径变量为 sys_tenant.code）；0=直连 openai_base_url',
   api_key_cipher MEDIUMTEXT NULL COMMENT 'API Key AES-GCM 密文 Base64；禁止明文',
   allow_anonymous TINYINT NOT NULL DEFAULT 0 COMMENT '是否允许访客调用：0 否 1 是',
@@ -568,7 +574,7 @@ CREATE TABLE IF NOT EXISTS ten_runtime_setting (
   id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
   tenant_id BIGINT NOT NULL COMMENT 'sys_tenant.id',
   setting_key VARCHAR(64) NOT NULL COMMENT 'TenantRuntimeSettingKey 存储值，如 AUTH_OPEN_REGISTRATION',
-  value_text VARCHAR(1024) NOT NULL COMMENT '短文本值：布尔 true/false 或可扩展短 JSON',
+  value_text MEDIUMTEXT NOT NULL COMMENT '文本值：布尔、短数字串、JSON 等（联网多轮后缀可较长）',
   created_at DATETIME(3) NOT NULL COMMENT '创建时间 UTC',
   updated_at DATETIME(3) NOT NULL COMMENT '更新时间 UTC',
   PRIMARY KEY (id),
@@ -592,6 +598,44 @@ CREATE TABLE IF NOT EXISTS ten_profile_tag (
   KEY idx_ten_profile_tenant_subject (tenant_id, subject_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='租户内用户/设备画像标签';
 
+-- ---------------------------------------------------------------------------
+-- 设备绑定与分层记忆（方案三：抽象层 + 具体层；注册归并）
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS ten_user_device_link (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  tenant_id BIGINT NOT NULL COMMENT '租户隔离键',
+  user_id BIGINT NOT NULL COMMENT 'sec_user_account.id',
+  device_id VARCHAR(64) NOT NULL COMMENT '与 X-Device-Id 对齐的设备码',
+  linked_at DATETIME(3) NOT NULL COMMENT '绑定时间 UTC',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_ten_user_device_link (tenant_id, user_id, device_id),
+  KEY idx_ten_user_device_device (tenant_id, device_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户与设备绑定（注册归并审计用）';
+
+CREATE TABLE IF NOT EXISTS ten_user_memory_abstract (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  tenant_id BIGINT NOT NULL COMMENT '租户隔离键',
+  subject_key VARCHAR(96) NOT NULL COMMENT 'u:{userId} 或 d:{deviceId}',
+  body_json LONGTEXT NOT NULL COMMENT '抽象层画像 JSON（稳定特质、偏好等；由规则或异步 LLM 合并）',
+  created_at DATETIME(3) NOT NULL COMMENT '创建时间 UTC',
+  updated_at DATETIME(3) NOT NULL COMMENT '更新时间 UTC',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_ten_user_memory_abstract (tenant_id, subject_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户/设备记忆抽象层';
+
+CREATE TABLE IF NOT EXISTS ten_user_memory_chunk (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  tenant_id BIGINT NOT NULL COMMENT '租户隔离键',
+  subject_key VARCHAR(96) NOT NULL COMMENT 'u:{userId} 或 d:{deviceId}',
+  conversation_id BIGINT NULL COMMENT '来源会话 chat_conversation.id，可空',
+  chunk_role VARCHAR(16) NOT NULL DEFAULT 'USER' COMMENT 'USER=用户侧摘录 ASSISTANT=助手侧摘录',
+  content_snippet VARCHAR(2000) NOT NULL COMMENT '具体层可检索片段（用户输入摘录等）',
+  vector_ref VARCHAR(64) NULL COMMENT '向量索引侧可选标记（如 milvus）',
+  created_at DATETIME(3) NOT NULL COMMENT '创建时间 UTC',
+  PRIMARY KEY (id),
+  KEY idx_ten_user_memory_chunk_subj_time (tenant_id, subject_key, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户/设备记忆具体层片段';
+
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- #############################################################################
@@ -612,12 +656,26 @@ INSERT IGNORE INTO ten_runtime_setting (tenant_id, setting_key, value_text, crea
 SELECT t.id, 'AUTH_OPEN_REGISTRATION', 'true', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)
 FROM sys_tenant t;
 
+INSERT IGNORE INTO ten_runtime_setting (tenant_id, setting_key, value_text, created_at, updated_at)
+SELECT t.id, 'CHAT_PROMPT_LIMITS_JSON', '{}', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)
+FROM sys_tenant t;
+
+INSERT IGNORE INTO ten_runtime_setting (tenant_id, setting_key, value_text, created_at, updated_at)
+SELECT t.id, 'MEMORY_POLICY_JSON', '{}', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)
+FROM sys_tenant t;
+
+INSERT IGNORE INTO ten_runtime_setting (tenant_id, setting_key, value_text, created_at, updated_at)
+SELECT t.id, 'CHAT_INPUT_GUARD_JSON', '{}', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)
+FROM sys_tenant t;
+
 -- 租户级：全量后台菜单码（AdminMenuCode）
 INSERT IGNORE INTO lnk_tenant_admin_menu (tenant_id, menu_code, created_at)
 SELECT t.id, m.menu_code, UTC_TIMESTAMP(3)
 FROM sys_tenant t
 CROSS JOIN (
-    SELECT 'USERS' AS menu_code
+    SELECT 'DASHBOARD' AS menu_code
+    UNION ALL SELECT 'USERS'
+    UNION ALL SELECT 'USER_PROFILES'
     UNION ALL SELECT 'TENANTS'
     UNION ALL SELECT 'ACCESS_LOGS'
     UNION ALL SELECT 'AUDIT_EVENTS'
@@ -641,7 +699,9 @@ SELECT t.id, u.id, m.menu_code, UTC_TIMESTAMP(3)
 FROM sys_tenant t
 INNER JOIN sec_user_account u ON u.login_name = 'admin'
 CROSS JOIN (
-    SELECT 'USERS' AS menu_code
+    SELECT 'DASHBOARD' AS menu_code
+    UNION ALL SELECT 'USERS'
+    UNION ALL SELECT 'USER_PROFILES'
     UNION ALL SELECT 'TENANTS'
     UNION ALL SELECT 'ACCESS_LOGS'
     UNION ALL SELECT 'AUDIT_EVENTS'
@@ -661,7 +721,9 @@ CROSS JOIN (
 
 -- 管理端菜单项中文名与路由提示
 INSERT IGNORE INTO sys_admin_menu_item (menu_code, title_zh, route_path, sort_order, enabled, created_at, updated_at) VALUES
+('DASHBOARD', '数据概览', '/dashboard', 5, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('USERS', '用户管理', '/users', 10, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('USER_PROFILES', '用户画像', '/users/profiles', 12, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('TENANTS', '租户管理', '/tenant/tenants', 20, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('MENU_CATALOG', '菜单管理', '/system/menu-items', 25, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('GATEWAY_API', '接口与限流', '/gateway/api-rate-limits', 28, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),

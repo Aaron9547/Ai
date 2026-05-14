@@ -18,7 +18,9 @@ public class SecurityOAuth2ResourceConfiguration {
                 .cors(Customizer.withDefaults())
                 .authorizeHttpRequests(
                         reg ->
-                                reg.requestMatchers(
+                                reg.requestMatchers("/open/v1/profile/**")
+                                        .authenticated()
+                                        .requestMatchers(
                                                 "/actuator/**",
                                                 "/v3/api-docs/**",
                                                 "/swagger-ui/**",

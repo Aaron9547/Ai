@@ -1,6 +1,7 @@
 package com.aaron.cloud.gateway;
 
 import com.aaron.cloud.common.context.TenantContextHolder;
+import com.aaron.cloud.common.web.HttpClientIp;
 import com.aaron.cloud.common.gateway.GwApiRateLimitRuleRepository;
 import com.aaron.cloud.common.gateway.entity.GwApiRateLimitRule;
 import jakarta.servlet.FilterChain;
@@ -129,19 +130,11 @@ public final class ApiRateLimitFilter extends OncePerRequestFilter {
         if (snap != null) {
             tid = snap.getTenantId();
         }
-        String ip = clientIp(request);
+        String ip = HttpClientIp.resolve(request);
         if (tid != null) {
             return "t:" + tid + ":r:" + hit.getId() + ":w:" + window;
         }
         return "o:r:" + hit.getId() + ":ip:" + ip + ":w:" + window;
-    }
-
-    private static String clientIp(HttpServletRequest request) {
-        String x = request.getHeader("X-Forwarded-For");
-        if (x != null && !x.isBlank()) {
-            return x.split(",")[0].trim();
-        }
-        return request.getRemoteAddr() == null ? "unknown" : request.getRemoteAddr();
     }
 
     @Override

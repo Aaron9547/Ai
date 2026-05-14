@@ -5,13 +5,13 @@
         <div class="hdr">
           <div class="hdr-intro">
             <div class="hdr-title-row">
-              <span class="title">知识库</span>
+              <span class="title">{{ t("views.ragBases.title") }}</span>
               <div class="kb-picker-wrap" v-loading="loadingKbs">
                 <el-select
                   v-model="selectedKbId"
                   class="kb-picker"
                   filterable
-                  placeholder="选择要管理的知识库"
+                  :placeholder="t('views.ragBases.kbPh')"
                   :disabled="!rows.length"
                 >
                   <el-option v-for="r in rows" :key="r.id" :label="kbOptionLabel(r)" :value="r.id">
@@ -21,12 +21,12 @@
               </div>
             </div>
             <p class="sub">
-              在标题旁切换知识库；下方管理文档、分类与入库。模型与默认分片策略、本库异步任务请在当前知识库标题栏中打开。
+              {{ t("views.ragBases.sub") }}
             </p>
           </div>
           <div class="hdr-actions">
-            <el-button plain :loading="loadingKbs" @click="loadKbs">刷新列表</el-button>
-            <el-button type="primary" @click="openCreate">新建知识库</el-button>
+            <el-button plain :loading="loadingKbs" @click="loadKbs">{{ t("views.ragBases.refreshList") }}</el-button>
+            <el-button type="primary" @click="openCreate">{{ t("views.ragBases.newKb") }}</el-button>
           </div>
         </div>
       </template>
@@ -37,8 +37,8 @@
         show-icon
         :closable="false"
         class="rag-cap-alert"
-        title="向量库未启用"
-        description="当前为占位模式（未连接 Milvus）：文档上传、网页/文件入库与索引入库已暂停，对话侧也不会使用知识库检索。列表与已有文档仍可查看。请在部署中设置 ai.providers.vector-store=milvus 并保证 Milvus 可用后重试写入。"
+        :title="t('views.ragBases.vecWarnTitle')"
+        :description="t('views.ragBases.vecWarnDesc')"
       />
 
       <div class="kc-hub-body">
@@ -54,14 +54,14 @@
                   :model-value="selectedKb.chatRetrievalEnabled !== 'OFF'"
                   :loading="patchingChatRagId === selectedKb.id"
                   inline-prompt
-                  active-text="对话检索开"
-                  inactive-text="对话检索关"
+                  :active-text="t('views.ragBases.chatRagOn')"
+                  :inactive-text="t('views.ragBases.chatRagOff')"
                   @change="(on: boolean) => wrapChatRagToggle(selectedKb, on)"
                 />
-                <el-button size="small" plain @click="openEdit(selectedKb)">重命名</el-button>
-                <el-button size="small" plain @click="openTasksDlg(selectedKb)">异步任务</el-button>
-                <el-button size="small" type="primary" plain @click="openAdvancedDlg(selectedKb)">高级设置</el-button>
-                <el-button size="small" type="danger" plain @click="remove(selectedKb)">删除</el-button>
+                <el-button size="small" plain @click="openEdit(selectedKb)">{{ t("views.ragBases.rename") }}</el-button>
+                <el-button size="small" plain @click="openTasksDlg(selectedKb)">{{ t("views.ragBases.asyncTasks") }}</el-button>
+                <el-button size="small" type="primary" plain @click="openAdvancedDlg(selectedKb)">{{ t("views.ragBases.advanced") }}</el-button>
+                <el-button size="small" type="danger" plain @click="remove(selectedKb)">{{ t("views.ragBases.remove") }}</el-button>
               </div>
             </div>
             <KbDocumentMatrixPanel
@@ -72,10 +72,10 @@
           </template>
           <el-empty
             v-else-if="!loadingKbs && !rows.length"
-            description="暂无知识库，请先新建"
+            :description="t('views.ragBases.emptyNoKb')"
             :image-size="80"
           />
-          <el-empty v-else description="请选择知识库" :image-size="72" />
+          <el-empty v-else :description="t('views.ragBases.emptyPick')" :image-size="72" />
         </main>
       </div>
     </el-card>
@@ -87,15 +87,21 @@
     />
     <KbAsyncTasksDialog v-model="tasksDlg" :kb-id="dlgKbId" :kb-name="dlgKbName" />
 
-    <el-dialog v-model="dlg" :title="editId ? '重命名知识库' : '新建知识库'" width="440px" destroy-on-close @closed="resetForm">
+    <el-dialog
+      v-model="dlg"
+      :title="editId ? t('views.ragBases.dlgRenameTitle') : t('views.ragBases.dlgNewTitle')"
+      width="440px"
+      destroy-on-close
+      @closed="resetForm"
+    >
       <el-form :model="form" label-width="88px">
-        <el-form-item label="名称" required>
-          <el-input v-model="form.name" placeholder="知识库名称" />
+        <el-form-item :label="t('views.ragBases.nameLabel')" required>
+          <el-input v-model="form.name" :placeholder="t('views.ragBases.namePh')" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dlg = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+        <el-button @click="dlg = false">{{ t("views.ragBases.cancel") }}</el-button>
+        <el-button type="primary" :loading="saving" @click="save">{{ t("views.ragBases.save") }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -104,6 +110,7 @@
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import * as ragApi from "../../api/ragAdmin";
 import type { RagKnowledgeBaseRow } from "../../types/admin";
@@ -113,6 +120,7 @@ import KbDocumentMatrixPanel from "./components/KbDocumentMatrixPanel.vue";
 
 const route = useRoute();
 const router = useRouter();
+const { t } = useI18n();
 
 const loadingKbs = ref(false);
 const capabilitiesLoaded = ref(false);
@@ -179,20 +187,21 @@ function wrapChatRagToggle(row: RagKnowledgeBaseRow | null, on: boolean) {
 
 async function toggleKbChatRag(row: RagKnowledgeBaseRow, on: boolean) {
   if (on && !vectorStoreMilvus.value) {
-    ElMessage.warning("未启用 Milvus 时无法打开对话检索，请先配置向量库。");
+    ElMessage.warning(t("views.ragBases.milvusWarn"));
     return;
   }
   if (on && row.assignedEmbeddingModelId == null) {
-    ElMessage.warning("请先在「高级设置」中为该知识库绑定「向量模型」，再开启对话检索。");
+    ElMessage.warning(t("views.ragBases.embedWarn"));
     return;
   }
   patchingChatRagId.value = row.id;
   try {
     await ragApi.patchRagKbSettings(row.id, { chatRetrievalEnabled: on });
-    ElMessage.success(on ? "已纳入对话检索" : "已暂停参与对话检索");
+    ElMessage.success(on ? t("views.ragBases.chatRagOnOk") : t("views.ragBases.chatRagOffOk"));
     await loadKbs();
   } catch (e: unknown) {
-    const msg = e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : "更新失败";
+    const msg =
+      e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : t("views.ragBases.updateFailed");
     ElMessage.error(msg);
   } finally {
     patchingChatRagId.value = null;
@@ -251,20 +260,20 @@ function resetForm() {
 
 async function save() {
   if (!form.name.trim()) {
-    ElMessage.warning("请填写名称");
+    ElMessage.warning(t("views.ragBases.nameRequired"));
     return;
   }
   saving.value = true;
   try {
     if (editId.value == null) {
       const created = await ragApi.createRagKb(form.name.trim());
-      ElMessage.success("已创建");
+      ElMessage.success(t("views.ragBases.created"));
       dlg.value = false;
       await loadKbs();
       selectKb(created);
     } else {
       const updated = await ragApi.updateRagKb(editId.value, form.name.trim());
-      ElMessage.success("已保存");
+      ElMessage.success(t("views.ragBases.saved"));
       dlg.value = false;
       await loadKbs();
       if (selectedKb.value?.id === updated.id) {
@@ -272,7 +281,7 @@ async function save() {
       }
     }
   } catch (e: unknown) {
-    const msg = e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : "保存失败";
+    const msg = e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : t("views.ragBases.saveFailed");
     ElMessage.error(msg);
   } finally {
     saving.value = false;
@@ -281,13 +290,11 @@ async function save() {
 
 async function remove(row: RagKnowledgeBaseRow) {
   try {
-    await ElMessageBox.confirm(
-      `确定删除知识库「${row.name}」？若已关联文档将无法删除。`,
-      "删除确认",
-      { type: "warning" },
-    );
+    await ElMessageBox.confirm(t("views.ragBases.deleteConfirm", { name: row.name }), t("common.confirmTitle"), {
+      type: "warning",
+    });
     await ragApi.deleteRagKb(row.id);
-    ElMessage.success("已删除");
+    ElMessage.success(t("views.ragBases.deleted"));
     if (selectedKb.value?.id === row.id) {
       selectedKb.value = null;
     }
@@ -314,7 +321,7 @@ onMounted(() => {
 
 .panel {
   border-radius: 12px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--el-border-color);
 }
 
 .hdr {
@@ -335,13 +342,13 @@ onMounted(() => {
 .title {
   font-weight: 600;
   font-size: 15px;
-  color: #0f172a;
+  color: var(--el-text-color-primary);
 }
 
 .sub {
   margin: 4px 0 0;
   font-size: 12px;
-  color: #64748b;
+  color: var(--el-text-color-secondary);
 }
 
 .hdr-intro {
@@ -367,24 +374,24 @@ onMounted(() => {
 
 .kb-picker :deep(.el-input__wrapper) {
   border-radius: 10px;
-  box-shadow: 0 0 0 1px #e2e8f0 inset;
-  background: linear-gradient(180deg, #fafbfc 0%, #f4f6f8 100%);
+  box-shadow: 0 0 0 1px var(--el-border-color-lighter) inset;
+  background: linear-gradient(180deg, var(--el-fill-color-light) 0%, var(--el-fill-color-darker) 100%);
   transition: box-shadow 0.15s ease, background 0.15s ease;
 }
 
 .kb-picker :deep(.el-input__wrapper:hover) {
-  box-shadow: 0 0 0 1px #cbd5e1 inset;
+  box-shadow: 0 0 0 1px var(--el-border-color) inset;
 }
 
 .kb-picker :deep(.el-input__wrapper.is-focus) {
-  box-shadow: 0 0 0 1px #94a3b8 inset, 0 0 0 3px rgba(148, 163, 184, 0.25);
-  background: #fff;
+  box-shadow: 0 0 0 1px var(--el-color-primary) inset, 0 0 0 3px var(--el-color-primary-light-8);
+  background: var(--el-bg-color);
 }
 
 .kb-opt-name {
   display: block;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--el-text-color-primary);
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -404,11 +411,11 @@ onMounted(() => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 14px;
-  background: #fff;
+  background: var(--el-bg-color);
   padding: 16px 18px 20px;
-  box-shadow: 0 2px 12px rgba(15, 23, 42, 0.04);
+  box-shadow: var(--el-box-shadow-lighter);
 }
 
 .main-hdr {
@@ -420,7 +427,7 @@ onMounted(() => {
   gap: 10px;
   margin-bottom: 14px;
   padding-bottom: 12px;
-  border-bottom: 1px dashed #e2e8f0;
+  border-bottom: 1px dashed var(--el-border-color-lighter);
 }
 
 .main-hdr-left {
@@ -433,7 +440,7 @@ onMounted(() => {
   margin: 0;
   font-size: 17px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--el-text-color-primary);
 }
 
 .main-hdr-right {

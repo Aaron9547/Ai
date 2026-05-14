@@ -1,12 +1,14 @@
 package com.aaron.cloud.common.config;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
 import org.springframework.core.env.MapPropertySource;
 import org.springframework.core.env.StandardEnvironment;
 
@@ -37,23 +39,236 @@ class AiEnvironmentBridgePostProcessorTest {
     }
 
     @Test
-    void redisOff_mergesExclude() {
+    void redisClusterNodes_bridgedToSpringDataRedis() {
         StandardEnvironment env = new StandardEnvironment();
         env.getPropertySources()
                 .addFirst(
                         new MapPropertySource(
                                 "in",
                                 Map.of(
-                                        "ai.redis.enabled",
-                                        "false",
-                                        "spring.autoconfigure.exclude",
-                                        "com.example.LegacyAutoConfig")));
+                                        "ai.redis.mode",
+                                        "cluster",
+                                        "ai.redis.cluster.nodes",
+                                        "redis-a:6379, redis-b:6380",
+                                        "ai.redis.cluster.max-redirects",
+                                        "24")));
 
         new AiEnvironmentBridgePostProcessor().postProcessEnvironment(env, new SpringApplication());
 
-        String ex = env.getProperty("spring.autoconfigure.exclude");
-        assertTrue(ex.contains("com.example.LegacyAutoConfig"));
-        assertTrue(ex.contains(RedisAutoConfiguration.class.getName()));
+        assertEquals("redis-a:6379", env.getProperty("spring.data.redis.cluster.nodes[0]"));
+        assertEquals("redis-b:6380", env.getProperty("spring.data.redis.cluster.nodes[1]"));
+        assertEquals(24, env.getProperty("spring.data.redis.cluster.max-redirects", Integer.class));
+        assertEquals(Boolean.TRUE, env.getProperty("spring.data.redis.lettuce.cluster.refresh.adaptive", Boolean.class));
+        assertEquals("30s", env.getProperty("spring.data.redis.lettuce.cluster.refresh.period"));
+    }
+
+    @Test
+    void redisClusterNodes_semicolonSeparated_bridges() {
+        StandardEnvironment env = new StandardEnvironment();
+        env.getPropertySources()
+                .addFirst(
+                        new MapPropertySource(
+                                "in",
+                                Map.of(
+                                        "ai.redis.mode",
+                                        "cluster",
+                                        "ai.redis.cluster.nodes",
+                                        "h1:6379;h2:6380")));
+
+        new AiEnvironmentBridgePostProcessor().postProcessEnvironment(env, new SpringApplication());
+
+        assertEquals("h1:6379", env.getProperty("spring.data.redis.cluster.nodes[0]"));
+        assertEquals("h2:6380", env.getProperty("spring.data.redis.cluster.nodes[1]"));
+    }
+
+    @Test
+    void redisClusterNodes_withoutMode_doesNotBridge() {
+        StandardEnvironment env = new StandardEnvironment();
+        env.getPropertySources()
+                .addFirst(new MapPropertySource("in", Map.of("ai.redis.cluster.nodes", "redis-a:6379")));
+
+        new AiEnvironmentBridgePostProcessor().postProcessEnvironment(env, new SpringApplication());
+
+        assertNull(env.getProperty("spring.data.redis.cluster.nodes[0]"));
+    }
+
+    @Test
+    void redisStandaloneMode_ignoresClusterNodes() {
+        StandardEnvironment env = new StandardEnvironment();
+        env.getPropertySources()
+                .addFirst(
+                        new MapPropertySource(
+                                "in",
+                                Map.of(
+                                        "ai.redis.mode",
+                                        "standalone",
+                                        "ai.redis.cluster.nodes",
+                                        "redis-a:6379")));
+
+        new AiEnvironmentBridgePostProcessor().postProcessEnvironment(env, new SpringApplication());
+
+        assertNull(env.getProperty("spring.data.redis.cluster.nodes[0]"));
+    }
+
+    @Test
+    void redisClusterMode_withoutNodes_throws() {
+        StandardEnvironment env = new StandardEnvironment();
+        env.getPropertySources().addFirst(new MapPropertySource("in", Map.of("ai.redis.mode", "cluster")));
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> new AiEnvironmentBridgePostProcessor().postProcessEnvironment(env, new SpringApplication()));
+    }
+
+    @Test
+    void redisSentinelNodes_bridgedToSpringDataRedis() {
+        StandardEnvironment env = new StandardEnvironment();
+        env.getPropertySources()
+                .addFirst(
+                        new MapPropertySource(
+                                "in",
+                                Map.of(
+                                        "ai.redis.mode",
+                                        "sentinel",
+                                        "ai.redis.sentinel.master",
+                                        "mymaster",
+                                        "ai.redis.sentinel.nodes",
+                                        "s1:26379;s2:26380")));
+
+        new AiEnvironmentBridgePostProcessor().postProcessEnvironment(env, new SpringApplication());
+
+        assertEquals("mymaster", env.getProperty("spring.data.redis.sentinel.master"));
+        assertEquals("s1:26379", env.getProperty("spring.data.redis.sentinel.nodes[0]"));
+        assertEquals("s2:26380", env.getProperty("spring.data.redis.sentinel.nodes[1]"));
+    }
+
+    @Test
+    void redisSentinelMode_bridgesSentinelPasswordFromSpringDataRedisPassword() {
+        StandardEnvironment env = new StandardEnvironment();
+        env.getPropertySources()
+                .addFirst(
+                        new MapPropertySource(
+                                "in",
+                                Map.of(
+                                        "ai.redis.mode",
+                                        "sentinel",
+                                        "ai.redis.sentinel.master",
+                                        "mymaster",
+                                        "ai.redis.sentinel.nodes",
+                                        "s1:26379",
+                                        "spring.data.redis.password",
+                                        "redis-secret")));
+
+        new AiEnvironmentBridgePostProcessor().postProcessEnvironment(env, new SpringApplication());
+
+        assertEquals("redis-secret", env.getProperty("spring.data.redis.sentinel.password"));
+    }
+
+    @Test
+    void redisSentinelMode_explicitAiSentinelPasswordOverridesDataPassword() {
+        StandardEnvironment env = new StandardEnvironment();
+        env.getPropertySources()
+                .addFirst(
+                        new MapPropertySource(
+                                "in",
+                                Map.of(
+                                        "ai.redis.mode",
+                                        "sentinel",
+                                        "ai.redis.sentinel.master",
+                                        "mymaster",
+                                        "ai.redis.sentinel.nodes",
+                                        "s1:26379",
+                                        "ai.redis.sentinel.password",
+                                        "sentinel-only",
+                                        "spring.data.redis.password",
+                                        "data-only")));
+
+        new AiEnvironmentBridgePostProcessor().postProcessEnvironment(env, new SpringApplication());
+
+        assertEquals("sentinel-only", env.getProperty("spring.data.redis.sentinel.password"));
+    }
+
+    @Test
+    void redisSentinelMode_sendAuthFalse_doesNotBridgeSentinelPassword() {
+        StandardEnvironment env = new StandardEnvironment();
+        env.getPropertySources()
+                .addFirst(
+                        new MapPropertySource(
+                                "in",
+                                Map.of(
+                                        "ai.redis.mode",
+                                        "sentinel",
+                                        "ai.redis.sentinel.master",
+                                        "mymaster",
+                                        "ai.redis.sentinel.nodes",
+                                        "s1:26379",
+                                        "ai.redis.sentinel.send-auth-to-sentinel",
+                                        "false",
+                                        "spring.data.redis.password",
+                                        "redis-secret")));
+
+        new AiEnvironmentBridgePostProcessor().postProcessEnvironment(env, new SpringApplication());
+
+        assertNull(env.getProperty("spring.data.redis.sentinel.password"));
+    }
+
+    @Test
+    void redisSentinelMode_bridgesSentinelUsernameWhenSet() {
+        StandardEnvironment env = new StandardEnvironment();
+        env.getPropertySources()
+                .addFirst(
+                        new MapPropertySource(
+                                "in",
+                                Map.of(
+                                        "ai.redis.mode",
+                                        "sentinel",
+                                        "ai.redis.sentinel.master",
+                                        "mymaster",
+                                        "ai.redis.sentinel.nodes",
+                                        "s1:26379",
+                                        "ai.redis.sentinel.username",
+                                        "sentinel-user")));
+
+        new AiEnvironmentBridgePostProcessor().postProcessEnvironment(env, new SpringApplication());
+
+        assertEquals("sentinel-user", env.getProperty("spring.data.redis.sentinel.username"));
+    }
+
+    @Test
+    void redisSentinelMode_withoutMaster_throws() {
+        StandardEnvironment env = new StandardEnvironment();
+        env.getPropertySources()
+                .addFirst(
+                        new MapPropertySource(
+                                "in",
+                                Map.of("ai.redis.mode", "sentinel", "ai.redis.sentinel.nodes", "h:26379")));
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> new AiEnvironmentBridgePostProcessor().postProcessEnvironment(env, new SpringApplication()));
+    }
+
+    @Test
+    void redisSentinelMode_withoutNodes_throws() {
+        StandardEnvironment env = new StandardEnvironment();
+        env.getPropertySources()
+                .addFirst(
+                        new MapPropertySource(
+                                "in", Map.of("ai.redis.mode", "sentinel", "ai.redis.sentinel.master", "mymaster")));
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> new AiEnvironmentBridgePostProcessor().postProcessEnvironment(env, new SpringApplication()));
+    }
+
+    @Test
+    void redisMode_invalidValue_throws() {
+        StandardEnvironment env = new StandardEnvironment();
+        env.getPropertySources().addFirst(new MapPropertySource("in", Map.of("ai.redis.mode", "replication")));
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> new AiEnvironmentBridgePostProcessor().postProcessEnvironment(env, new SpringApplication()));
     }
 
     @Test

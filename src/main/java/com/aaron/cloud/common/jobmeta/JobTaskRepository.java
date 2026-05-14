@@ -6,6 +6,8 @@ import com.aaron.cloud.common.jobmeta.mapper.JobTaskMapper;
 import com.aaron.cloud.common.api.enums.JobTaskType;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
@@ -67,5 +69,22 @@ public class JobTaskRepository {
                                                     ragKbId)));
         }
         return mapper.selectPage(Page.of(pageNo, pageSize), q);
+    }
+
+    public long countByTenantSince(long tenantId, LocalDateTime sinceUtcInclusive) {
+        return mapper.selectCount(
+                Wrappers.<JobTask>lambdaQuery()
+                        .eq(JobTask::getTenantId, tenantId)
+                        .ge(JobTask::getCreatedAt, sinceUtcInclusive));
+    }
+
+    public long countByTenantAndStatuses(long tenantId, List<JobTaskStatus> statuses) {
+        if (statuses == null || statuses.isEmpty()) {
+            return 0;
+        }
+        return mapper.selectCount(
+                Wrappers.<JobTask>lambdaQuery()
+                        .eq(JobTask::getTenantId, tenantId)
+                        .in(JobTask::getStatus, statuses));
     }
 }

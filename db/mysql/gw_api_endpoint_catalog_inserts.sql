@@ -19,8 +19,12 @@ INSERT IGNORE INTO gw_api_endpoint (path_pattern, http_method, display_name, rem
 ('/open/v1/auth/register', 'POST', '开放自助注册', '依赖租户开放注册开关', 1, 1010, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 -- ---------- Open：/open/v1/system ----------
 ('/open/v1/system/me', 'GET', '开放当前上下文 me', '访客可访问', 1, 1020, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+-- ---------- Open：/open/v1/profile（须 JWT）----------
+('/open/v1/profile/export', 'GET', '画像与记忆导出', 'jwt-local', 1, 1025, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/open/v1/profile/data', 'DELETE', '画像与记忆删除', 'jwt-local', 1, 1026, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 -- ---------- Open：/open/v1/chat ----------
 ('/open/v1/chat/models', 'GET', '对话模型列表', 'C 端选择器', 1, 1030, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/open/v1/chat/web-search-availability', 'GET', '联网检索是否可用', 'C 端开关', 1, 1035, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/conversations', 'GET', '开放会话列表', NULL, 1, 1040, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/conversations', 'POST', '创建会话', NULL, 1, 1050, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/conversations/*/messages', 'GET', '开放消息列表', NULL, 1, 1060, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
@@ -50,6 +54,10 @@ INSERT IGNORE INTO gw_api_endpoint (path_pattern, http_method, display_name, rem
 ('/api/v1/admin/users/*/tenant-role', 'PUT', '调整租户成员角色', NULL, 1, 2170, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/users/*/kick-session', 'POST', '踢下线', NULL, 1, 2180, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/users/*/ban', 'POST', '封禁用户', NULL, 1, 2190, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/user-profiles', 'GET', '用户画像列表', NULL, 1, 2192, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/user-profiles/memory-embedding-model', 'GET', '记忆向量化模型配置', NULL, 1, 2193, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/user-profiles/memory-embedding-model', 'PUT', '保存记忆向量化模型', NULL, 1, 2194, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/user-profiles/*', 'GET', '用户画像详情', NULL, 1, 2195, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 -- ---------- API：租户成员 ----------
 ('/api/v1/admin/tenant-members', 'GET', '租户成员列表', NULL, 1, 2200, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/tenant-members', 'POST', '邀请或恢复成员', NULL, 1, 2210, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
@@ -102,6 +110,8 @@ INSERT IGNORE INTO gw_api_endpoint (path_pattern, http_method, display_name, rem
 ('/api/v1/admin/chat/sensitive-terms/*', 'DELETE', '删除敏感词', NULL, 1, 3060, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/chat/intents', 'GET', '意图列表', NULL, 1, 3070, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/chat/intents', 'POST', '新增意图', NULL, 1, 3071, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/chat/intent-handlers/*/config-schema', 'GET', '意图处理器动态配置元数据', NULL, 1, 3078, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/chat/intent-handler-kinds', 'GET', '意图处理器类型下拉（已注册）', NULL, 1, 3079, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/chat/intents/*', 'PUT', '更新意图', NULL, 1, 3072, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/chat/intents/*', 'DELETE', '删除意图', NULL, 1, 3073, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/chat/intents/*/keywords', 'GET', '意图关键词列表', NULL, 1, 3074, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),

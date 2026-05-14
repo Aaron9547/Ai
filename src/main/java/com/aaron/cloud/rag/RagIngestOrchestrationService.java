@@ -16,13 +16,12 @@ import com.aaron.cloud.common.rag.entity.LnkRagKbDocument;
 import com.aaron.cloud.common.rag.entity.RagChunk;
 import com.aaron.cloud.common.rag.entity.RagDocument;
 import com.aaron.cloud.common.rag.entity.RagKnowledgeBase;
+import com.aaron.cloud.common.time.BeijingTime;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.net.URI;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -35,8 +34,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 @RequiredArgsConstructor
 public class RagIngestOrchestrationService {
-
-    private static final ZoneOffset UTC = ZoneOffset.UTC;
 
     private final RagKnowledgeBaseRepository ragKnowledgeBaseRepository;
     private final RagDocumentRepository ragDocumentRepository;
@@ -229,7 +226,7 @@ public class RagIngestOrchestrationService {
         n.put("phase", phase);
         n.put("status", status);
         n.put("detail", detail == null ? "" : detail);
-        n.put("at", LocalDateTime.now(UTC).toString());
+        n.put("at", BeijingTime.nowLocal().toString());
         steps.add(n);
     }
 

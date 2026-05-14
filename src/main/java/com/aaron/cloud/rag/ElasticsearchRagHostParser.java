@@ -9,7 +9,7 @@ import org.springframework.util.StringUtils;
 
 /**
  * 将 {@link AiRagProperties.Elasticsearch} 解析为 Elasticsearch {@code RestClient} 所需的 {@link HttpHost} 列表，语义对齐
- * ly-ai-rag-svc {@code elasticsearch.config.hostPorts}：由 {@code config.hostPorts} 拼出 {@code http://host:port} 串再解析为
+ * 对端 {@code elasticsearch.config.hostPorts}：由 {@code config.hostPorts} 拼出 {@code http://host:port} 串再解析为
  * {@link HttpHost}；多节点分隔符为逗号或分号；无 {@code ://} 时默认 http。
  */
 public final class ElasticsearchRagHostParser {
@@ -53,7 +53,7 @@ public final class ElasticsearchRagHostParser {
     }
 
     /**
-     * 按逗号或分号切分每一段为 {@link HttpHost}（与 ly-ai-rag-svc {@code parseHosts} 一致）。
+     * 按逗号或分号切分每一段为 {@link HttpHost}（与对端 {@code parseHosts} 一致）。
      */
     public static List<HttpHost> parseHttpHosts(String uris) {
         List<HttpHost> out = new ArrayList<>();

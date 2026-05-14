@@ -6,6 +6,11 @@
           <span class="msg-version-label">当前版本</span>
           <span v-if="message.modelAlias" class="msg-version-meta">模型 {{ message.modelAlias }}</span>
         </div>
+        <div v-if="(message.contentSummary ?? '').trim()" class="msg-content-summary msg-content-summary--current">
+          <span class="msg-summary-hdr">{{ t("views.chatDrawerAudit.summaryHdr") }}</span>
+          <span class="msg-summary-sub">{{ t("views.chatDrawerAudit.summarySub") }}</span>
+          <pre class="msg-summary-pre">{{ message.contentSummary }}</pre>
+        </div>
         <div v-if="message.reasoning" class="msg-reasoning msg-reasoning--in-current">
           <span class="msg-reasoning-hdr">思考过程</span>
           <pre>{{ message.reasoning }}</pre>
@@ -28,6 +33,31 @@
             >
               {{ ragCitationLabel(c) }}
             </el-tag>
+          </div>
+        </div>
+        <div v-if="message.webSearchReferences?.length" class="msg-web-wrap">
+          <div class="msg-web-hdr">联网参考</div>
+          <div class="msg-web-chips">
+            <template v-for="(w, wi) in message.webSearchReferences" :key="wi">
+              <a
+                v-if="(w.url ?? '').trim()"
+                class="msg-web-chip"
+                :href="w.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                :title="(w.summary || '').trim() || undefined"
+                @click.stop
+              >
+                {{ webRefLabel(w) }}
+              </a>
+              <span
+                v-else
+                class="msg-web-chip msg-web-chip--nolink"
+                :title="(w.summary || '').trim() || undefined"
+              >
+                {{ webRefLabel(w) }}
+              </span>
+            </template>
           </div>
         </div>
       </div>
@@ -63,6 +93,11 @@
     </template>
     <template v-else>
       <div v-if="message.modelAlias" class="msg-model">模型 {{ message.modelAlias }}</div>
+      <div v-if="(message.contentSummary ?? '').trim()" class="msg-content-summary">
+        <span class="msg-summary-hdr">{{ t("views.chatDrawerAudit.summaryHdr") }}</span>
+        <span class="msg-summary-sub">{{ t("views.chatDrawerAudit.summarySub") }}</span>
+        <pre class="msg-summary-pre">{{ message.contentSummary }}</pre>
+      </div>
       <div v-if="message.reasoning" class="msg-reasoning">
         <span class="msg-reasoning-hdr">思考过程</span>
         <pre>{{ message.reasoning }}</pre>
@@ -86,16 +121,43 @@
           </el-tag>
         </div>
       </div>
+      <div v-if="message.webSearchReferences?.length" class="msg-web-wrap">
+        <div class="msg-web-hdr">联网参考</div>
+        <div class="msg-web-chips">
+          <template v-for="(w, wi) in message.webSearchReferences" :key="wi">
+            <a
+              v-if="(w.url ?? '').trim()"
+              class="msg-web-chip"
+              :href="w.url"
+              target="_blank"
+              rel="noopener noreferrer"
+              :title="(w.summary || '').trim() || undefined"
+              @click.stop
+            >
+              {{ webRefLabel(w) }}
+            </a>
+            <span
+              v-else
+              class="msg-web-chip msg-web-chip--nolink"
+              :title="(w.summary || '').trim() || undefined"
+            >
+              {{ webRefLabel(w) }}
+            </span>
+          </template>
+        </div>
+      </div>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import type { ChatMessageAdminRow, RagCitationAdmin } from "../../../api/chatAdmin";
+import { useI18n } from "vue-i18n";
+import type { ChatMessageAdminRow, RagCitationAdmin, WebSearchRefAdmin } from "../../../api/chatAdmin";
 import { renderMarkdownToSafeHtml } from "../../../utils/renderMarkdown";
 
 defineProps<{ message: ChatMessageAdminRow }>();
 const emit = defineEmits<{ (e: "open-rag-citation", c: RagCitationAdmin): void }>();
+const { t } = useI18n();
 
 function assistantHtml(text: string): string {
   return renderMarkdownToSafeHtml(text ?? "");
@@ -106,6 +168,23 @@ function ragCitationLabel(c: RagCitationAdmin): string {
   const short = t.length > 18 ? `${t.slice(0, 18)}…` : t;
   return `${short} · 第 ${c.chunkSeq + 1} 片`;
 }
+
+function webRefLabel(w: WebSearchRefAdmin): string {
+  const t = (w.title || "").trim();
+  const site = (w.siteName || "").trim();
+  if (t && site) return `${t} · ${site}`;
+  if (t) return t;
+  if (site) return site;
+  const u = (w.url || "").trim();
+  if (u) {
+    try {
+      return new URL(u).hostname || u;
+    } catch {
+      return u.length > 40 ? `${u.slice(0, 40)}…` : u;
+    }
+  }
+  return "链接";
+}
 </script>
 
 <style scoped>
@@ -115,14 +194,51 @@ function ragCitationLabel(c: RagCitationAdmin): string {
 
 .msg-model {
   font-size: 12px;
-  color: #64748b;
+  color: var(--el-text-color-secondary);
   margin-bottom: 6px;
+}
+
+.msg-content-summary {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-lighter);
+}
+
+.msg-content-summary--current {
+  margin-top: 4px;
+}
+
+.msg-summary-hdr {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  margin-bottom: 4px;
+}
+
+.msg-summary-sub {
+  display: block;
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+
+.msg-summary-pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--el-text-color-regular);
 }
 
 .msg-md {
   font-size: 14px;
   line-height: 1.6;
-  color: #0f172a;
+  color: var(--el-text-color-primary);
 }
 
 .bubble-md :deep(p) {
@@ -137,7 +253,7 @@ function ragCitationLabel(c: RagCitationAdmin): string {
   overflow-x: auto;
   padding: 10px;
   border-radius: 8px;
-  background: #f1f5f9;
+  background: var(--el-fill-color);
   font-size: 13px;
 }
 
@@ -150,13 +266,13 @@ function ragCitationLabel(c: RagCitationAdmin): string {
 .msg-rag-wrap {
   margin-top: 10px;
   padding-top: 8px;
-  border-top: 1px dashed #e2e8f0;
+  border-top: 1px dashed var(--el-border-color-lighter);
 }
 
 .msg-rag-hdr {
   font-size: 11px;
   font-weight: 600;
-  color: #64748b;
+  color: var(--el-text-color-secondary);
   margin-bottom: 6px;
 }
 
@@ -170,13 +286,57 @@ function ragCitationLabel(c: RagCitationAdmin): string {
   cursor: pointer;
 }
 
+.msg-web-wrap {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--el-border-color-lighter);
+}
+
+.msg-web-hdr {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 6px;
+}
+
+.msg-web-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.msg-web-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  border: 1px solid var(--el-color-primary-light-5);
+  text-decoration: none;
+  word-break: break-word;
+}
+
+.msg-web-chip:hover {
+  border-color: var(--el-color-primary);
+}
+
+.msg-web-chip--nolink {
+  color: var(--el-text-color-regular);
+  background: var(--el-fill-color-light);
+  border-color: var(--el-border-color-lighter);
+}
+
 .msg-reasoning {
   margin-bottom: 10px;
   padding: 10px 12px;
   border-radius: 8px;
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-  border: 1px solid #e2e8f0;
-  border-left: 3px solid #94a3b8;
+  background: linear-gradient(135deg, var(--el-fill-color-light) 0%, var(--el-fill-color) 100%);
+  border: 1px solid var(--el-border-color-lighter);
+  border-left: 3px solid var(--el-border-color);
 }
 
 .msg-reasoning-hdr {
@@ -185,7 +345,7 @@ function ragCitationLabel(c: RagCitationAdmin): string {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  color: #64748b;
+  color: var(--el-text-color-secondary);
 }
 
 .msg-reasoning pre {
@@ -194,14 +354,14 @@ function ragCitationLabel(c: RagCitationAdmin): string {
   word-break: break-word;
   font-size: 12px;
   line-height: 1.5;
-  color: #475569;
+  color: var(--el-text-color-regular);
 }
 
 .msg-assistant-current {
   border-radius: 10px;
   border: 1px solid #bfdbfe;
   border-left: 5px solid #2563eb;
-  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 48%);
+  background: linear-gradient(180deg, var(--el-fill-color-light) 0%, var(--el-bg-color) 48%);
   padding: 12px 14px 14px;
   box-shadow: 0 1px 2px rgb(15 23 42 / 6%);
 }
@@ -213,7 +373,7 @@ function ragCitationLabel(c: RagCitationAdmin): string {
   gap: 8px 14px;
   margin-bottom: 10px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 
 .msg-version-strip--current {
@@ -235,13 +395,13 @@ function ragCitationLabel(c: RagCitationAdmin): string {
 
 .msg-version-meta {
   font-size: 12px;
-  color: #334155;
+  color: var(--el-text-color-regular);
   font-weight: 500;
 }
 
 .msg-reasoning--in-current {
   border-left-color: #3b82f6;
-  background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+  background: linear-gradient(135deg, var(--el-color-primary-light-9) 0%, var(--el-fill-color-light) 100%);
 }
 
 .bubble-md--current {
@@ -257,8 +417,8 @@ function ragCitationLabel(c: RagCitationAdmin): string {
   margin-top: 16px;
   padding: 8px;
   border-radius: 10px;
-  border: 1px dashed #94a3b8;
-  background: #f1f5f9;
+  border: 1px dashed var(--el-border-color);
+  background: var(--el-fill-color);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 70%);
 }
 
@@ -280,21 +440,21 @@ function ragCitationLabel(c: RagCitationAdmin): string {
 .msg-archive-title {
   font-size: 12px;
   font-weight: 700;
-  color: #475569;
+  color: var(--el-text-color-regular);
   letter-spacing: 0.04em;
 }
 
 .msg-archive-count {
   font-size: 11px;
   font-weight: 600;
-  color: #64748b;
+  color: var(--el-text-color-secondary);
 }
 
 .msg-archive-sub {
   display: block;
   font-size: 11px;
   line-height: 1.45;
-  color: #64748b;
+  color: var(--el-text-color-secondary);
 }
 
 .msg-prior-collapse {
@@ -311,10 +471,10 @@ function ragCitationLabel(c: RagCitationAdmin): string {
   padding: 8px 12px;
   font-size: 12px;
   font-weight: 600;
-  color: #64748b;
-  background: #e2e8f0;
+  color: var(--el-text-color-secondary);
+  background: var(--el-border-color-lighter);
   border-radius: 8px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--el-border-color);
 }
 
 .msg-prior-collapse--archive :deep(.el-collapse-item__wrap) {
@@ -331,7 +491,7 @@ function ragCitationLabel(c: RagCitationAdmin): string {
   padding: 12px;
   border-radius: 8px;
   background: #fff;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--el-border-color);
   box-shadow: 0 1px 1px rgb(15 23 42 / 4%);
 }
 
@@ -346,7 +506,7 @@ function ragCitationLabel(c: RagCitationAdmin): string {
   gap: 8px;
   margin-bottom: 10px;
   padding-bottom: 8px;
-  border-bottom: 1px dashed #cbd5e1;
+  border-bottom: 1px dashed var(--el-border-color);
 }
 
 .msg-prior-badge {
@@ -361,29 +521,29 @@ function ragCitationLabel(c: RagCitationAdmin): string {
 
 .msg-prior-model {
   font-size: 11px;
-  color: #64748b;
+  color: var(--el-text-color-secondary);
 }
 
 .msg-reasoning--archive {
   margin-bottom: 8px;
-  background: #f8fafc;
+  background: var(--el-fill-color-light);
   border-left-color: #cbd5e1;
 }
 
 .bubble-md--archive {
   font-size: 13px;
-  color: #475569;
+  color: var(--el-text-color-regular);
   line-height: 1.55;
 }
 
 .bubble-md--archive :deep(pre) {
-  background: #f1f5f9;
+  background: var(--el-fill-color);
   font-size: 12px;
 }
 
 .msg-usage--archive {
   margin-top: 6px;
   font-size: 11px;
-  color: #64748b;
+  color: var(--el-text-color-secondary);
 }
 </style>

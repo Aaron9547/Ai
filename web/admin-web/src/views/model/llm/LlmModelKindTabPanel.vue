@@ -1,9 +1,9 @@
 <template>
   <div class="tab-panel">
     <div class="toolbar">
-      <el-button type="primary" @click="openCreate">新建{{ tab.label }}</el-button>
+      <el-button type="primary" @click="openCreate">{{ t("views.llmKindTab.new", { label: tab.label }) }}</el-button>
     </div>
-    <el-table v-loading="loading" :data="rows" stripe border empty-text="暂无模型">
+    <el-table v-loading="loading" :data="rows" stripe border :empty-text="t('views.llmKindTab.empty')">
       <el-table-column
         v-for="col in tab.listColumns"
         :key="col.prop"
@@ -27,17 +27,23 @@
             </el-tag>
           </template>
           <template v-else-if="col.format === 'boolSwitch'">
-            <el-switch :model-value="row.enabled" disabled />
+            <el-switch
+              v-if="col.prop === 'enabled'"
+              :model-value="row.enabled"
+              :loading="togglingEnabledId === row.id"
+              @update:model-value="(v: boolean) => toggleRowEnabled(row, v)"
+            />
+            <el-switch v-else :model-value="row[col.prop as keyof typeof row] as boolean" disabled />
           </template>
           <template v-else>
             {{ row[col.prop as keyof typeof row] }}
           </template>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="160" fixed="right">
+      <el-table-column :label="t('views.llmKindTab.colActions')" width="160" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
-          <el-button link type="danger" size="small" @click="remove(row)">删除</el-button>
+          <el-button link type="primary" size="small" @click="openEdit(row)">{{ t("views.llmKindTab.edit") }}</el-button>
+          <el-button link type="danger" size="small" @click="remove(row)">{{ t("views.llmKindTab.delete") }}</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -45,14 +51,21 @@
     <el-dialog
       v-model="dlg"
       class="llm-model-dialog"
-      :title="editId ? `编辑 · ${tab.label}` : `新建 · ${tab.label}`"
-      width="580px"
+      width="600px"
       destroy-on-close
       align-center
+      header-class="llm-model-dialog-header"
+      body-class="llm-model-dialog-body"
       @closed="onDlgClosed"
     >
-      <div class="llm-model-dialog-scroll">
-        <el-form :model="form" label-position="left" label-width="112px" size="small" class="form">
+      <template #header>
+        <div class="dlg-hdr">
+          <h2 class="dlg-hdr-title">{{ editId ? t("views.llmKindTab.dlgHeaderEdit") : t("views.llmKindTab.dlgHeaderNew") }}</h2>
+          <p class="dlg-hdr-kind">{{ tab.label }}</p>
+        </div>
+      </template>
+      <el-scrollbar class="dlg-scroll" max-height="min(432px, 58vh)">
+        <el-form :model="form" label-position="top" size="default" class="form">
           <LlmModelFormFields
             :fields="tab.formFields"
             :form="form"
@@ -61,10 +74,10 @@
             :model-kind="tab.kind"
           />
         </el-form>
-      </div>
+      </el-scrollbar>
       <template #footer>
-        <el-button @click="dlg = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+        <el-button @click="dlg = false">{{ t("views.llmKindTab.cancel") }}</el-button>
+        <el-button type="primary" :loading="saving" @click="save">{{ t("views.llmKindTab.save") }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -73,16 +86,18 @@
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from "element-plus";
 import { reactive, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import * as modelsApi from "../../../api/models";
 import type {
   CreateLlmModelBody,
   LlmModelAdminMetaResponse,
   LlmModelAdminView,
-  LlmVectorBackendCode,
   ModelKindTabMeta,
 } from "../../../api/models";
 import { apiRequestErrorMessage } from "../../../utils/apiRequestErrorMessage";
 import LlmModelFormFields from "./LlmModelFormFields.vue";
+
+const { t } = useI18n();
 
 const props = defineProps<{
   tab: ModelKindTabMeta;
@@ -95,6 +110,8 @@ const rows = ref<LlmModelAdminView[]>([]);
 const dlg = ref(false);
 const editId = ref<number | null>(null);
 const form = reactive<Record<string, unknown>>({});
+/** 列表行「启用」开关提交中，避免连点 */
+const togglingEnabledId = ref<number | null>(null);
 
 async function loadRows() {
   loading.value = true;
@@ -123,24 +140,24 @@ function colWidth(col: { prop: string; format: string }): number | undefined {
   if (col.format === "boolTag" || col.format === "boolSwitch") return 100;
   if (col.prop === "alias") return 140;
   if (col.prop === "openaiModelId") return 160;
-  if (col.prop === "vectorBackend") return 220;
+  if (col.prop === "integrationBackend") return 220;
   if (col.prop === "localDeploy") return 108;
   return undefined;
 }
 
 function enumCellLabel(optionsKey: string, code: unknown): string {
-  if (code == null || code === "") return "—";
+  if (code == null || code === "") return t("common.dash");
   const opts = props.optionLists[optionsKey] || [];
   const o = opts.find((x) => x.code === code);
   return o ? o.label : String(code);
 }
 
 function boolTagText(prop: string, val: boolean): string {
-  if (prop === "apiKeyConfigured") return val ? "已配" : "未配";
-  if (prop === "allowAnonymous") return val ? "允许" : "禁止";
-  if (prop === "supportsThinking") return val ? "支持" : "—";
-  if (prop === "localDeploy") return val ? "Feign" : "直连";
-  return val ? "是" : "否";
+  if (prop === "apiKeyConfigured") return val ? t("views.llmKindTab.boolApiKeyOk") : t("views.llmKindTab.boolApiKeyNo");
+  if (prop === "allowAnonymous") return val ? t("views.llmKindTab.boolAllowYes") : t("views.llmKindTab.boolAllowNo");
+  if (prop === "supportsThinking") return val ? t("views.llmKindTab.boolThinkingYes") : t("views.llmKindTab.boolThinkingNo");
+  if (prop === "localDeploy") return val ? t("views.llmKindTab.boolLocalFeign") : t("views.llmKindTab.boolLocalDirect");
+  return val ? t("views.llmKindTab.boolYes") : t("views.llmKindTab.boolNo");
 }
 
 function boolTagType(prop: string, val: boolean): "success" | "warning" | "info" {
@@ -161,7 +178,8 @@ function initFormCreate() {
     else if (f.key === "sortOrder") form[f.key] = 0;
     else if (f.key === "maxAttachments") form[f.key] = 10;
     else if (f.key === "supportsThinking") form[f.key] = false;
-    else if (f.key === "vectorBackend") form[f.key] = "OPENAI_COMPATIBLE";
+    else if (f.key === "integrationBackend")
+      form[f.key] = props.tab.kind === "WEB_SEARCH" ? "VOLCENGINE_ARK_BOT" : "OPENAI_COMPATIBLE";
     else if (f.key === "clearApiKey") form[f.key] = false;
     else if (f.key === "localDeploy") form[f.key] = false;
     else form[f.key] = "";
@@ -176,8 +194,10 @@ function initFormEdit(row: LlmModelAdminView) {
   form.displayName = row.displayName;
   form.openaiBaseUrl = row.openaiBaseUrl;
   form.openaiModelId = row.openaiModelId;
-  if (props.tab.kind === "VECTOR") {
-    form.vectorBackend = row.vectorBackend ?? "OPENAI_COMPATIBLE";
+  if (props.tab.kind === "VECTOR" || props.tab.kind === "WEB_SEARCH") {
+    form.integrationBackend =
+      row.integrationBackend ??
+      (props.tab.kind === "WEB_SEARCH" ? "VOLCENGINE_ARK_BOT" : "OPENAI_COMPATIBLE");
   }
   form.apiKey = "";
   form.allowAnonymous = row.allowAnonymous;
@@ -210,16 +230,19 @@ function onDlgClosed() {
 function validateRequired(): boolean {
   for (const f of props.tab.formFields) {
     if (!f.required) continue;
-    if (f.key === "apiKey" && props.tab.kind === "VECTOR" && !editId.value) continue;
     if (f.key === "clearApiKey") continue;
+    // 编辑：密钥留空表示不轮换，不要求重新填写
+    if (f.key === "apiKey" && editId.value) continue;
+    // 新建向量模型：允许免密
+    if (f.key === "apiKey" && props.tab.kind === "VECTOR" && !editId.value) continue;
     const v = form[f.key];
     if (v === undefined || v === null || (typeof v === "string" && !v.trim())) {
-      ElMessage.warning(`请填写：${f.label}`);
+      ElMessage.warning(t("views.llmKindTab.fillField", { label: f.label }));
       return false;
     }
   }
   if (!editId.value && !form.tokenQuotaUnlimited && (!form.tokenQuotaTotal || Number(form.tokenQuotaTotal) < 1)) {
-    ElMessage.warning("请填写有效的 Token 上限，或打开「共用 Token 不限制」");
+    ElMessage.warning(t("views.llmKindTab.tokenQuotaWarning"));
     return false;
   }
   return true;
@@ -235,13 +258,16 @@ async function save() {
         openaiBaseUrl: String(form.openaiBaseUrl ?? "").trim(),
         openaiModelId: String(form.openaiModelId ?? "").trim(),
         modelKind: props.tab.kind,
-        ...(props.tab.kind === "VECTOR" ? { vectorBackend: form.vectorBackend as LlmVectorBackendCode } : {}),
+        ...(props.tab.kind === "VECTOR" || props.tab.kind === "WEB_SEARCH"
+          ? { integrationBackend: String(form.integrationBackend ?? "").trim() }
+          : {}),
         apiKey: String(form.apiKey ?? "").trim() || undefined,
         ...(props.tab.kind === "VECTOR" && form.clearApiKey ? { clearApiKey: true as const } : {}),
         allowAnonymous: !!form.allowAnonymous,
         maxAttachments:
-          props.tab.kind === "VECTOR" ? 10 : Number(form.maxAttachments ?? 0),
-        supportsThinking: props.tab.kind === "VECTOR" ? false : !!form.supportsThinking,
+          props.tab.kind === "VECTOR" ? 10 : props.tab.kind === "WEB_SEARCH" ? 0 : Number(form.maxAttachments ?? 0),
+        supportsThinking:
+          props.tab.kind === "VECTOR" || props.tab.kind === "WEB_SEARCH" ? false : !!form.supportsThinking,
         enabled: !!form.enabled,
         sortOrder: Number(form.sortOrder ?? 0),
         ...(form.tokenQuotaUnlimited
@@ -249,7 +275,7 @@ async function save() {
           : { tokenQuotaTotal: Number(form.tokenQuotaTotal) }),
         localDeploy: !!form.localDeploy,
       });
-      ElMessage.success("已保存");
+      ElMessage.success(t("views.llmKindTab.saved"));
     } else {
       const body: CreateLlmModelBody = {
         alias: String(form.alias ?? "").trim(),
@@ -257,46 +283,67 @@ async function save() {
         openaiBaseUrl: String(form.openaiBaseUrl ?? "").trim(),
         openaiModelId: String(form.openaiModelId ?? "").trim(),
         modelKind: props.tab.kind,
-        ...(props.tab.kind === "VECTOR" ? { vectorBackend: form.vectorBackend as LlmVectorBackendCode } : {}),
+        ...(props.tab.kind === "VECTOR" || props.tab.kind === "WEB_SEARCH"
+          ? { integrationBackend: String(form.integrationBackend ?? "").trim() }
+          : {}),
         apiKey: String(form.apiKey ?? "").trim(),
         allowAnonymous: !!form.allowAnonymous,
         maxAttachments:
-          props.tab.kind === "VECTOR" ? 10 : Number(form.maxAttachments ?? 0),
-        supportsThinking: props.tab.kind === "VECTOR" ? false : !!form.supportsThinking,
+          props.tab.kind === "VECTOR" ? 10 : props.tab.kind === "WEB_SEARCH" ? 0 : Number(form.maxAttachments ?? 0),
+        supportsThinking:
+          props.tab.kind === "VECTOR" || props.tab.kind === "WEB_SEARCH" ? false : !!form.supportsThinking,
         enabled: !!form.enabled,
         sortOrder: Number(form.sortOrder ?? 0),
         tokenQuotaTotal: form.tokenQuotaUnlimited ? null : Number(form.tokenQuotaTotal),
         localDeploy: !!form.localDeploy,
       };
-      if (props.tab.kind !== "VECTOR" && !body.apiKey?.trim()) {
-        ElMessage.warning("请填写 API Key");
+      if (props.tab.kind !== "VECTOR" && props.tab.kind !== "WEB_SEARCH" && !body.apiKey?.trim()) {
+        ElMessage.warning(t("views.llmKindTab.apiKeyWarning"));
         saving.value = false;
         return;
       }
       await modelsApi.createLlmModel(body);
-      ElMessage.success("已创建");
+      ElMessage.success(t("views.llmKindTab.created"));
     }
     dlg.value = false;
     await loadRows();
   } catch (e: unknown) {
-    ElMessage.error(apiRequestErrorMessage(e, "保存失败"));
+    ElMessage.error(apiRequestErrorMessage(e, t("views.llmKindTab.saveFailed")));
   } finally {
     saving.value = false;
   }
 }
 
+async function toggleRowEnabled(row: LlmModelAdminView, enabled: boolean) {
+  if (row.enabled === enabled || togglingEnabledId.value !== null) return;
+  togglingEnabledId.value = row.id;
+  const prev = row.enabled;
+  row.enabled = enabled;
+  try {
+    await modelsApi.updateLlmModel(row.id, { modelKind: props.tab.kind, enabled });
+    ElMessage.success(t("views.llmKindTab.saved"));
+  } catch (e: unknown) {
+    row.enabled = prev;
+    ElMessage.error(apiRequestErrorMessage(e, t("views.llmKindTab.saveFailed")));
+  } finally {
+    togglingEnabledId.value = null;
+  }
+}
+
 async function remove(row: LlmModelAdminView) {
   try {
-    await ElMessageBox.confirm(`确定删除模型「${row.displayName}」？`, "确认", { type: "warning" });
+    await ElMessageBox.confirm(t("views.llmKindTab.deleteConfirm", { name: row.displayName }), t("views.llmKindTab.confirm"), {
+      type: "warning",
+    });
   } catch {
     return;
   }
   try {
     await modelsApi.deleteLlmModel(row.id);
-    ElMessage.success("已删除");
+    ElMessage.success(t("views.llmKindTab.deleted"));
     await loadRows();
   } catch (e: unknown) {
-    ElMessage.error(apiRequestErrorMessage(e, "删除失败"));
+    ElMessage.error(apiRequestErrorMessage(e, t("views.llmKindTab.deleteFailed")));
   }
 }
 </script>
@@ -317,21 +364,64 @@ async function remove(row: LlmModelAdminView) {
 
 .quota-sep {
   margin: 0 4px;
-  color: #94a3b8;
+  color: var(--el-text-color-placeholder);
 }
 
 .form {
-  padding-top: 0;
+  padding: 4px 8px 12px 4px;
 }
 
-/* 控制弹窗总高度：正文区滚动，避免字段多时整窗过长 */
-.llm-model-dialog :deep(.el-dialog__body) {
-  padding: 6px 16px 8px;
+/* 弹窗：标题区 + Element Plus 滚动条（勿用原生 overflow 以免样式割裂） */
+.llm-model-dialog :deep(.llm-model-dialog-header) {
+  padding: 14px 20px 10px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 
-.llm-model-dialog-scroll {
-  max-height: min(380px, 56vh);
-  overflow-y: auto;
-  padding-right: 2px;
+.llm-model-dialog :deep(.el-dialog__headerbtn) {
+  top: 12px;
+}
+
+.dlg-hdr {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  padding-right: 36px;
+}
+
+.dlg-hdr-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  line-height: 1.35;
+}
+
+.dlg-hdr-kind {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--el-text-color-secondary);
+  line-height: 1.4;
+}
+
+.llm-model-dialog :deep(.llm-model-dialog-body) {
+  padding: 0 4px 4px;
+}
+
+.dlg-scroll {
+  padding: 0 4px 0 0;
+}
+
+.dlg-scroll :deep(.el-scrollbar__wrap) {
+  overflow-x: hidden;
+}
+
+.form :deep(.el-form-item) {
+  margin-bottom: 14px;
+}
+
+.form :deep(.el-form-item:last-child) {
+  margin-bottom: 6px;
 }
 </style>

@@ -13,4 +13,7 @@ public class ChatRegenerateRequest {
 
     /** 覆盖是否开启思考流；未传则仍用用户消息 meta */
     private Boolean thinkingEnabled;
+
+    /** 覆盖是否开启联网检索；未传则仍用用户消息 meta */
+    private Boolean webSearchEnabled;
 }

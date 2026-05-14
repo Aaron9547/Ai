@@ -1,8 +1,4 @@
-# Ai 运行时配置
-# - 覆盖：环境变量与 ${ENV:默认值} 同名时优先。
-# - 桥接：AiEnvironmentBridgePostProcessor 写入 spring.cloud.discovery / eureka.client.enabled、rocketmq.name-server、
-#   spring.security.oauth2.resourceserver.jwt.issuer-uri、management.health.elasticsearch.enabled（仅 MANAGEMENT_HEALTH_ELASTICSEARCH_ENABLED）等；勿在 yml 重复定义这些官方键。
-# - 架构与 API：.cursorrules；版本：PROJECT.md。
+# Ai 运行时：环境变量覆盖 ${ENV:默认值}；EPP 见 META-INF/spring.factories。Redis 仅 spring.data.redis（必连，无开关）；Eureka 默认与 ly-mc-electricity-meter-svc 同形；MySQL 默认 test_ai。
 
 server:
   # HTTP 端口；覆盖：SERVER_PORT
@@ -11,6 +7,11 @@ server:
 spring:
   application:
     name: ly-ai-application-svc
+  messages:
+    basename: llm-admin-meta
+    encoding: UTF-8
+    # 避免 JVM 默认 en_US 时 ResourceBundle 在 zh 资源缺失链上误用英文包（与 LlmAdminMetaMessageSourceConfiguration 一致）
+    fallback-to-system-locale: false
   jackson:
     # API 与库表时间展示时区
     time-zone: Asia/Shanghai
@@ -19,18 +20,18 @@ spring:
       max-file-size: 16MB
       max-request-size: 160MB
   datasource:
-    # MySQL；须带 connectionTimeZone=UTC 等与 DDL 一致；覆盖：MYSQL_URL / MYSQL_USERNAME / MYSQL_PASSWORD
-    url: ${MYSQL_URL:jdbc:mysql://192.168.2.37:3306/test_ai?useUnicode=true&characterEncoding=utf8&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true}
+    # MySQL：与 rag ShardingSphere 同机同账号（192.168.2.37:3306 root/37621040）；默认库 test_ai（Ai 迁移脚本）；与 rag 同用 cloud 库时覆盖 MYSQL_URL 为 rag 的 jdbc 串。
+    url: ${MYSQL_URL:jdbc:mysql://192.168.2.37:3306/test_ai?useUnicode=true&characterEncoding=utf8&connectionTimeZone=%2B08%3A00&forceConnectionTimeZoneToSession=true}
     username: ${MYSQL_USERNAME:root}
     password: ${MYSQL_PASSWORD:37621040}
     driver-class-name: com.mysql.cj.jdbc.Driver
   data:
     redis:
-      # 连接参数；总开关见 ai.redis.enabled / AI_REDIS_ENABLED
-      host: ${SPRING_DATA_REDIS_HOST:192.168.37.17}
-      port: ${SPRING_DATA_REDIS_PORT:26379}
-      password: ${SPRING_DATA_REDIS_PASSWORD:37621040}
-      timeout: ${SPRING_DATA_REDIS_TIMEOUT:3s}
+      database: ${SPRING_DATA_REDIS_DATABASE:0}
+      host: ${SPRING_DATA_REDIS_HOST:192.168.35.210}
+      port: ${SPRING_DATA_REDIS_PORT:16377}
+      password: "${SPRING_DATA_REDIS_PASSWORD:Ly@!37621040}"
+      timeout: ${SPRING_DATA_REDIS_TIMEOUT:20000ms}
   cloud:
     openfeign:
       circuitbreaker:
@@ -49,19 +50,15 @@ mybatis-plus:
 eureka:
   client:
     service-url:
-      # Eureka Server；覆盖：EUREKA_DEFAULT_ZONE（client.enabled 与 spring.cloud.discovery 由 EPP 跟 ai.discovery 同步）
-      defaultZone: ${EUREKA_DEFAULT_ZONE:http://192.168.35.210:1200/eureka/}
+      defaultZone: ${EUREKA_DEFAULT_ZONE:http://192.168.35.211:1200/eureka/}
   instance:
     prefer-ip-address: true
+    lease-renewal-interval-in-seconds: ${EUREKA_INSTANCE_LEASE_RENEWAL_INTERVAL_SECONDS:30}
+    lease-expiration-duration-in-seconds: ${EUREKA_INSTANCE_LEASE_EXPIRATION_DURATION_SECONDS:90}
 
 ai:
-  # 服务发现：true=Eureka 注册与拉取（会连 eureka.client.service-url / EUREKA_DEFAULT_ZONE）。关「注册中心」只停服务端，本进程仍会连 unless 此处为 false。
-  # 若未在 yml 写 true 仍见 DiscoveryClient 连 Eureka，请查 IDE Run 环境变量、系统环境或父进程是否设置了 AI_DISCOVERY_ENABLED=true。
   discovery:
-    enabled: ${AI_DISCOVERY_ENABLED:false}
-  # Redis：false=排除 Redis 自动配置、不建连（AI_REDIS_ENABLED）；用量队列等随之不可用。
-  redis:
-    enabled: ${AI_REDIS_ENABLED:true}
+    enabled: ${AI_DISCOVERY_ENABLED:true}
   # 模型用量事件：写 Redis 队列；可与 RocketMQ 投递联动（见 ai.rocketmq）。
   llm-usage:
     redis-queue-key: ${AI_LLM_USAGE_REDIS_QUEUE:ai:queue:llm-usage}
@@ -72,12 +69,22 @@ ai:
   # RocketMQ：enabled=true 导入 starter 并启用 Job/用量消费者；name-server、producer-group 由 EPP 映射到 rocketmq.*。
   rocketmq:
     enabled: ${AI_ROCKETMQ_ENABLED:false}
+    # 与对端 RocketMQ namesrv 一致
     name-server: ${ROCKETMQ_NAME_SRV:192.168.37.16:9999;192.168.37.17:9999}
     producer-group: ${ROCKETMQ_PRODUCER_GROUP:ai-producer}
     job-topic: ${AI_ROCKETMQ_JOB_TOPIC:ai-job-dispatch}
     job-consumer-group: ${AI_ROCKETMQ_CONSUMER_GROUP:ai-job-consumer}
     llm-usage-topic: ${AI_ROCKETMQ_LLM_USAGE_TOPIC:ai-llm-usage}
     llm-usage-consumer-group: ${AI_ROCKETMQ_LLM_USAGE_CONSUMER_GROUP:ai-llm-usage-consumer}
+    memory-abstract-topic: ${AI_ROCKETMQ_MEMORY_ABSTRACT_TOPIC:ai-memory-abstract-refresh}
+    memory-abstract-consumer-group: ${AI_ROCKETMQ_MEMORY_ABSTRACT_CONSUMER_GROUP:ai-memory-abstract-consumer}
+  # 用户分层记忆：Milvus 具体层向量（可选）、异步抽象层 JSON（RocketMQ / Redis 队列）。
+  memory:
+    # 进程级：是否走 Milvus 用户记忆向量路径；collection 名与 Redis 队列名见部署文档。
+    vector-enabled: ${AI_MEMORY_VECTOR_ENABLED:false}
+    milvus-collection: ${AI_MEMORY_MILVUS_COLLECTION:user_memory_chunk}
+    abstract-redis-queue-key: ${AI_MEMORY_ABSTRACT_REDIS_QUEUE:ai:queue:memory-abstract}
+    abstract-redis-poll-ms: ${AI_MEMORY_ABSTRACT_REDIS_POLL_MS:400}
   # remoting.mode：local=本进程大模型编排（默认）；remote=通过 Feign 调独立模型服务（model-base-url）。
   remoting:
     mode: ${AI_REMOTING_MODE:local}
@@ -98,6 +105,7 @@ ai:
     infra-via-discovery: ${AI_INFRA_VIA_DISCOVERY:false}
     milvus:
       service-id: ${AI_MILVUS_EUREKA_SERVICE_ID:milvus}
+      # 与对端 Milvus 网关地址同机同端口（如 http://192.168.37.17:19530）
       host: ${AI_MILVUS_HOST:192.168.37.17}
       port: ${AI_MILVUS_PORT:19530}
       token: ${AI_MILVUS_TOKEN:}
@@ -112,22 +120,24 @@ ai:
       secret-key: ${MINIO_SECRET_KEY:minioadmin}
       region: ${MINIO_REGION:}
   rag:
-    # retrieval-mode：milvus=仅向量；milvus_es_hybrid=Milvus+ES 关键词混合（ES 不可用时仅 Milvus）。见 RagRetrievalMode。
+    # retrieval-mode：milvus / milvus_es_hybrid；ES 见 elasticsearch 段
     retrieval-mode: ${AI_RAG_RETRIEVAL_MODE:milvus}
     # 向量化：模型在库表 llm_model（VECTOR）。local_deploy=true 时走本地嵌入 Feign：关 Eureka 时必须配直连 base-url（见下行）。
     local-embed-feign:
-      # 直连 ly-ai-rag 网关根路径（与 RAG 工程 aiengine.domain 一致，如 http://192.168.37.31/ly-ai-rag）。优先 AI_RAG_LOCAL_EMBED_FEIGN_BASE_URL，否则 AI_RAG_ENGINE_BASE_URL。
-      base-url: ${AI_RAG_LOCAL_EMBED_FEIGN_BASE_URL:${AI_RAG_ENGINE_BASE_URL:}}
-      service-id: ${AI_RAG_LOCAL_EMBED_FEIGN_SERVICE_ID:ly-ai-rag-svc}
+      # 与对端网关根路径一致（含尾斜杠示例）；优先 AI_RAG_LOCAL_EMBED_FEIGN_BASE_URL，否则 AI_RAG_ENGINE_BASE_URL
+      base-url: ${AI_RAG_LOCAL_EMBED_FEIGN_BASE_URL:${AI_RAG_ENGINE_BASE_URL:http://192.168.37.31/ly-ai-rag/}}
+      # Eureka 注册名须与对端 spring.application.name 一致，默认占位；覆盖：AI_RAG_LOCAL_EMBED_FEIGN_SERVICE_ID
+      service-id: ${AI_RAG_LOCAL_EMBED_FEIGN_SERVICE_ID:rag-embedding-svc}
     elasticsearch:
-      # 与 ly-ai-rag-svc「elasticsearch」同形：enabled=false 不装配 ES；混合检索时 enabled=true 并填 config.host-ports（无单独 uris）。
+      # 与对端 elasticsearch 块同形：enabled=false 不装配 ES；混合检索时 enabled=true 并填 config.host-ports（无单独 uris）。
       enabled: ${AI_RAG_ES_ENABLED:true}
       config:
         cluster-name: ${AI_RAG_ES_CLUSTER_NAME:es-test}
         host-ports: ${AI_RAG_ES_HOST_PORTS:192.168.37.17:19201;192.168.37.17:19202}
         user-name: ${AI_RAG_ES_USERNAME:elastic}
         password: ${AI_RAG_ES_PASSWORD:admin123}
-      index-name: ${AI_RAG_ES_INDEX:ai_rag_chunk}
+      # 与对端 elasticsearch.index-name 默认一致；独立测试索引可设 AI_RAG_ES_INDEX
+      index-name: ${AI_RAG_ES_INDEX:rag_agent_documents}
   # jwt-local 签名密钥；须足够长，勿提交生产明文。
   auth:
     jwt-local:
@@ -136,9 +146,9 @@ ai:
     # 访客或未解析租户时的默认 tenantId（与业务种子一致即可）
     default-id: ${AI_DEFAULT_TENANT_ID:1}
   chat:
-    input-guard:
-      # 对话发送前同步护栏总开关；细项默认见 AiChatInputGuardProperties（敏感词主库 guardrail_sensitive_term）。
-      enabled: ${AI_CHAT_INPUT_GUARD_ENABLED:true}
+    attachment:
+      # 会话附件原始文件落盘根目录（不入库）；路径段为 tenantId/conversationId/attachmentId
+      bin-dir: ${AI_CHAT_ATTACHMENT_BIN_DIR:${user.dir}/data/chat-attachment-bin}
   # 管理端 llm_model API Key 等 AES-GCM 加密；须配置随机密钥。可选 ai.cors.fallback-when-no-enabled-rows：库表无启用 CORS 行时的兜底 Origin 列表。
   llm-model:
     api-key-encryption-secret: ${AI_LLM_MODEL_KEY_SECRET:}
@@ -158,6 +168,10 @@ resilience4j:
         permittedNumberOfCallsInHalfOpenState: 3
 
 logging:
+  # Windows 控制台默认代码页常为 GBK，不设 UTF-8 时中文日志易成「瀵硅瘽闃舵」类乱码；IDE 终端可先执行 chcp 65001
+  charset:
+    console: UTF-8
+    file: UTF-8
   pattern:
     console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] %logger{40} - %msg%n%wEx"
   level:

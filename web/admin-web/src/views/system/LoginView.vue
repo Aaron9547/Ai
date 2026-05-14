@@ -5,7 +5,7 @@
       <template #header>
         <div class="title">
           <el-icon :size="22" color="#2dd4bf"><Lock /></el-icon>
-          <span>管理端登录</span>
+          <span>{{ t("login.title") }}</span>
         </div>
       </template>
       <el-alert
@@ -13,18 +13,18 @@
         type="info"
         :closable="false"
         show-icon
-        title="登录后进入控制台"
-        description="用于管理用户、访问日志与运维数据。若您没有账号或无法登录，请联系企业管理员。"
+        :title="t('login.alertTitle')"
+        :description="t('login.alertDesc')"
       />
       <el-form label-position="top" @submit.prevent="submit">
-        <el-form-item label="登录名">
+        <el-form-item :label="t('login.loginName')">
           <el-input v-model="loginName" autocomplete="username" size="large" clearable>
             <template #prefix>
               <el-icon><User /></el-icon>
             </template>
           </el-input>
         </el-form-item>
-        <el-form-item label="密码">
+        <el-form-item :label="t('login.password')">
           <el-input
             v-model="password"
             type="password"
@@ -39,7 +39,7 @@
           </el-input>
         </el-form-item>
         <el-button type="primary" native-type="submit" size="large" class="w100" :loading="loading">
-          登录
+          {{ t("login.submit") }}
         </el-button>
       </el-form>
       <el-alert v-if="error" class="mt" type="error" :closable="false" show-icon :title="error" />
@@ -49,7 +49,9 @@
 
 <script setup lang="ts">
 import { Key, Lock, User } from "@element-plus/icons-vue";
+import { ElMessage } from "element-plus";
 import { ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { openAuthLoginErrorMessage } from "@/utils/openAuthHttpErrors";
 import {
@@ -59,6 +61,7 @@ import {
   http,
 } from "../../plugins/http";
 
+const { t } = useI18n();
 const router = useRouter();
 const route = useRoute();
 const loginName = ref("admin");
@@ -81,12 +84,12 @@ async function submit() {
     if (data.memberships?.length) {
       localStorage.setItem(AI_ADMIN_MEMBERSHIPS_KEY, JSON.stringify(data.memberships));
     }
-    ElMessage.success("登录成功");
+    ElMessage.success(t("login.success"));
     const redir = typeof route.query.redirect === "string" ? route.query.redirect : "";
     if (redir && redir.startsWith("/") && !redir.startsWith("//")) {
       await router.replace(redir);
     } else {
-      await router.replace("/gateway/access-logs");
+      await router.replace("/dashboard");
     }
   } catch (e: unknown) {
     console.warn("[admin-web login]", e);
@@ -104,7 +107,7 @@ async function submit() {
   gap: 10px;
   font-size: 17px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--el-text-color-primary);
 }
 
 .mb {

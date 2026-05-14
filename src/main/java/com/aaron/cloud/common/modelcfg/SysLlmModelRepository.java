@@ -109,4 +109,42 @@ public class SysLlmModelRepository {
         }
         return mapper.selectCount(q) > 0;
     }
+
+    public long countByTenant(long tenantId) {
+        return mapper.selectCount(Wrappers.<SysLlmModel>lambdaQuery().eq(SysLlmModel::getTenantId, tenantId));
+    }
+
+    public long countActiveByTenant(long tenantId) {
+        return mapper.selectCount(
+                Wrappers.<SysLlmModel>lambdaQuery()
+                        .eq(SysLlmModel::getTenantId, tenantId)
+                        .eq(SysLlmModel::getStatus, LlmModelStatus.ACTIVE));
+    }
+
+    /**
+     * 是否存在至少一条启用的联网搜索模型；用于 C 端「联网」开关可用性及发送前校验。
+     */
+    public boolean hasEnabledWebSearchModel(long tenantId) {
+        return mapper.selectCount(
+                        Wrappers.<SysLlmModel>lambdaQuery()
+                                .eq(SysLlmModel::getTenantId, tenantId)
+                                .eq(SysLlmModel::getStatus, LlmModelStatus.ACTIVE)
+                                .eq(SysLlmModel::getModelKind, LlmModelKind.WEB_SEARCH))
+                > 0;
+    }
+
+    /**
+     * 默认联网搜索实例：{@code sort_order} 升序后 {@code id} 升序取第一条（与类注释约定一致，便于管理端通过排序指定默认）。
+     */
+    public Optional<SysLlmModel> pickDefaultWebSearchModel(long tenantId) {
+        return Optional.ofNullable(
+                mapper.selectOne(
+                        Wrappers.<SysLlmModel>lambdaQuery()
+                                .eq(SysLlmModel::getTenantId, tenantId)
+                                .eq(SysLlmModel::getStatus, LlmModelStatus.ACTIVE)
+                                .eq(SysLlmModel::getModelKind, LlmModelKind.WEB_SEARCH)
+                                .orderByAsc(SysLlmModel::getSortOrder)
+                                .orderByAsc(SysLlmModel::getId)
+                                .last("LIMIT 1")));
+    }
 }

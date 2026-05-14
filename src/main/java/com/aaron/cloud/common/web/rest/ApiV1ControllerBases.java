@@ -15,6 +15,9 @@ public final class ApiV1ControllerBases {
     @RequestMapping(AbstractApiV1Controller.PREFIX + "/auth")
     public static abstract class Auth extends AbstractApiV1Controller {}
 
+    @RequestMapping(AbstractApiV1Controller.PREFIX + "/admin/user-profiles")
+    public static abstract class AdminUserProfiles extends AbstractApiV1Controller {}
+
     @RequestMapping(AbstractApiV1Controller.PREFIX + "/admin/users")
     public static abstract class AdminUsers extends AbstractApiV1Controller {}
 

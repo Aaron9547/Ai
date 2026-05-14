@@ -33,7 +33,7 @@
           v-else-if="field.control === 'select' && field.selectOptionsKey"
           v-model="(form as Record<string, string>)[field.key]"
           style="width: 100%"
-          :placeholder="field.placeholder || '请选择'"
+          :placeholder="field.placeholder || t('views.llmFormFields.selectPh')"
         >
           <el-option
             v-for="o in optionLists[field.selectOptionsKey] || []"
@@ -58,7 +58,10 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
 import type { FormFieldMeta, LlmModelAdminMetaResponse, LlmModelKindCode } from "../../../api/models";
+
+const { t } = useI18n();
 
 const props = defineProps<{
   fields: FormFieldMeta[];
@@ -78,6 +81,9 @@ function fieldVisible(field: FormFieldMeta): boolean {
 }
 
 function isFieldRequired(field: FormFieldMeta): boolean {
+  if (field.key === "apiKey" && props.isEdit) {
+    return false;
+  }
   if (field.key === "apiKey" && props.modelKind === "VECTOR" && !props.isEdit) {
     return false;
   }
@@ -91,9 +97,10 @@ function isFieldRequired(field: FormFieldMeta): boolean {
 }
 
 .dyn-form :deep(.el-form-item__label) {
-  font-weight: 500;
-  line-height: 32px;
-  padding-right: 10px;
+  font-weight: 600;
+  line-height: 1.35;
+  height: auto;
+  padding-bottom: 6px;
 }
 
 .chk-row {

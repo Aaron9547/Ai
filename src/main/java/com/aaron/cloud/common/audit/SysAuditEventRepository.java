@@ -8,6 +8,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +48,13 @@ public class SysAuditEventRepository {
         Page<SysAuditEvent> page = mapper.selectPage(Page.of(pageNo, pageSize), q);
         attachAdminDisplayFields(page.getRecords());
         return page;
+    }
+
+    public long countByTenantSince(long tenantId, LocalDateTime sinceUtcInclusive) {
+        return mapper.selectCount(
+                Wrappers.<SysAuditEvent>lambdaQuery()
+                        .eq(SysAuditEvent::getTenantId, tenantId)
+                        .ge(SysAuditEvent::getCreatedAt, sinceUtcInclusive));
     }
 
     private void attachAdminDisplayFields(List<SysAuditEvent> records) {

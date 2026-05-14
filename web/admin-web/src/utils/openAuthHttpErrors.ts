@@ -58,7 +58,7 @@ export function openAuthLoginErrorMessage(err: unknown): string {
       return "该账号已被停用，请联系管理员。";
     }
     if (code === "LOGIN_NO_ACTIVE_MEMBERSHIP") {
-      return "未找到可用的租户成员关系（可能未加入租户、成员已禁用，或数据与程序版本不一致）。请联系管理员在「用户管理」中核对成员关系与数据库迁移。";
+      return "未找到可用的租户成员关系（可能未加入租户、成员已禁用，或数据与程序版本不一致）。请联系管理员在「成员管理」中核对成员关系与数据库迁移。";
     }
     return "该账号无管理后台权限（例如仅为成员角色），或已被禁用。";
   }

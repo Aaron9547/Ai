@@ -5,7 +5,7 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 向量模型（{@link LlmModelKind#VECTOR}）嵌入 HTTP 路径与请求体策略；与 {@code llm_model.vector_backend} 一致。非向量类型行可存默认值，不参与编排。
+ * 向量模型（{@link LlmModelKind#VECTOR}）嵌入 HTTP 路径与请求体策略；VECTOR 行在 {@code llm_model.integration_backend} 存本枚举 {@link #code}。非向量类型行可存默认值，不参与编排。
  *
  * <p>{@link #OPENAI_COMPATIBLE}：对服务根地址补 {@code /v1/embeddings}（若 Base 已以 {@code /v1} 结尾则只补 {@code /embeddings}），与内网统一嵌入网关常见 POST URI 一致；请求体为 OpenAI 兼容 {@code model}+{@code input} 字符串。
  *

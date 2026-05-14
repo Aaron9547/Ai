@@ -12,6 +12,8 @@ import lombok.RequiredArgsConstructor;
 @Getter
 @RequiredArgsConstructor
 public enum AdminMenuCode {
+    /** 管理端首页数据大屏（当前租户统计） */
+    DASHBOARD("DASHBOARD"),
     USERS("USERS"),
     TENANTS("TENANTS"),
     ACCESS_LOGS("ACCESS_LOGS"),
@@ -23,6 +25,8 @@ public enum AdminMenuCode {
     FILE_OBJECTS("FILE_OBJECTS"),
     NOTIFICATIONS("NOTIFICATIONS"),
     EVAL_RUNS("EVAL_RUNS"),
+    /** 租户内用户画像与记忆向量化模型配置 */
+    USER_PROFILES("USER_PROFILES"),
     /** 租户内对话日志、消息与用量只读查询 */
     CHAT("CHAT"),
     /** 对话意图与触发关键词配置 */

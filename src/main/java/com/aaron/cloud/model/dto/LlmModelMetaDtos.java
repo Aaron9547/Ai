@@ -60,5 +60,12 @@ public final class LlmModelMetaDtos {
 
     public record LlmModelAdminMetaResponse(
             List<ModelKindTabMeta> modelKindTabs,
-            Map<String, List<EnumOption>> optionLists) {}
+            Map<String, List<EnumOption>> optionLists,
+            /**
+             * 服务端解析后的 BCP 47 标签（见 {@link com.aaron.cloud.common.web.locale.AdminUiLocaleResolver}）；仅 meta 接口由控制器写入。
+             * 网关剥自定义响应头时仍可从 JSON 判断是否命中本实现。
+             */
+            String metaResolvedLocale,
+            /** 收到的 {@code lang} 查询原始值；无查询参数时为 {@code null}。 */
+            String metaLangParamRaw) {}
 }

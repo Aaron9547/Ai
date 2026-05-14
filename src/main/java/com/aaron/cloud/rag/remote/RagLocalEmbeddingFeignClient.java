@@ -10,15 +10,15 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 
 /**
- * 对齐 ly-ai-rag-svc {@code PrivateModelController}：{@code POST .../{tenantCode}/privateModel/embedding}；路径变量为租户
+ * 对齐对端嵌入网关 {@code POST .../{tenantCode}/privateModel/embedding}；路径变量为租户
  * {@code sys_tenant.code}。
  *
  * <p>解析方式：{@code ai.rag.local-embed-feign.base-url} 非空时<strong>直连</strong>（环境变量 {@code AI_RAG_LOCAL_EMBED_FEIGN_BASE_URL} 或
- * {@code AI_RAG_ENGINE_BASE_URL}，与 ly-ai-rag {@code aiengine.domain} 根路径一致）；否则以 {@code name}（即
+ * {@code AI_RAG_ENGINE_BASE_URL}，与对端 {@code aiengine.domain} 根路径一致）；否则以 {@code name}（即
  * {@code ai.rag.local-embed-feign.service-id}）经 <strong>LoadBalancer + Eureka</strong>（须 {@code ai.discovery.enabled=true}）。
  */
 @FeignClient(
-        name = "${ai.rag.local-embed-feign.service-id:ly-ai-rag-svc}",
+        name = "${ai.rag.local-embed-feign.service-id:rag-embedding-svc}",
         contextId = "ragLocalEmbedding",
         url = "${ai.rag.local-embed-feign.base-url:}")
 public interface RagLocalEmbeddingFeignClient {

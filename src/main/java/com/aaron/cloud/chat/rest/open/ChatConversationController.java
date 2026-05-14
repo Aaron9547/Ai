@@ -6,6 +6,7 @@ import com.aaron.cloud.chat.dto.ChatMessageView;
 import com.aaron.cloud.chat.dto.ChatRegenerateRequest;
 import com.aaron.cloud.chat.dto.ChatSendPayload;
 import com.aaron.cloud.chat.dto.LlmModelOption;
+import com.aaron.cloud.chat.dto.WebSearchAvailabilityView;
 import com.aaron.cloud.common.web.rest.OpenV1ControllerBases;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -28,6 +29,11 @@ public class ChatConversationController extends OpenV1ControllerBases.Chat {
     @GetMapping("/models")
     public List<LlmModelOption> listModels() {
         return chatApplicationService.listModelsForChatPicker();
+    }
+
+    @GetMapping("/web-search-availability")
+    public WebSearchAvailabilityView webSearchAvailability() {
+        return new WebSearchAvailabilityView(chatApplicationService.isWebSearchAvailableForCurrentTenant());
     }
 
     @PostMapping("/conversations")

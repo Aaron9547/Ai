@@ -17,6 +17,9 @@ public final class OpenV1ControllerBases {
     @RequestMapping(AbstractOpenV1Controller.PREFIX + "/system")
     public static abstract class OpenSystem extends AbstractOpenV1Controller {}
 
+    @RequestMapping(AbstractOpenV1Controller.PREFIX + "/profile")
+    public static abstract class Profile extends AbstractOpenV1Controller {}
+
     @RequestMapping(AbstractOpenV1Controller.PREFIX + "/chat")
     public static abstract class Chat extends AbstractOpenV1Controller {}
 

@@ -5,31 +5,37 @@
       :closable="false"
       show-icon
       class="hint"
-      title="用户管理"
-      description="「租户成员」用于查看与邀请成员、调整角色、移出租户；「本租户账号」用于新增账号、启停、踢下线与封禁等。创始人可在上方选择租户后操作成员。"
+      :title="t('views.users.alertTitle')"
+      :description="t('views.users.alertDesc')"
     />
     <el-card shadow="never" class="card card--members">
       <template #header>
         <div class="hdr-row">
-          <span class="hdr">租户成员</span>
+          <span class="hdr">{{ t("views.users.hdrMembers") }}</span>
           <div class="filters">
             <el-select
               v-if="isFounder"
               v-model="tenantFilter"
               class="filter-tenant"
               filterable
-              placeholder="租户"
+              :placeholder="t('views.users.placeholderTenant')"
               clearable
               @change="loadMembers"
             >
-              <el-option v-for="t in tenantOptions" :key="t.id" :label="tenantOptionLabel(t)" :value="t.id" />
+              <el-option v-for="tenant in tenantOptions" :key="tenant.id" :label="tenantOptionLabel(tenant)" :value="tenant.id" />
             </el-select>
-            <el-select v-model="roleFilter" class="filter-role" placeholder="角色" clearable @change="loadMembers">
-              <el-option label="全部角色" value="" />
-              <el-option label="创始人" value="FOUNDER" />
-              <el-option label="所有者" value="OWNER" />
-              <el-option label="管理员" value="ADMIN" />
-              <el-option label="成员" value="MEMBER" />
+            <el-select
+              v-model="roleFilter"
+              class="filter-role"
+              :placeholder="t('views.users.placeholderRole')"
+              clearable
+              @change="loadMembers"
+            >
+              <el-option :label="t('views.users.roleAll')" value="" />
+              <el-option :label="t('views.users.roleFounder')" value="FOUNDER" />
+              <el-option :label="t('views.users.roleOwner')" value="OWNER" />
+              <el-option :label="t('views.users.roleAdmin')" value="ADMIN" />
+              <el-option :label="t('views.users.roleMember')" value="MEMBER" />
             </el-select>
             <el-checkbox
               v-if="isOwnerOrFounder"
@@ -37,33 +43,49 @@
               class="filter-inactive"
               @change="loadMembers"
             >
-              含已退出成员
+              {{ t("views.users.includeInactive") }}
             </el-checkbox>
-            <el-button v-if="canMutateMembership" type="primary" plain @click="openInvite">邀请成员</el-button>
+            <el-button v-if="canMutateMembership" type="primary" plain @click="openInvite">{{ t("views.users.invite") }}</el-button>
             <el-button class="users-refresh-btn" type="primary" plain :loading="loadingMembers" @click="loadMembers">
-              刷新
+              {{ t("views.users.refresh") }}
             </el-button>
           </div>
         </div>
       </template>
-      <el-table v-loading="loadingMembers" :data="members" stripe border empty-text="暂无数据">
-        <el-table-column prop="loginName" label="登录名" min-width="120" />
-        <el-table-column prop="displayName" label="昵称" min-width="120" />
-        <el-table-column label="账号状态" width="100" align="center">
+      <el-table v-loading="loadingMembers" :data="members" stripe border :empty-text="t('views.users.empty')">
+        <el-table-column prop="loginName" :label="t('views.users.colLoginName')" min-width="120" />
+        <el-table-column prop="displayName" :label="t('views.users.colNickname')" min-width="120" />
+        <el-table-column :label="t('views.users.colAccountStatus')" width="100" align="center">
           <template #default="{ row }">
             <el-tag :type="row.userStatus === 'ACTIVE' ? 'success' : 'info'" size="small">
-              {{ row.userStatus === "ACTIVE" ? "启用" : "已禁用" }}
+              {{ row.userStatus === "ACTIVE" ? t("views.users.statusEnabled") : t("views.users.statusDisabled") }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="成员状态" width="100" align="center">
+        <el-table-column :label="t('views.users.colMemberStatus')" width="100" align="center">
           <template #default="{ row }">
             <el-tag :type="row.memberStatus === 'ACTIVE' ? 'success' : 'info'" size="small">
-              {{ row.memberStatus === "ACTIVE" ? "在册" : "已退出" }}
+              {{ row.memberStatus === "ACTIVE" ? t("views.users.statusActiveMember") : t("views.users.statusLeftMember") }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="角色" min-width="220">
+        <el-table-column :label="t('views.users.colOnline')" width="88" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.sessionOnline ? 'success' : 'info'" size="small">
+              {{ row.sessionOnline ? t("views.users.onlineYes") : t("views.users.onlineNo") }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('views.users.colLastLogin')" min-width="168" show-overflow-tooltip>
+          <template #default="{ row }">{{ formatLastLoginAt(row.lastLoginAt) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('views.users.colLastLoginIp')" min-width="132" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.lastLoginIp || t("common.dash") }}</template>
+        </el-table-column>
+        <el-table-column :label="t('views.users.colLastLoginRegion')" min-width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ formatLoginRegionDisplay(row.lastLoginRegion) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('views.users.colRole')" min-width="220">
           <template #default="{ row }">
             <el-select
               :model-value="row.role"
@@ -72,14 +94,14 @@
               :disabled="!canEditMemberRow(row)"
               @change="(v: string) => onMemberRoleChange(row, v as usersApi.TenantMemberRole)"
             >
-              <el-option v-if="isFounder" label="创始人" value="FOUNDER" />
-              <el-option label="所有者" value="OWNER" />
-              <el-option label="管理员" value="ADMIN" />
-              <el-option label="成员" value="MEMBER" />
+              <el-option v-if="isFounder" :label="t('views.users.roleFounder')" value="FOUNDER" />
+              <el-option :label="t('views.users.roleOwner')" value="OWNER" />
+              <el-option :label="t('views.users.roleAdmin')" value="ADMIN" />
+              <el-option :label="t('views.users.roleMember')" value="MEMBER" />
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column v-if="canMutateMembership" label="操作" width="112" fixed="right">
+        <el-table-column v-if="canMutateMembership" :label="t('views.users.colActions')" width="112" fixed="right">
           <template #default="{ row }">
             <el-button
               v-if="row.memberStatus === 'ACTIVE' && canRemoveMemberRow(row)"
@@ -88,7 +110,7 @@
               size="small"
               @click="onRemoveMember(row)"
             >
-              移出租户
+              {{ t("views.users.removeFromTenant") }}
             </el-button>
           </template>
         </el-table-column>
@@ -98,19 +120,19 @@
     <el-card shadow="never" class="card card--accounts">
       <template #header>
         <div class="table-hdr">
-          <span class="card-title">本租户账号</span>
+          <span class="card-title">{{ t("views.users.hdrAccounts") }}</span>
           <div class="table-hdr-actions">
-            <el-button type="primary" @click="openCreateDialog">新增用户</el-button>
+            <el-button type="primary" @click="openCreateDialog">{{ t("views.users.addUser") }}</el-button>
             <el-button class="users-refresh-btn" type="primary" plain :loading="loadingUsers" @click="loadUsers">
-              刷新
+              {{ t("views.users.refresh") }}
             </el-button>
           </div>
         </div>
       </template>
-      <el-table v-loading="loadingUsers" :data="users" stripe border style="width: 100%" empty-text="暂无数据">
-        <el-table-column prop="loginName" label="登录名" min-width="120" />
-        <el-table-column prop="displayName" label="昵称" min-width="120" />
-        <el-table-column label="本租户角色" min-width="200">
+      <el-table v-loading="loadingUsers" :data="users" stripe border style="width: 100%" :empty-text="t('views.users.empty')">
+        <el-table-column prop="loginName" :label="t('views.users.colLoginName')" min-width="120" />
+        <el-table-column prop="displayName" :label="t('views.users.colNickname')" min-width="120" />
+        <el-table-column :label="t('views.users.colTenantRole')" min-width="200">
           <template #default="{ row }">
             <el-select
               v-if="row.tenantRole != null"
@@ -120,81 +142,105 @@
               :disabled="!canEditUserRole(row)"
               @change="(v: string) => onUserRoleChange(row, v as usersApi.TenantMemberRole)"
             >
-              <el-option v-if="isFounder" label="创始人" value="FOUNDER" />
-              <el-option label="所有者" value="OWNER" />
-              <el-option label="管理员" value="ADMIN" />
-              <el-option label="成员" value="MEMBER" />
+              <el-option v-if="isFounder" :label="t('views.users.roleFounder')" value="FOUNDER" />
+              <el-option :label="t('views.users.roleOwner')" value="OWNER" />
+              <el-option :label="t('views.users.roleAdmin')" value="ADMIN" />
+              <el-option :label="t('views.users.roleMember')" value="MEMBER" />
             </el-select>
-            <span v-else class="muted">未加入本租户</span>
+            <span v-else class="muted">{{ t("views.users.notInTenant") }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="110">
+        <el-table-column :label="t('views.users.colOnline')" width="88" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.sessionOnline ? 'success' : 'info'" size="small">
+              {{ row.sessionOnline ? t("views.users.onlineYes") : t("views.users.onlineNo") }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('views.users.colLastLogin')" min-width="168" show-overflow-tooltip>
+          <template #default="{ row }">{{ formatLastLoginAt(row.lastLoginAt) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('views.users.colLastLoginIp')" min-width="132" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.lastLoginIp || t("common.dash") }}</template>
+        </el-table-column>
+        <el-table-column :label="t('views.users.colLastLoginRegion')" min-width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ formatLoginRegionDisplay(row.lastLoginRegion) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('views.users.colStatus')" width="110">
           <template #default="{ row }">
             <el-tag :type="row.status === 'ACTIVE' ? 'success' : 'info'" size="small">
               {{ statusLabel(row.status) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="320" fixed="right">
+        <el-table-column :label="t('views.users.colActions')" width="360" fixed="right">
           <template #default="{ row }">
-            <el-button link type="warning" size="small" @click="kickUser(row)">踢下线</el-button>
-            <el-button link type="danger" size="small" @click="banUser(row)">封禁</el-button>
-            <el-button link type="primary" size="small" @click="toggleStatus(row)">启停</el-button>
-            <el-button link type="danger" size="small" @click="removeUser(row)">删除</el-button>
+            <el-button
+              v-if="row.sessionOnline"
+              link
+              type="warning"
+              size="small"
+              @click="kickUser(row)"
+            >
+              {{ t("views.users.kick") }}
+            </el-button>
+            <el-button link type="danger" size="small" @click="banUser(row)">{{ t("views.users.ban") }}</el-button>
+            <el-button link type="primary" size="small" @click="toggleStatus(row)">{{ t("views.users.toggle") }}</el-button>
+            <el-button link type="danger" size="small" @click="removeUser(row)">{{ t("views.users.delete") }}</el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
 
-    <el-dialog v-model="inviteVisible" title="邀请成员" width="440px" destroy-on-close @closed="resetInvite">
+    <el-dialog v-model="inviteVisible" :title="t('views.users.dlgInviteTitle')" width="440px" destroy-on-close @closed="resetInvite">
       <el-form label-width="96px">
-        <el-form-item label="登录名" required>
+        <el-form-item :label="t('views.users.dlgInviteLoginLabel')" required>
           <el-input
             v-model="inviteLoginName"
             autocomplete="off"
             clearable
-            placeholder="对方账号的登录名（全局唯一）"
+            :placeholder="t('views.users.dlgInviteLoginPh')"
             class="w-full-role"
           />
         </el-form-item>
-        <el-form-item label="角色" required>
+        <el-form-item :label="t('views.users.dlgInviteRole')" required>
           <el-select v-model="inviteRole" class="w-full-role">
-            <el-option v-if="isFounder" label="创始人" value="FOUNDER" />
-            <el-option label="所有者" value="OWNER" />
-            <el-option label="管理员" value="ADMIN" />
-            <el-option label="成员" value="MEMBER" />
+            <el-option v-if="isFounder" :label="t('views.users.roleFounder')" value="FOUNDER" />
+            <el-option :label="t('views.users.roleOwner')" value="OWNER" />
+            <el-option :label="t('views.users.roleAdmin')" value="ADMIN" />
+            <el-option :label="t('views.users.roleMember')" value="MEMBER" />
           </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="inviteVisible = false">取消</el-button>
-        <el-button type="primary" :loading="inviteSubmitting" @click="submitInvite">确定</el-button>
+        <el-button @click="inviteVisible = false">{{ t("views.users.cancel") }}</el-button>
+        <el-button type="primary" :loading="inviteSubmitting" @click="submitInvite">{{ t("views.users.ok") }}</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="createVisible" title="新增用户" width="520px" destroy-on-close @closed="resetCreateForm">
+    <el-dialog v-model="createVisible" :title="t('views.users.dlgCreateTitle')" width="520px" destroy-on-close @closed="resetCreateForm">
       <el-form :model="form" label-width="88px" class="form-grid" @submit.prevent="onCreate">
-        <el-form-item label="登录名" required>
+        <el-form-item :label="t('views.users.dlgCreateLogin')" required>
           <el-input v-model="form.loginName" autocomplete="off" clearable />
         </el-form-item>
-        <el-form-item label="密码" required>
+        <el-form-item :label="t('views.users.dlgCreatePassword')" required>
           <el-input v-model="form.password" type="password" show-password autocomplete="new-password" />
         </el-form-item>
-        <el-form-item label="昵称">
-          <el-input v-model="form.displayName" clearable placeholder="可选，不填则存空串" />
+        <el-form-item :label="t('views.users.dlgCreateNickname')">
+          <el-input v-model="form.displayName" clearable :placeholder="t('views.users.dlgCreateNicknamePh')" />
         </el-form-item>
-        <el-form-item label="角色">
+        <el-form-item :label="t('views.users.dlgCreateRole')">
           <el-select v-model="form.role" style="width: 100%">
-            <el-option v-if="isFounder" label="创始人" value="FOUNDER" />
-            <el-option label="成员" value="MEMBER" />
-            <el-option label="管理员" value="ADMIN" />
-            <el-option label="所有者" value="OWNER" />
+            <el-option v-if="isFounder" :label="t('views.users.roleFounder')" value="FOUNDER" />
+            <el-option :label="t('views.users.roleMember')" value="MEMBER" />
+            <el-option :label="t('views.users.roleAdmin')" value="ADMIN" />
+            <el-option :label="t('views.users.roleOwner')" value="OWNER" />
           </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="createVisible = false">取消</el-button>
-        <el-button type="primary" :loading="createSubmitting" @click="onCreate">创建</el-button>
+        <el-button @click="createVisible = false">{{ t("views.users.cancel") }}</el-button>
+        <el-button type="primary" :loading="createSubmitting" @click="onCreate">{{ t("views.users.create") }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -202,11 +248,14 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { AI_ADMIN_ACCESS_TOKEN_KEY } from "@/plugins/http";
 import * as tenantsApi from "@/api/tenants";
 import * as usersApi from "@/api/users";
 import { readJwtTid, readJwtTmr, readJwtUid } from "@/utils/jwtSubject";
 import { apiRequestErrorMessage } from "@/utils/apiRequestErrorMessage";
+
+const { t, locale } = useI18n();
 
 const members = ref<usersApi.TenantMemberRow[]>([]);
 const users = ref<usersApi.UserRow[]>([]);
@@ -276,7 +325,36 @@ function canEditUserRole(row: usersApi.UserRow): boolean {
 }
 
 function statusLabel(s: usersApi.UserRow["status"]): string {
-  return s === "ACTIVE" ? "启用" : "已禁用";
+  return s === "ACTIVE" ? t("views.users.statusEnabled") : t("views.users.statusDisabled");
+}
+
+function formatLastLoginAt(raw: string | null | undefined): string {
+  if (!raw) return t("common.dash");
+  const s = raw.trim();
+  // 后端已格式化为东八区墙钟 yyyy-MM-dd HH:mm:ss 时直接展示
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) {
+    return s;
+  }
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return s;
+  const loc = String(locale.value || "zh-CN").replace("_", "-");
+  return d.toLocaleString(loc, { timeZone: "Asia/Shanghai", hour12: false });
+}
+
+/** 展示「国家码」或「国家码|省|市」：CN 多段时前缀「中国」，段间用 · */
+function formatLoginRegionDisplay(raw: string | null | undefined): string {
+  if (!raw) return t("common.dash");
+  const s = raw.trim();
+  if (!s) return t("common.dash");
+  const parts = s
+    .split("|")
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+  if (parts.length <= 1) return s;
+  const cc = parts[0].toUpperCase();
+  const rest = parts.slice(1).join(" · ");
+  if (cc === "CN") return t("views.users.loginRegionCn", { rest });
+  return t("views.users.loginRegionIntl", { cc, rest });
 }
 
 function openCreateDialog() {
@@ -311,7 +389,7 @@ async function loadMembers() {
     members.value = await usersApi.listTenantMembers(params);
   } catch (e: unknown) {
     console.warn("[tenant-members]", e);
-    ElMessage.error("成员列表加载失败，请稍后重试");
+    ElMessage.error(t("views.users.loadMembersFailed"));
     members.value = [];
   } finally {
     loadingMembers.value = false;
@@ -323,7 +401,7 @@ async function loadUsers() {
   try {
     users.value = await usersApi.listUsers();
   } catch (e: unknown) {
-    ElMessage.error(apiRequestErrorMessage(e, "账号列表加载失败"));
+    ElMessage.error(apiRequestErrorMessage(e, t("views.users.loadUsersFailed")));
   } finally {
     loadingUsers.value = false;
   }
@@ -336,9 +414,9 @@ async function onMemberRoleChange(row: usersApi.TenantMemberRow, role: usersApi.
       isFounder.value && tenantFilter.value != null ? { tenantId: tenantFilter.value } : undefined;
     await usersApi.updateTenantMemberRole(row.userId, role, opts);
     row.role = role;
-    ElMessage.success("已更新角色");
+    ElMessage.success(t("views.users.roleUpdated"));
   } catch (e: unknown) {
-    ElMessage.error(apiRequestErrorMessage(e, "更新失败"));
+    ElMessage.error(apiRequestErrorMessage(e, t("views.users.updateFailed")));
     await loadMembers();
   }
 }
@@ -348,9 +426,9 @@ async function onUserRoleChange(row: usersApi.UserRow, role: usersApi.TenantMemb
   try {
     await usersApi.updateTenantMemberRole(row.id, role);
     row.tenantRole = role;
-    ElMessage.success("已更新角色");
+    ElMessage.success(t("views.users.roleUpdated"));
   } catch (e: unknown) {
-    ElMessage.error(apiRequestErrorMessage(e, "更新失败"));
+    ElMessage.error(apiRequestErrorMessage(e, t("views.users.updateFailed")));
     await loadUsers();
   }
 }
@@ -368,7 +446,7 @@ function resetInvite() {
 async function submitInvite() {
   const name = inviteLoginName.value.trim();
   if (!name) {
-    ElMessage.warning("请填写登录名");
+    ElMessage.warning(t("views.users.fillLoginName"));
     return;
   }
   inviteSubmitting.value = true;
@@ -382,11 +460,11 @@ async function submitInvite() {
     }
     await usersApi.inviteTenantMember(body);
     inviteVisible.value = false;
-    ElMessage.success("已保存");
+    ElMessage.success(t("views.users.saved"));
     await loadMembers();
     await loadUsers();
   } catch (e: unknown) {
-    ElMessage.error(apiRequestErrorMessage(e, "操作失败"));
+    ElMessage.error(apiRequestErrorMessage(e, t("views.users.opFailed")));
   } finally {
     inviteSubmitting.value = false;
   }
@@ -395,8 +473,8 @@ async function submitInvite() {
 async function onRemoveMember(row: usersApi.TenantMemberRow) {
   try {
     await ElMessageBox.confirm(
-      `将用户「${row.loginName}」从当前租户移出？其账号仍保留，仅本租户成员关系结束。`,
-      "确认",
+      t("views.users.confirmRemoveMember", { name: row.loginName }),
+      t("common.confirmTitle"),
       { type: "warning" },
     );
   } catch {
@@ -406,11 +484,11 @@ async function onRemoveMember(row: usersApi.TenantMemberRow) {
     const opts =
       isFounder.value && tenantFilter.value != null ? { tenantId: tenantFilter.value } : undefined;
     await usersApi.removeTenantMember(row.userId, opts);
-    ElMessage.success("已移出");
+    ElMessage.success(t("views.users.removed"));
     await loadMembers();
     await loadUsers();
   } catch (e: unknown) {
-    ElMessage.error(apiRequestErrorMessage(e, "操作失败"));
+    ElMessage.error(apiRequestErrorMessage(e, t("views.users.opFailed")));
   }
 }
 
@@ -427,9 +505,9 @@ async function onCreate() {
     resetCreateForm();
     await loadUsers();
     await loadMembers();
-    ElMessage.success("已创建");
+    ElMessage.success(t("views.users.created"));
   } catch (e: unknown) {
-    ElMessage.error(apiRequestErrorMessage(e, "创建失败"));
+    ElMessage.error(apiRequestErrorMessage(e, t("views.users.createFailed")));
   } finally {
     createSubmitting.value = false;
   }
@@ -440,44 +518,50 @@ async function toggleStatus(u: usersApi.UserRow) {
   await usersApi.updateUser(u.id, { status: next });
   await loadUsers();
   await loadMembers();
-  ElMessage.success("已更新状态");
+  ElMessage.success(t("views.users.statusUpdated"));
 }
 
 async function kickUser(u: usersApi.UserRow) {
+  if (!u.sessionOnline) {
+    return;
+  }
   try {
-    await ElMessageBox.confirm(`将用户「${u.loginName}」踢下线（需重新登录）?`, "确认", { type: "warning" });
+    await ElMessageBox.confirm(t("views.users.kickConfirm", { name: u.loginName }), t("common.confirmTitle"), {
+      type: "warning",
+    });
     await usersApi.kickUserSession(u.id);
-    ElMessage.success("已踢下线");
+    ElMessage.success(t("views.users.kicked"));
+    await loadUsers();
   } catch (e: unknown) {
     if (e !== "cancel") {
-      ElMessage.error(apiRequestErrorMessage(e, "操作失败"));
+      ElMessage.error(apiRequestErrorMessage(e, t("views.users.opFailed")));
     }
   }
 }
 
 async function banUser(u: usersApi.UserRow) {
   try {
-    await ElMessageBox.confirm(`封禁用户「${u.loginName}」? 将禁用账号并使当前登录失效。`, "确认", {
+    await ElMessageBox.confirm(t("views.users.banConfirm", { name: u.loginName }), t("common.confirmTitle"), {
       type: "warning",
-      confirmButtonText: "封禁",
+      confirmButtonText: t("views.users.banOk"),
     });
     await usersApi.banUser(u.id);
     await loadUsers();
     await loadMembers();
-    ElMessage.success("已封禁");
+    ElMessage.success(t("views.users.banned"));
   } catch (e: unknown) {
     if (e !== "cancel") {
-      ElMessage.error(apiRequestErrorMessage(e, "操作失败"));
+      ElMessage.error(apiRequestErrorMessage(e, t("views.users.opFailed")));
     }
   }
 }
 
 async function removeUser(u: usersApi.UserRow) {
   try {
-    await ElMessageBox.confirm(`确定删除（禁用）用户「${u.loginName}」?`, "确认", {
+    await ElMessageBox.confirm(t("views.users.deleteConfirm", { name: u.loginName }), t("common.confirmTitle"), {
       type: "warning",
-      confirmButtonText: "删除",
-      cancelButtonText: "取消",
+      confirmButtonText: t("views.users.delete"),
+      cancelButtonText: t("views.users.cancel"),
     });
   } catch {
     return;
@@ -485,7 +569,7 @@ async function removeUser(u: usersApi.UserRow) {
   await usersApi.deleteUser(u.id);
   await loadUsers();
   await loadMembers();
-  ElMessage.success("已删除");
+  ElMessage.success(t("views.users.deleted"));
 }
 
 onMounted(async () => {
@@ -511,7 +595,7 @@ onMounted(async () => {
 .card {
   margin-bottom: 0;
   border-radius: 12px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--el-border-color);
 }
 
 .card--members {
@@ -589,7 +673,7 @@ onMounted(async () => {
 }
 
 .muted {
-  color: #94a3b8;
+  color: var(--el-text-color-placeholder);
   font-size: 13px;
 }
 

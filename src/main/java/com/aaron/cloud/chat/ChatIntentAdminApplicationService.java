@@ -13,6 +13,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * 管理端意图识别：列表与 CRUD 数据面仅为当前 JWT 工作区租户，见 {@link AdminQueryTenantSupport#resolveIntentAdminDataTenantId(Long)}。
+ */
 @Service
 @RequiredArgsConstructor
 public class ChatIntentAdminApplicationService {
@@ -20,13 +23,13 @@ public class ChatIntentAdminApplicationService {
     private final ChatIntentDefinitionRepository definitionRepository;
     private final ChatIntentKeywordRepository keywordRepository;
 
-    public List<ChatIntentAdminDtos.IntentRow> listDefinitions(Long filterTenantId) {
-        Long tid = AdminQueryTenantSupport.resolveAdminListTenantFilter(filterTenantId);
-        return definitionRepository.listForAdmin(tid).stream().map(this::toIntentRow).toList();
+    public List<ChatIntentAdminDtos.IntentRow> listDefinitions() {
+        long tid = AdminQueryTenantSupport.resolveIntentAdminDataTenantId(null);
+        return definitionRepository.listByTenant(tid).stream().map(this::toIntentRow).toList();
     }
 
     public ChatIntentAdminDtos.IntentRow createDefinition(ChatIntentAdminDtos.IntentCreateBody body) {
-        long dataTenantId = AdminQueryTenantSupport.resolveSensitiveTermsDataTenantId(body.targetTenantId());
+        long dataTenantId = AdminQueryTenantSupport.resolveIntentAdminDataTenantId(null);
         String code = body.code().trim();
         if (definitionRepository.findByTenantAndCode(dataTenantId, code).isPresent()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "该租户下意图编码已存在");
@@ -48,7 +51,7 @@ public class ChatIntentAdminApplicationService {
     }
 
     public ChatIntentAdminDtos.IntentRow updateDefinition(long id, ChatIntentAdminDtos.IntentUpdateBody body) {
-        long dataTenantId = AdminQueryTenantSupport.resolveSensitiveTermsDataTenantId(body.targetTenantId());
+        long dataTenantId = AdminQueryTenantSupport.resolveIntentAdminDataTenantId(null);
         ChatIntentDefinition row =
                 definitionRepository
                         .findById(id, dataTenantId)
@@ -78,8 +81,8 @@ public class ChatIntentAdminApplicationService {
                         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND)));
     }
 
-    public void deleteDefinition(long id, Long targetTenantId) {
-        long dataTenantId = AdminQueryTenantSupport.resolveSensitiveTermsDataTenantId(targetTenantId);
+    public void deleteDefinition(long id) {
+        long dataTenantId = AdminQueryTenantSupport.resolveIntentAdminDataTenantId(null);
         if (definitionRepository.findById(id, dataTenantId).isEmpty()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "意图不存在");
         }
@@ -87,21 +90,21 @@ public class ChatIntentAdminApplicationService {
         definitionRepository.deleteById(id, dataTenantId);
     }
 
-    public List<ChatIntentAdminDtos.KeywordRow> listKeywords(long intentId, Long targetTenantId) {
-        long dataTenantId = AdminQueryTenantSupport.resolveSensitiveTermsDataTenantId(targetTenantId);
+    public List<ChatIntentAdminDtos.KeywordRow> listKeywords(long intentId) {
+        long dataTenantId = AdminQueryTenantSupport.resolveIntentAdminDataTenantId(null);
         assertIntentInTenant(intentId, dataTenantId);
         return keywordRepository.listByIntent(dataTenantId, intentId).stream().map(this::toKeywordRow).toList();
     }
 
-    public ChatIntentAdminDtos.KeywordRow addKeyword(
-            long intentId, Long targetTenantId, ChatIntentAdminDtos.KeywordCreateBody body) {
-        long dataTenantId = AdminQueryTenantSupport.resolveSensitiveTermsDataTenantId(targetTenantId);
+    public ChatIntentAdminDtos.KeywordRow addKeyword(long intentId, ChatIntentAdminDtos.KeywordCreateBody body) {
+        long dataTenantId = AdminQueryTenantSupport.resolveIntentAdminDataTenantId(null);
         assertIntentInTenant(intentId, dataTenantId);
         var row = new ChatIntentKeyword();
         row.setTenantId(dataTenantId);
         row.setIntentId(intentId);
         row.setPhrase(body.phrase().trim());
         row.setKeywordKind(body.keywordKind());
+        row.setTargetRound(body.targetRound() == null ? null : body.targetRound().trim());
         row.setEnabled(body.enabled());
         row.setSortOrder(body.sortOrder() == null ? 0 : body.sortOrder());
         keywordRepository.insert(row);
@@ -112,8 +115,8 @@ public class ChatIntentAdminApplicationService {
     }
 
     public ChatIntentAdminDtos.KeywordRow updateKeyword(
-            long intentId, long keywordId, ChatIntentAdminDtos.KeywordUpdateBody body, Long targetTenantId) {
-        long dataTenantId = AdminQueryTenantSupport.resolveSensitiveTermsDataTenantId(targetTenantId);
+            long intentId, long keywordId, ChatIntentAdminDtos.KeywordUpdateBody body) {
+        long dataTenantId = AdminQueryTenantSupport.resolveIntentAdminDataTenantId(null);
         assertIntentInTenant(intentId, dataTenantId);
         ChatIntentKeyword row =
                 keywordRepository
@@ -128,6 +131,10 @@ public class ChatIntentAdminApplicationService {
         if (body.keywordKind() != null) {
             row.setKeywordKind(body.keywordKind());
         }
+        if (body.targetRound() != null) {
+            String tr = body.targetRound().trim();
+            row.setTargetRound(tr.isEmpty() ? null : tr);
+        }
         if (body.enabled() != null) {
             row.setEnabled(body.enabled());
         }
@@ -141,8 +148,8 @@ public class ChatIntentAdminApplicationService {
                         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND)));
     }
 
-    public void deleteKeyword(long intentId, long keywordId, Long targetTenantId) {
-        long dataTenantId = AdminQueryTenantSupport.resolveSensitiveTermsDataTenantId(targetTenantId);
+    public void deleteKeyword(long intentId, long keywordId) {
+        long dataTenantId = AdminQueryTenantSupport.resolveIntentAdminDataTenantId(null);
         assertIntentInTenant(intentId, dataTenantId);
         ChatIntentKeyword row =
                 keywordRepository
@@ -163,7 +170,6 @@ public class ChatIntentAdminApplicationService {
     private ChatIntentAdminDtos.IntentRow toIntentRow(ChatIntentDefinition d) {
         return new ChatIntentAdminDtos.IntentRow(
                 d.getId(),
-                d.getTenantId(),
                 d.getCode(),
                 d.getDisplayName(),
                 d.getDescription(),
@@ -179,7 +185,9 @@ public class ChatIntentAdminApplicationService {
                 k.getIntentId(),
                 k.getPhrase(),
                 k.getKeywordKind(),
+                k.getTargetRound(),
                 k.getEnabled() == null ? ToggleState.OFF : k.getEnabled(),
-                k.getSortOrder() == null ? 0 : k.getSortOrder());
+                k.getSortOrder() == null ? 0 : k.getSortOrder(),
+                k.getHitCount() == null ? 0L : k.getHitCount());
     }
 }

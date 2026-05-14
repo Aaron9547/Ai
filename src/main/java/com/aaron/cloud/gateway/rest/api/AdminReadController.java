@@ -9,6 +9,8 @@ import com.aaron.cloud.common.filemeta.FileObjectMetaRepository;
 import com.aaron.cloud.common.metering.MeteringUsageEventRepository;
 import com.aaron.cloud.common.notifymeta.NotificationWebhookSubscriptionRepository;
 import com.aaron.cloud.common.web.rest.ApiV1ControllerBases;
+import com.aaron.cloud.gateway.admin.AdminDashboardApplicationService;
+import com.aaron.cloud.gateway.admin.AdminDashboardSummaryView;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -24,6 +26,13 @@ public class AdminReadController extends ApiV1ControllerBases.AdminRead {
     private final FileObjectMetaRepository fileObjectMetaRepository;
     private final NotificationWebhookSubscriptionRepository notificationWebhookSubscriptionRepository;
     private final EvalPipelineRunRepository evalPipelineRunRepository;
+    private final AdminDashboardApplicationService adminDashboardApplicationService;
+
+    @GetMapping("/dashboard/summary")
+    public AdminDashboardSummaryView dashboardSummary() {
+        long tenantId = TenantContextHolder.require().getTenantId();
+        return adminDashboardApplicationService.buildForTenant(tenantId);
+    }
 
     @GetMapping("/access-logs")
     public Object accessLogs(

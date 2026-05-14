@@ -45,6 +45,11 @@ public class ChatMessageRepository {
                         .eq(ChatMessage::getTenantId, tenantId));
     }
 
+    public long countByTenant(long tenantId) {
+        return mapper.selectCount(
+                Wrappers.<ChatMessage>lambdaQuery().eq(ChatMessage::getTenantId, tenantId));
+    }
+
     /** 按 {@code idsInOrder} 顺序返回消息（用于会话历史展示）。 */
     public List<ChatMessage> listByTenantAndIdsInOrder(long tenantId, List<Long> idsInOrder) {
         if (idsInOrder == null || idsInOrder.isEmpty()) {

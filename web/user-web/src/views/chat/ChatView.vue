@@ -102,7 +102,7 @@
             </div>
             <div class="bubble">
               <div
-                v-if="m.role === 'assistant' && (m.reasoningStreaming || (m.reasoning && m.reasoning.length))"
+                v-if="m.role === 'assistant' && showAssistantReasoningShell(m)"
                 class="reasoning"
               >
                 <button
@@ -112,7 +112,7 @@
                   @click="onReasoningBarClick(m)"
                 >
                   <span class="reasoning-bar-title">思考过程</span>
-                  <span v-if="m.reasoningStreaming" class="reasoning-live">思考中…</span>
+                  <span v-if="m.reasoningStreaming" class="reasoning-live">{{ intentReasoningLiveLabel(m) }}</span>
                   <span v-else class="reasoning-meta">
                     {{ m.reasoningCollapsed ? "已折叠 · 点击展开" : "点击收起" }}
                   </span>
@@ -123,31 +123,73 @@
                 </button>
                 <div v-show="isReasoningBodyVisible(m)" class="reasoning-body-wrap">
                   <div class="reasoning-body">
-                    {{ m.reasoning }}<span v-if="m.reasoningStreaming" class="cursor" />
+                    <template v-if="m.reasoning && m.reasoning.length">
+                      {{ m.reasoning }}<span v-if="m.reasoningStreaming" class="cursor" />
+                    </template>
+                    <p
+                      v-else-if="reasoningIntentOrchestrationHint(m)"
+                      class="reasoning-intent-hint"
+                    >
+                      已开启「思考」；本回复由<strong>意图编排</strong>完成，模型链式思考未参与。请关注下方「流程进度」各步骤输出。
+                    </p>
+                    <span v-else-if="m.reasoningStreaming" class="cursor" />
                   </div>
                 </div>
               </div>
-              <div v-if="m.role === 'assistant' && m.workflowSegments?.length" class="intent-workflow">
-                <div v-for="seg in m.workflowSegments" :key="seg.segmentId" class="wf-card">
-                  <div v-if="seg.title" class="wf-title">{{ seg.title }}</div>
-                  <div class="wf-body-wrap">
-                    <div v-if="seg.status === 'loading'" class="wf-loading">
-                      <el-icon class="wf-spin" :size="18"><Loading /></el-icon>
-                      <span>处理中…</span>
+              <div v-if="m.role === 'assistant' && showIntentWorkflowShell(m)" class="intent-workflow">
+                <div class="intent-workflow-shell">
+                  <div class="intent-workflow-head">流程进度</div>
+                  <div v-for="seg in m.workflowSegments" :key="seg.segmentId" class="wf-step">
+                    <button
+                      type="button"
+                      class="wf-bar"
+                      :class="{ 'wf-bar--live': seg.status !== 'done' }"
+                      @click="onWorkflowBarClick(m, seg)"
+                    >
+                      <span class="wf-bar-lead" aria-hidden="true">
+                        <el-icon v-if="seg.status === 'done'" class="wf-bar-done" :size="17">
+                          <CircleCheck />
+                        </el-icon>
+                        <el-icon v-else class="wf-spin" :size="17">
+                          <Loading />
+                        </el-icon>
+                      </span>
+                      <span class="wf-bar-title">{{ wfSegmentBarTitle(seg) }}</span>
+                      <span v-if="seg.status === 'loading'" class="wf-bar-meta">处理中…</span>
+                      <span v-else-if="seg.status === 'streaming'" class="wf-bar-meta">输出中…</span>
+                      <span v-else-if="seg.status === 'done'" class="wf-bar-meta">
+                        {{ isWfSegmentBodyVisible(seg) ? "点击收起" : "已完成 · 点击展开" }}
+                      </span>
+                      <span v-else class="wf-bar-meta">等待中…</span>
+                      <el-icon class="wf-bar-chevron">
+                        <ArrowDown v-if="!isWfSegmentBodyVisible(seg)" />
+                        <ArrowUp v-else />
+                      </el-icon>
+                    </button>
+                    <div v-show="isWfSegmentBodyVisible(seg)" class="wf-body-outer">
+                      <div v-if="seg.status === 'loading'" class="wf-loading">
+                        <el-icon class="wf-spin" :size="18"><Loading /></el-icon>
+                        <span>处理中…</span>
+                      </div>
+                      <template v-else-if="seg.status === 'streaming'">
+                        <div class="wf-body-md bubble-md" v-html="workflowSegmentStreamingHtml(seg)" />
+                      </template>
+                      <template v-else-if="seg.status === 'done'">
+                        <div class="wf-body-md bubble-md" v-html="workflowSegmentRichHtml(seg.text || '')" />
+                      </template>
+                      <div v-else class="wf-loading">
+                        <el-icon class="wf-spin" :size="18"><Loading /></el-icon>
+                        <span>等待中…</span>
+                      </div>
                     </div>
-                    <div v-else-if="seg.status === 'streaming'" class="wf-stream">
-                      {{ seg.text }}<span class="cursor" />
-                    </div>
-                    <div v-else class="wf-done">{{ seg.text }}</div>
                   </div>
                 </div>
               </div>
               <div
-                v-if="m.role === 'assistant' && showAssistantMainBubble(m)"
+                v-if="m.role === 'assistant' && showAssistantMdBubble(m)"
                 class="bubble-inner bubble-inner--assistant"
               >
-                <div class="bubble-md" v-html="assistantMdHtml(m.content)" />
-                <span v-if="m.streaming" class="cursor" />
+                <div class="bubble-md" v-html="assistantMdStreamingHtml(m)" />
               </div>
               <div v-else-if="m.role === 'user'" class="bubble-inner bubble-inner--user">
                 <button
@@ -161,6 +203,32 @@
                   <el-icon v-else class="msg-act-ico-success" :size="16"><CircleCheck /></el-icon>
                 </button>
                 <span class="user-msg-text">{{ m.content }}<span v-if="m.streaming" class="cursor" /></span>
+                <div v-if="m.attachments?.length" class="user-msg-attach-strip" role="list">
+                  <span class="rag-sources-label">附件</span>
+                  <span
+                    v-for="a in m.attachments"
+                    :key="a.id"
+                    class="user-msg-attach-chip"
+                    :title="a.fileName + (a.charLength != null ? `（${a.charLength} 字）` : '')"
+                  >
+                    <el-icon class="user-msg-attach-ico"><Document /></el-icon>
+                    <span class="user-msg-attach-name">{{ truncateName(a.fileName) }}</span>
+                  </span>
+                </div>
+              </div>
+              <div
+                v-if="m.role === 'user' && m.intentTurnHit"
+                class="intent-hit-hint"
+                role="note"
+              >
+                <template v-if="m.intentTurnHit.keywordPhrase">
+                  已匹配关键词「{{ m.intentTurnHit.keywordPhrase }}」
+                  <span class="intent-hit-sub">（{{ formatIntentMatchSource(m.intentTurnHit.matchSource) }}）</span>
+                </template>
+                <template v-else>
+                  已进入意图流程
+                  <span class="intent-hit-sub">（{{ formatIntentMatchSource(m.intentTurnHit.matchSource) }}）</span>
+                </template>
               </div>
               <div
                 v-if="m.role === 'assistant' && m.ragRetrievalTitles?.length"
@@ -170,6 +238,40 @@
               >
                 <span class="rag-sources-label">参考文档</span>
                 <span v-for="(t, ti) in m.ragRetrievalTitles" :key="`${ti}-${t}`" class="rag-doc-chip">{{ t }}</span>
+              </div>
+              <div
+                v-if="m.webSearchReferences?.length && m.role === 'assistant'"
+                class="web-search-refs-strip"
+                role="list"
+              >
+                <span class="rag-sources-label">联网参考</span>
+                <template v-for="(w, wi) in m.webSearchReferences" :key="`${wi}-${w.url || w.title || ''}`">
+                  <a
+                    v-if="(w.url ?? '').trim()"
+                    class="web-ref-chip"
+                    :href="w.url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    :title="(w.summary || '').trim() || undefined"
+                  >
+                    <img
+                      v-if="(w.logoUrl ?? '').trim()"
+                      class="web-ref-logo"
+                      :src="w.logoUrl!"
+                      alt=""
+                    />
+                    <span class="web-ref-chip-text">{{ webRefLabel(w) }}</span>
+                  </a>
+                  <span v-else class="web-ref-chip web-ref-chip--nolink" :title="(w.summary || '').trim() || undefined">
+                    <img
+                      v-if="(w.logoUrl ?? '').trim()"
+                      class="web-ref-logo"
+                      :src="w.logoUrl!"
+                      alt=""
+                    />
+                    <span class="web-ref-chip-text">{{ webRefLabel(w) }}</span>
+                  </span>
+                </template>
               </div>
               <div
                 v-if="
@@ -415,6 +517,18 @@
                   思考
                 </button>
               </div>
+              <div v-if="webSearchAllowed" class="deep-think-wrap">
+                <button
+                  type="button"
+                  class="deep-think-toggle"
+                  :class="{ 'deep-think-toggle--on': webSearchEnabled }"
+                  :aria-pressed="webSearchEnabled"
+                  aria-label="联网检索"
+                  @click="webSearchEnabled = !webSearchEnabled"
+                >
+                  联网
+                </button>
+              </div>
             </div>
             <el-button
               class="send-fab"
@@ -475,6 +589,7 @@ import UserAuthDialog from "../../components/UserAuthDialog.vue";
 import * as chatApi from "../../api/chat";
 import { AI_USER_ACCESS_TOKEN_KEY, clearUserSession } from "../../plugins/http";
 import { TENANT_CODE_PATH_RE } from "../../utils/outboundTenant";
+import { copyTextToUserClipboard } from "../../utils/clipboard";
 import { renderMarkdownToSafeHtml } from "../../utils/renderMarkdown";
 import { apiRequestErrorMessage } from "../../utils/apiRequestErrorMessage";
 
@@ -535,6 +650,8 @@ type ReplyVariant = {
   userFeedback?: string;
   /** 重新生成流式过程中按 SSE {@code ragDoc} 累积的检索文档标题 */
   ragRetrievalTitles?: string[];
+  /** 联网引用（SSE {@code webSearchRefs}；历史由 meta {@code webSearchReferences} 恢复） */
+  webSearchReferences?: chatApi.WebSearchRefItem[];
 };
 
 type Msg = {
@@ -545,6 +662,8 @@ type Msg = {
   content: string;
   /** 当前轮次检索到的文档标题（SSE {@code ragDoc} 帧；刷新后由接口 {@code ragCitations} 恢复） */
   ragRetrievalTitles?: string[];
+  /** 联网检索引用（SSE {@code webSearchRefs}；刷新后由 {@code webSearchReferences} 恢复） */
+  webSearchReferences?: chatApi.WebSearchRefItem[];
   streaming?: boolean;
   reasoning?: string;
   reasoningStreaming?: boolean;
@@ -559,7 +678,59 @@ type Msg = {
   activeVariantIndex?: number;
   /** 意图工作流阶段（SSE {@code workflowStage}；历史由 {@code workflowSegments} 恢复） */
   workflowSegments?: chatApi.WorkflowStagePayload[];
+  /** 本回合意图命中（历史接口 {@code intentTurnHit}） */
+  intentTurnHit?: chatApi.ChatIntentTurnHit;
+  /** 用户消息已上传附件（历史或发送后回显） */
+  attachments?: chatApi.ChatAttachmentMessage[];
 };
+
+/** 后端 {@code segmentId} 缺省时用于顶栏标题（与 Java 侧步骤 id 对齐）。 */
+const WF_TITLE_FALLBACK: Record<string, string> = {
+  "doc-parse": "文档解析",
+  "doc-need-file": "材料准备",
+  "doc-parse-empty": "文档解析",
+  "doc-parse-error": "文档解析",
+  "doc-expired": "材料准备",
+  "plan-apply": "审批核验",
+  "plan-no-apply": "出差申请",
+  "plan-conflict": "行程冲突检测",
+  "plan-kb": "知识库检索",
+  "plan-final": "行程规划",
+};
+
+function wfSegmentBarTitle(seg: chatApi.WorkflowStagePayload): string {
+  const t = (seg.title ?? "").trim();
+  if (t) return t;
+  return WF_TITLE_FALLBACK[seg.segmentId] ?? "处理步骤";
+}
+
+/** 进行中步骤始终展开；已完成步骤在新步骤进入 loading 时自动折叠。未完成（含等待）始终展开。 */
+function isWfSegmentBodyVisible(seg: chatApi.WorkflowStagePayload): boolean {
+  if (seg.status === "loading" || seg.status === "streaming" || seg.status !== "done") {
+    return true;
+  }
+  return seg.wfCollapsed !== true;
+}
+
+function onWorkflowBarClick(m: Msg, seg: chatApi.WorkflowStagePayload) {
+  if (seg.status !== "done") {
+    return;
+  }
+  const row = m.workflowSegments?.find((x) => x.segmentId === seg.segmentId);
+  if (!row) return;
+  row.wfCollapsed = !row.wfCollapsed;
+}
+
+/** 历史消息：除最后一步外默认折叠，避免长流程占屏。 */
+function decorateHistoryWorkflowSegments(
+  segs: chatApi.WorkflowStagePayload[],
+): chatApi.WorkflowStagePayload[] {
+  const n = segs.length;
+  return segs.map((s, i) => ({
+    ...s,
+    wfCollapsed: n > 1 && i < n - 1,
+  }));
+}
 
 /** 将落库 meta 中的 RAG 引用转为对话条顶栏展示用标题列表（去重、去空）。 */
 function mergeWorkflowStage(m: Msg, stage: chatApi.WorkflowStagePayload) {
@@ -569,7 +740,20 @@ function mergeWorkflowStage(m: Msg, stage: chatApi.WorkflowStagePayload) {
   }
   const arr = m.workflowSegments;
   const i = arr.findIndex((x) => x.segmentId === stage.segmentId);
-  const row = { ...stage };
+  if (stage.status === "loading") {
+    for (const x of arr) {
+      if (x.segmentId !== stage.segmentId && x.status === "done") {
+        x.wfCollapsed = true;
+      }
+    }
+  }
+  const prev = i >= 0 ? arr[i]! : undefined;
+  const row: chatApi.WorkflowStagePayload = { ...stage };
+  if (stage.status === "loading" || stage.status === "streaming") {
+    row.wfCollapsed = false;
+  } else if (stage.status === "done") {
+    row.wfCollapsed = prev?.wfCollapsed ?? false;
+  }
   if (i >= 0) {
     arr.splice(i, 1, row);
   } else {
@@ -581,6 +765,33 @@ function citationsToTitles(c: chatApi.RagCitationItem[] | null | undefined): str
   if (!c?.length) return undefined;
   const titles = [...new Set(c.map((x) => (x.documentTitle ?? "").trim()).filter(Boolean))];
   return titles.length ? titles : undefined;
+}
+
+function webRefLabel(w: chatApi.WebSearchRefItem): string {
+  const t = (w.title ?? "").trim();
+  if (t) return t;
+  const s = (w.siteName ?? "").trim();
+  if (s) return s;
+  const u = (w.url ?? "").trim();
+  if (!u) return "来源";
+  try {
+    return new URL(u).hostname;
+  } catch {
+    return u.slice(0, 48);
+  }
+}
+
+/** 将后端 {@code ChatIntentMatchSource} 枚举名转为简短中文说明 */
+function formatIntentMatchSource(src: string | null | undefined): string {
+  if (!src) return "意图匹配";
+  const map: Record<string, string> = {
+    TRIGGER_PHRASE: "首轮关键词",
+    PLAN_CONTINUE_PHRASE: "续办关键词",
+    PLAN_CONTINUE_DEFAULT_PHRASE: "续办默认短语",
+    PLAN_CONTINUE_REGEX: "续办规则",
+    DOC_ATTACHMENT: "附件继续",
+  };
+  return map[src] ?? src.replace(/_/g, " ");
 }
 
 function priorApiRowToVariant(pv: chatApi.PriorAssistantVersion): ReplyVariant {
@@ -619,6 +830,10 @@ function mapHistoryToMsgs(rows: chatApi.ChatHistoryMessage[]): Msg[] {
       const ragTitles = citationsToTitles(r.ragCitations);
       const ragForTail = ragTitles ? [...ragTitles] : undefined;
       const ragForFlat = ragTitles ? [...ragTitles] : undefined;
+      const webRefs =
+        r.webSearchReferences && r.webSearchReferences.length > 0
+          ? [...r.webSearchReferences]
+          : undefined;
       const variants: ReplyVariant[] = r.priorVersions.map(priorApiRowToVariant);
       variants.push({
         id: r.id,
@@ -629,6 +844,7 @@ function mapHistoryToMsgs(rows: chatApi.ChatHistoryMessage[]): Msg[] {
         modelAlias: r.modelAlias ?? undefined,
         userFeedback: r.userFeedback ?? undefined,
         ragRetrievalTitles: ragForTail,
+        webSearchReferences: webRefs,
       });
       out.push({
         id: r.id,
@@ -640,10 +856,14 @@ function mapHistoryToMsgs(rows: chatApi.ChatHistoryMessage[]): Msg[] {
         modelAlias: r.modelAlias ?? undefined,
         userFeedback: r.userFeedback ?? undefined,
         ragRetrievalTitles: ragForFlat,
+        webSearchReferences: webRefs,
         replyVariants: variants,
         activeVariantIndex: variants.length - 1,
         workflowSegments:
-          r.workflowSegments && r.workflowSegments.length > 0 ? [...r.workflowSegments] : undefined,
+          r.workflowSegments && r.workflowSegments.length > 0
+            ? decorateHistoryWorkflowSegments([...r.workflowSegments])
+            : undefined,
+        intentTurnHit: r.intentTurnHit ?? undefined,
       });
       continue;
     }
@@ -660,8 +880,15 @@ function mapHistoryToMsgs(rows: chatApi.ChatHistoryMessage[]): Msg[] {
       ...(r.role === "assistant" && ragSingle?.length
         ? { ragRetrievalTitles: [...ragSingle] }
         : {}),
+      ...((r.role === "assistant" || r.role === "user") && r.webSearchReferences?.length
+        ? { webSearchReferences: [...r.webSearchReferences] }
+        : {}),
       ...(r.role === "assistant" && r.workflowSegments?.length
-        ? { workflowSegments: [...r.workflowSegments] }
+        ? { workflowSegments: decorateHistoryWorkflowSegments([...r.workflowSegments]) }
+        : {}),
+      ...(r.intentTurnHit ? { intentTurnHit: { ...r.intentTurnHit } } : {}),
+      ...(r.role === "user" && r.attachments && r.attachments.length > 0
+        ? { attachments: r.attachments.map((a) => ({ ...a })) }
         : {}),
     });
   }
@@ -674,6 +901,10 @@ function deepCloneReplyVariants(v: ReplyVariant[]): ReplyVariant[] {
     usage: x.usage ? { ...x.usage } : undefined,
     ragRetrievalTitles:
       x.ragRetrievalTitles && x.ragRetrievalTitles.length > 0 ? [...x.ragRetrievalTitles] : undefined,
+    webSearchReferences:
+      x.webSearchReferences && x.webSearchReferences.length > 0
+        ? [...x.webSearchReferences]
+        : undefined,
   }));
 }
 
@@ -705,6 +936,8 @@ function syncAssistantActiveToFlat(m: Msg) {
   m.reasoningCollapsed = v.reasoningCollapsed;
   m.ragRetrievalTitles =
     v.ragRetrievalTitles && v.ragRetrievalTitles.length > 0 ? [...v.ragRetrievalTitles] : undefined;
+  m.webSearchReferences =
+    v.webSearchReferences && v.webSearchReferences.length > 0 ? [...v.webSearchReferences] : undefined;
 }
 
 function assistantFeedbackEligible(m: Msg): boolean {
@@ -743,22 +976,132 @@ function assistantMdHtml(text: string): string {
   return renderMarkdownToSafeHtml(text ?? "");
 }
 
+/** 流式光标须落在正文末尾同一行；类名 stream-md-cursor 配合 :deep，因 v-html 节点无 scoped data 属性。 */
+const STREAM_CURSOR_HTML = '<span class="stream-md-cursor" aria-hidden="true"></span>';
+
+function injectStreamCursorBeforeLastBlockClose(html: string): string {
+  if (!html) {
+    return STREAM_CURSOR_HTML;
+  }
+  const closers = [
+    "</p>",
+    "</blockquote>",
+    "</pre>",
+    "</li>",
+    "</h6>",
+    "</h5>",
+    "</h4>",
+    "</h3>",
+    "</h2>",
+    "</h1>",
+    "</td>",
+    "</th>",
+  ];
+  let pos = -1;
+  for (const c of closers) {
+    const i = html.lastIndexOf(c);
+    if (i > pos) {
+      pos = i;
+    }
+  }
+  if (pos >= 0) {
+    return html.slice(0, pos) + STREAM_CURSOR_HTML + html.slice(pos);
+  }
+  return html + STREAM_CURSOR_HTML;
+}
+
+function assistantMdStreamingHtml(m: Msg): string {
+  const html = assistantMdHtml(m.content);
+  if (m.role !== "assistant" || !m.streaming) {
+    return html;
+  }
+  return injectStreamCursorBeforeLastBlockClose(html);
+}
+
+function workflowSegmentStreamingHtml(seg: { status: string; text?: string | null }): string {
+  const html = workflowSegmentRichHtml(seg.text || "");
+  if (seg.status !== "streaming") {
+    return html;
+  }
+  return injectStreamCursorBeforeLastBlockClose(html);
+}
+
+/** 工作流阶段正文：Markdown 默认会合并单换行；将换行转为硬换行并兼容字面量 \\n。 */
+function workflowSegmentRichHtml(text: string): string {
+  let s = text ?? "";
+  s = s.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  s = s.replace(/\\n/g, "\n");
+  if (s.includes("\n")) {
+    s = s
+      .split("\n")
+      .map((line) => line.trimEnd())
+      .join("  \n");
+  }
+  return renderMarkdownToSafeHtml(s);
+}
+
+/** 是否展示「思考过程」外壳（含意图编排且已开思考；流结束后仍保留，避免说明与正文割裂） */
+function showAssistantReasoningShell(m: Msg): boolean {
+  if (m.role !== "assistant") return false;
+  if (m.reasoningStreaming || (m.reasoning != null && m.reasoning.length > 0)) {
+    return true;
+  }
+  return !!(
+    thinkingEnabled.value &&
+    currentModel.value?.supportsThinking &&
+    (m.workflowSegments?.length ?? 0) > 0
+  );
+}
+
+function intentReasoningLiveLabel(m: Msg): string {
+  if (m.reasoning && m.reasoning.length > 0) {
+    return "思考中…";
+  }
+  if ((m.workflowSegments?.length ?? 0) > 0) {
+    return "意图编排中…";
+  }
+  return "思考中…";
+}
+
+/** 思考区展示意图说明（模型无 reasoning 分片、且已有流程步骤；流结束后仍展示） */
+function reasoningIntentOrchestrationHint(m: Msg): boolean {
+  if (!thinkingEnabled.value || !currentModel.value?.supportsThinking) {
+    return false;
+  }
+  if (m.reasoning && m.reasoning.length > 0) {
+    return false;
+  }
+  return (m.workflowSegments?.length ?? 0) > 0;
+}
+
+/** 流程卡片：仅在有 SSE 工作流阶段数据时展示（未命中意图的正常对话不占位）。 */
+function showIntentWorkflowShell(m: Msg): boolean {
+  if (m.role !== "assistant") return false;
+  return (m.workflowSegments?.length ?? 0) > 0;
+}
+
 function isReasoningBodyVisible(m: Msg): boolean {
   const hasMain = m.content.trim().length > 0;
   // 仅有思考流时展开正文；主回复一旦出现则默认收起思考正文（保留顶栏）
   if (m.reasoningStreaming && !hasMain) {
     return true;
   }
+  if (reasoningIntentOrchestrationHint(m)) {
+    return m.reasoningCollapsed !== true;
+  }
   return m.reasoningCollapsed !== true;
 }
 
-/** 存在「思考」区域时，主 Markdown 气泡延后到正文首个 token，避免与思考框并排空白 */
-function showAssistantMainBubble(m: Msg): boolean {
+/**
+ * 是否渲染主 Markdown 气泡。意图工作流已在 {@code workflowSegments} 卡片中展示分段正文，
+ * 助手 {@code content} 多为各段拼接，再画主气泡会整段重复。
+ */
+function showAssistantMdBubble(m: Msg): boolean {
   if (m.role !== "assistant") {
     return false;
   }
   if ((m.workflowSegments?.length ?? 0) > 0) {
-    return true;
+    return false;
   }
   const reasonUi =
     m.reasoningStreaming === true || (m.reasoning != null && m.reasoning.length > 0);
@@ -766,6 +1109,17 @@ function showAssistantMainBubble(m: Msg): boolean {
     return true;
   }
   return m.content.trim().length > 0 || !m.streaming;
+}
+
+/** 是否视为「有助手主区」：用于模型行、复制等（含仅工作流卡片、无 Markdown 气泡的情况） */
+function showAssistantMainBubble(m: Msg): boolean {
+  if (m.role !== "assistant") {
+    return false;
+  }
+  if ((m.workflowSegments?.length ?? 0) > 0) {
+    return true;
+  }
+  return showAssistantMdBubble(m);
 }
 
 function onReasoningBarClick(m: Msg) {
@@ -782,12 +1136,13 @@ function onReasoningBarClick(m: Msg) {
 function finishAssistantStreamState(m: Msg) {
   m.streaming = false;
   m.reasoningStreaming = false;
+  const hasWorkflow = (m.workflowSegments?.length ?? 0) > 0;
   if (m.replyVariants?.length) {
     const tail = m.replyVariants[m.replyVariants.length - 1];
-    if (tail?.reasoning != null && tail.reasoning.length > 0) {
+    if (tail?.reasoning != null && tail.reasoning.length > 0 && !hasWorkflow) {
       tail.reasoningCollapsed = true;
     }
-  } else if (m.reasoning != null && m.reasoning.length > 0) {
+  } else if (m.reasoning != null && m.reasoning.length > 0 && !hasWorkflow) {
     m.reasoningCollapsed = true;
   }
   syncAssistantActiveToFlat(m);
@@ -825,8 +1180,14 @@ function assistantPlainTextFromMd(content: string): string {
 }
 
 async function copyUserMessage(m: Msg, idx: number) {
-  try {
-    await navigator.clipboard.writeText(m.content ?? "");
+  const att = (m.attachments ?? [])
+    .map((a) => a.fileName)
+    .filter((n) => n && n.trim())
+    .join("、");
+  const body =
+    att ? `${m.content ?? ""}\n\n[附件：${att}]` : (m.content ?? "");
+  const ok = await copyTextToUserClipboard(body);
+  if (ok) {
     ElMessage.success("已复制");
     const k = rowUserCopyKeyUser(idx);
     userCopyFlashKey.value = k;
@@ -835,27 +1196,33 @@ async function copyUserMessage(m: Msg, idx: number) {
         userCopyFlashKey.value = null;
       }
     }, 2000);
-  } catch {
+  } else {
     ElMessage.warning("复制失败，请手动选择文本");
   }
 }
 
 async function copyAssistantPlain(m: Msg, idx: number) {
+  let plain: string;
   try {
-    await navigator.clipboard.writeText(assistantPlainTextFromMd(m.content ?? ""));
+    plain = assistantPlainTextFromMd(m.content ?? "");
+  } catch {
+    plain = (m.content ?? "").trim();
+  }
+  const ok = await copyTextToUserClipboard(plain);
+  if (ok) {
     ElMessage.success("已复制");
     flashCopyRow(m, idx);
-  } catch {
+  } else {
     ElMessage.warning("复制失败，请手动选择文本");
   }
 }
 
 async function copyAssistantMarkdown(m: Msg, idx: number) {
-  try {
-    await navigator.clipboard.writeText(m.content ?? "");
+  const ok = await copyTextToUserClipboard(m.content ?? "");
+  if (ok) {
     ElMessage.success("已复制为 Markdown");
     flashCopyRow(m, idx);
-  } catch {
+  } else {
     ElMessage.warning("复制失败，请手动选择文本");
   }
 }
@@ -882,10 +1249,10 @@ function openShareDialog(m: Msg) {
 }
 
 async function copyShareText() {
-  try {
-    await navigator.clipboard.writeText(shareText.value);
+  const ok = await copyTextToUserClipboard(shareText.value);
+  if (ok) {
     ElMessage.success("已复制");
-  } catch {
+  } else {
     ElMessage.warning("复制失败，请手动选择文本");
   }
 }
@@ -1009,6 +1376,8 @@ const models = ref<chatApi.LlmModelOption[]>([]);
 const modelAlias = ref("");
 /** 默认开启；不支持思考的模型由 watch(modelAlias) 置为 false */
 const thinkingEnabled = ref(true);
+const webSearchAllowed = ref(false);
+const webSearchEnabled = ref(false);
 const feedbackSendingId = ref<number | null>(null);
 const pendingFiles = ref<File[]>([]);
 const dragDepth = ref(0);
@@ -1110,6 +1479,7 @@ async function retryAssistantAt(assistantIdx: number) {
   }
 
   const think = !!currentModel.value?.supportsThinking && thinkingEnabled.value;
+  const useWeb = webSearchAllowed.value && webSearchEnabled.value;
 
   const committed: ReplyVariant[] = prev.replyVariants?.length
     ? deepCloneReplyVariants(prev.replyVariants)
@@ -1127,7 +1497,7 @@ async function retryAssistantAt(assistantIdx: number) {
   committed.push({
     content: "",
     ragRetrievalTitles: [],
-    reasoning: think ? "" : undefined,
+    reasoning: undefined,
     reasoningCollapsed: think ? false : undefined,
     modelAlias: modelAlias.value,
   });
@@ -1135,7 +1505,7 @@ async function retryAssistantAt(assistantIdx: number) {
   prev.activeVariantIndex = committed.length - 1;
   prev.workflowSegments = [];
   prev.streaming = true;
-  prev.reasoningStreaming = think;
+  prev.reasoningStreaming = false;
   syncAssistantActiveToFlat(prev);
 
   sending.value = true;
@@ -1146,7 +1516,7 @@ async function retryAssistantAt(assistantIdx: number) {
     await chatApi.streamRegenerateAssistantReply(
       convId.value,
       oldDbId,
-      { modelAlias: modelAlias.value, thinkingEnabled: think },
+      { modelAlias: modelAlias.value, thinkingEnabled: think, webSearchEnabled: useWeb },
       (part) => {
       if (regenGen !== assistantStreamGeneration) {
         return;
@@ -1157,7 +1527,7 @@ async function retryAssistantAt(assistantIdx: number) {
       }
       const tail = m.replyVariants[m.replyVariants.length - 1]!;
       if (part.type === "content" && part.v) {
-        if (!tail.content && part.v.trim().length > 0) {
+        if (!tail.content && part.v.trim().length > 0 && (m.workflowSegments?.length ?? 0) === 0) {
           tail.reasoningCollapsed = true;
         }
         tail.content += part.v;
@@ -1166,7 +1536,13 @@ async function retryAssistantAt(assistantIdx: number) {
           return;
         }
         tail.ragRetrievalTitles = [...(tail.ragRetrievalTitles ?? []), part.title];
+      } else if (part.type === "webSearchRefs" && part.references?.length) {
+        if (!m.streaming) {
+          return;
+        }
+        tail.webSearchReferences = [...part.references];
       } else if (part.type === "reasoning" && part.v) {
+        m.reasoningStreaming = true;
         tail.reasoning = (tail.reasoning ?? "") + part.v;
       } else if (part.type === "workflowStage") {
         mergeWorkflowStage(m, part.stage);
@@ -1199,7 +1575,8 @@ watch(
       .map((m) => {
         const vi = m.replyVariants?.length ? String(m.activeVariantIndex ?? 0) : "";
         const rag = (m.ragRetrievalTitles ?? []).join("|");
-        return `${m.content}\u0001${m.reasoning ?? ""}\u0001${m.usage?.totalTokens ?? ""}\u0001${vi}\u0001${rag}`;
+        const ws = (m.webSearchReferences ?? []).map((w) => `${w.url}\u0001${w.title}`).join("|");
+        return `${m.content}\u0001${m.reasoning ?? ""}\u0001${m.usage?.totalTokens ?? ""}\u0001${vi}\u0001${rag}\u0001${ws}`;
       })
       .join("\u0002"),
   () => {
@@ -1220,6 +1597,7 @@ function clearThread() {
 
 function selectConv(id: number) {
   convId.value = id;
+  webSearchEnabled.value = false;
   if (isMobile.value) {
     sidebarOpen.value = false;
   }
@@ -1245,6 +1623,15 @@ const tenantShellReady = ref(false);
 async function loadChatShellForCurrentTenant() {
   try {
     models.value = await chatApi.listChatModels();
+    try {
+      const av = await chatApi.getWebSearchAvailability();
+      webSearchAllowed.value = !!av?.allowed;
+    } catch {
+      webSearchAllowed.value = false;
+    }
+    if (!webSearchAllowed.value) {
+      webSearchEnabled.value = false;
+    }
     if (!models.value.length) {
       ElMessage.warning("当前租户暂无可用模型，请先在管理端配置 LLM。");
     } else if (!models.value.some((m) => m.alias === modelAlias.value)) {
@@ -1286,6 +1673,7 @@ async function onAuthDone() {
 function logoutUser() {
   clearUserSession();
   refreshAuthLabel();
+  webSearchEnabled.value = false;
   void refresh();
   clearThread();
   ElMessage.success("已退出登录");
@@ -1364,6 +1752,7 @@ watch(modelAlias, () => {
 async function newConv() {
   const c = await chatApi.createConversation("新对话 " + new Date().toLocaleString("zh-CN", { hour12: false }));
   convId.value = c.id;
+  webSearchEnabled.value = false;
   if (isMobile.value) {
     sidebarOpen.value = false;
   }
@@ -1392,11 +1781,28 @@ async function send() {
   }
   if (!convId.value) return;
 
+  let intentFlowTicket: string | undefined;
+  for (let i = messages.value.length - 1; i >= 0; i--) {
+    const row = messages.value[i]!;
+    if (row.role !== "user" && row.role !== "assistant") continue;
+    const t = row.intentTurnHit?.intentFlowTicket;
+    if (t) {
+      intentFlowTicket = t;
+      break;
+    }
+  }
+
   let attachmentIds: number[] = [];
+  let uploadedAttachmentViews: chatApi.ChatAttachmentMessage[] = [];
   if (pendingFiles.value.length) {
     try {
       const ups = await chatApi.uploadChatAttachments(convId.value, pendingFiles.value);
       attachmentIds = ups.map((u) => u.id);
+      uploadedAttachmentViews = ups.map((u) => ({
+        id: u.id,
+        fileName: u.fileName,
+        charLength: u.charLength ?? null,
+      }));
       pendingFiles.value = [];
     } catch (e: unknown) {
       ElMessage.error(apiRequestErrorMessage(e, "附件上传失败"));
@@ -1406,8 +1812,14 @@ async function send() {
 
   const think =
     !!currentModel.value?.supportsThinking && thinkingEnabled.value;
+  const useWeb = webSearchAllowed.value && webSearchEnabled.value;
 
-  messages.value.push({ role: "user", content: text, clientRowKey: newClientRowKey() });
+  messages.value.push({
+    role: "user",
+    content: text,
+    clientRowKey: newClientRowKey(),
+    ...(uploadedAttachmentViews.length ? { attachments: uploadedAttachmentViews } : {}),
+  });
   input.value = "";
   messages.value.push({
     role: "assistant",
@@ -1416,8 +1828,8 @@ async function send() {
     ragRetrievalTitles: [],
     workflowSegments: [],
     streaming: true,
-    reasoning: think ? "" : undefined,
-    reasoningStreaming: think,
+    reasoning: undefined,
+    reasoningStreaming: false,
     modelAlias: modelAlias.value,
   });
   const assistantIdx = messages.value.length - 1;
@@ -1432,7 +1844,9 @@ async function send() {
         content: text,
         modelAlias: modelAlias.value,
         thinkingEnabled: think,
+        webSearchEnabled: useWeb,
         attachmentIds,
+        ...(intentFlowTicket ? { intentFlowTicket } : {}),
       },
       (part) => {
         if (sendGen !== assistantStreamGeneration) {
@@ -1441,7 +1855,7 @@ async function send() {
         const m = messages.value[assistantIdx];
         if (!m) return;
         if (part.type === "content" && part.v) {
-          if (!m.content && part.v.trim().length > 0) {
+          if (!m.content && part.v.trim().length > 0 && (m.workflowSegments?.length ?? 0) === 0) {
             m.reasoningCollapsed = true;
           }
           m.content += part.v;
@@ -1450,7 +1864,13 @@ async function send() {
             return;
           }
           m.ragRetrievalTitles = [...(m.ragRetrievalTitles ?? []), part.title];
+        } else if (part.type === "webSearchRefs" && part.references?.length) {
+          if (!m.streaming) {
+            return;
+          }
+          m.webSearchReferences = [...part.references];
         } else if (part.type === "reasoning" && part.v) {
+          m.reasoningStreaming = true;
           m.reasoning = (m.reasoning ?? "") + part.v;
         } else if (part.type === "workflowStage") {
           mergeWorkflowStage(m, part.stage);
@@ -1762,34 +2182,108 @@ async function send() {
   max-width: 100%;
 }
 
-/* 意图工作流：整段说明与分阶段 loading / 流式 / 完成 */
+.reasoning-intent-hint {
+  margin: 0;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.reasoning-intent-hint strong {
+  font-weight: 600;
+  color: #27272a;
+}
+
+/* 意图工作流：与「思考过程」类似的顶栏 + 可折叠正文，支持 Markdown */
 .intent-workflow {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
   margin-bottom: 10px;
   min-width: 0;
   max-width: 100%;
 }
 
-.wf-card {
+.intent-workflow-shell {
   border: 1px solid #e4e4e7;
   border-radius: 10px;
   background: #fafafa;
   overflow: hidden;
 }
 
-.wf-title {
+.intent-workflow-head {
   padding: 8px 12px;
   font-size: 12px;
   font-weight: 600;
   color: #52525b;
+  background: #f4f4f5;
   border-bottom: 1px solid #e4e4e7;
+}
+
+.wf-step + .wf-step {
+  border-top: 1px solid #e4e4e7;
+}
+
+.wf-bar-lead {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+}
+
+.wf-bar-done {
+  color: #16a34a;
+}
+
+.wf-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  background: #fafafa;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: #3f3f46;
+  transition: background 0.15s ease;
+}
+
+.wf-bar:hover {
   background: #f4f4f5;
 }
 
-.wf-body-wrap {
-  padding: 10px 12px 12px;
+.wf-bar--live {
+  background: #f0fdf4;
+}
+
+.wf-bar-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #27272a;
+}
+
+.wf-bar-meta {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #71717a;
+}
+
+.wf-bar-chevron {
+  flex-shrink: 0;
+  color: #a1a1aa;
+}
+
+.wf-body-outer {
+  padding: 0 12px 12px;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.wf-body-md {
+  padding-top: 6px;
   font-size: 14px;
   line-height: 1.55;
   color: #3f3f46;
@@ -1801,6 +2295,7 @@ async function send() {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding-top: 8px;
   color: #71717a;
   font-size: 13px;
 }
@@ -1813,19 +2308,6 @@ async function send() {
   to {
     transform: rotate(360deg);
   }
-}
-
-.wf-stream,
-.wf-done {
-  white-space: pre-wrap;
-}
-
-.wf-stream {
-  color: #3f3f46;
-}
-
-.wf-done {
-  color: #27272a;
 }
 
 .bubble-inner--assistant {
@@ -1949,6 +2431,18 @@ async function send() {
   border: none;
   border-top: 1px solid #e4e4e7;
   margin: 0.75em 0;
+}
+
+/* 经 v-html 注入的流式光标无 Vue scoped 的 data-v-*，普通 .cursor 选择器无法命中，故单独类名 + :deep */
+.bubble-md :deep(.stream-md-cursor) {
+  display: inline-block;
+  width: 6px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -2px;
+  border-radius: 1px;
+  background: #19c37d;
+  animation: blink 1s step-end infinite;
 }
 
 .messages-wrap {
@@ -2153,6 +2647,59 @@ async function send() {
   padding-right: 4px;
 }
 
+.user-msg-attach-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #e4e4e7;
+}
+
+.user-msg-attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid #e4e4e7;
+  font-size: 12px;
+  color: #3f3f46;
+}
+
+.user-msg-attach-ico {
+  flex-shrink: 0;
+  font-size: 14px;
+  color: #71717a;
+}
+
+.user-msg-attach-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+.intent-hit-hint {
+  margin: 8px 0 0 2px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  font-size: 12px;
+  color: #1e40af;
+  line-height: 1.45;
+  text-align: right;
+}
+
+.intent-hit-sub {
+  color: #3b82f6;
+  font-weight: 500;
+}
+
 .rag-sources-strip {
   display: flex;
   flex-wrap: wrap;
@@ -2181,6 +2728,58 @@ async function send() {
   border: 1px solid #86efac;
   color: #14532d;
   line-height: 1.35;
+}
+
+.web-search-refs-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 10px 0 0 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  font-size: 12px;
+  color: #0f172a;
+}
+
+.web-ref-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  color: #0f172a;
+  text-decoration: none;
+  line-height: 1.35;
+}
+
+.web-ref-chip:hover {
+  border-color: #94a3b8;
+  color: #0369a1;
+}
+
+.web-ref-chip--nolink {
+  cursor: default;
+}
+
+.web-ref-logo {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.web-ref-chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: min(320px, 70vw);
 }
 
 .bubble-row.assistant .cursor {

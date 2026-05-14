@@ -6,12 +6,12 @@
       show-icon
       :closable="false"
       class="rag-cap-inline-alert"
-      title="向量库未启用"
-      description="上传、入库与触发索引已禁用；仍可浏览与下载已有文档。"
+      :title="t('views.kbMatrix.vecWarnTitle')"
+      :description="t('views.kbMatrix.vecWarnDesc')"
     />
     <div class="docs-matrix">
             <aside class="docs-nav" v-loading="loadingCategories">
-              <el-button type="primary" class="new-cat-btn" @click="openCategoryCreate">新建分类</el-button>
+              <el-button type="primary" class="new-cat-btn" @click="openCategoryCreate">{{ t("views.kbMatrix.newCategory") }}</el-button>
               <nav class="cat-nav">
                 <button
                   type="button"
@@ -19,7 +19,7 @@
                   :class="{ 'is-active': selectedCategoryId === null }"
                   @click="selectCategoryFilter(null)"
                 >
-                  全部分类
+                  {{ t("views.kbMatrix.allCategories") }}
                 </button>
                 <div
                   v-for="c in categories"
@@ -34,8 +34,8 @@
                     <el-button class="cat-more" text type="primary" size="small">···</el-button>
                     <template #dropdown>
                       <el-dropdown-menu>
-                        <el-dropdown-item command="edit">编辑</el-dropdown-item>
-                        <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
+                        <el-dropdown-item command="edit">{{ t("views.kbMatrix.edit") }}</el-dropdown-item>
+                        <el-dropdown-item command="delete" divided>{{ t("views.kbMatrix.delete") }}</el-dropdown-item>
                       </el-dropdown-menu>
                     </template>
                   </el-dropdown>
@@ -43,23 +43,23 @@
               </nav>
             </aside>
 
-            <div ref="docsMainRef" class="docs-main">
+            <div class="docs-main">
               <div class="docs-toolbar">
                 <div class="docs-toolbar-left">
                   <el-input
                     v-model="queryTitle"
-                    placeholder="文档名称"
+                    :placeholder="t('views.kbMatrix.docTitlePh')"
                     clearable
                     class="q-title"
                     @keyup.enter="runDocQuery"
                   />
-                  <el-select v-model="queryDisplayStatus" placeholder="状态" clearable class="q-status">
-                    <el-option label="已发布" value="PUBLISHED" />
-                    <el-option label="解析中" value="PARSING" />
-                    <el-option label="解析失败" value="PARSE_FAILED" />
+                  <el-select v-model="queryDisplayStatus" :placeholder="t('views.kbMatrix.statusPh')" clearable class="q-status">
+                    <el-option :label="t('views.kbMatrix.statusPublished')" value="PUBLISHED" />
+                    <el-option :label="t('views.kbMatrix.statusParsing')" value="PARSING" />
+                    <el-option :label="t('views.kbMatrix.statusFailed')" value="PARSE_FAILED" />
                   </el-select>
-                  <el-button @click="resetDocQuery">重置</el-button>
-                  <el-button type="primary" @click="runDocQuery">查询</el-button>
+                  <el-button @click="resetDocQuery">{{ t("views.kbMatrix.reset") }}</el-button>
+                  <el-button type="primary" @click="runDocQuery">{{ t("views.kbMatrix.query") }}</el-button>
                 </div>
                 <div class="docs-toolbar-right">
                   <el-button
@@ -69,15 +69,15 @@
                     :disabled="!vectorMilvusEnabled"
                     @click="triggerIndex"
                   >
-                    触发索引
+                    {{ t("views.kbMatrix.triggerIndex") }}
                   </el-button>
-                  <el-button plain @click="openJobsDialog">入库任务</el-button>
-                  <el-button :loading="loadingDocPage || loadingCategories" @click="refreshDocs">刷新</el-button>
-                  <el-button type="primary" :disabled="!vectorMilvusEnabled" @click="openIngest">上传 / 入库</el-button>
+                  <el-button plain @click="openJobsDialog">{{ t("views.kbMatrix.jobsBtn") }}</el-button>
+                  <el-button :loading="loadingDocPage || loadingCategories" @click="refreshDocs">{{ t("views.kbMatrix.refresh") }}</el-button>
+                  <el-button type="primary" :disabled="!vectorMilvusEnabled" @click="openIngest">{{ t("views.kbMatrix.uploadIngest") }}</el-button>
                 </div>
               </div>
 
-              <div class="docs-table-wrap">
+              <div ref="docsTableWrapRef" class="docs-table-wrap">
                 <el-table
                   ref="docTableRef"
                   v-loading="loadingDocPage"
@@ -86,52 +86,58 @@
                   border
                   stripe
                   :height="docTableBodyHeight"
-                  empty-text="暂无文档"
+                  :empty-text="t('views.kbMatrix.emptyDocs')"
                   @selection-change="onDocSelectionChange"
                 >
                 <el-table-column type="selection" width="48" align="center" />
-                <el-table-column label="文档名称" min-width="200" show-overflow-tooltip>
+                <el-table-column :label="t('views.kbMatrix.colDocTitle')" min-width="200" show-overflow-tooltip>
                   <template #default="{ row }">
                     <router-link class="doc-title-link" :to="docChunksRoute(row)">
-                      {{ row.title || "（无标题）" }}
+                      {{ row.title || t("views.kbMatrix.noTitle") }}
                     </router-link>
                   </template>
                 </el-table-column>
-                <el-table-column label="命中" width="88" align="right">
+                <el-table-column :label="t('views.kbMatrix.colHits')" width="88" align="right">
                   <template #default="{ row }">{{ row.hitCount ?? 0 }}</template>
                 </el-table-column>
-                <el-table-column label="适用范围" min-width="140" show-overflow-tooltip>
-                  <template #default="{ row }">{{ row.applicableScope || "—" }}</template>
+                <el-table-column :label="t('views.kbMatrix.colScope')" min-width="140" show-overflow-tooltip>
+                  <template #default="{ row }">{{ row.applicableScope || emDash }}</template>
                 </el-table-column>
-                <el-table-column label="上传人" width="120" show-overflow-tooltip>
-                  <template #default="{ row }">{{ row.uploadedByLabel || "—" }}</template>
+                <el-table-column :label="t('views.kbMatrix.colUploader')" width="120" show-overflow-tooltip>
+                  <template #default="{ row }">{{ row.uploadedByLabel || emDash }}</template>
                 </el-table-column>
-                <el-table-column label="更新时间" width="172">
+                <el-table-column :label="t('views.kbMatrix.colUpdated')" width="172">
                   <template #default="{ row }">{{ formatTime(row.updatedAt) }}</template>
                 </el-table-column>
-                <el-table-column label="状态" width="112" align="center">
+                <el-table-column :label="t('views.kbMatrix.colStatus')" width="112" align="center">
                   <template #default="{ row }">
-                    <el-tag v-if="row.displayStatus === 'PUBLISHED'" type="success" size="small">已发布</el-tag>
-                    <el-tag v-else-if="row.displayStatus === 'PARSING'" type="warning" size="small">解析中</el-tag>
-                    <el-tag v-else-if="row.displayStatus === 'PARSE_FAILED'" type="danger" size="small">解析失败</el-tag>
+                    <el-tag v-if="row.displayStatus === 'PUBLISHED'" type="success" size="small">{{
+                      t("views.kbMatrix.statusPublished")
+                    }}</el-tag>
+                    <el-tag v-else-if="row.displayStatus === 'PARSING'" type="warning" size="small">{{
+                      t("views.kbMatrix.statusParsing")
+                    }}</el-tag>
+                    <el-tag v-else-if="row.displayStatus === 'PARSE_FAILED'" type="danger" size="small">{{
+                      t("views.kbMatrix.statusFailed")
+                    }}</el-tag>
                     <el-tag v-else size="small">{{ ragDocumentDisplayStatusLabel(row.displayStatus) }}</el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column label="操作" width="300" align="right" fixed="right">
+                <el-table-column :label="t('views.kbMatrix.colActions')" width="300" align="right" fixed="right">
                   <template #default="{ row }">
                     <template v-if="row.displayStatus === 'PUBLISHED' || !row.displayStatus">
-                      <el-button link type="primary" size="small" @click="openDocSettings(row)">设置</el-button>
-                      <el-button link type="primary" size="small" @click="openIngest">更新文档</el-button>
-                      <el-button link type="danger" size="small" @click="removeDoc(row)">删除</el-button>
-                      <el-button link type="primary" size="small" @click="downloadDocMarkdown(row)">下载</el-button>
-                      <el-button link type="primary" size="small" @click="openChunksDrawer(row)">分片</el-button>
+                      <el-button link type="primary" size="small" @click="openDocSettings(row)">{{ t("views.kbMatrix.settings") }}</el-button>
+                      <el-button link type="primary" size="small" @click="openIngest">{{ t("views.kbMatrix.updateDoc") }}</el-button>
+                      <el-button link type="danger" size="small" @click="removeDoc(row)">{{ t("views.kbMatrix.removeDoc") }}</el-button>
+                      <el-button link type="primary" size="small" @click="downloadDocMarkdown(row)">{{ t("views.kbMatrix.download") }}</el-button>
+                      <el-button link type="primary" size="small" @click="openChunksDrawer(row)">{{ t("views.kbMatrix.chunks") }}</el-button>
                     </template>
                     <template v-else-if="row.displayStatus === 'PARSE_FAILED'">
-                      <el-button link type="primary" size="small" @click="openIngest">重新上传</el-button>
-                      <el-button link type="danger" size="small" @click="removeDoc(row)">删除</el-button>
-                      <el-button link type="primary" size="small" @click="downloadDocMarkdown(row)">下载</el-button>
+                      <el-button link type="primary" size="small" @click="openIngest">{{ t("views.kbMatrix.reupload") }}</el-button>
+                      <el-button link type="danger" size="small" @click="removeDoc(row)">{{ t("views.kbMatrix.removeDoc") }}</el-button>
+                      <el-button link type="primary" size="small" @click="downloadDocMarkdown(row)">{{ t("views.kbMatrix.download") }}</el-button>
                     </template>
-                    <span v-else class="muted">—</span>
+                    <span v-else class="muted">{{ emDash }}</span>
                   </template>
                 </el-table-column>
                 </el-table>
@@ -139,9 +145,9 @@
 
               <div class="docs-footer">
                 <div class="docs-footer-left">
-                  <span class="doc-range-text">第 {{ docRangeText }} 条 / 共 {{ docPageTotal }} 条</span>
+                  <span class="doc-range-text">{{ t("views.kbMatrix.rangeText", { range: docRangeText, total: docPageTotal }) }}</span>
                   <el-button v-if="selectedDocs.length" link type="danger" size="small" @click="batchRemoveDocs">
-                    批量删除
+                    {{ t("views.kbMatrix.batchDelete") }}
                   </el-button>
                 </div>
                 <el-pagination
@@ -160,17 +166,17 @@
 
     <el-dialog
       v-model="jobsDlgOpen"
-      title="入库异步任务"
+      :title="t('views.kbMatrix.jobsDlgTitle')"
       width="min(920px, 96vw)"
       class="jobs-dlg"
       destroy-on-close
       @open="onJobsDialogOpen"
     >
       <p class="jobs-dlg-hint">
-        与本知识库相关的网页入库、文件入库与索引任务。展开行可查看阶段说明与入参摘要；原始数据在折叠区，供排障使用。
+        {{ t("views.kbMatrix.jobsDlgHint") }}
       </p>
       <div class="jobs-dlg-toolbar">
-        <el-button type="primary" plain :loading="loadingJobs" @click="loadKbJobs">刷新任务列表</el-button>
+        <el-button type="primary" plain :loading="loadingJobs" @click="loadKbJobs">{{ t("views.kbMatrix.refreshJobs") }}</el-button>
       </div>
       <el-table
         v-loading="loadingJobs"
@@ -180,41 +186,41 @@
         border
         class="jobs-dlg-table"
         max-height="420"
-        empty-text="暂无入库任务"
+        :empty-text="t('views.kbMatrix.emptyJobs')"
       >
-        <el-table-column label="任务类型" width="108" align="center">
+        <el-table-column :label="t('views.kbMatrix.colJobType')" width="108" align="center">
           <template #default="{ row }">
             <el-tag type="warning" size="small" effect="plain">{{ row.typeLabel }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="标题 / 地址" min-width="200">
+        <el-table-column :label="t('views.kbMatrix.colTitleAddr')" min-width="200">
           <template #default="{ row }">
             <div class="cell-title">{{ row.title }}</div>
             <div v-if="row.subtitle" class="cell-sub">{{ row.subtitle }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="100" align="center">
+        <el-table-column :label="t('views.kbMatrix.colJobStatus')" width="100" align="center">
           <template #default="{ row }">
             <el-tag :type="row.statusType" size="small">{{ row.statusLabel }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="时间" width="168">
+        <el-table-column :label="t('views.kbMatrix.colTime')" width="168">
           <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
         </el-table-column>
         <el-table-column type="expand" width="48">
           <template #default="{ row }">
             <div class="expand-inner job-expand">
               <el-descriptions :column="1" border size="small">
-                <el-descriptions-item label="任务内部编号（排障）">{{ row.job?.id }}</el-descriptions-item>
-                <el-descriptions-item label="任务类型">{{ jobTaskTypeLabel(row.job?.taskType) }}</el-descriptions-item>
-                <el-descriptions-item label="状态">
+                <el-descriptions-item :label="t('views.kbMatrix.expandJobId')">{{ row.job?.id }}</el-descriptions-item>
+                <el-descriptions-item :label="t('views.kbMatrix.expandTaskType')">{{ jobTaskTypeLabel(row.job?.taskType) }}</el-descriptions-item>
+                <el-descriptions-item :label="t('views.kbMatrix.expandStatus')">
                   <el-tag v-if="row.job" :type="jobStatusMeta(row.job.status).tag" size="small">
                     {{ jobStatusMeta(row.job.status).label }}
                   </el-tag>
                 </el-descriptions-item>
               </el-descriptions>
               <div v-if="parseJobResultMetaRows(row.job?.resultJson).length" class="job-kv-block">
-                <div class="job-section-title">结果摘要</div>
+                <div class="job-section-title">{{ t("views.kbMatrix.resultSummary") }}</div>
                 <el-descriptions :column="1" border size="small">
                   <el-descriptions-item
                     v-for="(r, ri) in parseJobResultMetaRows(row.job?.resultJson)"
@@ -226,7 +232,7 @@
                 </el-descriptions>
               </div>
               <div v-if="parseResultSteps(row.job?.resultJson).length" class="timeline-wrap">
-                <div class="job-section-title">执行阶段</div>
+                <div class="job-section-title">{{ t("views.kbMatrix.jobTimelineTitle") }}</div>
                 <el-timeline>
                   <el-timeline-item
                     v-for="(s, i) in parseResultSteps(row.job?.resultJson)"
@@ -241,7 +247,7 @@
                 </el-timeline>
               </div>
               <div v-if="parseJobPayloadRows(row.job?.payloadJson).length" class="job-kv-block">
-                <div class="job-section-title">任务入参</div>
+                <div class="job-section-title">{{ t("views.kbMatrix.payloadSection") }}</div>
                 <el-descriptions :column="1" border size="small">
                   <el-descriptions-item
                     v-for="(r, pi) in parseJobPayloadRows(row.job?.payloadJson)"
@@ -253,12 +259,12 @@
                 </el-descriptions>
               </div>
               <el-collapse class="job-raw-collapse">
-                <el-collapse-item title="原始入参（排障）" :name="'p-' + row.key">
+                <el-collapse-item :title="t('views.kbMatrix.rawPayloadCollapse')" :name="'p-' + row.key">
                   <el-scrollbar max-height="120px">
                     <pre class="json-pre">{{ prettyJson(row.job?.payloadJson) }}</pre>
                   </el-scrollbar>
                 </el-collapse-item>
-                <el-collapse-item title="原始返回（排障）" :name="'r-' + row.key">
+                <el-collapse-item :title="t('views.kbMatrix.rawResultCollapse')" :name="'r-' + row.key">
                   <el-scrollbar max-height="140px">
                     <pre class="json-pre">{{ prettyJson(row.job?.resultJson) }}</pre>
                   </el-scrollbar>
@@ -270,22 +276,22 @@
       </el-table>
     </el-dialog>
 
-    <el-drawer v-model="ingestOpen" title="上传与入库" size="480px" destroy-on-close @closed="resetIngestForm">
+    <el-drawer v-model="ingestOpen" :title="t('views.kbMatrix.ingestDrawerTitle')" size="480px" destroy-on-close @closed="resetIngestForm">
       <el-radio-group v-model="ingestType" class="ingest-type">
-        <el-radio-button label="crawl">网页爬取</el-radio-button>
-        <el-radio-button label="upload">本地上传</el-radio-button>
-        <el-radio-button label="paste">Markdown 任务</el-radio-button>
+        <el-radio-button label="crawl">{{ t("views.kbMatrix.ingestTabCrawl") }}</el-radio-button>
+        <el-radio-button label="upload">{{ t("views.kbMatrix.ingestTabUpload") }}</el-radio-button>
+        <el-radio-button label="paste">{{ t("views.kbMatrix.ingestTabPaste") }}</el-radio-button>
       </el-radio-group>
       <p class="ingest-tip">{{ ingestTip }}</p>
 
       <el-form label-width="108px" class="ingest-form">
         <template v-if="ingestType === 'crawl'">
-          <el-form-item label="网页 URL" required>
-            <el-input v-model="crawlForm.url" placeholder="https://example.com/page" type="url" />
+          <el-form-item :label="t('views.kbMatrix.labelWebUrl')" required>
+            <el-input v-model="crawlForm.url" :placeholder="t('views.ingest.urlPh')" type="url" />
           </el-form-item>
         </template>
         <template v-else-if="ingestType === 'upload'">
-          <el-form-item label="选择文件" required>
+          <el-form-item :label="t('views.kbMatrix.labelPickFile')" required>
             <el-upload
               :auto-upload="false"
               :limit="1"
@@ -293,43 +299,45 @@
               :on-remove="() => (uploadFile = null)"
               accept=".txt,.md,.pdf,.doc,.docx,.html,.htm"
             >
-              <el-button type="primary" plain>选择文件</el-button>
+              <el-button type="primary" plain>{{ t("views.kbMatrix.pickFileBtn") }}</el-button>
             </el-upload>
           </el-form-item>
         </template>
         <template v-else>
-          <el-form-item label="文件名" required>
-            <el-input v-model="pasteForm.originalFilename" placeholder="如 notes.md" />
+          <el-form-item :label="t('views.ingest.labelFilename')" required>
+            <el-input v-model="pasteForm.originalFilename" :placeholder="t('views.ingest.filenamePh')" />
           </el-form-item>
-          <el-form-item label="内容类型">
-            <el-input v-model="pasteForm.contentType" placeholder="可选，如 text/markdown" />
+          <el-form-item :label="t('views.ingest.labelContentType')">
+            <el-input v-model="pasteForm.contentType" :placeholder="t('views.ingest.ctPh')" />
           </el-form-item>
-          <el-form-item label="Markdown">
-            <el-input v-model="pasteForm.markdownContent" type="textarea" :rows="8" placeholder="粘贴正文" />
+          <el-form-item :label="t('views.ingest.labelMd')">
+            <el-input v-model="pasteForm.markdownContent" type="textarea" :rows="8" :placeholder="t('views.ingest.mdPh')" />
           </el-form-item>
         </template>
 
-        <el-form-item label="分片策略">
-          <el-select v-model="ingestChunkStrategy" clearable placeholder="使用知识库默认" style="width: 100%">
-            <el-option label="不分片" :value="0" />
-            <el-option label="固定字数" :value="1" />
-            <el-option label="语义段落" :value="2" />
-            <el-option label="滑动窗口" :value="3" />
-            <el-option label="自定义（预留）" :value="99" />
+        <el-form-item :label="t('views.ingest.labelChunkOverride')">
+          <el-select v-model="ingestChunkStrategy" clearable :placeholder="t('views.ingest.chunkDefaultPh')" style="width: 100%">
+            <el-option :label="t('views.ingest.chunk0')" :value="0" />
+            <el-option :label="t('views.ingest.chunk1')" :value="1" />
+            <el-option :label="t('views.ingest.chunk2')" :value="2" />
+            <el-option :label="t('views.ingest.chunk3')" :value="3" />
+            <el-option :label="t('views.ingest.chunk99')" :value="99" />
           </el-select>
         </el-form-item>
 
         <el-form-item>
-          <el-button type="primary" class="accent-btn" :loading="ingestSubmitting" @click="submitIngest">提交</el-button>
+          <el-button type="primary" class="accent-btn" :loading="ingestSubmitting" @click="submitIngest">{{
+            t("views.kbMatrix.submitIngest")
+          }}</el-button>
         </el-form-item>
       </el-form>
     </el-drawer>
 
-    <el-dialog v-model="chunkDlg" title="编辑分片" width="720px" destroy-on-close @closed="editingChunk = null">
+    <el-dialog v-model="chunkDlg" :title="t('views.chunks.dlgEditChunk')" width="720px" destroy-on-close @closed="editingChunk = null">
       <el-input v-model="chunkEditText" type="textarea" :rows="14" />
       <template #footer>
-        <el-button @click="chunkDlg = false">取消</el-button>
-        <el-button type="primary" :loading="chunkSaving" @click="saveChunk">保存</el-button>
+        <el-button @click="chunkDlg = false">{{ t("views.kbMatrix.formCancel") }}</el-button>
+        <el-button type="primary" :loading="chunkSaving" @click="saveChunk">{{ t("views.kbMatrix.formSave") }}</el-button>
       </template>
     </el-dialog>
 
@@ -342,7 +350,7 @@
     >
       <div v-if="chunksDrawerDoc" class="chunks-drawer-bar">
         <el-button size="small" type="primary" plain :loading="chunksDrawerLoading" @click="loadChunksInDrawer">
-          加载分片
+          {{ t("views.kbMatrix.chunksLoadBtn") }}
         </el-button>
       </div>
       <el-table
@@ -353,61 +361,61 @@
         class="chunks-drawer-table"
       >
         <el-table-column prop="seq" label="#" width="52" />
-        <el-table-column label="命中" width="72" align="right">
+        <el-table-column :label="t('views.kbMatrix.colHits')" width="72" align="right">
           <template #default="{ row: c }">{{ c.hitCount ?? 0 }}</template>
         </el-table-column>
-        <el-table-column label="内容预览" min-width="220">
+        <el-table-column :label="t('views.kbMatrix.colPreview')" min-width="220">
           <template #default="{ row: c }">{{ preview(c.content) }}</template>
         </el-table-column>
-        <el-table-column prop="createdAt" label="创建" width="156" />
-        <el-table-column label="操作" width="88" align="center">
+        <el-table-column prop="createdAt" :label="t('views.kbMatrix.colCreatedShort')" width="156" />
+        <el-table-column :label="t('views.kbMatrix.colActions')" width="88" align="center">
           <template #default="{ row: c }">
-            <el-button link type="primary" size="small" @click="openChunkEditFromDrawer(c)">编辑</el-button>
+            <el-button link type="primary" size="small" @click="openChunkEditFromDrawer(c)">{{ t("views.kbMatrix.edit") }}</el-button>
           </template>
         </el-table-column>
       </el-table>
       <el-empty
         v-else-if="chunksDrawerDoc"
-        description="点击「加载分片」查看内容"
+        :description="t('views.kbMatrix.chunksEmptyHint')"
         :image-size="56"
       />
     </el-drawer>
 
-    <el-dialog v-model="docSettingsDlg" title="文档设置" width="520px" destroy-on-close @closed="docSettingsRow = null">
+    <el-dialog v-model="docSettingsDlg" :title="t('views.kbMatrix.docSettingsTitle')" width="520px" destroy-on-close @closed="docSettingsRow = null">
       <el-form v-if="docSettingsRow" label-width="100px">
-        <el-form-item label="分类">
-          <el-select v-model="docSettingsCategoryId" clearable placeholder="未分类" style="width: 100%">
+        <el-form-item :label="t('views.chunks.categoryLabel')">
+          <el-select v-model="docSettingsCategoryId" clearable :placeholder="t('views.chunks.categoryPh')" style="width: 100%">
             <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="适用范围">
-          <el-input v-model="docSettingsScope" type="textarea" :rows="3" placeholder="可选" />
+        <el-form-item :label="t('views.chunks.scopeLabel')">
+          <el-input v-model="docSettingsScope" type="textarea" :rows="3" :placeholder="t('views.kbMatrix.scopeOptionalPh')" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="docSettingsDlg = false">取消</el-button>
-        <el-button type="primary" :loading="docSettingsSaving" @click="saveDocSettings">保存</el-button>
+        <el-button @click="docSettingsDlg = false">{{ t("views.kbMatrix.formCancel") }}</el-button>
+        <el-button type="primary" :loading="docSettingsSaving" @click="saveDocSettings">{{ t("views.kbMatrix.formSave") }}</el-button>
       </template>
     </el-dialog>
 
     <el-dialog
       v-model="categoryDlg"
-      :title="categoryDlgMode === 'create' ? '新建分类' : '编辑分类'"
+      :title="categoryDlgMode === 'create' ? t('views.kbMatrix.categoryDlgNew') : t('views.kbMatrix.categoryDlgEdit')"
       width="420px"
       destroy-on-close
       @closed="onCategoryDlgClosed"
     >
       <el-form label-width="80px">
-        <el-form-item label="名称" required>
+        <el-form-item :label="t('views.kbMatrix.labelCatName')" required>
           <el-input v-model="categoryForm.name" maxlength="128" show-word-limit />
         </el-form-item>
-        <el-form-item label="排序">
+        <el-form-item :label="t('views.kbMatrix.labelSort')">
           <el-input-number v-model="categoryForm.sortOrder" :min="0" :max="9999" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="categoryDlg = false">取消</el-button>
-        <el-button type="primary" :loading="categorySaving" @click="saveCategoryDlg">保存</el-button>
+        <el-button @click="categoryDlg = false">{{ t("views.kbMatrix.formCancel") }}</el-button>
+        <el-button type="primary" :loading="categorySaving" @click="saveCategoryDlg">{{ t("views.kbMatrix.formSave") }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -417,6 +425,7 @@
 import { ElMessage, ElMessageBox } from "element-plus";
 import type { UploadFile } from "element-plus";
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import * as ragApi from "../../../api/ragAdmin";
 import * as jobApi from "../../../api/jobAdmin";
 import type {
@@ -439,10 +448,13 @@ import {
   ragDocumentDisplayStatusLabel,
 } from "../../../utils/ragJobDisplay";
 
+const { t } = useI18n();
+const emDash = "\u2014";
+
 /** 知识库文档导出 Markdown 的本地文件名：去掉常见源文件后缀，避免出现「报告.doc.md」。 */
 function filenameForMarkdownExport(title: string | null | undefined): string {
-  let base = (title || "document").trim().replace(/[/\\?%*:|"<>]/g, "_").slice(0, 120);
-  if (!base) base = "document";
+  let base = (title || t("views.kbMatrix.docFallback")).trim().replace(/[/\\?%*:|"<>]/g, "_").slice(0, 120);
+  if (!base) base = t("views.kbMatrix.docFallback");
   const lower = base.toLowerCase();
   if (lower.endsWith(".md") || lower.endsWith(".markdown")) {
     return base;
@@ -451,7 +463,7 @@ function filenameForMarkdownExport(title: string | null | undefined): string {
     /\.(docx?|pdf|html?|txt|rtf|pptx?|xlsx?|csv|json|xml|epub|odt|pages)$/i,
     "",
   );
-  const root = stripped.trim() || "document";
+  const root = stripped.trim() || t("views.kbMatrix.docFallback");
   return `${root}.md`;
 }
 
@@ -475,7 +487,7 @@ const queryTitle = ref("");
 const queryDisplayStatus = ref<string | undefined>(undefined);
 const selectedDocs = ref<RagDocumentAdminRow[]>([]);
 const docTableRef = ref<{ clearSelection: () => void } | null>(null);
-const docsMainRef = ref<HTMLElement | null>(null);
+const docsTableWrapRef = ref<HTMLElement | null>(null);
 /** 供 el-table 固定高度，使无数据时表体区域仍占满剩余空间 */
 const docTableBodyHeight = ref(360);
 let docTableResizeObserver: ResizeObserver | null = null;
@@ -534,7 +546,11 @@ const docRangeText = computed(() => {
 });
 
 const chunksDrawerTitle = computed(() =>
-  chunksDrawerDoc.value ? `分片 · ${chunksDrawerDoc.value.title || "文档"}` : "分片",
+  chunksDrawerDoc.value
+    ? t("views.kbMatrix.chunksTitle", {
+        title: chunksDrawerDoc.value.title || t("views.kbMatrix.docFallback"),
+      })
+    : t("views.kbMatrix.chunksTitleFallback"),
 );
 
 const chunksDrawerRows = computed(() => {
@@ -544,9 +560,9 @@ const chunksDrawerRows = computed(() => {
 });
 
 const ingestTip = computed(() => {
-  if (ingestType.value === "crawl") return "提交后创建异步任务，抓取网页并按所选分片策略入库。";
-  if (ingestType.value === "upload") return "即时解析所选文件并入库；分片可选覆盖仅对本文件生效。";
-  return "创建异步「文件入库」任务；适合大段 Markdown 或后续接对象存储的流程。";
+  if (ingestType.value === "crawl") return t("views.kbMatrix.ingestTipCrawl");
+  if (ingestType.value === "upload") return t("views.kbMatrix.ingestTipUpload");
+  return t("views.kbMatrix.ingestTipPaste");
 });
 
 const jobPipelineRows = computed<JobPipelineRow[]>(() =>
@@ -574,7 +590,7 @@ function docChunksRoute(row: RagDocumentAdminRow) {
 }
 
 function formatTime(v: string | null | undefined): string {
-  if (!v) return "—";
+  if (!v) return emDash;
   return v.replace("T", " ").slice(0, 19);
 }
 
@@ -599,16 +615,17 @@ function jobTitleSubtitle(j: JobTaskAdminRow): { title: string; subtitle?: strin
 
 async function triggerIndex() {
   if (!vectorMilvusEnabled.value) {
-    ElMessage.warning("当前未启用 Milvus 向量库，无法触发索引。");
+    ElMessage.warning(t("views.kbMatrix.milvusWarnIdx"));
     return;
   }
   indexingLoading.value = true;
   try {
-    const r = await ragApi.enqueueRagKbIndexJob(kid.value);
-    ElMessage.success("索引任务已加入队列，可在本知识库标题栏「异步任务」中查看进度");
+    await ragApi.enqueueRagKbIndexJob(kid.value);
+    ElMessage.success(t("views.kbMatrix.indexQueued"));
     await loadKbJobs();
   } catch (e: unknown) {
-    const msg = e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : "入队失败";
+    const msg =
+      e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : t("views.kbMatrix.enqueueFailed");
     ElMessage.error(msg);
   } finally {
     indexingLoading.value = false;
@@ -620,7 +637,8 @@ async function loadCategories() {
   try {
     categories.value = await ragApi.fetchRagKbDocumentCategories(kid.value);
   } catch (e: unknown) {
-    const msg = e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : "加载分类失败";
+    const msg =
+      e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : t("views.kbMatrix.loadCatFailed");
     ElMessage.error(msg);
   } finally {
     loadingCategories.value = false;
@@ -640,7 +658,8 @@ async function loadDocPage() {
     docRows.value = p.records ?? [];
     docPageTotal.value = p.total ?? 0;
   } catch (e: unknown) {
-    const msg = e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : "加载文档失败";
+    const msg =
+      e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : t("views.kbMatrix.loadDocFailed");
     ElMessage.error(msg);
   } finally {
     loadingDocPage.value = false;
@@ -729,9 +748,11 @@ async function onCategoryRowCommand(cmd: string, c: RagDocumentCategoryAdminRow)
   }
   if (cmd === "delete") {
     try {
-      await ElMessageBox.confirm(`确定删除分类「${c.name}」？（分类下不能有文档）`, "确认", { type: "warning" });
+      await ElMessageBox.confirm(t("views.kbMatrix.deleteCatConfirm", { name: c.name }), t("views.menuItems.confirm"), {
+        type: "warning",
+      });
       await ragApi.deleteRagKbDocumentCategory(kid.value, c.id);
-      ElMessage.success("已删除");
+      ElMessage.success(t("views.kbMatrix.deleted"));
       if (selectedCategoryId.value === c.id) {
         selectedCategoryId.value = null;
       }
@@ -746,25 +767,26 @@ async function onCategoryRowCommand(cmd: string, c: RagDocumentCategoryAdminRow)
 async function saveCategoryDlg() {
   const name = categoryForm.name.trim();
   if (!name) {
-    ElMessage.warning("请填写分类名称");
+    ElMessage.warning(t("views.kbMatrix.fillCatName"));
     return;
   }
   categorySaving.value = true;
   try {
     if (categoryDlgMode.value === "create") {
       await ragApi.createRagKbDocumentCategory(kid.value, { name, sortOrder: categoryForm.sortOrder });
-      ElMessage.success("已创建");
+      ElMessage.success(t("views.kbMatrix.catCreated"));
     } else if (categoryEditingId.value != null) {
       await ragApi.updateRagKbDocumentCategory(kid.value, categoryEditingId.value, {
         name,
         sortOrder: categoryForm.sortOrder,
       });
-      ElMessage.success("已保存");
+      ElMessage.success(t("views.kbMatrix.catSaved"));
     }
     categoryDlg.value = false;
     await loadCategories();
   } catch (e: unknown) {
-    const msg = e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : "保存失败";
+    const msg =
+      e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : t("views.kbMatrix.saveFailed");
     ElMessage.error(msg);
   } finally {
     categorySaving.value = false;
@@ -793,10 +815,11 @@ async function saveDocSettings() {
     const updated = await ragApi.patchRagKbDocument(kid.value, row.id, body);
     const i = docRows.value.findIndex((x) => x.id === updated.id);
     if (i >= 0) docRows.value[i] = updated;
-    ElMessage.success("已保存");
+    ElMessage.success(t("views.kbMatrix.docSaved"));
     docSettingsDlg.value = false;
   } catch (e: unknown) {
-    const msg = e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : "保存失败";
+    const msg =
+      e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : t("views.kbMatrix.saveFailed");
     ElMessage.error(msg);
   } finally {
     docSettingsSaving.value = false;
@@ -816,7 +839,8 @@ async function loadChunksInDrawer() {
   try {
     chunksByDoc.value[d.id] = await ragApi.fetchRagKbChunks(kid.value, d.id);
   } catch (e: unknown) {
-    const msg = e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : "加载失败";
+    const msg =
+      e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : t("views.kbMatrix.loadFailed");
     ElMessage.error(msg);
   } finally {
     chunksDrawerLoading.value = false;
@@ -846,7 +870,8 @@ async function downloadDocMarkdown(row: RagDocumentAdminRow) {
     a.click();
     URL.revokeObjectURL(url);
   } catch (e: unknown) {
-    const msg = e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : "下载失败";
+    const msg =
+      e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : t("views.kbMatrix.downloadFailed");
     ElMessage.error(msg);
   }
 }
@@ -855,11 +880,13 @@ async function batchRemoveDocs() {
   const rows = selectedDocs.value;
   if (!rows.length) return;
   try {
-    await ElMessageBox.confirm(`确定删除选中的 ${rows.length} 篇文档？`, "确认", { type: "warning" });
+    await ElMessageBox.confirm(t("views.kbMatrix.batchDeleteConfirm", { n: rows.length }), t("views.menuItems.confirm"), {
+      type: "warning",
+    });
     for (const d of rows) {
       await ragApi.deleteRagKbDocument(kid.value, d.id);
     }
-    ElMessage.success("已删除");
+    ElMessage.success(t("views.kbMatrix.deleted"));
     docTableRef.value?.clearSelection();
     await refreshDocs();
   } catch {
@@ -869,7 +896,7 @@ async function batchRemoveDocs() {
 
 function openIngest() {
   if (!vectorMilvusEnabled.value) {
-    ElMessage.warning("当前未启用 Milvus 向量库，上传与入库暂不可用。");
+    ElMessage.warning(t("views.kbMatrix.milvusUploadDisabled"));
     return;
   }
   resetIngestForm();
@@ -892,7 +919,7 @@ function onPickUploadFile(file: UploadFile) {
 
 async function submitIngest() {
   if (!vectorMilvusEnabled.value) {
-    ElMessage.warning("当前未启用 Milvus 向量库，无法提交入库。");
+    ElMessage.warning(t("views.kbMatrix.milvusSubmitDisabled"));
     return;
   }
   const cs = ingestChunkStrategy.value;
@@ -901,37 +928,38 @@ async function submitIngest() {
     if (ingestType.value === "crawl") {
       const u = crawlForm.url.trim();
       if (!u) {
-        ElMessage.warning("请填写网页地址");
+        ElMessage.warning(t("views.ingest.fillUrl"));
         return;
       }
-      const r = await ragApi.enqueueUrlImportJob(kid.value, u, cs);
-      ElMessage.success("已创建爬取任务，可在本知识库标题栏「异步任务」中查看进度");
+      await ragApi.enqueueUrlImportJob(kid.value, u, cs);
+      ElMessage.success(t("views.kbMatrix.crawlJobCreated"));
     } else if (ingestType.value === "upload") {
       const f = uploadFile.value;
       if (!f) {
-        ElMessage.warning("请选择文件");
+        ElMessage.warning(t("views.kbMatrix.pickFileWarning"));
         return;
       }
       await ragApi.uploadRagKbDocument(kid.value, f, cs);
-      ElMessage.success("已上传并入库");
+      ElMessage.success(t("views.kbMatrix.uploadIngestDone"));
     } else {
       const name = pasteForm.originalFilename.trim();
       if (!name) {
-        ElMessage.warning("请填写文件名");
+        ElMessage.warning(t("views.ingest.fillName"));
         return;
       }
-      const r = await ragApi.enqueueFileIngestJob(kid.value, {
+      await ragApi.enqueueFileIngestJob(kid.value, {
         originalFilename: name,
         contentType: pasteForm.contentType.trim() || undefined,
         markdownContent: pasteForm.markdownContent.trim() || undefined,
         chunkStrategy: cs,
       });
-      ElMessage.success("已创建文件任务，可在本知识库标题栏「异步任务」中查看进度");
+      ElMessage.success(t("views.kbMatrix.fileJobCreated"));
     }
     ingestOpen.value = false;
     await refreshDocsAndKbJobs();
   } catch (e: unknown) {
-    const msg = e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : "提交失败";
+    const msg =
+      e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : t("views.kbMatrix.submitFailed");
     ElMessage.error(msg);
   } finally {
     ingestSubmitting.value = false;
@@ -940,9 +968,13 @@ async function submitIngest() {
 
 async function removeDoc(row: RagDocumentAdminRow) {
   try {
-    await ElMessageBox.confirm(`确定逻辑删除文档「${row.title}」及其分片？`, "确认", { type: "warning" });
+    await ElMessageBox.confirm(
+      t("views.kbMatrix.deleteDocConfirm", { title: row.title || t("views.kbMatrix.noTitle") }),
+      t("views.menuItems.confirm"),
+      { type: "warning" },
+    );
     await ragApi.deleteRagKbDocument(kid.value, row.id);
-    ElMessage.success("已删除");
+    ElMessage.success(t("views.kbMatrix.deleted"));
     delete chunksByDoc.value[row.id];
     await refreshDocs();
   } catch {
@@ -962,10 +994,11 @@ async function saveChunk() {
       const i = arr.findIndex((x) => x.id === u.id);
       if (i >= 0) arr[i] = u;
     }
-    ElMessage.success("已更新分片");
+    ElMessage.success(t("views.kbMatrix.chunkUpdated"));
     chunkDlg.value = false;
   } catch (e: unknown) {
-    const msg = e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : "保存失败";
+    const msg =
+      e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : t("views.kbMatrix.saveFailed");
     ElMessage.error(msg);
   } finally {
     chunkSaving.value = false;
@@ -998,30 +1031,32 @@ function unbindDocTableResize() {
 }
 
 /**
- * 表高取自 docs-main 减去工具栏、底栏与列 gap，须观察 docs-main 本身。
- * 若观察包裹 el-table 的 docs-table-wrap 并把其高度回写为 :height，表格渲染略大于槽位时会撑高该 wrap，
- * ResizeObserver 再读到更大高度，形成无限增高，分页器被顶出视口。
+ * 表高取自「文档表格外层槽」{@code .docs-table-wrap} 的 {@code clientHeight}（flex:1 + min-height:0 下的可用高度），
+ * 勿用 {@code docs-main} 的 {@code getBoundingClientRect().height} 参与回算：表体略超出时会把 main 撑高，
+ * ResizeObserver 反复读到更大高度 → 无限增高，分页器被顶出视口（直连带 ?kbId= 进入时更易触发）。
  */
 function bindDocTableResize() {
   unbindDocTableResize();
-  const main = docsMainRef.value;
-  if (!main || typeof ResizeObserver === "undefined") {
+  const wrap = docsTableWrapRef.value;
+  if (!wrap || typeof ResizeObserver === "undefined") {
     return;
   }
-  // docs-main 为 column + gap:12px，toolbar / table-wrap / footer 三行之间共 2 段 gap
-  const MAIN_COLUMN_GAP_PX = 24;
+  const capByViewport = () =>
+    typeof window !== "undefined" ? Math.max(240, window.innerHeight - 200) : 720;
+
   const apply = () => {
-    const tb = main.querySelector(".docs-toolbar") as HTMLElement | null;
-    const ft = main.querySelector(".docs-footer") as HTMLElement | null;
-    const mainH = main.getBoundingClientRect().height;
-    const tbH = tb?.getBoundingClientRect().height ?? 0;
-    const ftH = ft?.getBoundingClientRect().height ?? 0;
-    const h = Math.floor(mainH - tbH - ftH - MAIN_COLUMN_GAP_PX);
+    let h = Math.floor(wrap.clientHeight);
+    if (h < 80) {
+      return;
+    }
+    h = Math.min(h, capByViewport());
     docTableBodyHeight.value = Math.max(200, h);
   };
-  docTableResizeObserver = new ResizeObserver(() => apply());
-  docTableResizeObserver.observe(main);
-  apply();
+  docTableResizeObserver = new ResizeObserver(() => {
+    window.requestAnimationFrame(apply);
+  });
+  docTableResizeObserver.observe(wrap);
+  requestAnimationFrame(apply);
 }
 
 watch(
@@ -1063,11 +1098,11 @@ onBeforeUnmount(() => {
 }
 
 .kb-dmx-root {
-  --ws-accent: #0d9488;
-  --ws-accent-weak: #ccfbf1;
-  --ws-card: #ffffff;
-  --ws-border: #e2e8f0;
-  --ws-muted: #64748b;
+  --ws-accent: var(--el-color-primary);
+  --ws-accent-weak: var(--el-color-primary-light-9);
+  --ws-card: var(--el-bg-color);
+  --ws-border: var(--el-border-color-lighter);
+  --ws-muted: var(--el-text-color-secondary);
   flex: 1;
   min-height: 0;
   display: flex;
@@ -1090,7 +1125,7 @@ onBeforeUnmount(() => {
 }
 
 .accent-btn {
-  background: linear-gradient(135deg, #0f766e, #0d9488) !important;
+  background: linear-gradient(135deg, var(--el-color-primary-dark-2), var(--el-color-primary)) !important;
   border: none !important;
 }
 
@@ -1106,14 +1141,14 @@ onBeforeUnmount(() => {
 }
 
 .pipe-table :deep(.el-table__header th) {
-  background: #f8fafc !important;
-  color: #475569;
+  background: var(--el-fill-color-light) !important;
+  color: var(--el-text-color-regular);
   font-weight: 600;
 }
 
 .cell-title {
   font-weight: 500;
-  color: #0f172a;
+  color: var(--el-text-color-primary);
   word-break: break-all;
 }
 
@@ -1126,7 +1161,7 @@ onBeforeUnmount(() => {
 
 .expand-inner {
   padding: 8px 12px 12px;
-  background: #f8fafc;
+  background: var(--el-fill-color-light);
   border-radius: 8px;
 }
 
@@ -1141,7 +1176,7 @@ onBeforeUnmount(() => {
 .job-section-title {
   font-size: 12px;
   font-weight: 600;
-  color: #475569;
+  color: var(--el-text-color-regular);
   margin-bottom: 6px;
 }
 
@@ -1161,7 +1196,7 @@ onBeforeUnmount(() => {
 .json-hdr {
   font-size: 12px;
   font-weight: 600;
-  color: #475569;
+  color: var(--el-text-color-regular);
   margin-bottom: 6px;
 }
 
@@ -1188,12 +1223,12 @@ onBeforeUnmount(() => {
 
 .td {
   font-size: 12px;
-  color: #475569;
+  color: var(--el-text-color-regular);
   margin-top: 4px;
 }
 
 .muted {
-  color: #cbd5e1;
+  color: var(--el-text-color-placeholder);
   font-size: 12px;
 }
 
@@ -1240,7 +1275,7 @@ onBeforeUnmount(() => {
   padding: 12px;
   border: 1px solid var(--ws-border);
   border-radius: 12px;
-  background: #fff;
+  background: var(--ws-card);
 }
 
 .new-cat-btn {
@@ -1265,8 +1300,8 @@ onBeforeUnmount(() => {
 }
 
 .cat-row.is-active {
-  border-color: rgba(37, 99, 235, 0.35);
-  background: #eff6ff;
+  border-color: var(--el-color-primary-light-5);
+  background: var(--el-color-primary-light-9);
 }
 
 .cat-item {
@@ -1277,17 +1312,17 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   background: transparent;
   font-size: 14px;
-  color: #334155;
+  color: var(--el-text-color-regular);
   cursor: pointer;
 }
 
 .cat-item:hover {
-  background: #f1f5f9;
+  background: var(--el-fill-color);
 }
 
 .cat-item.is-active {
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
   font-weight: 600;
 }
 
@@ -1305,6 +1340,7 @@ onBeforeUnmount(() => {
   flex: 1;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1317,7 +1353,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   border-radius: 12px;
   border: 1px solid var(--ws-border);
-  background: #fff;
+  background: var(--ws-card);
 }
 
 .docs-table-wrap :deep(.el-table) {
@@ -1334,7 +1370,7 @@ onBeforeUnmount(() => {
   padding: 12px 14px;
   border: 1px solid var(--ws-border);
   border-radius: 12px;
-  background: #fafafa;
+  background: var(--el-fill-color-lighter);
 }
 
 .docs-toolbar-left,
@@ -1396,7 +1432,7 @@ onBeforeUnmount(() => {
 }
 
 .doc-title-link {
-  color: #2563eb;
+  color: var(--el-color-primary);
   font-weight: 500;
   text-decoration: none;
 }

@@ -4,6 +4,7 @@ import com.aaron.cloud.common.api.enums.TenantMemberRole;
 import com.aaron.cloud.common.api.enums.UserAccountStatus;
 import com.aaron.cloud.common.security.entity.SysTenantMember;
 import com.aaron.cloud.common.security.mapper.SysTenantMemberMapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import java.util.Collection;
@@ -35,6 +36,36 @@ public class SysTenantMemberRepository {
                 Wrappers.<SysTenantMember>lambdaQuery()
                         .eq(SysTenantMember::getTenantId, tenantId)
                         .orderByDesc(SysTenantMember::getUpdatedAt));
+    }
+
+    /** 当前租户内 {@link UserAccountStatus#ACTIVE} 成员行数。 */
+    public long countActiveByTenant(long tenantId) {
+        return mapper.selectCount(
+                Wrappers.<SysTenantMember>lambdaQuery()
+                        .eq(SysTenantMember::getTenantId, tenantId)
+                        .eq(SysTenantMember::getStatus, UserAccountStatus.ACTIVE));
+    }
+
+    /** 关键词匹配登录名或昵称（不含 %/_ 注入片段）；关键词为空时等价 {@link #pageByTenant}。 */
+    public IPage<SysTenantMember> pageByTenantAndUserKeyword(
+            long tenantId, long pageNo, long pageSize, String keyword) {
+        String kw = sanitizeKeyword(keyword);
+        if (kw.isEmpty()) {
+            return pageByTenant(tenantId, pageNo, pageSize);
+        }
+        Page<SysTenantMember> pg = Page.of(pageNo, pageSize);
+        return mapper.selectPageWithAccountKeyword(pg, tenantId, kw);
+    }
+
+    private static String sanitizeKeyword(String keyword) {
+        if (keyword == null) {
+            return "";
+        }
+        String s = keyword.trim();
+        if (s.length() > 64) {
+            s = s.substring(0, 64);
+        }
+        return s.replace("%", "").replace("_", "").replace("'", "").replace("\\", "");
     }
 
     /** 按租户列出成员；{@code role} 非空时仅该角色；{@code memberStatus} 非空时仅该成员状态。 */

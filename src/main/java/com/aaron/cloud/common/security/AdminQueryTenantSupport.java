@@ -48,4 +48,18 @@ public final class AdminQueryTenantSupport {
         }
         return snap.getTenantId();
     }
+
+    /**
+     * 意图识别管理：仅允许读写当前 JWT 工作区租户；创始人亦不得借查询参数/请求体指定其他租户（须先通过管理端切换工作区再操作）。
+     *
+     * @param requestedTenantId 历史兼容或误传的租户 id；非空且与当前工作区不一致时 {@code 403}
+     */
+    public static long resolveIntentAdminDataTenantId(Long requestedTenantId) {
+        var snap = TenantContextHolder.require();
+        long current = snap.getTenantId();
+        if (requestedTenantId != null && !requestedTenantId.equals(current)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权查看或操作其他租户的意图配置");
+        }
+        return current;
+    }
 }

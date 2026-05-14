@@ -35,7 +35,7 @@ import org.springframework.web.server.ResponseStatusException;
 /**
  * RAG 向量化：按知识库绑定的 {@link LlmModelKind#VECTOR} 与 {@link LlmVectorBackend} 解析 {@code POST} URL（见
  * {@link VectorEmbeddingsUrl}）；请求体与响应解析见 {@link RagEmbeddingHttpSupport}（OpenAI 兼容 / 方舟多模态等）。若模型
- * {@code local_deploy=true}，则经 {@link RagLocalEmbeddingFeignClient} 调 ly-ai-rag-svc 同类接口（路径变量为
+ * {@code local_deploy=true}，则经 {@link RagLocalEmbeddingFeignClient} 调对端嵌入接口（路径变量为
  * {@code sys_tenant.code}）。内网免鉴权可不配 Key，此时不发送 {@code Authorization}。
  */
 @Slf4j
@@ -96,8 +96,7 @@ public class RagEmbeddingService implements RagEmbeddingPort {
             if (Boolean.TRUE.equals(m.getLocalDeploy())) {
                 return embedViaLocalDeployFeign(tenantId, m, t, apiKey);
             }
-            LlmVectorBackend vb =
-                    m.getVectorBackend() != null ? m.getVectorBackend() : LlmVectorBackend.OPENAI_COMPATIBLE;
+            LlmVectorBackend vb = m.resolveVectorBackend();
             return callEmbeddingsUpstream(
                     m.getOpenaiBaseUrl().trim(), apiKey, m.getOpenaiModelId().trim(), t, vb);
         } catch (ResponseStatusException e) {
@@ -121,12 +120,12 @@ public class RagEmbeddingService implements RagEmbeddingPort {
                     discoveryOn
                             ? ("模型已标记本地部署向量化，但未注册本地嵌入 Feign：请确认 Eureka 上已注册 "
                                     + environment.getProperty(
-                                            "ai.rag.local-embed-feign.service-id", "ly-ai-rag-svc")
-                                    + "，或改为配置直连环境变量 AI_RAG_LOCAL_EMBED_FEIGN_BASE_URL（与 ly-ai-rag 的 aiengine.domain 根路径一致）后重启。")
+                                            "ai.rag.local-embed-feign.service-id", "rag-embedding-svc")
+                                    + "，或改为配置直连环境变量 AI_RAG_LOCAL_EMBED_FEIGN_BASE_URL（与对端网关根地址一致，如 AI_RAG_ENGINE_BASE_URL）后重启。")
                             : ("模型已标记本地部署向量化，但未注册本地嵌入 Feign：已关闭服务发现（ai.discovery.enabled=false），"
                                     + "须配置直连 RAG 网关根地址：环境变量 AI_RAG_LOCAL_EMBED_FEIGN_BASE_URL 或 AI_RAG_ENGINE_BASE_URL"
                                     + (baseConfigured.isBlank()
-                                            ? "（当前为空；示例与 ly-ai-rag 的 aiengine.domain 一致，如 http://192.168.37.31/ly-ai-rag）"
+                                            ? "（当前为空；请设为对端网关根 URL，含尾斜杠，见 application.yml 示例）"
                                             : "")
                                     + "，对应 ai.rag.local-embed-feign.base-url。若改用 Eureka，请设置 AI_DISCOVERY_ENABLED=true 并保证 RAG 服务已注册。"));
         }
@@ -273,6 +272,46 @@ public class RagEmbeddingService implements RagEmbeddingPort {
         } catch (Exception e) {
             log.warn("解析嵌入错误响应 JSON 失败 bodyLen={}", body.length(), e);
             return "";
+        }
+    }
+
+    /**
+     * 记忆层等场景：按租户下指定 {@link LlmModelKind#VECTOR} 模型主键嵌入；模型不可用或调用失败时退化为
+     * {@link RagQueryEmbeddingHasher} 占位向量，避免阻塞主流程。
+     */
+    public float[] embedByVectorModelIdOrHash(long tenantId, Long vectorModelIdOrNull, String text) {
+        String t = text == null ? "" : text;
+        if (vectorModelIdOrNull == null) {
+            return RagQueryEmbeddingHasher.hashToVector(t, dimensions());
+        }
+        SysLlmModel m = sysLlmModelRepository.findById(tenantId, vectorModelIdOrNull).orElse(null);
+        if (m == null) {
+            log.debug("memory embed fallback hash: model missing tenantId={} id={}", tenantId, vectorModelIdOrNull);
+            return RagQueryEmbeddingHasher.hashToVector(t, dimensions());
+        }
+        LlmModelKind k = m.getModelKind() != null ? m.getModelKind() : LlmModelKind.LANGUAGE;
+        if (k != LlmModelKind.VECTOR || m.getStatus() != LlmModelStatus.ACTIVE) {
+            return RagQueryEmbeddingHasher.hashToVector(t, dimensions());
+        }
+        String apiKey = "";
+        if (m.getApiKeyCipher() != null && !m.getApiKeyCipher().isBlank()) {
+            try {
+                apiKey = aesSecretCipher.decryptFromBase64(m.getApiKeyCipher());
+            } catch (Exception e) {
+                log.warn("memory embed fallback hash: decrypt key failed llmModelId={}", m.getId(), e);
+                return RagQueryEmbeddingHasher.hashToVector(t, dimensions());
+            }
+        }
+        try {
+            if (Boolean.TRUE.equals(m.getLocalDeploy())) {
+                return embedViaLocalDeployFeign(tenantId, m, t, apiKey);
+            }
+            LlmVectorBackend vb = m.resolveVectorBackend();
+            return callEmbeddingsUpstream(
+                    m.getOpenaiBaseUrl().trim(), apiKey, m.getOpenaiModelId().trim(), t, vb);
+        } catch (Exception e) {
+            log.warn("memory embed fallback hash tenantId={} llmModelId={}", tenantId, m.getId(), e);
+            return RagQueryEmbeddingHasher.hashToVector(t, dimensions());
         }
     }
 }

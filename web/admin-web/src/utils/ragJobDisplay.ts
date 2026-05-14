@@ -1,151 +1,177 @@
-/** 管理端知识中心：异步任务类型、状态、阶段等对用户可读的中文映射 */
+import type { ComposerTranslation } from "vue-i18n";
 
-export function jobTaskTypeLabel(taskType: string | null | undefined): string {
+/** Async job labels for knowledge center (requires vue-i18n `t`) */
+
+export function jobTaskTypeLabel(taskType: string | null | undefined, t: ComposerTranslation): string {
   switch ((taskType || "").toUpperCase()) {
     case "RAG_INDEX":
-      return "知识库索引重建";
+      return String(t("views.kbAsync.jobTypes.RAG_INDEX"));
     case "RAG_URL_IMPORT":
-      return "网页抓取入库";
+      return String(t("views.kbAsync.jobTypes.RAG_URL_IMPORT"));
     case "RAG_FILE_IMPORT":
-      return "文件 / Markdown 入库";
+      return String(t("views.kbAsync.jobTypes.RAG_FILE_IMPORT"));
     default:
-      return taskType?.trim() || "—";
+      return taskType?.trim() || String(t("common.dash"));
   }
 }
 
-/** 表格标签等紧凑用语 */
-export function jobTaskTypeShort(taskType: string | null | undefined): string {
+export function jobTaskTypeShort(taskType: string | null | undefined, t: ComposerTranslation): string {
   switch ((taskType || "").toUpperCase()) {
     case "RAG_URL_IMPORT":
-      return "网页入库";
+      return String(t("views.kbAsync.jobTypesShort.RAG_URL_IMPORT"));
     case "RAG_FILE_IMPORT":
-      return "文件入库";
+      return String(t("views.kbAsync.jobTypesShort.RAG_FILE_IMPORT"));
     case "RAG_INDEX":
-      return "索引";
+      return String(t("views.kbAsync.jobTypesShort.RAG_INDEX"));
     default:
-      return jobTaskTypeLabel(taskType);
+      return jobTaskTypeLabel(taskType, t);
   }
 }
 
 export type JobStatusTag = "success" | "warning" | "info" | "danger";
 
-export function jobStatusMeta(status: string | null | undefined): { label: string; tag: JobStatusTag } {
+export function jobStatusMeta(
+  status: string | null | undefined,
+  t: ComposerTranslation,
+): { label: string; tag: JobStatusTag } {
   const s = (status || "").toUpperCase();
-  if (s === "SUCCEEDED") return { label: "已完成", tag: "success" };
-  if (s === "FAILED") return { label: "失败", tag: "danger" };
-  if (s === "RUNNING") return { label: "执行中", tag: "warning" };
-  if (s === "PENDING") return { label: "等待中", tag: "info" };
-  return { label: status?.trim() || "—", tag: "info" };
+  if (s === "SUCCEEDED") return { label: String(t("views.kbAsync.jobStatus.SUCCEEDED")), tag: "success" };
+  if (s === "FAILED") return { label: String(t("views.kbAsync.jobStatus.FAILED")), tag: "danger" };
+  if (s === "RUNNING") return { label: String(t("views.kbAsync.jobStatus.RUNNING")), tag: "warning" };
+  if (s === "PENDING") return { label: String(t("views.kbAsync.jobStatus.PENDING")), tag: "info" };
+  return { label: status?.trim() || String(t("common.dash")), tag: "info" };
 }
 
-export function jobStepPhaseLabel(phase: string | null | undefined): string {
+export function jobStepPhaseLabel(phase: string | null | undefined, t: ComposerTranslation): string {
   const p = (phase || "").trim().toLowerCase();
-  const map: Record<string, string> = {
-    fetch_url: "下载网页",
-    html_to_md: "转为 Markdown",
-    persist: "保存文档与分片",
-    vector: "写入向量索引",
-    markdown_source: "读取正文",
-  };
-  return map[p] ?? (phase?.trim() || "—");
+  const key = `views.kbAsync.phases.${p}` as const;
+  const tr = t(key);
+  if (tr !== key) return String(tr);
+  return phase?.trim() || String(t("common.dash"));
 }
 
-export function jobStepStatusLabel(status: string | null | undefined): string {
+export function jobStepStatusLabel(status: string | null | undefined, t: ComposerTranslation): string {
   const s = (status || "").trim().toLowerCase();
-  if (s === "running") return "进行中";
-  if (s === "ok") return "已完成";
-  if (s === "failed" || s === "error") return "失败";
-  return status?.trim() || "—";
+  if (s === "running") return String(t("views.kbAsync.stepStatus.running"));
+  if (s === "ok") return String(t("views.kbAsync.stepStatus.ok"));
+  if (s === "failed" || s === "error") return String(t("views.kbAsync.stepStatus.failed"));
+  return status?.trim() || String(t("common.dash"));
 }
 
-export function humanizeJobStepDetail(detail: string | null | undefined): string {
+export function humanizeJobStepDetail(detail: string | null | undefined, t: ComposerTranslation): string {
   if (detail == null || !String(detail).trim()) return "";
   let d = String(detail).trim();
   const mDoc = /^documentId=(\d+),chunks=(\d+)$/.exec(d);
-  if (mDoc) return `文档编号 ${mDoc[1]}，共 ${mDoc[2]} 个分片`;
-  if (/^bytes=\d+$/i.test(d)) return `已下载约 ${d.slice(6)} 字节`;
-  if (/^chars=\d+$/i.test(d)) return `正文约 ${d.slice(6)} 字`;
-  if (/^collection=/.test(d)) return `向量集合：${d.replace(/^collection=/, "")}`;
+  if (mDoc) {
+    return String(
+      t("views.kbAsync.stepDetail.docChunks", { docId: mDoc[1], chunks: mDoc[2] }),
+    );
+  }
+  if (/^bytes=\d+$/i.test(d)) {
+    return String(t("views.kbAsync.stepDetail.bytes", { n: d.slice(6) }));
+  }
+  if (/^chars=\d+$/i.test(d)) {
+    return String(t("views.kbAsync.stepDetail.chars", { n: d.slice(6) }));
+  }
+  if (/^collection=/.test(d)) {
+    return String(t("views.kbAsync.stepDetail.collection", { name: d.replace(/^collection=/, "") }));
+  }
   return d;
 }
 
-export function ragChunkStrategyLabel(code: number | string | null | undefined): string {
+export function ragChunkStrategyLabel(code: number | string | null | undefined, t: ComposerTranslation): string {
   const n = typeof code === "string" ? Number.parseInt(code, 10) : code;
-  if (n == null || Number.isNaN(n)) return "—";
-  switch (n) {
-    case 0:
-      return "整篇不分片";
-    case 1:
-      return "固定字数切分";
-    case 2:
-      return "语义段落";
-    case 3:
-      return "滑动窗口";
-    case 99:
-      return "自定义（预留）";
-    default:
-      return `策略代码 ${n}`;
-  }
+  if (n == null || Number.isNaN(n)) return String(t("common.dash"));
+  const map: Record<number, string> = {
+    0: "views.kbAsync.chunkStrategy.0",
+    1: "views.kbAsync.chunkStrategy.1",
+    2: "views.kbAsync.chunkStrategy.2",
+    3: "views.kbAsync.chunkStrategy.3",
+    99: "views.kbAsync.chunkStrategy.99",
+  };
+  const path = map[n];
+  if (path) return String(t(path));
+  return String(t("views.kbAsync.chunkStrategy.other", { n }));
 }
 
 export type JobKvRow = { label: string; value: string };
 
-export function parseJobPayloadRows(payloadJson: string | null | undefined): JobKvRow[] {
+export function parseJobPayloadRows(
+  payloadJson: string | null | undefined,
+  t: ComposerTranslation,
+): JobKvRow[] {
   if (payloadJson == null || !String(payloadJson).trim()) return [];
   let o: Record<string, unknown>;
   try {
     o = JSON.parse(payloadJson) as Record<string, unknown>;
   } catch {
-    return [{ label: "原始入参", value: String(payloadJson) }];
+    return [{ label: String(t("views.kbAsync.payloadLabels.raw")), value: String(payloadJson) }];
   }
   const rows: JobKvRow[] = [];
-  if (o.kbId != null && o.kbId !== "") rows.push({ label: "目标知识库", value: `#${String(o.kbId)}` });
-  if (typeof o.url === "string" && o.url.trim()) rows.push({ label: "网页地址", value: o.url.trim() });
+  if (o.kbId != null && o.kbId !== "") rows.push({ label: String(t("views.kbAsync.payloadLabels.kb")), value: `#${String(o.kbId)}` });
+  if (typeof o.url === "string" && o.url.trim()) rows.push({ label: String(t("views.kbAsync.payloadLabels.url")), value: o.url.trim() });
   if (typeof o.originalFilename === "string" && o.originalFilename.trim())
-    rows.push({ label: "文件名", value: o.originalFilename.trim() });
+    rows.push({ label: String(t("views.kbAsync.payloadLabels.filename")), value: o.originalFilename.trim() });
   if (o.chunkStrategy != null && o.chunkStrategy !== "")
-    rows.push({ label: "分片策略", value: ragChunkStrategyLabel(o.chunkStrategy as number) });
+    rows.push({
+      label: String(t("views.kbAsync.payloadLabels.chunkStrategy")),
+      value: ragChunkStrategyLabel(o.chunkStrategy as number, t),
+    });
   if (typeof o.contentType === "string" && o.contentType.trim())
-    rows.push({ label: "内容类型", value: o.contentType.trim() });
+    rows.push({ label: String(t("views.kbAsync.payloadLabels.contentType")), value: o.contentType.trim() });
   if (typeof o.markdownContent === "string" && o.markdownContent.length > 0) {
     rows.push({
-      label: "Markdown 正文",
-      value: `已填写（约 ${o.markdownContent.length} 字，完整内容见下方「原始数据」）`,
+      label: String(t("views.kbAsync.payloadLabels.markdownBody")),
+      value: String(t("views.kbAsync.payloadLabels.markdownFilled", { n: o.markdownContent.length })),
     });
   }
   return rows;
 }
 
-export function parseJobResultMetaRows(resultJson: string | null | undefined): JobKvRow[] {
+export function parseJobResultMetaRows(resultJson: string | null | undefined, t: ComposerTranslation): JobKvRow[] {
   if (resultJson == null || !String(resultJson).trim()) return [];
   try {
     const o = JSON.parse(resultJson) as Record<string, unknown>;
     const rows: JobKvRow[] = [];
-    if (typeof o.documentId === "number") rows.push({ label: "文档编号", value: String(o.documentId) });
-    if (typeof o.chunkCount === "number") rows.push({ label: "分片数量", value: `${o.chunkCount} 块` });
-    if (typeof o.kbId === "number") rows.push({ label: "知识库编号", value: String(o.kbId) });
-    if (typeof o.error === "string" && o.error.trim()) rows.push({ label: "错误说明", value: o.error.trim() });
-    if (o.indexed === true) rows.push({ label: "索引结果", value: "占位任务已结束（尚未执行全库向量重建）" });
+    if (typeof o.documentId === "number") rows.push({ label: String(t("views.kbAsync.resultMeta.documentId")), value: String(o.documentId) });
+    if (typeof o.chunkCount === "number") {
+      rows.push({
+        label: String(t("views.kbAsync.resultMeta.chunkCount")),
+        value: String(t("views.kbAsync.resultMeta.chunkCountUnit", { n: o.chunkCount })),
+      });
+    }
+    if (typeof o.kbId === "number") rows.push({ label: String(t("views.kbAsync.resultMeta.kbId")), value: String(o.kbId) });
+    if (typeof o.error === "string" && o.error.trim()) rows.push({ label: String(t("views.kbAsync.resultMeta.error")), value: o.error.trim() });
+    if (o.indexed === true) {
+      rows.push({
+        label: String(t("views.kbAsync.resultMeta.indexedLabel")),
+        value: String(t("views.kbAsync.resultMeta.indexedValue")),
+      });
+    }
     return rows;
   } catch {
     return [];
   }
 }
 
-export function summarizeJobResult(resultJson: string | null | undefined): string {
-  if (resultJson == null || !String(resultJson).trim()) return "—";
+export function summarizeJobResult(resultJson: string | null | undefined, t: ComposerTranslation): string {
+  if (resultJson == null || !String(resultJson).trim()) return String(t("common.dash"));
   try {
     const o = JSON.parse(resultJson) as Record<string, unknown>;
     if (typeof o.error === "string" && o.error.trim()) {
       const e = o.error.trim();
-      return e.length > 80 ? `失败：${e.slice(0, 80)}…` : `失败：${e}`;
+      return e.length > 80
+        ? `${String(t("views.kbAsync.summarize.failPrefix"))}${e.slice(0, 80)}…`
+        : `${String(t("views.kbAsync.summarize.failPrefix"))}${e}`;
     }
     if (typeof o.documentId === "number" && typeof o.chunkCount === "number") {
-      return `已入库 · 文档 ${o.documentId} · ${o.chunkCount} 个分片`;
+      return String(
+        t("views.kbAsync.summarize.ingested", { docId: o.documentId, chunks: o.chunkCount }),
+      );
     }
-    if (o.indexed === true) return "索引占位已完成";
+    if (o.indexed === true) return String(t("views.kbAsync.summarize.indexDone"));
     const steps = o.steps as unknown[] | undefined;
-    if (Array.isArray(steps) && steps.length > 0) return `共 ${steps.length} 个执行阶段`;
+    if (Array.isArray(steps) && steps.length > 0) return String(t("views.kbAsync.summarize.steps", { n: steps.length }));
   } catch {
     /* fall through */
   }
@@ -164,13 +190,12 @@ export function prettyJson(v: string | null | undefined): string {
 
 export type ResultStep = { phase?: string; status?: string; detail?: string; at?: string };
 
-/** 文档列表「展示状态」列（与后端 RagDocumentDisplayStatus 一致） */
-export function ragDocumentDisplayStatusLabel(code: string | null | undefined): string {
+export function ragDocumentDisplayStatusLabel(code: string | null | undefined, t: ComposerTranslation): string {
   const s = (code || "").toUpperCase();
-  if (s === "PUBLISHED") return "已发布";
-  if (s === "PARSING") return "解析中";
-  if (s === "PARSE_FAILED") return "解析失败";
-  return code?.trim() || "—";
+  if (s === "PUBLISHED") return String(t("views.kbAsync.ragDocStatus.PUBLISHED"));
+  if (s === "PARSING") return String(t("views.kbAsync.ragDocStatus.PARSING"));
+  if (s === "PARSE_FAILED") return String(t("views.kbAsync.ragDocStatus.PARSE_FAILED"));
+  return code?.trim() || String(t("common.dash"));
 }
 
 export function parseResultSteps(resultJson: string | null | undefined): ResultStep[] {

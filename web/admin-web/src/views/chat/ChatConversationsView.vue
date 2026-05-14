@@ -4,10 +4,8 @@
       <template #header>
         <div class="hdr">
           <div>
-            <span class="title">对话日志</span>
-            <p class="sub">
-              按权限展示会话列表（含访客设备码）；创始人可不选租户查看全部。列表中的「会话总 Token」为助手消息（含历史稿）用量的<strong>近似合计</strong>，供抽检参考。点开详情后，消息按<strong>一问一答</strong>分组展示，便于对照抽检。
-            </p>
+            <span class="title">{{ t("views.chatConv.title") }}</span>
+            <p class="sub" v-html="t('views.chatConv.sub')" />
           </div>
           <div class="hdr-actions">
             <el-select
@@ -16,17 +14,17 @@
               class="tenant-filter"
               clearable
               filterable
-              placeholder="全部租户"
+              :placeholder="t('views.chatConv.placeholderAllTenants')"
               @change="onTenantFilterChange"
             >
               <el-option
-                v-for="t in tenantOptions"
-                :key="t.id"
-                :label="`${t.name} (${t.code})`"
-                :value="t.id"
+                v-for="tenantOpt in tenantOptions"
+                :key="tenantOpt.id"
+                :label="`${tenantOpt.name} (${tenantOpt.code})`"
+                :value="tenantOpt.id"
               />
             </el-select>
-            <el-button type="primary" plain :loading="loading" @click="load">刷新</el-button>
+            <el-button type="primary" plain :loading="loading" @click="load">{{ t("views.chatConv.refresh") }}</el-button>
           </div>
         </div>
       </template>
@@ -38,39 +36,41 @@
         border
         max-height="520"
         class="data-table"
-        empty-text="暂无会话"
+        :empty-text="t('views.chatConv.empty')"
         highlight-current-row
         @row-click="onRowClick"
       >
-        <el-table-column label="租户" min-width="160" show-overflow-tooltip>
+        <el-table-column :label="t('views.chatConv.colTenant')" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">
             {{ formatTenantNameCode(row) }}
           </template>
         </el-table-column>
-        <el-table-column prop="title" label="标题" min-width="160" show-overflow-tooltip />
-        <el-table-column label="会话总 Token（约）" width="140" align="right">
+        <el-table-column prop="title" :label="t('views.chatConv.colTitle')" min-width="160" show-overflow-tooltip />
+        <el-table-column :label="t('views.chatConv.colTokens')" width="140" align="right">
           <template #default="{ row }">
             {{ formatConversationTokensApprox(row.totalTokensInConversation) }}
           </template>
         </el-table-column>
-        <el-table-column label="用户" min-width="120" show-overflow-tooltip>
+        <el-table-column :label="t('views.chatConv.colUser')" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">
             {{ formatChatConversationUser(row) }}
           </template>
         </el-table-column>
-        <el-table-column prop="deviceId" label="设备码" min-width="120" show-overflow-tooltip>
+        <el-table-column prop="deviceId" :label="t('views.chatConv.colDevice')" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">
-            {{ row.deviceId || "—" }}
+            {{ row.deviceId || emDash }}
           </template>
         </el-table-column>
-        <el-table-column prop="updatedAt" label="更新" width="168">
+        <el-table-column prop="updatedAt" :label="t('views.chatConv.colUpdated')" width="168">
           <template #default="{ row }">
             {{ formatTime(row.updatedAt) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="100" fixed="right" align="center">
+        <el-table-column :label="t('views.chatConv.colActions')" width="100" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click.stop="openMessages(row)">详情</el-button>
+            <el-button link type="primary" size="small" @click.stop="openMessages(row)">{{
+              t("views.chatConv.detail")
+            }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -91,35 +91,42 @@
 
     <el-drawer v-model="drawerOpen" :title="drawerTitle" size="min(760px, 96vw)" destroy-on-close>
       <el-scrollbar max-height="calc(100vh - 120px)">
-        <p v-if="drawerConv" class="drawer-debug-id">会话内部编号（排障）：{{ drawerConv.id }}</p>
+        <p v-if="drawerConv" class="drawer-debug-id">{{ t("views.chatConv.drawerDebug", { id: drawerConv.id }) }}</p>
         <div
           v-if="drawerConv && drawerConv.totalTokensInConversation != null"
           class="drawer-token-banner"
         >
-          本会话助手侧 Token 合计（约）：<strong>{{ formatConversationTokensApprox(drawerConv.totalTokensInConversation) }}</strong>
+          {{ t("views.chatConv.drawerTokenBanner")
+          }}<strong>{{ formatConversationTokensApprox(drawerConv.totalTokensInConversation) }}</strong>
         </div>
-        <div v-if="msgLoading" class="msg-loading">加载中…</div>
+        <div v-if="msgLoading" class="msg-loading">{{ t("views.chatConv.loading") }}</div>
         <div v-else class="msg-list">
           <template v-for="seg in drawerMessageSegments" :key="seg.key">
             <div v-if="seg.kind === 'pair'" class="qa-pair-card">
               <header class="qa-pair-head">
-                <span class="qa-pair-badge">第 {{ seg.pairIndex }} 轮</span>
-                <span class="qa-pair-hint">用户提问 · 助手回答</span>
+                <span class="qa-pair-badge">{{ t("views.chatConv.roundN", { n: seg.pairIndex }) }}</span>
+                <span class="qa-pair-hint">{{ t("views.chatConv.pairHint") }}</span>
               </header>
               <section class="qa-section qa-section--q">
                 <div class="qa-section-head">
-                  <span class="qa-role">用户</span>
+                  <span class="qa-role">{{ t("views.chatConv.roleUser") }}</span>
                   <span v-if="seg.user.createdAt" class="msg-time">{{ formatTime(seg.user.createdAt) }}</span>
                 </div>
                 <div v-if="seg.user.reasoning" class="msg-reasoning msg-reasoning--non-assistant">
-                  <span class="msg-reasoning-hdr">思考过程</span>
+                  <span class="msg-reasoning-hdr">{{ t("views.chatConv.reasoning") }}</span>
                   <pre>{{ seg.user.reasoning }}</pre>
                 </div>
                 <pre class="msg-plain qa-user-pre">{{ seg.user.content }}</pre>
+                <div v-if="seg.user.attachments?.length" class="qa-user-attachments">
+                  <span class="qa-user-attach-label">{{ t("views.chatConv.userAttachments") }}</span>
+                  <span v-for="a in seg.user.attachments" :key="a.id" class="qa-user-attach-chip" :title="a.fileName">
+                    {{ a.fileName }}
+                  </span>
+                </div>
               </section>
               <section class="qa-section qa-section--a">
                 <div class="qa-section-head">
-                  <span class="qa-role">助手</span>
+                  <span class="qa-role">{{ t("views.chatConv.roleAssistant") }}</span>
                   <span v-if="seg.assistant.createdAt" class="msg-time">{{ formatTime(seg.assistant.createdAt) }}</span>
                 </div>
                 <ChatDrawerAssistantAuditBlock
@@ -130,24 +137,35 @@
             </div>
             <div v-else :class="['msg-block', seg.message.role]">
               <div class="msg-head">
-                <span class="msg-role">{{ seg.message.role }}</span>
+                <span class="msg-role">{{ roleUiLabel(seg.message.role) }}</span>
                 <span v-if="seg.message.createdAt" class="msg-time">{{ formatTime(seg.message.createdAt) }}</span>
               </div>
               <p v-if="seg.message.role === 'assistant'" class="qa-orphan-hint">
-                本条助手消息未与上一条用户消息成对（例如会话以助手开头或数据异常），单独展示。
+                {{ t("views.chatConv.orphanAssistant") }}
               </p>
               <p v-else-if="seg.message.role === 'user'" class="qa-orphan-hint">
-                本条用户消息后未紧跟助手回复（例如仍生成中或仅落库了用户侧），单独展示。
+                {{ t("views.chatConv.orphanUser") }}
               </p>
               <template v-if="seg.message.role === 'assistant'">
                 <ChatDrawerAssistantAuditBlock :message="seg.message" @open-rag-citation="openRagCitation" />
               </template>
               <template v-else>
                 <div v-if="seg.message.reasoning" class="msg-reasoning msg-reasoning--non-assistant">
-                  <span class="msg-reasoning-hdr">思考过程</span>
+                  <span class="msg-reasoning-hdr">{{ t("views.chatConv.reasoning") }}</span>
                   <pre>{{ seg.message.reasoning }}</pre>
                 </div>
                 <pre class="msg-plain">{{ seg.message.content }}</pre>
+                <div v-if="seg.message.attachments?.length" class="qa-user-attachments">
+                  <span class="qa-user-attach-label">{{ t("views.chatConv.userAttachments") }}</span>
+                  <span
+                    v-for="a in seg.message.attachments"
+                    :key="a.id"
+                    class="qa-user-attach-chip"
+                    :title="a.fileName"
+                  >
+                    {{ a.fileName }}
+                  </span>
+                </div>
               </template>
             </div>
           </template>
@@ -171,6 +189,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import * as chatAdmin from "../../api/chatAdmin";
 import type { ChatConversationRow, ChatMessageAdminRow, RagCitationAdmin } from "../../api/chatAdmin";
 import * as ragApi from "../../api/ragAdmin";
@@ -192,6 +211,9 @@ type DrawerMessageSegment =
     }
   | { kind: "single"; key: string; message: ChatMessageAdminRow };
 
+const { t } = useI18n();
+const emDash = "\u2014";
+
 const { isFounder, tenantOptions, listFilterTenantId, listFilterQuery } = useAdminFounderListTenantFilter();
 
 const loading = ref(false);
@@ -211,10 +233,10 @@ const ragCitationDlgBody = ref("");
 const ragCitationDlgLoading = ref(false);
 
 const drawerTitle = computed(() => {
-  if (!drawerConv.value) return "消息详情";
-  const title = (drawerConv.value.title ?? "").trim() || "未命名会话";
+  if (!drawerConv.value) return t("views.chatConv.drawerTitle");
+  const title = (drawerConv.value.title ?? "").trim() || t("views.chatConv.unnamedConv");
   const tenant = formatTenantNameCode(drawerConv.value);
-  return tenant !== "—" ? `${tenant} · ${title}` : title;
+  return tenant !== emDash ? `${tenant} · ${title}` : title;
 });
 
 /** 将连续「用户 + 助手」合并为一轮卡片，其余单条单独展示。 */
@@ -244,23 +266,34 @@ const drawerMessageSegments = computed<DrawerMessageSegment[]>(() => {
   return out;
 });
 
+function roleUiLabel(role: string): string {
+  if (role === "user") return t("views.chatConv.roleUser");
+  if (role === "assistant") return t("views.chatConv.roleAssistant");
+  return role;
+}
+
 function formatTime(v: string | null | undefined): string {
-  if (!v) return "—";
+  if (!v) return emDash;
   return v.replace("T", " ").slice(0, 19);
 }
 
 async function openRagCitation(c: RagCitationAdmin) {
-  ragCitationDlgTitle.value = `${(c.documentTitle || "文档").trim()} · 第 ${c.chunkSeq + 1} 片`;
+  ragCitationDlgTitle.value = t("views.chatDrawerAudit.citationLabel", {
+    title: (c.documentTitle || t("views.chatDrawerAudit.docFallback")).trim(),
+    n: c.chunkSeq + 1,
+  });
   ragCitationDlgOpen.value = true;
   ragCitationDlgLoading.value = true;
   ragCitationDlgBody.value = "";
   try {
     const chunks = await ragApi.fetchRagKbChunks(c.kbId, c.documentId);
     const row = chunks.find((x) => x.id === c.chunkId);
-    ragCitationDlgBody.value = row?.content ?? "（未找到该分片，可能已删除或无权访问）";
+    ragCitationDlgBody.value = row?.content ?? t("views.chatConv.ragChunkNotFound");
   } catch (e: unknown) {
     const msg =
-      e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : "加载失败";
+      e && typeof e === "object" && "message" in e
+        ? String((e as { message?: string }).message)
+        : t("views.chatConv.loadFailed");
     ragCitationDlgBody.value = msg;
   } finally {
     ragCitationDlgLoading.value = false;
@@ -316,7 +349,7 @@ onMounted(() => {
 
 .panel {
   border-radius: 12px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--el-border-color);
 }
 
 .hdr {
@@ -341,13 +374,13 @@ onMounted(() => {
 .title {
   font-weight: 600;
   font-size: 15px;
-  color: #0f172a;
+  color: var(--el-text-color-primary);
 }
 
 .sub {
   margin: 4px 0 0;
   font-size: 12px;
-  color: #64748b;
+  color: var(--el-text-color-secondary);
 }
 
 .data-table {
@@ -363,14 +396,14 @@ onMounted(() => {
 .drawer-debug-id {
   margin: 0 8px 10px;
   font-size: 12px;
-  color: #64748b;
+  color: var(--el-text-color-secondary);
 }
 
 .drawer-token-banner {
   margin: 0 8px 12px;
   padding: 10px 12px;
   font-size: 13px;
-  color: #334155;
+  color: var(--el-text-color-regular);
   background: #eff6ff;
   border: 1px solid #bfdbfe;
   border-radius: 8px;
@@ -378,7 +411,7 @@ onMounted(() => {
 
 .msg-loading {
   padding: 24px;
-  color: #64748b;
+  color: var(--el-text-color-secondary);
 }
 
 .msg-list {
@@ -388,7 +421,7 @@ onMounted(() => {
 .qa-pair-card {
   margin-bottom: 20px;
   border-radius: 12px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--el-border-color);
   background: #fff;
   box-shadow: 0 2px 8px rgb(15 23 42 / 6%);
   overflow: hidden;
@@ -401,8 +434,8 @@ onMounted(() => {
   gap: 10px;
   flex-wrap: wrap;
   padding: 10px 14px;
-  background: linear-gradient(90deg, #f0fdf4 0%, #ecfdf5 40%, #f8fafc 100%);
-  border-bottom: 1px solid #e2e8f0;
+  background: linear-gradient(90deg, var(--el-color-success-light-9) 0%, var(--el-color-success-light-8) 40%, var(--el-fill-color-light) 100%);
+  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 
 .qa-pair-badge {
@@ -417,7 +450,7 @@ onMounted(() => {
 
 .qa-pair-hint {
   font-size: 12px;
-  color: #64748b;
+  color: var(--el-text-color-secondary);
 }
 
 .qa-section {
@@ -430,7 +463,7 @@ onMounted(() => {
 }
 
 .qa-section--a {
-  background: #f8fafc;
+  background: var(--el-fill-color-light);
 }
 
 .qa-section-head {
@@ -446,11 +479,38 @@ onMounted(() => {
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #475569;
+  color: var(--el-text-color-regular);
 }
 
 .qa-user-pre {
   margin-top: 2px;
+}
+
+.qa-user-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.qa-user-attach-label {
+  font-weight: 600;
+  color: var(--el-text-color-secondary);
+}
+
+.qa-user-attach-chip {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--el-fill-color);
+  border: 1px solid var(--el-border-color-lighter);
+  color: var(--el-text-color-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .qa-orphan-hint {
@@ -468,8 +528,8 @@ onMounted(() => {
   margin-bottom: 16px;
   padding: 12px;
   border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  background: #f8fafc;
+  border: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-light);
 }
 
 .msg-block.user {
@@ -489,12 +549,12 @@ onMounted(() => {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  color: #64748b;
+  color: var(--el-text-color-secondary);
 }
 
 .msg-time {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--el-text-color-placeholder);
 }
 
 .msg-plain {
@@ -503,7 +563,7 @@ onMounted(() => {
   word-break: break-word;
   font-family: ui-sans-serif, system-ui, sans-serif;
   font-size: 13px;
-  color: #0f172a;
+  color: var(--el-text-color-primary);
 }
 
 .rag-citation-body {
@@ -516,7 +576,7 @@ onMounted(() => {
   word-break: break-word;
   font-size: 13px;
   line-height: 1.55;
-  color: #0f172a;
+  color: var(--el-text-color-primary);
   max-height: min(60vh, 480px);
   overflow: auto;
 }
@@ -526,9 +586,9 @@ onMounted(() => {
   margin-bottom: 10px;
   padding: 10px 12px;
   border-radius: 8px;
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-  border: 1px solid #e2e8f0;
-  border-left: 3px solid #94a3b8;
+  background: linear-gradient(135deg, var(--el-fill-color-light) 0%, var(--el-fill-color) 100%);
+  border: 1px solid var(--el-border-color-lighter);
+  border-left: 3px solid var(--el-border-color);
 }
 
 .msg-reasoning--non-assistant {
@@ -541,7 +601,7 @@ onMounted(() => {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  color: #64748b;
+  color: var(--el-text-color-secondary);
 }
 
 .msg-reasoning pre {
@@ -550,6 +610,6 @@ onMounted(() => {
   word-break: break-word;
   font-size: 12px;
   line-height: 1.5;
-  color: #475569;
+  color: var(--el-text-color-regular);
 }
 </style>

@@ -117,4 +117,22 @@ public class SecUserAccountRepository {
                         .setSql("jwt_seq = IFNULL(jwt_seq,0) + 1")
                         .eq(SecUserAccount::getId, userId));
     }
+
+    /** 登录成功后更新最近登录时间、IP 与地区（见 {@link com.aaron.cloud.common.web.LoginRegionResolver}）。 */
+    public int updateLastLogin(long userId, java.time.LocalDateTime atUtc, String ip, String region) {
+        String ipV = ip == null ? null : (ip.length() > 64 ? ip.substring(0, 64) : ip);
+        String regV = region == null ? null : (region.length() > 128 ? region.substring(0, 128) : region);
+        return mapper.update(
+                null,
+                Wrappers.<SecUserAccount>lambdaUpdate()
+                        .eq(SecUserAccount::getId, userId)
+                        .set(SecUserAccount::getLastLoginAt, atUtc)
+                        .set(SecUserAccount::getLastLoginIp, ipV)
+                        .set(SecUserAccount::getLastLoginRegion, regV));
+    }
+
+    /** 当前租户在册成员按账号 {@code last_login_region} 聚合（空归并为「—」）。 */
+    public List<Map<String, Object>> countActiveMembersByLastLoginRegion(long tenantId) {
+        return mapper.countActiveMembersByLastLoginRegion(tenantId);
+    }
 }

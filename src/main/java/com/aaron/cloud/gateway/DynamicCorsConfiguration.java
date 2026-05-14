@@ -1,10 +1,12 @@
 package com.aaron.cloud.gateway;
 
+import com.aaron.cloud.common.web.http.AdminUiNegotiationHeaders;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 
@@ -34,6 +36,12 @@ public class DynamicCorsConfiguration {
             c.setAllowedHeaders(List.of("*"));
             c.setAllowCredentials(true);
             c.setMaxAge(3600L);
+            c.setExposedHeaders(
+                    List.of(
+                            HttpHeaders.CONTENT_LANGUAGE,
+                            HttpHeaders.VARY,
+                            AdminUiNegotiationHeaders.X_LLM_META_LOCALE,
+                            AdminUiNegotiationHeaders.X_LLM_META_LANG_PARAM));
             return c;
         };
     }

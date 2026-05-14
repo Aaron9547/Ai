@@ -1,5 +1,18 @@
-import axios from "axios";
+import axios, { AxiosHeaders } from "axios";
+import { unref } from "vue";
+import { AI_ADMIN_LOCALE_LS_KEY, useUiPreferencesStore } from "@/stores/uiPreferences";
 import { readJwtTid } from "@/utils/jwtSubject";
+
+function resolveAcceptLanguageHeader(): string {
+  try {
+    const v = unref(useUiPreferencesStore().locale);
+    if (v === "zh-CN" || v === "en-US") return v;
+  } catch {
+    /* Pinia 未激活时回退 localStorage */
+  }
+  const lang = localStorage.getItem(AI_ADMIN_LOCALE_LS_KEY)?.trim();
+  return lang && (lang === "zh-CN" || lang === "en-US") ? lang : "zh-CN";
+}
 
 export const AI_ADMIN_ACCESS_TOKEN_KEY = "ai_admin_access_token";
 
@@ -29,10 +42,13 @@ function resolveRequestTenantId(token: string | null): string {
 http.interceptors.request.use((config) => {
   const token = localStorage.getItem(AI_ADMIN_ACCESS_TOKEN_KEY);
   const tenantId = resolveRequestTenantId(token);
-  config.headers["X-Tenant-Id"] = tenantId;
+  const headers = AxiosHeaders.from(config.headers ?? {});
+  headers.set("X-Tenant-Id", tenantId, true);
+  headers.set("Accept-Language", resolveAcceptLanguageHeader(), true);
   if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+    headers.set("Authorization", `Bearer ${token}`, true);
   }
+  config.headers = headers;
   return config;
 });
 

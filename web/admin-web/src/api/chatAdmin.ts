@@ -43,6 +43,24 @@ export interface RagCitationAdmin {
   contentPreview: string;
 }
 
+/** 与助手消息 meta {@code webSearchReferences} 项一致 */
+export interface WebSearchRefAdmin {
+  title: string;
+  url: string;
+  summary: string;
+  siteName?: string | null;
+  logoUrl?: string | null;
+  publishTime?: string | null;
+  extraJson?: string | null;
+}
+
+/** 用户消息随附的上传文件摘要（与 {@code ChatMessageView.attachments} 一致） */
+export interface ChatAttachmentMessageAdmin {
+  id: number;
+  fileName: string;
+  charLength: number | null;
+}
+
 export interface ChatMessageAdminRow {
   id: number;
   role: string;
@@ -57,6 +75,12 @@ export interface ChatMessageAdminRow {
   priorVersions?: PriorAssistantVersionAdmin[] | null;
   /** RAG 意图下命中的知识分片（可点击预览正文） */
   ragCitations?: RagCitationAdmin[] | null;
+  /** 联网检索引用 */
+  webSearchReferences?: WebSearchRefAdmin[] | null;
+  /** 助手回复摘要（meta contentSummary），异步生成；无则 null */
+  contentSummary?: string | null;
+  /** 用户消息关联的上传附件 */
+  attachments?: ChatAttachmentMessageAdmin[] | null;
 }
 
 export async function fetchChatConversations(

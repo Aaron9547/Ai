@@ -1,46 +1,44 @@
 <template>
   <div class="page">
     <header class="head">
-      <h1>敏感词管理</h1>
-      <p class="hint">
-        平台强制词库对<strong>所有租户</strong>的对话校验生效；仅<strong>创始人</strong>可维护平台词与导入平台词。租户扩展词按<strong>数据租户</strong>隔离；创始人请在<strong>租户扩展词库卡片内、词表下方</strong>选择「维护目标租户」（未选时使用当前工作区租户）。
-      </p>
+      <h1>{{ t("views.sensitive.title") }}</h1>
+      <p class="hint" v-html="t('views.sensitive.hint')" />
     </header>
 
     <div class="split">
       <el-card shadow="never" class="split-card">
         <template #header>
-          <span>平台强制词库（全租户）</span>
-          <el-tag v-if="!isFounder" type="info" size="small" class="tag-ro">只读</el-tag>
+          <span>{{ t("views.sensitive.platformTitle") }}</span>
+          <el-tag v-if="!isFounder" type="info" size="small" class="tag-ro">{{ t("views.sensitive.roTag") }}</el-tag>
         </template>
         <div class="pane-inner">
           <div v-if="isFounder" class="toolbar">
-            <el-input v-model="platformWord" placeholder="新增一个词" clearable class="inp-short" />
-            <el-button type="primary" :loading="saving" @click="onAddPlatform">添加</el-button>
-            <el-button @click="platformImportOpen = true">批量导入</el-button>
+            <el-input v-model="platformWord" :placeholder="t('views.sensitive.addWordPh')" clearable class="inp-short" />
+            <el-button type="primary" :loading="saving" @click="onAddPlatform">{{ t("views.sensitive.add") }}</el-button>
+            <el-button @click="platformImportOpen = true">{{ t("views.sensitive.batchImport") }}</el-button>
           </div>
           <div class="toolbar toolbar--secondary">
             <el-input
               v-model="platformQInput"
-              placeholder="关键词筛选（包含匹配）"
+              :placeholder="t('views.sensitive.filterPh')"
               clearable
               class="inp-short"
               @keyup.enter="applyPlatformSearch"
             />
-            <el-button plain @click="applyPlatformSearch">筛选</el-button>
+            <el-button plain @click="applyPlatformSearch">{{ t("views.sensitive.filterBtn") }}</el-button>
           </div>
           <div class="table-scroll">
             <el-table
               v-loading="platformLoading"
               :data="platformTerms"
               stripe
-              empty-text="暂无平台词（请创始人配置）"
+              :empty-text="t('views.sensitive.emptyPlatform')"
             >
-              <el-table-column prop="word" label="词" min-width="120" show-overflow-tooltip />
-              <el-table-column prop="createdAt" label="创建时间" width="168" :formatter="fmtTimeCol" />
-              <el-table-column v-if="isFounder" label="操作" width="88" align="center">
+              <el-table-column prop="word" :label="t('views.sensitive.colWord')" min-width="120" show-overflow-tooltip />
+              <el-table-column prop="createdAt" :label="t('views.sensitive.colCreated')" width="168" :formatter="fmtTimeCol" />
+              <el-table-column v-if="isFounder" :label="t('views.sensitive.colActions')" width="88" align="center">
                 <template #default="{ row }">
-                  <el-button link type="danger" @click="onDelete(row)">删除</el-button>
+                  <el-button link type="danger" @click="onDelete(row)">{{ t("views.sensitive.delete") }}</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -63,55 +61,55 @@
 
       <el-card shadow="never" class="split-card">
         <template #header>
-          <span>租户扩展词库</span>
+          <span>{{ t("views.sensitive.tenantTitle") }}</span>
         </template>
         <div class="pane-inner">
           <div class="toolbar">
-            <el-input v-model="tenantWord" placeholder="新增一个词" clearable class="inp-short" />
-            <el-button type="primary" :loading="saving" @click="onAddTenant">添加</el-button>
-            <el-button @click="tenantImportOpen = true">批量导入</el-button>
+            <el-input v-model="tenantWord" :placeholder="t('views.sensitive.addWordPh')" clearable class="inp-short" />
+            <el-button type="primary" :loading="saving" @click="onAddTenant">{{ t("views.sensitive.add") }}</el-button>
+            <el-button @click="tenantImportOpen = true">{{ t("views.sensitive.batchImport") }}</el-button>
           </div>
           <div class="toolbar toolbar--secondary">
             <el-input
               v-model="tenantQInput"
-              placeholder="关键词筛选（包含匹配）"
+              :placeholder="t('views.sensitive.filterPh')"
               clearable
               class="inp-short"
               @keyup.enter="applyTenantSearch"
             />
-            <el-button plain @click="applyTenantSearch">筛选</el-button>
+            <el-button plain @click="applyTenantSearch">{{ t("views.sensitive.filterBtn") }}</el-button>
           </div>
           <div class="table-scroll">
-            <el-table v-loading="tenantLoading" :data="tenantTerms" stripe empty-text="暂无该租户扩展词">
-              <el-table-column prop="word" label="词" min-width="120" show-overflow-tooltip />
-              <el-table-column label="租户编码" min-width="120" align="center" show-overflow-tooltip>
+            <el-table v-loading="tenantLoading" :data="tenantTerms" stripe :empty-text="t('views.sensitive.emptyTenant')">
+              <el-table-column prop="word" :label="t('views.sensitive.colWord')" min-width="120" show-overflow-tooltip />
+              <el-table-column :label="t('views.sensitive.colTenantCode')" min-width="120" align="center" show-overflow-tooltip>
                 <template #default="{ row }">
-                  <span>{{ row.tenantCode?.trim() ? row.tenantCode : "—" }}</span>
+                  <span>{{ row.tenantCode?.trim() ? row.tenantCode : emDash }}</span>
                 </template>
               </el-table-column>
-              <el-table-column prop="createdAt" label="创建时间" width="168" :formatter="fmtTimeCol" />
-              <el-table-column label="操作" width="88" align="center">
+              <el-table-column prop="createdAt" :label="t('views.sensitive.colCreated')" width="168" :formatter="fmtTimeCol" />
+              <el-table-column :label="t('views.sensitive.colActions')" width="88" align="center">
                 <template #default="{ row }">
-                  <el-button link type="danger" @click="onDelete(row)">删除</el-button>
+                  <el-button link type="danger" @click="onDelete(row)">{{ t("views.sensitive.delete") }}</el-button>
                 </template>
               </el-table-column>
             </el-table>
           </div>
           <div v-if="isFounder" class="toolbar toolbar--tenant-target">
-            <span class="field-label">维护目标租户</span>
+            <span class="field-label">{{ t("views.sensitive.targetTenant") }}</span>
             <el-select
               v-model="extensionTenantId"
               class="tenant-select"
               clearable
               filterable
-              placeholder="未选则用当前工作区租户"
+              :placeholder="t('views.sensitive.targetTenantPh')"
               @change="onExtensionTenantChange"
             >
               <el-option
-                v-for="t in tenantOptions"
-                :key="t.id"
-                :label="`${t.name} (${t.code})`"
-                :value="t.id"
+                v-for="tenantOpt in tenantOptions"
+                :key="tenantOpt.id"
+                :label="`${tenantOpt.name} (${tenantOpt.code})`"
+                :value="tenantOpt.id"
               />
             </el-select>
           </div>
@@ -132,21 +130,21 @@
       </el-card>
     </div>
 
-    <el-dialog v-model="platformImportOpen" title="批量导入 — 平台强制词库" width="520px" destroy-on-close>
-      <p class="dlg-hint">每行一条，或使用逗号、顿号、分号分隔。仅创始人可导入到平台池。</p>
-      <el-input v-model="platformImportText" type="textarea" :rows="10" placeholder="粘贴词表…" />
+    <el-dialog v-model="platformImportOpen" :title="t('views.sensitive.dlgPlatformImport')" width="520px" destroy-on-close>
+      <p class="dlg-hint">{{ t("views.sensitive.importHintPlatform") }}</p>
+      <el-input v-model="platformImportText" type="textarea" :rows="10" :placeholder="t('views.sensitive.pastePh')" />
       <template #footer>
-        <el-button @click="platformImportOpen = false">取消</el-button>
-        <el-button type="primary" :loading="importing" @click="onImportPlatform">导入</el-button>
+        <el-button @click="platformImportOpen = false">{{ t("views.sensitive.cancel") }}</el-button>
+        <el-button type="primary" :loading="importing" @click="onImportPlatform">{{ t("views.sensitive.import") }}</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="tenantImportOpen" title="批量导入 — 租户扩展词库" width="520px" destroy-on-close>
-      <p class="dlg-hint">每行一条，或使用逗号、顿号、分号分隔。导入目标与词表下方的「维护目标租户」选择一致。</p>
-      <el-input v-model="tenantImportText" type="textarea" :rows="10" placeholder="粘贴词表…" />
+    <el-dialog v-model="tenantImportOpen" :title="t('views.sensitive.dlgTenantImport')" width="520px" destroy-on-close>
+      <p class="dlg-hint">{{ t("views.sensitive.importHintTenant") }}</p>
+      <el-input v-model="tenantImportText" type="textarea" :rows="10" :placeholder="t('views.sensitive.pastePh')" />
       <template #footer>
-        <el-button @click="tenantImportOpen = false">取消</el-button>
-        <el-button type="primary" :loading="importing" @click="onImportTenant">导入</el-button>
+        <el-button @click="tenantImportOpen = false">{{ t("views.sensitive.cancel") }}</el-button>
+        <el-button type="primary" :loading="importing" @click="onImportTenant">{{ t("views.sensitive.import") }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -155,9 +153,13 @@
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from "element-plus";
 import { onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import * as chatAdmin from "../../api/chatAdmin";
 import type { SensitiveTermRow } from "../../api/chatAdmin";
 import { useAdminFounderTenantOptions } from "../../composables/useAdminFounderTenantOptions";
+
+const { t, locale } = useI18n();
+const emDash = "\u2014";
 
 const { isFounder, tenantOptions } = useAdminFounderTenantOptions();
 
@@ -189,10 +191,11 @@ const platformImportText = ref("");
 const tenantImportText = ref("");
 
 function fmtTimeCol(_row: unknown, _col: unknown, cellValue: string) {
-  if (!cellValue) return "—";
+  if (!cellValue) return emDash;
   const d = new Date(cellValue);
   if (Number.isNaN(d.getTime())) return cellValue;
-  return d.toLocaleString("zh-CN", { hour12: false });
+  const loc = locale.value === "en" ? "en-US" : "zh-CN";
+  return d.toLocaleString(loc, { hour12: false });
 }
 
 function tenantPageOpts() {
@@ -220,7 +223,7 @@ async function loadPlatform() {
   } catch {
     platformTerms.value = [];
     platformTotal.value = 0;
-    ElMessage.error("平台词列表加载失败");
+    ElMessage.error(t("views.sensitive.platformLoadErr"));
   } finally {
     platformLoading.value = false;
   }
@@ -239,7 +242,7 @@ async function loadTenant() {
   } catch {
     tenantTerms.value = [];
     tenantTotal.value = 0;
-    ElMessage.error("租户词列表加载失败");
+    ElMessage.error(t("views.sensitive.tenantLoadErr"));
   } finally {
     tenantLoading.value = false;
   }
@@ -280,9 +283,9 @@ async function onAddPlatform() {
     await chatAdmin.addSensitiveTerm("PLATFORM", w);
     platformWord.value = "";
     await loadPlatform();
-    ElMessage.success("已添加");
+    ElMessage.success(t("views.sensitive.added"));
   } catch (e: unknown) {
-    ElMessage.error(errMsg(e, "添加失败"));
+    ElMessage.error(errMsg(e, t("views.sensitive.addFailed")));
   } finally {
     saving.value = false;
   }
@@ -296,9 +299,9 @@ async function onAddTenant() {
     await chatAdmin.addSensitiveTerm("TENANT", w, tenantWriteTarget());
     tenantWord.value = "";
     await loadTenant();
-    ElMessage.success("已添加");
+    ElMessage.success(t("views.sensitive.added"));
   } catch (e: unknown) {
-    ElMessage.error(errMsg(e, "添加失败"));
+    ElMessage.error(errMsg(e, t("views.sensitive.addFailed")));
   } finally {
     saving.value = false;
   }
@@ -306,7 +309,7 @@ async function onAddTenant() {
 
 async function onImportPlatform() {
   if (!platformImportText.value.trim()) {
-    ElMessage.warning("请输入要导入的内容");
+    ElMessage.warning(t("views.sensitive.importEmpty"));
     return;
   }
   importing.value = true;
@@ -315,9 +318,15 @@ async function onImportPlatform() {
     platformImportOpen.value = false;
     platformImportText.value = "";
     await loadPlatform();
-    ElMessage.success(`导入完成：新增 ${r.inserted}，重复跳过 ${r.skippedDuplicates}，无效 ${r.skippedInvalid}`);
+    ElMessage.success(
+      t("views.sensitive.importResult", {
+        inserted: r.inserted,
+        skippedDuplicates: r.skippedDuplicates,
+        skippedInvalid: r.skippedInvalid,
+      }),
+    );
   } catch (e: unknown) {
-    ElMessage.error(errMsg(e, "导入失败"));
+    ElMessage.error(errMsg(e, t("views.sensitive.importFailed")));
   } finally {
     importing.value = false;
   }
@@ -325,7 +334,7 @@ async function onImportPlatform() {
 
 async function onImportTenant() {
   if (!tenantImportText.value.trim()) {
-    ElMessage.warning("请输入要导入的内容");
+    ElMessage.warning(t("views.sensitive.importEmpty"));
     return;
   }
   importing.value = true;
@@ -334,9 +343,15 @@ async function onImportTenant() {
     tenantImportOpen.value = false;
     tenantImportText.value = "";
     await loadTenant();
-    ElMessage.success(`导入完成：新增 ${r.inserted}，重复跳过 ${r.skippedDuplicates}，无效 ${r.skippedInvalid}`);
+    ElMessage.success(
+      t("views.sensitive.importResult", {
+        inserted: r.inserted,
+        skippedDuplicates: r.skippedDuplicates,
+        skippedInvalid: r.skippedInvalid,
+      }),
+    );
   } catch (e: unknown) {
-    ElMessage.error(errMsg(e, "导入失败"));
+    ElMessage.error(errMsg(e, t("views.sensitive.importFailed")));
   } finally {
     importing.value = false;
   }
@@ -344,16 +359,18 @@ async function onImportTenant() {
 
 async function onDelete(row: SensitiveTermRow) {
   try {
-    await ElMessageBox.confirm(`确定删除「${row.word}」？`, "确认", { type: "warning" });
+    await ElMessageBox.confirm(t("views.sensitive.deleteConfirm", { word: row.word }), t("views.menuItems.confirm"), {
+      type: "warning",
+    });
   } catch {
     return;
   }
   try {
     await chatAdmin.deleteSensitiveTerm(row.id);
     await Promise.all([loadPlatform(), loadTenant()]);
-    ElMessage.success("已删除");
+    ElMessage.success(t("views.sensitive.deleted"));
   } catch (e: unknown) {
-    ElMessage.error(errMsg(e, "删除失败"));
+    ElMessage.error(errMsg(e, t("views.sensitive.deleteFailed")));
   }
 }
 
@@ -366,7 +383,7 @@ function errMsg(e: unknown, fallback: string): string {
 }
 
 onMounted(() => {
-  void Promise.all([loadPlatform(), loadTenant()]).catch(() => ElMessage.error("加载失败"));
+  void Promise.all([loadPlatform(), loadTenant()]).catch(() => ElMessage.error(t("views.sensitive.loadFailed")));
 });
 </script>
 
@@ -391,13 +408,13 @@ onMounted(() => {
   margin: 0 0 8px;
   font-size: 20px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--el-text-color-primary);
 }
 
 .hint {
   margin: 0;
   font-size: 13px;
-  color: #64748b;
+  color: var(--el-text-color-secondary);
   line-height: 1.5;
 }
 
@@ -465,7 +482,7 @@ onMounted(() => {
 
 .field-label {
   font-size: 13px;
-  color: #64748b;
+  color: var(--el-text-color-secondary);
   flex-shrink: 0;
 }
 
@@ -500,7 +517,7 @@ onMounted(() => {
 
 .dlg-hint {
   font-size: 13px;
-  color: #64748b;
+  color: var(--el-text-color-secondary);
   margin: 0 0 10px;
 }
 </style>

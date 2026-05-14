@@ -70,4 +70,14 @@ public class ChatIntentKeywordRepository {
                         .eq(ChatIntentKeyword::getTenantId, tenantId)
                         .eq(ChatIntentKeyword::getIntentId, intentId));
     }
+
+    /** 配置关键词命中意图 SSE 时原子 +1；返回受影响行数（0 表示 id/租户不匹配）。 */
+    public int incrementHitCount(long tenantId, long keywordId) {
+        return mapper.update(
+                null,
+                Wrappers.<ChatIntentKeyword>lambdaUpdate()
+                        .eq(ChatIntentKeyword::getTenantId, tenantId)
+                        .eq(ChatIntentKeyword::getId, keywordId)
+                        .setSql("hit_count = IFNULL(hit_count, 0) + 1"));
+    }
 }

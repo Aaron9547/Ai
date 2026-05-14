@@ -165,7 +165,7 @@ onMounted(() => {
 <style scoped>
 .panel {
   border-radius: 12px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--el-border-color);
 }
 
 .hdr {
@@ -178,13 +178,13 @@ onMounted(() => {
 .title {
   font-weight: 600;
   font-size: 15px;
-  color: #0f172a;
+  color: var(--el-text-color-primary);
 }
 
 .sub {
   margin: 4px 0 0;
   font-size: 12px;
-  color: #64748b;
+  color: var(--el-text-color-secondary);
 }
 
 .kb-row {

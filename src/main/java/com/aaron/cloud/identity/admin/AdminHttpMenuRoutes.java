@@ -11,6 +11,12 @@ public final class AdminHttpMenuRoutes {
         if (uri == null) {
             return null;
         }
+        if (uri.startsWith("/api/v1/admin/dashboard")) {
+            return AdminMenuCode.DASHBOARD;
+        }
+        if (uri.startsWith("/api/v1/admin/user-profiles")) {
+            return AdminMenuCode.USER_PROFILES;
+        }
         if (uri.startsWith("/api/v1/admin/users")) {
             return AdminMenuCode.USERS;
         }

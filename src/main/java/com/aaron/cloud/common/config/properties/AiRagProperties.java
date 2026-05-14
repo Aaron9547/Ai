@@ -26,13 +26,13 @@ public class AiRagProperties {
         return com.aaron.cloud.common.api.enums.RagRetrievalMode.fromYaml(retrievalMode);
     }
 
-    /** 与 ly-ai-rag-svc {@code elasticsearch} 块同形：{@code enabled} 总闸；节点与账号在 {@link Elasticsearch#config}。 */
+    /** 与对端 {@code elasticsearch} 块同形：{@code enabled} 总闸；节点与账号在 {@link Elasticsearch#config}。 */
     @Data
     public static class Elasticsearch {
         private boolean enabled = false;
         private Config config = new Config();
-        /** 与索引模板一致；需自行写入 chunk 文档（tenant_id、kb_id、content）。 */
-        private String indexName = "ai_rag_chunk";
+        /** 与对端默认 {@code elasticsearch.index-name} 一致（rag_agent_documents）。 */
+        private String indexName = "rag_agent_documents";
         /**
          * 非空时对 ES 使用 HTTP Basic；否则使用 {@link Config} 内 {@code userName}/{@code password}（与 RAG 侧
          * {@code elasticsearch.username} 覆盖 {@code config.userName} 一致）。
@@ -44,7 +44,7 @@ public class AiRagProperties {
         public static class Config {
             /** 与 RAG 侧展示一致；Rest 客户端不使用，仅配置占位。 */
             private String clusterName = "";
-            /** 与 ly-ai-rag-svc {@code elasticsearch.config.hostPorts} 同形（{@code host:port;host:port}）。 */
+            /** 与对端 {@code elasticsearch.config.hostPorts} 同形（{@code host:port;host:port}）。 */
             private String hostPorts = "";
             private String userName = "";
             private String password = "";
@@ -54,12 +54,12 @@ public class AiRagProperties {
     @Data
     public static class LocalEmbedFeign {
         /**
-         * 与 ly-ai-rag {@code aiengine.domain} 根路径一致（如 {@code http://host/ly-ai-rag}）；非空则 Feign 直连。环境变量：
+         * 与对端网关根地址（如 {@code aiengine.domain}）一致（含路径前缀与尾斜杠）；非空则 Feign 直连。环境变量：
          * {@code AI_RAG_LOCAL_EMBED_FEIGN_BASE_URL} 或 {@code AI_RAG_ENGINE_BASE_URL}（见 {@code application.yml} 占位）。
          */
         private String baseUrl = "";
 
         /** Eureka 注册名；与 {@link com.aaron.cloud.rag.remote.RagLocalEmbeddingFeignClient} 占位一致。 */
-        private String serviceId = "ly-ai-rag-svc";
+        private String serviceId = "rag-embedding-svc";
     }
 }

@@ -1,6 +1,6 @@
 # 集成测试：需本机 MySQL 已建库并执行 db/mysql/schema_v1.sql
 spring:
   datasource:
-    url: ${MYSQL_URL:jdbc:mysql://127.0.0.1:3306/ai?useUnicode=true&characterEncoding=utf8&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true}
+    url: ${MYSQL_URL:jdbc:mysql://127.0.0.1:3306/ai?useUnicode=true&characterEncoding=utf8&connectionTimeZone=%2B08%3A00&forceConnectionTimeZoneToSession=true}
     username: ${MYSQL_USERNAME:ai}
     password: ${MYSQL_PASSWORD:ai}

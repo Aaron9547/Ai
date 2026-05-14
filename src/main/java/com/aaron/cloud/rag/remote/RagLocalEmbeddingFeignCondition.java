@@ -7,7 +7,7 @@ import org.springframework.util.StringUtils;
 
 /**
  * 在下列任一成立时注册本地嵌入 Feign：配置了非空 {@code ai.rag.local-embed-feign.base-url}（直连）；或 {@code ai.discovery.enabled}
- * 为 true 且配置了非空 {@code ai.rag.local-embed-feign.service-id}（经 Eureka + LoadBalancer，与 {@code ly-ai-rag-svc} 等注册名对齐）。
+ * 为 true 且配置了非空 {@code ai.rag.local-embed-feign.service-id}（经 Eureka + LoadBalancer，须与对端 Eureka 注册名一致）。
  */
 public final class RagLocalEmbeddingFeignCondition implements Condition {
 

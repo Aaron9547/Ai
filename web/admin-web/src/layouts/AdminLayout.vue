@@ -4,12 +4,12 @@
       <div class="brand">
         <span class="brand-mark" aria-hidden="true" />
         <div class="brand-text">
-          <span class="brand-title">Ai 控制台</span>
-          <span class="brand-sub">运营与中台</span>
+          <span class="brand-title">{{ t("admin.brandTitle") }}</span>
+          <span class="brand-sub">{{ t("admin.brandSub") }}</span>
         </div>
       </div>
 
-      <div class="admin-aside-scroll">
+      <el-scrollbar class="admin-aside-scroll" height="100%">
         <el-menu
           router
           :default-active="sideMenuActivePath"
@@ -19,121 +19,147 @@
           text-color="#94a3b8"
           active-text-color="#e0e7ff"
         >
+        <el-menu-item v-if="menuAllowed('DASHBOARD')" index="/dashboard">
+          <el-icon><Odometer /></el-icon>
+          <span>{{ t("admin.menu.dashboard") }}</span>
+        </el-menu-item>
+        <!-- 1. 模型、工具与知识数据（中台能力） -->
         <el-sub-menu
           v-if="menuAllowed('LLM_MODELS') || menuAllowed('MCP_SERVERS') || menuAllowed('RAG_KBS')"
-          index="grp-ai"
+          index="grp-model-knowledge"
         >
           <template #title>
             <el-icon><Cpu /></el-icon>
-            <span>AI 中台</span>
+            <span>{{ t("admin.menu.modelKnowledge") }}</span>
           </template>
           <el-menu-item v-if="menuAllowed('LLM_MODELS')" index="/model/llm-models">
             <el-icon><Setting /></el-icon>
-            <span>模型管理</span>
+            <span>{{ t("admin.menu.llmModels") }}</span>
           </el-menu-item>
           <el-menu-item v-if="menuAllowed('MCP_SERVERS')" index="/mcp/servers">
             <el-icon><Connection /></el-icon>
-            <span>MCP 管理</span>
+            <span>{{ t("admin.menu.mcpServers") }}</span>
           </el-menu-item>
           <el-menu-item v-if="menuAllowed('RAG_KBS')" index="/knowledge-center/knowledge-bases">
             <el-icon><Reading /></el-icon>
-            <span>知识中心</span>
+            <span>{{ t("admin.menu.knowledgeCenter") }}</span>
           </el-menu-item>
         </el-sub-menu>
 
-        <el-sub-menu v-if="menuAllowed('USERS')" index="grp-org">
+        <!-- 2. 当前租户内成员账号与画像记忆（非「组织架构」） -->
+        <el-sub-menu v-if="menuAllowed('USERS') || menuAllowed('USER_PROFILES')" index="grp-members">
           <template #title>
             <el-icon><User /></el-icon>
-            <span>用户与组织</span>
+            <span>{{ t("admin.menu.membersProfiles") }}</span>
           </template>
           <el-menu-item v-if="menuAllowed('USERS')" index="/users">
             <el-icon><Avatar /></el-icon>
-            <span>用户管理</span>
+            <span>{{ t("admin.menu.users") }}</span>
+          </el-menu-item>
+          <el-menu-item v-if="menuAllowed('USER_PROFILES')" index="/users/profiles">
+            <el-icon><UserFilled /></el-icon>
+            <span>{{ t("admin.menu.userProfiles") }}</span>
           </el-menu-item>
         </el-sub-menu>
 
-        <el-sub-menu v-if="menuAllowed('SYSTEM_SETTINGS')" index="grp-system">
+        <!-- 3. 对话侧运营：内容日志与策略（与网关 HTTP 日志区分） -->
+        <el-sub-menu v-if="menuAllowed('CHAT') || menuAllowed('CHAT_INTENTS')" index="grp-chat-risk">
           <template #title>
-            <el-icon><Operation /></el-icon>
-            <span>系统</span>
+            <el-icon><ChatDotRound /></el-icon>
+            <span>{{ t("admin.menu.chatRisk") }}</span>
           </template>
-          <el-menu-item index="/system/runtime-settings">
-            <el-icon><Setting /></el-icon>
-            <span>系统参数</span>
-          </el-menu-item>
-        </el-sub-menu>
-
-        <el-sub-menu v-if="isFounder && (menuAllowed('TENANTS') || menuAllowed('MENU_CATALOG'))" index="grp-platform">
-          <template #title>
-            <el-icon><OfficeBuilding /></el-icon>
-            <span>平台</span>
-          </template>
-          <el-menu-item v-if="menuAllowed('TENANTS')" index="/tenant/tenants">
-            <el-icon><House /></el-icon>
-            <span>租户管理</span>
-          </el-menu-item>
-          <el-menu-item v-if="isFounder && menuAllowed('MENU_CATALOG')" index="/system/menu-items">
-            <el-icon><MenuIcon /></el-icon>
-            <span>菜单管理</span>
-          </el-menu-item>
-        </el-sub-menu>
-
-        <el-sub-menu
-          v-if="
-            menuAllowed('ACCESS_LOGS') ||
-            menuAllowed('AUDIT_EVENTS') ||
-            menuAllowed('METERING') ||
-            menuAllowed('CHAT') ||
-            menuAllowed('CHAT_INTENTS') ||
-            menuAllowed('GATEWAY_API')
-          "
-          index="grp-observe"
-        >
-          <template #title>
-            <el-icon><DataLine /></el-icon>
-            <span>观测与审计</span>
-          </template>
-          <el-menu-item v-if="menuAllowed('GATEWAY_API')" index="/gateway/api-rate-limits">
-            <el-icon><Setting /></el-icon>
-            <span>接口与限流</span>
-          </el-menu-item>
-          <el-menu-item v-if="menuAllowed('GATEWAY_API')" index="/gateway/cors-origins">
-            <el-icon><Link /></el-icon>
-            <span>跨域来源</span>
-          </el-menu-item>
-          <el-menu-item v-if="menuAllowed('ACCESS_LOGS')" index="/gateway/access-logs">
-            <el-icon><TrendCharts /></el-icon>
-            <span>访问日志</span>
-          </el-menu-item>
-          <el-menu-item v-if="menuAllowed('AUDIT_EVENTS')" index="/audit/events">
-            <el-icon><Document /></el-icon>
-            <span>审计事件</span>
-          </el-menu-item>
-          <el-menu-item v-if="menuAllowed('METERING')" index="/billing/metering">
-            <el-icon><Histogram /></el-icon>
-            <span>计量</span>
-          </el-menu-item>
           <el-menu-item v-if="menuAllowed('CHAT')" index="/chat/conversations">
             <el-icon><ChatDotRound /></el-icon>
-            <span>对话日志</span>
+            <span>{{ t("admin.menu.chatConversations") }}</span>
           </el-menu-item>
           <el-menu-item v-if="menuAllowed('CHAT')" index="/chat/sensitive-terms">
             <el-icon><Warning /></el-icon>
-            <span>敏感词</span>
+            <span>{{ t("admin.menu.sensitiveTerms") }}</span>
           </el-menu-item>
           <el-menu-item v-if="menuAllowed('CHAT_INTENTS')" index="/chat/intents">
             <el-icon><Promotion /></el-icon>
-            <span>意图识别</span>
+            <span>{{ t("admin.menu.intents") }}</span>
+          </el-menu-item>
+        </el-sub-menu>
+
+        <!-- 4. 接入层：网关策略与原始 HTTP 访问轨迹 -->
+        <el-sub-menu
+          v-if="menuAllowed('GATEWAY_API') || menuAllowed('ACCESS_LOGS')"
+          index="grp-gateway"
+        >
+          <template #title>
+            <el-icon><Monitor /></el-icon>
+            <span>{{ t("admin.menu.gateway") }}</span>
+          </template>
+          <el-menu-item v-if="menuAllowed('GATEWAY_API')" index="/gateway/api-rate-limits">
+            <el-icon><Setting /></el-icon>
+            <span>{{ t("admin.menu.apiRateLimits") }}</span>
+          </el-menu-item>
+          <el-menu-item v-if="menuAllowed('GATEWAY_API')" index="/gateway/cors-origins">
+            <el-icon><Link /></el-icon>
+            <span>{{ t("admin.menu.corsOrigins") }}</span>
+          </el-menu-item>
+          <el-menu-item v-if="menuAllowed('ACCESS_LOGS')" index="/gateway/access-logs">
+            <el-icon><TrendCharts /></el-icon>
+            <span>{{ t("admin.menu.accessLogs") }}</span>
+          </el-menu-item>
+        </el-sub-menu>
+
+        <!-- 5. 合规留痕与计费类用量 -->
+        <el-sub-menu
+          v-if="menuAllowed('AUDIT_EVENTS') || menuAllowed('METERING')"
+          index="grp-audit-metering"
+        >
+          <template #title>
+            <el-icon><DataAnalysis /></el-icon>
+            <span>{{ t("admin.menu.auditMetering") }}</span>
+          </template>
+          <el-menu-item v-if="menuAllowed('AUDIT_EVENTS')" index="/audit/events">
+            <el-icon><Document /></el-icon>
+            <span>{{ t("admin.menu.auditEvents") }}</span>
+          </el-menu-item>
+          <el-menu-item v-if="menuAllowed('METERING')" index="/billing/metering">
+            <el-icon><Histogram /></el-icon>
+            <span>{{ t("admin.menu.metering") }}</span>
+          </el-menu-item>
+        </el-sub-menu>
+
+        <!-- 6. 本租户业务开关类参数（与平台级菜单/租户 CRUD 区分） -->
+        <el-sub-menu v-if="menuAllowed('SYSTEM_SETTINGS')" index="grp-tenant-settings">
+          <template #title>
+            <el-icon><Tools /></el-icon>
+            <span>{{ t("admin.menu.tenantSettings") }}</span>
+          </template>
+          <el-menu-item index="/system/runtime-settings">
+            <el-icon><Setting /></el-icon>
+            <span>{{ t("admin.menu.runtimeSettings") }}</span>
+          </el-menu-item>
+        </el-sub-menu>
+
+        <!-- 7. 跨租户平台治理（创始人） -->
+        <el-sub-menu v-if="isFounder && (menuAllowed('TENANTS') || menuAllowed('MENU_CATALOG'))" index="grp-platform">
+          <template #title>
+            <el-icon><OfficeBuilding /></el-icon>
+            <span>{{ t("admin.menu.platform") }}</span>
+          </template>
+          <el-menu-item v-if="menuAllowed('TENANTS')" index="/tenant/tenants">
+            <el-icon><House /></el-icon>
+            <span>{{ t("admin.menu.tenantManage") }}</span>
+          </el-menu-item>
+          <el-menu-item v-if="isFounder && menuAllowed('MENU_CATALOG')" index="/system/menu-items">
+            <el-icon><MenuIcon /></el-icon>
+            <span>{{ t("admin.menu.menuCatalog") }}</span>
           </el-menu-item>
         </el-sub-menu>
         </el-menu>
-      </div>
+      </el-scrollbar>
     </el-aside>
 
     <el-container direction="vertical">
       <el-header height="56px" class="top-bar">
         <div class="crumb">{{ pageTitle }}</div>
         <div class="header-right">
+          <LocaleThemeToolbar />
           <el-dropdown
             trigger="click"
             placement="bottom-end"
@@ -149,7 +175,7 @@
               <el-dropdown-menu>
                 <el-dropdown-item v-if="showWorkspaceSwitch" disabled class="user-menu-hint">
                   <div class="hint-workspace">
-                    <span class="hint-workspace-label">当前工作区</span>
+                    <span class="hint-workspace-label">{{ t("common.currentWorkspace") }}</span>
                     <span class="hint-workspace-value">{{ workspaceSummary }}</span>
                   </div>
                 </el-dropdown-item>
@@ -161,17 +187,23 @@
                   class="workspace-pick-item"
                 >
                   <span class="workspace-pick-label">{{ row.label }}</span>
-                  <el-tag v-if="row.isCurrent" type="info" size="small" class="workspace-current-tag">当前</el-tag>
+                  <el-tag v-if="row.isCurrent" type="info" size="small" class="workspace-current-tag">{{
+                    t("common.current")
+                  }}</el-tag>
                 </el-dropdown-item>
-                <el-dropdown-item command="relogin" :divided="showWorkspaceSwitch">重新登录</el-dropdown-item>
-                <el-dropdown-item command="logout" divided>退出</el-dropdown-item>
+                <el-dropdown-item command="relogin" :divided="showWorkspaceSwitch">{{ t("common.relogin") }}</el-dropdown-item>
+                <el-dropdown-item command="logout" divided>{{ t("common.logout") }}</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
         </div>
       </el-header>
-      <el-main>
-        <RouterView />
+      <el-main class="admin-main">
+        <el-scrollbar class="admin-main-scrollbar" height="100%">
+          <div class="admin-main-scrollbar-inner">
+            <RouterView />
+          </div>
+        </el-scrollbar>
       </el-main>
     </el-container>
   </el-container>
@@ -184,25 +216,31 @@ import {
   ChatDotRound,
   Connection,
   Cpu,
-  DataLine,
+  DataAnalysis,
   Document,
   Histogram,
   House,
   Link,
   Menu as MenuIcon,
+  Monitor,
+  Odometer,
   OfficeBuilding,
-  Operation,
   Promotion,
   Reading,
   Setting,
+  Tools,
   TrendCharts,
   User,
+  UserFilled,
   Warning,
 } from "@element-plus/icons-vue";
 import { computed, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElLoading, ElMessage, ElMessageBox } from "element-plus";
+import LocaleThemeToolbar from "@/components/LocaleThemeToolbar.vue";
 import * as tenantsApi from "@/api/tenants";
+import { AI_ADMIN_WORKSPACE_CHANGED_EVENT } from "@/constants/adminWorkspace";
 import { postAdminContextSwitch } from "@/api/authAdminContext";
 import { fetchAdminMe, type AdminMeMembership, type AdminMeView } from "@/api/adminMe";
 import {
@@ -215,6 +253,7 @@ import { formatTenantNameCode } from "@/utils/adminListDisplay";
 
 const router = useRouter();
 const route = useRoute();
+const { t, te } = useI18n();
 
 /** 知识库工作台等子路径在侧栏高亮「知识中心」入口 */
 const sideMenuActivePath = computed(() => {
@@ -224,32 +263,18 @@ const sideMenuActivePath = computed(() => {
   return route.path;
 });
 
-const titles: Record<string, string> = {
-  "/users": "用户管理",
-  "/tenant/tenants": "租户管理",
-  "/system/menu-items": "菜单管理",
-  "/gateway/api-rate-limits": "接口与限流",
-  "/gateway/access-logs": "HTTP 访问日志",
-  "/audit/events": "审计事件",
-  "/billing/metering": "计量事件",
-  "/chat/conversations": "对话日志",
-  "/chat/sensitive-terms": "敏感词管理",
-  "/model/llm-models": "模型管理",
-  "/mcp/servers": "MCP 服务注册",
-  "/knowledge-center/knowledge-bases": "知识中心",
-  "/system/runtime-settings": "系统参数（本租户）",
-};
-
 const pageTitle = computed(() => {
   if (/\/knowledge-center\/workspace\/\d+\/documents\/\d+\/chunks$/.test(route.path)) {
-    return "知识中心 · 分片管理";
+    return t("admin.titles.chunks");
   }
-  return titles[route.path] ?? "管理端";
+  const pathKey = `admin.titles.${route.path}`;
+  if (te(pathKey)) return t(pathKey);
+  return t("admin.defaultPageTitle");
 });
 
 const displayUserLabel = computed(() => {
   if (import.meta.env.VITE_ADMIN_AUTH_SKIP === "true") {
-    return "免登录预览";
+    return t("common.authSkipPreview");
   }
   const me = meSnapshot.value;
   const name = me?.displayName?.trim();
@@ -257,7 +282,7 @@ const displayUserLabel = computed(() => {
     return name;
   }
   const sub = readJwtSubject(localStorage.getItem(AI_ADMIN_ACCESS_TOKEN_KEY));
-  return sub ?? "未登录";
+  return sub ?? t("common.notLoggedIn");
 });
 
 const isFounder = computed(() => {
@@ -281,14 +306,9 @@ type WorkspacePickRow = {
   isCurrent: boolean;
 };
 
-function formatRoleLabel(code: string): string {
-  const map: Record<string, string> = {
-    FOUNDER: "创始人",
-    OWNER: "租户负责人",
-    ADMIN: "管理员",
-    MEMBER: "成员",
-  };
-  return map[code] ?? code;
+function roleLabel(code: string): string {
+  const key = `roles.${code}`;
+  return te(key) ? String(t(key)) : code;
 }
 
 function resolveTenantDisplayName(tid: string): string {
@@ -304,7 +324,7 @@ function resolveTenantDisplayName(tid: string): string {
   }
   const code = fromMembership?.tenantCode?.trim();
   if (code) return code;
-  return "当前租户";
+  return t("common.currentTenant");
 }
 
 function membershipTenantDisplay(m: AdminMeMembership): string {
@@ -316,7 +336,7 @@ function membershipTenantDisplay(m: AdminMeMembership): string {
   if (optRow) {
     return formatTenantNameCode({ tenantName: optRow.name, tenantCode: optRow.code });
   }
-  return "租户（信息未加载）";
+  return t("common.tenantInfoPending");
 }
 
 function markWorkspaceCurrent(rows: WorkspacePickRow[]): WorkspacePickRow[] {
@@ -348,7 +368,7 @@ const workspacePickRows = computed((): WorkspacePickRow[] => {
   if (isFounder.value) {
     if (elevated.length > 1) {
       for (const m of elevated) {
-        pushUnique(m.tenantId, m.role, `${membershipTenantDisplay(m)}（${formatRoleLabel(m.role)}）`);
+        pushUnique(m.tenantId, m.role, `${membershipTenantDisplay(m)}（${roleLabel(m.role)}）`);
       }
       return markWorkspaceCurrent(acc);
     }
@@ -358,7 +378,7 @@ const workspacePickRows = computed((): WorkspacePickRow[] => {
         pushUnique(
           t.id,
           "FOUNDER",
-          `${formatTenantNameCode({ tenantName: t.name, tenantCode: t.code })}（${formatRoleLabel("FOUNDER")}）`,
+          `${formatTenantNameCode({ tenantName: t.name, tenantCode: t.code })}（${roleLabel("FOUNDER")}）`,
         );
       }
       return markWorkspaceCurrent(acc);
@@ -368,7 +388,7 @@ const workspacePickRows = computed((): WorkspacePickRow[] => {
 
   if (elevated.length <= 1) return [];
   for (const m of elevated) {
-    pushUnique(m.tenantId, m.role, `${membershipTenantDisplay(m)}（${formatRoleLabel(m.role)}）`);
+    pushUnique(m.tenantId, m.role, `${membershipTenantDisplay(m)}（${roleLabel(m.role)}）`);
   }
   return markWorkspaceCurrent(acc);
 });
@@ -380,10 +400,10 @@ const workspaceSummary = computed(() => {
   const token = localStorage.getItem(AI_ADMIN_ACCESS_TOKEN_KEY);
   const tid = readJwtTid(token);
   const tmr = readJwtTmr(token);
-  if (!tid || !tmr) return "—";
+  if (!tid || !tmr) return t("common.dash");
   const hit = workspacePickRows.value.find((r) => r.isCurrent);
   if (hit) return hit.label;
-  return `${resolveTenantDisplayName(tid)}（${formatRoleLabel(tmr)}）`;
+  return `${resolveTenantDisplayName(tid)}（${roleLabel(tmr)}）`;
 });
 
 function workspaceCommand(row: WorkspacePickRow): string {
@@ -393,13 +413,23 @@ function workspaceCommand(row: WorkspacePickRow): string {
 async function applyWorkspaceSwitch(tenantId: number, role: string) {
   try {
     await ElMessageBox.confirm(
-      "将签发新的登录凭证，菜单与数据范围会按所选租户与角色立即变更。",
-      "确认切换工作区",
-      { type: "warning", confirmButtonText: "确认切换", cancelButtonText: "取消" },
+      t("admin.workspace.switchConfirmMsg"),
+      t("admin.workspace.switchConfirmTitle"),
+      {
+        type: "warning",
+        confirmButtonText: t("admin.workspace.switchConfirmOk"),
+        cancelButtonText: t("common.cancel"),
+      },
     );
   } catch {
     return;
   }
+  const loading = ElLoading.service({
+    lock: true,
+    fullscreen: true,
+    text: t("common.workspaceSwitching"),
+    background: "rgba(0, 0, 0, 0.25)",
+  });
   try {
     const data = await postAdminContextSwitch({ tenantId, role });
     localStorage.setItem(AI_ADMIN_ACCESS_TOKEN_KEY, data.accessToken);
@@ -417,10 +447,13 @@ async function applyWorkspaceSwitch(tenantId: number, role: string) {
         tenantOptions.value = r;
       });
     }
-    ElMessage.success("已切换工作区");
+    ElMessage.success(t("common.workspaceSwitched"));
+    window.dispatchEvent(new Event(AI_ADMIN_WORKSPACE_CHANGED_EVENT));
   } catch (e: unknown) {
     console.warn("[workspace switch]", e);
-    ElMessage.error("切换失败，请稍后重试");
+    ElMessage.error(t("common.workspaceSwitchFailed"));
+  } finally {
+    loading.close();
   }
 }
 
@@ -464,7 +497,7 @@ onMounted(() => {
 
 const avatarLetter = computed(() => {
   const name = displayUserLabel.value;
-  if (!name || name === "未登录" || name === "免登录预览") return "?";
+  if (!name || name === t("common.notLoggedIn") || name === t("common.authSkipPreview")) return "?";
   return name.slice(0, 1).toUpperCase();
 });
 
@@ -559,6 +592,29 @@ function onUserMenuCommand(cmd: string) {
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
+}
+
+.admin-main {
+  padding: 0 !important;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.admin-main-scrollbar {
+  flex: 1;
+  min-height: 0;
+}
+
+.admin-main-scrollbar :deep(.el-scrollbar__wrap) {
+  overflow-x: hidden;
+}
+
+.admin-main-scrollbar-inner {
+  min-height: 100%;
+  box-sizing: border-box;
 }
 
 </style>

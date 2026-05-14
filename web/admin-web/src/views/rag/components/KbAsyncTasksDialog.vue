@@ -259,7 +259,7 @@ async function copyResult() {
 .sub {
   margin: 0 0 12px;
   font-size: 12px;
-  color: #64748b;
+  color: var(--el-text-color-secondary);
 }
 
 .filters {
@@ -287,7 +287,7 @@ async function copyResult() {
 .section-title {
   font-size: 13px;
   font-weight: 600;
-  color: #334155;
+  color: var(--el-text-color-regular);
   margin-bottom: 8px;
 }
 
@@ -303,8 +303,8 @@ async function copyResult() {
 .json-pre {
   margin: 0;
   padding: 10px 12px;
-  background: #0f172a;
-  color: #e2e8f0;
+  background: var(--el-fill-color-darker);
+  color: var(--el-text-color-primary);
   border-radius: 8px;
   font-size: 12px;
   line-height: 1.45;
@@ -317,13 +317,13 @@ async function copyResult() {
 }
 
 .st {
-  color: #64748b;
+  color: var(--el-text-color-secondary);
   font-size: 13px;
 }
 
 .td {
   font-size: 12px;
-  color: #475569;
+  color: var(--el-text-color-regular);
   margin-top: 4px;
   word-break: break-all;
 }

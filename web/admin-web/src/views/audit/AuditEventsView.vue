@@ -3,7 +3,7 @@
     <el-card shadow="never" class="panel">
       <template #header>
         <div class="hdr">
-          <span class="title">审计事件</span>
+          <span class="title">{{ t("views.audit.title") }}</span>
           <div class="hdr-actions">
             <el-select
               v-if="isFounder"
@@ -11,17 +11,17 @@
               class="tenant-filter"
               clearable
               filterable
-              placeholder="全部租户"
+              :placeholder="t('views.audit.placeholderAllTenants')"
               @change="onTenantFilterChange"
             >
               <el-option
-                v-for="t in tenantOptions"
-                :key="t.id"
-                :label="`${t.name} (${t.code})`"
-                :value="t.id"
+                v-for="tenantOpt in tenantOptions"
+                :key="tenantOpt.id"
+                :label="`${tenantOpt.name} (${tenantOpt.code})`"
+                :value="tenantOpt.id"
               />
             </el-select>
-            <el-button type="primary" plain :loading="loading" @click="load">刷新</el-button>
+            <el-button type="primary" plain :loading="loading" @click="load">{{ t("views.audit.refresh") }}</el-button>
           </div>
         </div>
       </template>
@@ -33,53 +33,53 @@
         border
         max-height="520"
         class="data-table"
-        empty-text="暂无审计记录"
+        :empty-text="t('views.audit.empty')"
         highlight-current-row
         @row-click="onRowClick"
       >
-        <el-table-column prop="createdAt" label="发生时间" width="168">
+        <el-table-column prop="createdAt" :label="t('views.audit.colTime')" width="168">
           <template #default="{ row }">
             {{ formatTime(row.createdAt) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作类型" width="140" show-overflow-tooltip>
+        <el-table-column :label="t('views.audit.colAction')" width="140" show-overflow-tooltip>
           <template #default="{ row }">
             {{ labelAction(row.action) }}
           </template>
         </el-table-column>
-        <el-table-column label="关联对象类型" width="130" show-overflow-tooltip>
+        <el-table-column :label="t('views.audit.colResType')" width="130" show-overflow-tooltip>
           <template #default="{ row }">
             {{ labelResourceType(row.resourceType) }}
           </template>
         </el-table-column>
-        <el-table-column label="关联对象" min-width="160" show-overflow-tooltip>
+        <el-table-column :label="t('views.audit.colResource')" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">
             {{ formatAuditResource(row) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作者类型" width="110" show-overflow-tooltip>
+        <el-table-column :label="t('views.audit.colActorType')" width="110" show-overflow-tooltip>
           <template #default="{ row }">
             {{ labelActorType(row.actorType) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作者" min-width="120" show-overflow-tooltip>
+        <el-table-column :label="t('views.audit.colActor')" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">
             {{ formatAuditActor(row) }}
           </template>
         </el-table-column>
-        <el-table-column label="租户" min-width="160" show-overflow-tooltip>
+        <el-table-column :label="t('views.audit.colTenant')" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">
             {{ formatTenantNameCode(row) }}
           </template>
         </el-table-column>
-        <el-table-column label="详情摘要" min-width="160" show-overflow-tooltip>
+        <el-table-column :label="t('views.audit.colSummary')" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">
             {{ previewJson(row.detailJson) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="100" fixed="right" align="center">
+        <el-table-column :label="t('views.audit.colActions')" width="100" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click.stop="openDetail(row)">详情</el-button>
+            <el-button link type="primary" size="small" @click.stop="openDetail(row)">{{ t("views.audit.detail") }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -98,26 +98,26 @@
       </div>
     </el-card>
 
-    <el-dialog v-model="detailOpen" title="审计事件详情" width="640px" destroy-on-close class="detail-dlg">
+    <el-dialog v-model="detailOpen" :title="t('views.audit.dlgTitle')" width="640px" destroy-on-close class="detail-dlg">
       <template v-if="detail">
         <el-descriptions :column="1" border size="small">
-          <el-descriptions-item label="记录编号（排障）">{{ detail.id }}</el-descriptions-item>
-          <el-descriptions-item label="发生时间">{{ formatTime(detail.createdAt) }}</el-descriptions-item>
-          <el-descriptions-item label="租户（名称 / 编码）">{{ formatTenantNameCode(detail) }}</el-descriptions-item>
-          <el-descriptions-item label="租户 ID（排障）">{{ detail.tenantId }}</el-descriptions-item>
-          <el-descriptions-item label="操作者类型">{{ labelActorType(detail.actorType) }}</el-descriptions-item>
-          <el-descriptions-item label="操作者">{{ formatAuditActor(detail) }}</el-descriptions-item>
-          <el-descriptions-item label="操作者标识原文（排障）">{{ detail.actorId || "—" }}</el-descriptions-item>
-          <el-descriptions-item label="操作类型">{{ labelAction(detail.action) }}</el-descriptions-item>
-          <el-descriptions-item label="原始操作码（排障）">{{ detail.action || "—" }}</el-descriptions-item>
-          <el-descriptions-item label="关联对象（可读）">{{ formatAuditResource(detail) }}</el-descriptions-item>
-          <el-descriptions-item label="关联对象类型">{{ labelResourceType(detail.resourceType) }}</el-descriptions-item>
-          <el-descriptions-item label="关联对象标识（排障）">{{ detail.resourceId || "—" }}</el-descriptions-item>
+          <el-descriptions-item :label="t('views.audit.descRecordId')">{{ detail.id }}</el-descriptions-item>
+          <el-descriptions-item :label="t('views.audit.descTime')">{{ formatTime(detail.createdAt) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('views.audit.descTenantNc')">{{ formatTenantNameCode(detail) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('views.audit.descTenantId')">{{ detail.tenantId }}</el-descriptions-item>
+          <el-descriptions-item :label="t('views.audit.descActorType')">{{ labelActorType(detail.actorType) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('views.audit.descActor')">{{ formatAuditActor(detail) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('views.audit.descActorIdRaw')">{{ detail.actorId || emDash }}</el-descriptions-item>
+          <el-descriptions-item :label="t('views.audit.descAction')">{{ labelAction(detail.action) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('views.audit.descActionRaw')">{{ detail.action || emDash }}</el-descriptions-item>
+          <el-descriptions-item :label="t('views.audit.descResourceReadable')">{{ formatAuditResource(detail) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('views.audit.descResourceType')">{{ labelResourceType(detail.resourceType) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('views.audit.descResourceId')">{{ detail.resourceId || emDash }}</el-descriptions-item>
         </el-descriptions>
         <div class="json-block">
           <div class="json-hdr">
-            <span>详情数据（JSON）</span>
-            <el-button size="small" type="primary" plain @click="copyJson">复制</el-button>
+            <span>{{ t("views.audit.jsonHdr") }}</span>
+            <el-button size="small" type="primary" plain @click="copyJson">{{ t("views.audit.copy") }}</el-button>
           </div>
           <el-scrollbar max-height="220px">
             <pre class="json-pre">{{ prettyDetail }}</pre>
@@ -129,46 +129,36 @@
 </template>
 
 <script setup lang="ts">
+import { ElMessage } from "element-plus";
 import { computed, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import * as admin from "../../api/admin";
 import { useAdminFounderListTenantFilter } from "../../composables/useAdminFounderTenantOptions";
 import type { AuditEventRow } from "../../types/admin";
 import { formatAuditActor, formatAuditResource, formatTenantNameCode } from "../../utils/adminListDisplay";
 
+const { t, tm } = useI18n();
+const emDash = "\u2014";
+
 const { isFounder, tenantOptions, listFilterTenantId, listFilterQuery } = useAdminFounderListTenantFilter();
 
-const ACTION_LABELS: Record<string, string> = {
-  TENANT_MEMBER_INVITE: "邀请或恢复成员",
-  TENANT_MEMBER_REMOVE: "移出租户",
-  TENANT_MEMBER_ROLE_UPDATE: "变更成员角色",
-  ADMIN_CONTEXT_SWITCH: "切换管理端工作区",
-};
-
-const ACTOR_TYPE_LABELS: Record<string, string> = {
-  USER: "用户",
-  SERVICE: "服务账号",
-  SYSTEM: "系统",
-};
-
-const RESOURCE_TYPE_LABELS: Record<string, string> = {
-  sys_tenant_member: "租户成员",
-  admin_context: "管理端上下文",
-  sys_audit_event: "审计事件",
-};
+const actionLabels = computed(() => (tm("views.audit.actions") as Record<string, string>) ?? {});
+const actorTypeLabels = computed(() => (tm("views.audit.actorTypes") as Record<string, string>) ?? {});
+const resourceTypeLabels = computed(() => (tm("views.audit.resourceTypes") as Record<string, string>) ?? {});
 
 function labelAction(a: string | null | undefined): string {
-  if (!a) return "—";
-  return ACTION_LABELS[a] ?? a;
+  if (!a) return emDash;
+  return actionLabels.value[a] ?? a;
 }
 
-function labelActorType(t: string | null | undefined): string {
-  if (!t) return "—";
-  return ACTOR_TYPE_LABELS[t] ?? t;
+function labelActorType(actor: string | null | undefined): string {
+  if (!actor) return emDash;
+  return actorTypeLabels.value[actor] ?? actor;
 }
 
-function labelResourceType(t: string | null | undefined): string {
-  if (!t) return "—";
-  return RESOURCE_TYPE_LABELS[t] ?? t;
+function labelResourceType(rt: string | null | undefined): string {
+  if (!rt) return emDash;
+  return resourceTypeLabels.value[rt] ?? rt;
 }
 
 const loading = ref(false);
@@ -183,7 +173,7 @@ const detail = ref<AuditEventRow | null>(null);
 const detailJson = computed(() => (detail.value ? JSON.stringify(detail.value, null, 2) : ""));
 
 const prettyDetail = computed(() => {
-  if (!detail.value?.detailJson) return "—";
+  if (!detail.value?.detailJson) return emDash;
   try {
     return JSON.stringify(JSON.parse(detail.value.detailJson), null, 2);
   } catch {
@@ -192,15 +182,15 @@ const prettyDetail = computed(() => {
 });
 
 function formatTime(v: string | null | undefined): string {
-  if (!v) return "—";
+  if (!v) return emDash;
   return v.replace("T", " ").slice(0, 19);
 }
 
 function previewJson(raw: string | null | undefined): string {
-  if (!raw) return "—";
-  const t = raw.trim();
-  if (t.length <= 80) return t;
-  return `${t.slice(0, 80)}…`;
+  if (!raw) return emDash;
+  const s = raw.trim();
+  if (s.length <= 80) return s;
+  return `${s.slice(0, 80)}…`;
 }
 
 async function load() {
@@ -236,9 +226,9 @@ function onRowClick(row: AuditEventRow) {
 async function copyJson() {
   try {
     await navigator.clipboard.writeText(detailJson.value);
-    ElMessage.success("已复制");
+    ElMessage.success(t("views.audit.copied"));
   } catch {
-    ElMessage.error("复制失败");
+    ElMessage.error(t("views.audit.copyFailed"));
   }
 }
 
@@ -250,7 +240,7 @@ onMounted(() => {
 <style scoped>
 .panel {
   border-radius: 12px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--el-border-color);
 }
 
 .hdr {
@@ -274,7 +264,7 @@ onMounted(() => {
 .title {
   font-weight: 600;
   font-size: 15px;
-  color: #0f172a;
+  color: var(--el-text-color-primary);
 }
 
 .data-table {
@@ -293,7 +283,7 @@ onMounted(() => {
 
 .json-block {
   margin-top: 16px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -303,10 +293,10 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  background: #f8fafc;
+  background: var(--el-fill-color-light);
   font-size: 13px;
   font-weight: 500;
-  color: #334155;
+  color: var(--el-text-color-regular);
 }
 
 .json-pre {
@@ -315,7 +305,7 @@ onMounted(() => {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
   line-height: 1.5;
-  color: #334155;
+  color: var(--el-text-color-regular);
   white-space: pre-wrap;
   word-break: break-word;
 }

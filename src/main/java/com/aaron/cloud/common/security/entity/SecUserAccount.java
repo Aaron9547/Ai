@@ -33,6 +33,14 @@ public class SecUserAccount {
     @TableField(insertStrategy = FieldStrategy.NEVER, updateStrategy = FieldStrategy.NEVER)
     private Long jwtSeq;
 
+    /** 最近一次成功登录时间（东八区墙钟）；登录成功后更新。 */
+    private LocalDateTime lastLoginAt;
+
+    private String lastLoginIp;
+
+    /** 粗粒度国家码，或 {@code CC|省/州|城市}（边缘注入 {@code CF-Region} / {@code CF-IPCity} 时）；登录时写入。 */
+    private String lastLoginRegion;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 

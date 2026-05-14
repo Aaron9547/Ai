@@ -5,13 +5,18 @@ import com.aaron.cloud.common.api.enums.TenantMemberRole;
 import com.aaron.cloud.common.api.enums.UserAccountStatus;
 import com.aaron.cloud.common.security.SecUserAccountRepository;
 import com.aaron.cloud.common.security.SysTenantMemberRepository;
+import com.aaron.cloud.common.time.BeijingTime;
 import com.aaron.cloud.common.security.entity.SecUserAccount;
 import com.aaron.cloud.common.security.entity.SysTenantMember;
+import com.aaron.cloud.common.profile.ProfileDeviceMergeApplicationService;
 import com.aaron.cloud.common.tenant.SysTenantRepository;
 import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService;
+import com.aaron.cloud.common.web.HttpClientIp;
+import com.aaron.cloud.common.web.LoginRegionResolver;
 import com.aaron.cloud.common.web.ApiErrorResponse;
 import com.aaron.cloud.common.web.rest.OpenV1ControllerBases;
 import com.aaron.cloud.identity.jwt.JwtLocalAdminTokenService;
+import com.aaron.cloud.identity.service.OpenRegistrationApplicationService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import lombok.Data;
@@ -39,6 +44,8 @@ public class AuthLoginController extends OpenV1ControllerBases.Auth {
     private final PasswordEncoder passwordEncoder;
     private final JwtLocalAdminTokenService jwtLocalAdminTokenService;
     private final TenantRuntimeSettingApplicationService tenantRuntimeSettingApplicationService;
+    private final OpenRegistrationApplicationService openRegistrationApplicationService;
+    private final ProfileDeviceMergeApplicationService profileDeviceMergeApplicationService;
 
     @Value("${ai.tenant.default-id:1}")
     private long defaultTenantId;
@@ -97,6 +104,28 @@ public class AuthLoginController extends OpenV1ControllerBases.Auth {
                                     .build());
         }
         Long headerTid = parseLongHeaderNullable(request, "X-Tenant-Id");
+        String deviceId = request.getHeader("X-Device-Id");
+        if (deviceId != null && !deviceId.isBlank()) {
+            for (SysTenantMember m : active) {
+                try {
+                    profileDeviceMergeApplicationService.mergeGuestDeviceToUser(
+                            m.getTenantId(), user.getId(), deviceId);
+                } catch (Exception ex) {
+                    log.warn(
+                            "login guest device merge failed tenantId={} userId={}",
+                            m.getTenantId(),
+                            user.getId(),
+                            ex);
+                }
+            }
+        }
+        try {
+            String ip = HttpClientIp.resolve(request);
+            String region = LoginRegionResolver.resolve(request);
+            userAccountRepository.updateLastLogin(user.getId(), BeijingTime.nowLocal(), ip, region);
+        } catch (Exception ex) {
+            log.warn("update last_login failed userId={}", user.getId(), ex);
+        }
         return ResponseEntity.ok(jwtLocalAdminTokenService.buildLoginResponse(user, active, headerTid));
     }
 
@@ -125,25 +154,10 @@ public class AuthLoginController extends OpenV1ControllerBases.Auth {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
-        var u = new SecUserAccount();
-        u.setLoginName(loginName);
-        u.setDisplayName(
-                req.getDisplayName() == null || req.getDisplayName().isBlank()
-                        ? loginName
-                        : req.getDisplayName().trim());
-        u.setPasswordHash(passwordEncoder.encode(password));
-        u.setStatus(UserAccountStatus.ACTIVE);
-        userAccountRepository.insert(u);
-
-        var m = new SysTenantMember();
-        m.setTenantId(tenantId);
-        m.setUserId(u.getId());
-        m.setRoleCode(TenantMemberRole.MEMBER);
-        m.setStatus(UserAccountStatus.ACTIVE);
-        tenantMemberRepository.insert(m);
-
-        List<SysTenantMember> active = List.of(m);
-        return ResponseEntity.status(HttpStatus.CREATED).body(jwtLocalAdminTokenService.buildLoginResponse(u, active, tenantId));
+        String deviceId = request.getHeader("X-Device-Id");
+        LoginResponse body =
+                openRegistrationApplicationService.register(tenantId, req, deviceId);
+        return ResponseEntity.status(HttpStatus.CREATED).body(body);
     }
 
     private static String trimLoginName(LoginRequest req) {

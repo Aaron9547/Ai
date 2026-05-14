@@ -53,7 +53,7 @@ async function copy() {
 <style scoped>
 .panel {
   border-radius: 12px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--el-border-color);
 }
 
 .hdr {
@@ -70,7 +70,7 @@ async function copy() {
     monospace;
   font-size: 12px;
   line-height: 1.55;
-  color: #334155;
+  color: var(--el-text-color-regular);
   padding: 4px 8px 12px 0;
   white-space: pre-wrap;
   word-break: break-word;

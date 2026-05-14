@@ -6,7 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 解析 ly-ai-rag-svc {@code WebResult<List<List<Double>>>} 风格 JSON：取 {@code data[0]} 为第一条文本的向量。
+ * 解析对端 {@code WebResult<List<List<Double>>>} 风格 JSON：取 {@code data[0]} 为第一条文本的向量。
  */
 final class RagLocalEmbeddingFeignSupport {
 

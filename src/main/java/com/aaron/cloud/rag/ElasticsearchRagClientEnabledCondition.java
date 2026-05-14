@@ -5,7 +5,7 @@ import org.springframework.context.annotation.ConditionContext;
 import org.springframework.core.type.AnnotatedTypeMetadata;
 
 /**
- * 与 {@link ElasticsearchRagSearchClient} 装配条件一致：{@code enabled=true} 且 {@code config.host-ports} 非空（与 ly-ai-rag-svc
+ * 与 {@link ElasticsearchRagSearchClient} 装配条件一致：{@code enabled=true} 且 {@code config.host-ports} 非空（与对端
  * {@code elasticsearch.config.hostPorts} 一致）。
  */
 public class ElasticsearchRagClientEnabledCondition implements Condition {

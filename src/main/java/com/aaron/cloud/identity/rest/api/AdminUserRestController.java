@@ -8,10 +8,13 @@ import com.aaron.cloud.common.security.SecUserAccountRepository;
 import com.aaron.cloud.common.security.SysTenantMemberRepository;
 import com.aaron.cloud.common.security.entity.SecUserAccount;
 import com.aaron.cloud.common.security.entity.SysTenantMember;
+import com.aaron.cloud.common.time.BeijingTime;
 import com.aaron.cloud.common.web.rest.ApiV1ControllerBases;
+import com.aaron.cloud.identity.admin.UserAccessPresenceService;
 import com.aaron.cloud.identity.admin.UserAdminMenuApplicationService;
 import com.aaron.cloud.identity.tenant.TenantMemberRoleApplicationService;
 import jakarta.validation.constraints.NotBlank;
+import java.util.ArrayList;
 import java.util.List;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -37,27 +40,33 @@ public class AdminUserRestController extends ApiV1ControllerBases.AdminUsers {
     private final PasswordEncoder passwordEncoder;
     private final UserAdminMenuApplicationService userAdminMenuApplicationService;
     private final TenantMemberRoleApplicationService tenantMemberRoleApplicationService;
+    private final UserAccessPresenceService userAccessPresenceService;
 
     @GetMapping
     public List<UserView> page(@RequestParam(defaultValue = "1") long page, @RequestParam(defaultValue = "20") long size) {
         var snap = TenantContextHolder.require();
-        return tenantMemberRepository.pageByTenant(snap.getTenantId(), page, size).getRecords().stream()
-                .map(
-                        m -> {
-                            var u =
-                                    userAccountRepository
-                                            .findById(m.getUserId())
-                                            .orElse(null);
-                            if (u == null) {
-                                return null;
-                            }
-                            TenantMemberRole tr =
-                                    m.getStatus() == UserAccountStatus.ACTIVE ? m.getRoleCode() : null;
-                            return new UserView(
-                                    u.getId(), u.getLoginName(), u.getDisplayName(), u.getStatus(), tr);
-                        })
-                .filter(java.util.Objects::nonNull)
-                .toList();
+        long tenantId = snap.getTenantId();
+        var records = tenantMemberRepository.pageByTenant(tenantId, page, size).getRecords();
+        List<SecUserAccount> accounts = new ArrayList<>();
+        List<TenantMemberRole> roles = new ArrayList<>();
+        List<Long> userIds = new ArrayList<>();
+        for (SysTenantMember m : records) {
+            var u = userAccountRepository.findById(m.getUserId()).orElse(null);
+            if (u == null) {
+                continue;
+            }
+            TenantMemberRole tr = m.getStatus() == UserAccountStatus.ACTIVE ? m.getRoleCode() : null;
+            accounts.add(u);
+            roles.add(tr);
+            userIds.add(u.getId());
+        }
+        var online = userAccessPresenceService.onlineAmong(tenantId, userIds);
+        List<UserView> views = new ArrayList<>(accounts.size());
+        for (int i = 0; i < accounts.size(); i++) {
+            SecUserAccount u = accounts.get(i);
+            views.add(toUserView(u, roles.get(i), online.contains(u.getId())));
+        }
+        return views;
     }
 
     @GetMapping("/{id}/admin-menus")
@@ -91,7 +100,7 @@ public class AdminUserRestController extends ApiV1ControllerBases.AdminUsers {
                 body.getTenantId() != null ? body.getTenantId() : TenantContextHolder.require().getTenantId();
         TenantMemberRole tenantRole =
                 tenantMemberRepository.find(tidForRead, id).map(SysTenantMember::getRoleCode).orElse(null);
-        return new UserView(u.getId(), u.getLoginName(), u.getDisplayName(), u.getStatus(), tenantRole);
+        return toUserView(u, tenantRole, tidForRead);
     }
 
     @GetMapping("/{id}")
@@ -107,7 +116,7 @@ public class AdminUserRestController extends ApiV1ControllerBases.AdminUsers {
                         .orElseThrow(() -> new IllegalArgumentException("user not found"));
         TenantMemberRole tenantRole =
                 membership.getStatus() == UserAccountStatus.ACTIVE ? membership.getRoleCode() : null;
-        return new UserView(u.getId(), u.getLoginName(), u.getDisplayName(), u.getStatus(), tenantRole);
+        return toUserView(u, tenantRole, snap.getTenantId());
     }
 
     @PostMapping
@@ -137,7 +146,7 @@ public class AdminUserRestController extends ApiV1ControllerBases.AdminUsers {
         m.setStatus(UserAccountStatus.ACTIVE);
         tenantMemberRepository.insert(m);
         TenantMemberRole role = body.getRole() == null ? TenantMemberRole.MEMBER : body.getRole();
-        return new UserView(u.getId(), u.getLoginName(), u.getDisplayName(), u.getStatus(), role);
+        return toUserView(u, role, false);
     }
 
     @PutMapping("/{id}")
@@ -172,7 +181,7 @@ public class AdminUserRestController extends ApiV1ControllerBases.AdminUsers {
                                                 ? m.getRoleCode()
                                                 : null)
                         .orElse(null);
-        return new UserView(u.getId(), u.getLoginName(), u.getDisplayName(), u.getStatus(), tenantRole);
+        return toUserView(u, tenantRole, TenantContextHolder.require().getTenantId());
     }
 
     @PostMapping("/{id}/kick-session")
@@ -245,12 +254,35 @@ public class AdminUserRestController extends ApiV1ControllerBases.AdminUsers {
                 .orElseThrow(() -> new IllegalArgumentException("user not in tenant"));
     }
 
+    private UserView toUserView(SecUserAccount u, TenantMemberRole tenantRole, long tenantIdForPresence) {
+        boolean online = userAccessPresenceService.onlineAmong(tenantIdForPresence, List.of(u.getId())).contains(u.getId());
+        return toUserView(u, tenantRole, online);
+    }
+
+    private UserView toUserView(SecUserAccount u, TenantMemberRole tenantRole, boolean sessionOnline) {
+        String lastLoginAt = BeijingTime.formatDisplay(u.getLastLoginAt());
+        return new UserView(
+                u.getId(),
+                u.getLoginName(),
+                u.getDisplayName(),
+                u.getStatus(),
+                tenantRole,
+                sessionOnline,
+                lastLoginAt,
+                u.getLastLoginIp(),
+                u.getLastLoginRegion());
+    }
+
     public record UserView(
             long id,
             String loginName,
             String displayName,
             UserAccountStatus status,
-            TenantMemberRole tenantRole) {}
+            TenantMemberRole tenantRole,
+            boolean sessionOnline,
+            String lastLoginAt,
+            String lastLoginIp,
+            String lastLoginRegion) {}
 
     @Data
     public static class ReplaceUserAdminMenusBody {

@@ -1,46 +1,51 @@
 <template>
   <el-dialog
     v-model="innerVisible"
-    title="账号"
+    :title="t('auth.title')"
     width="420px"
     destroy-on-close
     class="auth-dlg"
     @closed="reset"
   >
     <el-tabs v-model="tab">
-      <el-tab-pane label="登录" name="login">
+      <el-tab-pane :label="t('auth.tabLogin')" name="login">
         <el-form class="auth-form" label-position="top" @submit.prevent="onLogin">
-          <el-form-item label="登录名" required>
+          <el-form-item :label="t('auth.loginName')" required>
             <el-input v-model="loginUser" autocomplete="username" maxlength="64" />
           </el-form-item>
-          <el-form-item label="密码" required>
+          <el-form-item :label="t('auth.password')" required>
             <el-input v-model="loginPass" type="password" autocomplete="current-password" show-password />
           </el-form-item>
           <el-button type="primary" class="auth-submit" :loading="loading" native-type="submit" @click="onLogin">
-            登录
+            {{ t("auth.login") }}
           </el-button>
         </el-form>
       </el-tab-pane>
-      <el-tab-pane label="注册" name="reg">
+      <el-tab-pane :label="t('auth.tabReg')" name="reg">
         <el-form class="auth-form" label-position="top" @submit.prevent="onRegister">
-          <el-form-item label="登录名" required>
-            <el-input v-model="regUser" autocomplete="username" maxlength="64" placeholder="3～64 字符" />
+          <el-form-item :label="t('auth.loginName')" required>
+            <el-input
+              v-model="regUser"
+              autocomplete="username"
+              maxlength="64"
+              :placeholder="t('auth.regLoginPh')"
+            />
           </el-form-item>
-          <el-form-item label="密码" required>
+          <el-form-item :label="t('auth.password')" required>
             <el-input
               v-model="regPass"
               type="password"
               autocomplete="new-password"
               show-password
-              placeholder="至少 6 位"
+              :placeholder="t('auth.regPassPh')"
             />
           </el-form-item>
-          <el-form-item label="昵称（可选）">
-            <el-input v-model="regDisplay" maxlength="64" placeholder="不填则默认同登录名" />
+          <el-form-item :label="t('auth.displayName')">
+            <el-input v-model="regDisplay" maxlength="64" :placeholder="t('auth.displayPh')" />
           </el-form-item>
-          <p class="auth-hint">注册将加入<strong>当前地址栏路径中的租户</strong>（形如 <code>/租户ID/chat</code>），与请求头 <code>X-Tenant-Id</code> 一致。</p>
+          <p class="auth-hint">{{ t("auth.regHint") }}</p>
           <el-button type="primary" class="auth-submit" :loading="loading" native-type="submit" @click="onRegister">
-            注册并登录
+            {{ t("auth.regSubmit") }}
           </el-button>
         </el-form>
       </el-tab-pane>
@@ -50,6 +55,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import * as authApi from "../api/auth";
 import {
@@ -58,6 +64,8 @@ import {
 } from "../plugins/http";
 import { openAuthLoginErrorMessage, openAuthRegisterErrorMessage } from "../utils/openAuthHttpErrors";
 import { saveUserMemberships } from "../utils/userMembershipStorage";
+
+const { t } = useI18n();
 
 const props = defineProps<{ modelValue: boolean }>();
 const emit = defineEmits<{ "update:modelValue": [boolean]; done: [] }>();
@@ -126,7 +134,7 @@ async function onLogin() {
     const data = await authApi.loginOpen(loginUser.value.trim(), loginPass.value);
     persistSession(data);
     await router.push(homeChatPathAfterLogin(data));
-    ElMessage.success("已登录");
+    ElMessage.success(t("auth.loggedIn"));
     innerVisible.value = false;
     emit("done");
   } catch (e: unknown) {
@@ -142,7 +150,7 @@ async function onRegister() {
     const data = await authApi.registerOpen(regUser.value.trim(), regPass.value, regDisplay.value);
     persistSession(data);
     await router.push(homeChatPathAfterLogin(data));
-    ElMessage.success("注册成功，已自动登录");
+    ElMessage.success(t("auth.regOk"));
     innerVisible.value = false;
     emit("done");
   } catch (e: unknown) {

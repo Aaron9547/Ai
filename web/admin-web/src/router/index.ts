@@ -21,11 +21,19 @@ const router = createRouter({
     {
       path: "/",
       component: AdminLayout,
-      redirect: "/gateway/access-logs",
+      redirect: "/dashboard",
       children: [
+        {
+          path: "dashboard",
+          component: () => import("../views/dashboard/DashboardView.vue"),
+        },
         {
           path: "users",
           component: () => import("../views/users/UsersView.vue"),
+        },
+        {
+          path: "users/profiles",
+          component: () => import("../views/users/UserProfilesView.vue"),
         },
         { path: "users/roles", redirect: "/users" },
         {
@@ -115,7 +123,7 @@ router.beforeEach((to) => {
   if (to.path === "/login") {
     if (hasToken()) {
       const redir = typeof to.query.redirect === "string" ? to.query.redirect : "";
-      return redir && redir.startsWith("/") && !redir.startsWith("//") ? redir : "/gateway/access-logs";
+      return redir && redir.startsWith("/") && !redir.startsWith("//") ? redir : "/dashboard";
     }
     return;
   }
@@ -125,7 +133,7 @@ router.beforeEach((to) => {
   if (to.meta.founderOnly === true) {
     const token = localStorage.getItem(AI_ADMIN_ACCESS_TOKEN_KEY);
     if (readJwtTmr(token) !== "FOUNDER") {
-      return { path: "/gateway/access-logs" };
+      return { path: "/dashboard" };
     }
   }
 });

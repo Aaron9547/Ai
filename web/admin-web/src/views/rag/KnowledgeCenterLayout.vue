@@ -14,26 +14,32 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
 import type { RouteLocationRaw } from "vue-router";
 
 type Crumb = { label: string; to?: RouteLocationRaw };
 
 const route = useRoute();
+const { t } = useI18n();
 const hubPath = "/knowledge-center/knowledge-bases";
 
 const crumbs = computed((): Crumb[] => {
   const p = route.path;
-  const head: Crumb[] = [{ label: "知识中心", to: hubPath }];
+  const head: Crumb[] = [{ label: t("views.kcLayout.hub"), to: hubPath }];
 
   if (p === hubPath) {
-    return [...head, { label: "知识库" }];
+    return [...head, { label: t("views.kcLayout.kb") }];
   }
 
   const chunks = /^\/knowledge-center\/workspace\/(\d+)\/documents\/(\d+)\/chunks$/.exec(p);
   if (chunks) {
     const kbId = chunks[1]!;
-    return [...head, { label: "文档与入库", to: { path: hubPath, query: { kbId } } }, { label: "分片管理" }];
+    return [
+      ...head,
+      { label: t("views.kcLayout.docsIngest"), to: { path: hubPath, query: { kbId } } },
+      { label: t("views.kcLayout.chunks") },
+    ];
   }
 
   return head;
@@ -42,7 +48,10 @@ const crumbs = computed((): Crumb[] => {
 
 <style scoped>
 .kc-page {
+  flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .kc-crumb {

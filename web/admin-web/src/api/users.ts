@@ -9,6 +9,12 @@ export type UserRow = {
   status: "ACTIVE" | "DISABLED";
   /** 当前租户内角色；未加入租户时后端可能为 null */
   tenantRole?: TenantMemberRole | null;
+  /** 近窗口内有 HTTP 访问日志，推断为在线 */
+  sessionOnline: boolean;
+  /** 北京时间，格式 yyyy-MM-dd HH:mm:ss */
+  lastLoginAt: string | null;
+  lastLoginIp: string | null;
+  lastLoginRegion: string | null;
 };
 
 export type TenantMemberRole = "FOUNDER" | "OWNER" | "ADMIN" | "MEMBER";
@@ -22,6 +28,11 @@ export type TenantMemberRow = {
   tenantId: number;
   role: TenantMemberRole;
   memberStatus: "ACTIVE" | "DISABLED";
+  sessionOnline: boolean;
+  /** 北京时间，格式 yyyy-MM-dd HH:mm:ss */
+  lastLoginAt: string | null;
+  lastLoginIp: string | null;
+  lastLoginRegion: string | null;
 };
 
 export async function listTenantMembers(params: {

@@ -44,6 +44,17 @@ export interface RagCitationItem {
   contentPreview: string;
 }
 
+/** 与助手消息 meta {@code webSearchReferences} 及 SSE {@code webSearchRefs} 内 {@code references[]} 项一致 */
+export interface WebSearchRefItem {
+  title: string;
+  url: string;
+  summary: string;
+  siteName?: string | null;
+  logoUrl?: string | null;
+  publishTime?: string | null;
+  extraJson?: string | null;
+}
+
 /** 与 SSE / meta {@code workflowSegments} 单项一致（意图工作流阶段）。 */
 export interface WorkflowStagePayload {
   segmentId: string;
@@ -51,6 +62,29 @@ export interface WorkflowStagePayload {
   mode: string;
   status: string;
   text: string;
+  /** 仅前端：步骤条是否折叠正文（落库 meta 不含此字段）。 */
+  wfCollapsed?: boolean;
+}
+
+/** 与后端 {@code ChatIntentTurnHitView} 一致（用户/助手消息 meta 解析） */
+export interface ChatIntentTurnHit {
+  intentId: number;
+  intentCode: string;
+  keywordId: number | null;
+  keywordPhrase: string;
+  keywordKind: string | null;
+  matchSource: string;
+  intentFlowTicket?: string | null;
+  intentFlowEpisodeId?: string | null;
+  intentFlowRound?: string | null;
+  intentFlowRoundSeq?: number | null;
+}
+
+/** 用户消息随附的上传文件摘要（与开放接口 {@code ChatMessageView.attachments} 项一致） */
+export interface ChatAttachmentMessage {
+  id: number;
+  fileName: string;
+  charLength: number | null;
 }
 
 export interface ChatHistoryMessage {
@@ -68,8 +102,16 @@ export interface ChatHistoryMessage {
   /** 重新生成链上保留的旧版（不含当前正文行） */
   priorVersions?: PriorAssistantVersion[] | null;
   ragCitations?: RagCitationItem[] | null;
+  /** 联网检索引用（助手 meta {@code webSearchReferences}） */
+  webSearchReferences?: WebSearchRefItem[] | null;
+  /** 助手回复摘要（meta contentSummary），异步生成 */
+  contentSummary?: string | null;
   /** 意图工作流阶段快照（助手 meta） */
   workflowSegments?: WorkflowStagePayload[] | null;
+  /** 本回合意图命中摘要（用户/助手 meta） */
+  intentTurnHit?: ChatIntentTurnHit | null;
+  /** 用户消息关联的上传附件 */
+  attachments?: ChatAttachmentMessage[] | null;
 }
 
 export async function listConversationMessages(conversationId: number): Promise<ChatHistoryMessage[]> {
@@ -91,6 +133,11 @@ export interface LlmModelOption {
 
 export async function listChatModels(): Promise<LlmModelOption[]> {
   const { data } = await http.get<LlmModelOption[]>("/open/v1/chat/models");
+  return data;
+}
+
+export async function getWebSearchAvailability(): Promise<{ allowed: boolean }> {
+  const { data } = await http.get<{ allowed: boolean }>("/open/v1/chat/web-search-availability");
   return data;
 }
 
@@ -119,7 +166,11 @@ export interface ChatSendPayload {
   content: string;
   modelAlias: string;
   thinkingEnabled: boolean;
+  /** 主模型前是否执行联网检索（须租户已配置联网搜索模型） */
+  webSearchEnabled?: boolean;
   attachmentIds: number[];
+  /** 多轮意图流票据（来自上一条助手消息 meta） */
+  intentFlowTicket?: string | null;
 }
 
 export type TokenUsageChunk = {
@@ -132,6 +183,7 @@ export type StreamPart =
   | { type: "content"; v?: string }
   | { type: "reasoning"; v?: string }
   | { type: "ragDoc"; documentId?: number; title?: string }
+  | { type: "webSearchRefs"; references: WebSearchRefItem[] }
   | { type: "workflowStage"; stage: WorkflowStagePayload }
   | { type: "inputBlocked"; reason?: string }
   | { type: "end"; usage?: TokenUsageChunk };
@@ -159,6 +211,28 @@ function parseSsePayload(raw: string): StreamPart | null {
         };
       } catch {
         return { type: "ragDoc", title: o.v };
+      }
+    }
+    if (o.type === "webSearchRefs" && typeof o.v === "string") {
+      try {
+        const j = JSON.parse(o.v) as { references?: WebSearchRefItem[] };
+        const refs = Array.isArray(j.references) ? j.references : [];
+        const normalized: WebSearchRefItem[] = refs
+          .filter((x) => x && typeof x === "object")
+          .map((x) => ({
+            title: typeof x.title === "string" ? x.title : "",
+            url: typeof x.url === "string" ? x.url : "",
+            summary: typeof x.summary === "string" ? x.summary : "",
+            siteName: typeof x.siteName === "string" ? x.siteName : null,
+            logoUrl: typeof x.logoUrl === "string" ? x.logoUrl : null,
+            publishTime: typeof x.publishTime === "string" ? x.publishTime : null,
+            extraJson: typeof x.extraJson === "string" ? x.extraJson : null,
+          }));
+        if (normalized.length) {
+          return { type: "webSearchRefs", references: normalized };
+        }
+      } catch {
+        /* ignore */
       }
     }
     if (o.type === "workflowStage" && typeof o.v === "string") {
@@ -206,6 +280,7 @@ export async function submitAssistantFeedback(
 export interface ChatRegenerateBody {
   modelAlias?: string;
   thinkingEnabled?: boolean;
+  webSearchEnabled?: boolean;
 }
 
 /** 删除最后一条助手消息并基于前一条用户消息重新流式生成（SSE 帧与 {@link streamAssistantReply} 相同）。 */
@@ -261,7 +336,7 @@ export async function streamRegenerateAssistantReply(
   }
 }
 
-/** 使用 fetch 读取 SSE（携带 {@code X-Tenant-Id} 或 {@code X-Tenant-Code} 与 {@code X-Device-Id}）。data 行为 JSON 分帧：content / reasoning / ragDoc / end */
+/** 使用 fetch 读取 SSE（携带 {@code X-Tenant-Id} 或 {@code X-Tenant-Code} 与 {@code X-Device-Id}）。data 行为 JSON 分帧：content / reasoning / ragDoc / webSearchRefs / end */
 export async function streamAssistantReply(
   conversationId: number,
   payload: ChatSendPayload,

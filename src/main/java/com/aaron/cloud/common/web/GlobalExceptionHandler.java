@@ -1,9 +1,15 @@
 package com.aaron.cloud.common.web;
 
 import com.aaron.cloud.common.api.ErrorCodes;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -18,7 +24,10 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
  */
 @Slf4j
 @RestControllerAdvice
+@RequiredArgsConstructor
 public class GlobalExceptionHandler {
+
+    private final ObjectMapper objectMapper;
 
     /**
      * 可预期非法状态（用户名冲突、CORS 行缺失、租户上下文缺失等）。其中租户成员「重复在册」分支：仅当 {@code ex.getMessage()} 等于 {@link
@@ -234,19 +243,31 @@ public class GlobalExceptionHandler {
                                 .build());
     }
 
+    /**
+     * 末兜底：须直接写入 {@link HttpServletResponse}，避免 SSE 等仅 {@code Accept: text/event-stream} 的请求在
+     * {@code ResponseEntity + HttpMessageConverter} 路径上触发 {@code HttpMediaTypeNotAcceptableException}。
+     */
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiErrorResponse> generic(Exception ex) {
+    public void generic(Exception ex, HttpServletResponse response) throws IOException {
         log.error(
                 "unhandled exception http=\"{}\" type={} message={}",
                 RequestLogSupport.currentRequestLine(),
                 ex.getClass().getName(),
                 ex.getMessage(),
                 ex);
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(
+        if (response.isCommitted()) {
+            return;
+        }
+        response.resetBuffer();
+        response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR.value());
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        String json =
+                objectMapper.writeValueAsString(
                         ApiErrorResponse.builder()
                                 .code(ErrorCodes.INTERNAL)
                                 .message("unexpected error")
                                 .build());
+        response.getWriter().write(json);
     }
 }

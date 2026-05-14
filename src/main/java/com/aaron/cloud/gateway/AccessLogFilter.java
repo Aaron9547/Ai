@@ -3,13 +3,13 @@ package com.aaron.cloud.gateway;
 import com.aaron.cloud.common.accesslog.SysHttpAccessLogRepository;
 import com.aaron.cloud.common.accesslog.entity.SysHttpAccessLog;
 import com.aaron.cloud.common.context.TenantContextHolder;
+import com.aaron.cloud.common.time.BeijingTime;
+import com.aaron.cloud.common.web.HttpClientIp;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -47,8 +47,8 @@ public class AccessLogFilter extends OncePerRequestFilter {
             row.setTraceId(request.getHeader("X-Request-Id"));
             String ua = request.getHeader("User-Agent");
             row.setUserAgent(ua != null && ua.length() > 500 ? ua.substring(0, 500) : ua);
-            row.setClientIp(request.getRemoteAddr());
-            row.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
+            row.setClientIp(HttpClientIp.resolve(request));
+            row.setCreatedAt(BeijingTime.nowLocal());
             try {
                 accessLogRepository.insert(row);
             } catch (Exception e) {

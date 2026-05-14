@@ -1,0 +1,3 @@
+# 与 Spring Boot 3.4 官方约定一致：自定义 EnvironmentPostProcessor 须登记于此（见参考手册 Customize the Environment）
+org.springframework.boot.env.EnvironmentPostProcessor=\
+com.aaron.cloud.common.config.AiEnvironmentBridgePostProcessor

@@ -43,11 +43,11 @@ public class ElasticsearchRagSearchClient {
 
     public ElasticsearchRagSearchClient(AiRagProperties aiRagProperties) {
         var es = aiRagProperties.getElasticsearch();
-        this.indexName = es.getIndexName() == null || es.getIndexName().isBlank() ? "ai_rag_chunk" : es.getIndexName();
+        this.indexName = es.getIndexName() == null || es.getIndexName().isBlank() ? "rag_agent_documents" : es.getIndexName();
         String effective = ElasticsearchRagHostParser.resolveEffectiveUriString(es);
         if (effective.isEmpty()) {
             throw new IllegalStateException(
-                    "ai.rag.elasticsearch.enabled=true 但未解析到任何节点：请配置 ai.rag.elasticsearch.config.host-ports（与 ly-ai-rag-svc 同形）");
+                    "ai.rag.elasticsearch.enabled=true 但未解析到任何节点：请配置 ai.rag.elasticsearch.config.host-ports（与对端同形）");
         }
         List<HttpHost> hosts = ElasticsearchRagHostParser.parseHttpHosts(effective);
         if (hosts.isEmpty()) {

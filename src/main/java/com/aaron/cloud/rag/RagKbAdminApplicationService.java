@@ -24,6 +24,7 @@ import com.aaron.cloud.common.rag.entity.RagKnowledgeBase;
 import com.aaron.cloud.common.security.SecUserAccountRepository;
 import com.aaron.cloud.common.tenant.SysTenantRepository;
 import com.aaron.cloud.common.tenant.entity.SysTenant;
+import com.aaron.cloud.common.time.BeijingTime;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.CreateRagDocumentCategoryRequest;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.CreateRagKbRequest;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.FileIngestJobRequest;
@@ -43,7 +44,6 @@ import com.aaron.cloud.rag.dto.RagKbAdminDtos.UrlImportJobRequest;
 import java.io.InputStream;
 import java.net.URI;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import java.util.ArrayList;
@@ -69,7 +69,6 @@ import org.springframework.web.server.ResponseStatusException;
 public class RagKbAdminApplicationService {
 
     private static final DateTimeFormatter ISO = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
-    private static final ZoneOffset UTC = ZoneOffset.UTC;
     private static final int UPLOAD_MAX_BYTES = 8_000_000;
     private static final int TIKA_MAX_CHARS = 5_000_000;
 
@@ -372,7 +371,7 @@ public class RagKbAdminApplicationService {
         lnkRagDocumentChunkRepository.deleteByDocumentId(documentId);
         lnkRagKbDocumentRepository.deleteLink(kbId, documentId);
         doc.setDeleted(1);
-        doc.setDeletedAt(LocalDateTime.now(UTC));
+        doc.setDeletedAt(BeijingTime.nowLocal());
         ragDocumentRepository.updateById(doc);
     }
 

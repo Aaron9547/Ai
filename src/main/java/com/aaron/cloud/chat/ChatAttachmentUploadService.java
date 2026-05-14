@@ -18,6 +18,7 @@ public class ChatAttachmentUploadService {
 
     private final ChatConversationRepository conversationRepository;
     private final ChatAttachmentRepository attachmentRepository;
+    private final ChatAttachmentBinStore attachmentBinStore;
     private final DocumentTextExtractor documentTextExtractor;
 
     public ChatAttachment save(long conversationId, MultipartFile file) throws Exception {
@@ -54,6 +55,7 @@ public class ChatAttachmentUploadService {
         row.setCharLength(text.length());
         row.setExtractedText(text);
         attachmentRepository.insert(row);
+        attachmentBinStore.persist(snap.getTenantId(), conversationId, row.getId(), bytes);
         return row;
     }
 

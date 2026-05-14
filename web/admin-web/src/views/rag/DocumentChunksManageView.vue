@@ -39,7 +39,7 @@
                 inline-prompt
                 active-text="启用"
                 inactive-text="禁用"
-                style="--el-switch-on-color: #16a34a; --el-switch-off-color: #94a3b8"
+                style="--el-switch-on-color: #16a34a; --el-switch-off-color: var(--el-text-color-placeholder)"
                 :loading="toggleLoadingId === row.id"
                 @change="(v: string | number | boolean) => onToggleRetrieval(row, Boolean(v))"
               />
@@ -469,7 +469,7 @@ onMounted(() => {
 <style scoped>
 .panel {
   border-radius: 12px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--el-border-color);
 }
 
 .hdr {
@@ -482,13 +482,13 @@ onMounted(() => {
 .title {
   font-weight: 600;
   font-size: 15px;
-  color: #0f172a;
+  color: var(--el-text-color-primary);
 }
 
 .sub {
   margin: 4px 0 0;
   font-size: 12px;
-  color: #64748b;
+  color: var(--el-text-color-secondary);
 }
 
 .dc-split {
@@ -534,7 +534,7 @@ onMounted(() => {
 .chunk-card {
   display: flex;
   flex-direction: column;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 12px;
   background: #fff;
   box-shadow: 0 2px 10px rgba(15, 23, 42, 0.06);
@@ -547,20 +547,20 @@ onMounted(() => {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border-bottom: 1px solid #f1f5f9;
-  background: #fafafa;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-lighter);
 }
 
 .chunk-seq {
   flex: 1;
   font-weight: 600;
   font-size: 13px;
-  color: #334155;
+  color: var(--el-text-color-regular);
 }
 
 .chunk-hit {
   font-size: 12px;
-  color: #64748b;
+  color: var(--el-text-color-secondary);
   white-space: nowrap;
 }
 
@@ -580,14 +580,14 @@ onMounted(() => {
 }
 
 .chunk-body:hover {
-  background: #f8fafc;
+  background: var(--el-fill-color-light);
 }
 
 .chunk-text {
   margin: 0;
   font-size: 13px;
   line-height: 1.55;
-  color: #1e293b;
+  color: var(--el-text-color-primary);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -601,8 +601,8 @@ onMounted(() => {
 .chunk-ft {
   padding: 8px 12px;
   font-size: 12px;
-  color: #94a3b8;
-  border-top: 1px solid #f1f5f9;
+  color: var(--el-text-color-placeholder);
+  border-top: 1px solid var(--el-border-color-lighter);
 }
 
 .dc-pager-wrap {
@@ -612,7 +612,7 @@ onMounted(() => {
 }
 
 .aside-card {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 12px;
   padding: 14px 16px;
   margin-bottom: 14px;
@@ -623,7 +623,7 @@ onMounted(() => {
   margin: 0 0 12px;
   font-size: 14px;
   font-weight: 600;
-  color: #334155;
+  color: var(--el-text-color-regular);
 }
 
 .aside-dl {
@@ -633,7 +633,7 @@ onMounted(() => {
 
 .aside-dl dt {
   margin-top: 8px;
-  color: #94a3b8;
+  color: var(--el-text-color-placeholder);
   font-size: 12px;
 }
 
@@ -642,7 +642,7 @@ onMounted(() => {
 }
 
 .aside-muted {
-  color: #64748b;
+  color: var(--el-text-color-secondary);
 }
 
 .aside-link {
@@ -653,7 +653,7 @@ onMounted(() => {
 .aside-tip {
   margin: 0 0 10px;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--el-text-color-placeholder);
   line-height: 1.45;
 }
 
@@ -665,7 +665,7 @@ onMounted(() => {
 
 .dc-upload-ico {
   font-size: 28px;
-  color: #94a3b8;
+  color: var(--el-text-color-placeholder);
 }
 
 @media (max-width: 1024px) {

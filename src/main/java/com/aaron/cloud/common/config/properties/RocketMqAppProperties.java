@@ -25,4 +25,7 @@ public class RocketMqAppProperties {
     private String jobConsumerGroup = "ai-job-consumer";
     private String llmUsageTopic = "ai-llm-usage";
     private String llmUsageConsumerGroup = "ai-llm-usage-consumer";
+
+    private String memoryAbstractTopic = "ai-memory-abstract-refresh";
+    private String memoryAbstractConsumerGroup = "ai-memory-abstract-consumer";
 }

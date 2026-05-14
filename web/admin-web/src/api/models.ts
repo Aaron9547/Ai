@@ -1,13 +1,20 @@
 import { http } from "../plugins/http";
+import { adminUiNegotiationHeaders, adminUiNegotiationParams, type AdminUiLocaleTag } from "./adminUiNegotiation";
 
 /** 与后端 `LlmModelKind` 一致；C 端对话仅 `LANGUAGE`。 */
-export type LlmModelKindCode = "LANGUAGE" | "SPEECH" | "VISION" | "VECTOR" | "SMART_ROUTING";
+export type LlmModelKindCode = "LANGUAGE" | "SPEECH" | "VISION" | "VECTOR" | "SMART_ROUTING" | "WEB_SEARCH";
 
-/** 与后端 `LlmVectorBackend` 一致；仅 `VECTOR` 有效。 */
+/** 与后端 `LlmWebSearchProvider` 一致；写入 {@code llm_model.integration_backend}（WEB_SEARCH 行）。 */
+export type LlmWebSearchProviderCode = "VOLCENGINE_ARK_BOT";
+
+/** 与后端 `LlmVectorBackend` 一致；写入 {@code llm_model.integration_backend}（VECTOR 行）。 */
 export type LlmVectorBackendCode =
   | "OPENAI_COMPATIBLE"
   | "VOLCENGINE_ARK"
   | "VOLCENGINE_ARK_MULTIMODAL";
+
+/** VECTOR / WEB_SEARCH 写入后端的 integration_backend 码（下拉项仍分 vectorBackends / webSearchProviders）。 */
+export type LlmIntegrationBackendCode = LlmVectorBackendCode | LlmWebSearchProviderCode;
 
 /** 与后端 `LlmConnectorKind` 一致；元数据下发，持久化字段后续可扩展。 */
 export type LlmConnectorKindCode = "OPENAI_COMPATIBLE_JSON";
@@ -52,6 +59,10 @@ export interface ModelKindTabMeta {
 export interface LlmModelAdminMetaResponse {
   modelKindTabs: ModelKindTabMeta[];
   optionLists: Record<string, EnumOption[]>;
+  /** 后端写入：MessageSource 使用的语言标签；无此字段说明响应非当前 Ai meta 实现或网关改写了 body */
+  metaResolvedLocale?: string | null;
+  /** 后端写入：收到的 lang 查询参数 */
+  metaLangParamRaw?: string | null;
 }
 
 export interface LlmModelAdminView {
@@ -61,8 +72,8 @@ export interface LlmModelAdminView {
   openaiBaseUrl: string;
   openaiModelId: string;
   modelKind: LlmModelKindCode;
-  /** 仅向量类型有值 */
-  vectorBackend?: LlmVectorBackendCode | null;
+  /** {@code llm_model.integration_backend}：VECTOR 为嵌入策略码；WEB_SEARCH 为联网实现码 */
+  integrationBackend: string;
   apiKeyConfigured: boolean;
   allowAnonymous: boolean;
   maxAttachments: number;
@@ -83,8 +94,8 @@ export interface CreateLlmModelBody {
   openaiModelId: string;
   /** 省略时后端默认 `LANGUAGE` */
   modelKind?: LlmModelKindCode;
-  /** 仅 `VECTOR`；省略时 `OPENAI_COMPATIBLE` */
-  vectorBackend?: LlmVectorBackendCode;
+  /** VECTOR / WEB_SEARCH：写入 integration_backend */
+  integrationBackend?: LlmIntegrationBackendCode | string;
   /** 向量模型可与内网免鉴权嵌入服务留空 */
   apiKey?: string;
   allowAnonymous: boolean;
@@ -98,8 +109,12 @@ export interface CreateLlmModelBody {
   localDeploy?: boolean;
 }
 
-export async function getLlmModelMeta(): Promise<LlmModelAdminMetaResponse> {
-  const { data } = await http.get<LlmModelAdminMetaResponse>("/api/v1/admin/llm-models/meta");
+/** 须传入当前界面语言；协商参数见 {@link adminUiNegotiationHeaders}。 */
+export async function getLlmModelMeta(acceptLanguage: AdminUiLocaleTag): Promise<LlmModelAdminMetaResponse> {
+  const { data } = await http.get<LlmModelAdminMetaResponse>("/api/v1/admin/llm-models/meta", {
+    headers: adminUiNegotiationHeaders(acceptLanguage),
+    params: adminUiNegotiationParams(acceptLanguage),
+  });
   return data;
 }
 
@@ -117,7 +132,7 @@ export async function updateLlmModel(
   id: number,
   body: Partial<CreateLlmModelBody> & {
     modelKind?: LlmModelKindCode;
-    vectorBackend?: LlmVectorBackendCode;
+    integrationBackend?: LlmIntegrationBackendCode | string;
     apiKey?: string;
     /** true：清除已保存的 API Key（向量模型免鉴权等） */
     clearApiKey?: boolean;

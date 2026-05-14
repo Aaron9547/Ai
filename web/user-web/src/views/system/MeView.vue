@@ -35,7 +35,7 @@
             </template>
             <template v-else>未登录（访客模式）</template>
           </p>
-          <p class="card-hint">访客仍可对话；注册/登录后服务端会将同一设备上的匿名数据按策略归并到账号。</p>
+          <p class="card-hint">访客仍可对话；在本机登录/注册时会自动归并<strong>当前设备码</strong>下的匿名数据；其他设备见下方「合并其他设备」。</p>
         </section>
 
         <section class="card">
@@ -54,6 +54,45 @@
             复制设备码
           </el-button>
         </section>
+
+        <section v-if="snapshot.userId != null" class="card">
+          <h2>合并其他设备的访客数据</h2>
+          <p class="card-hint">
+            在另一浏览器或电脑<strong>未登录</strong>产生的对话挂在对方的设备码下。于对方页面「复制设备码」后粘贴到此处，可将<strong>当前租户</strong>内该访客会话与画像/记忆并入你的账号；每台设备码只需合并一次，可多次合并<strong>不同</strong>设备码。
+          </p>
+          <div class="me-merge-row">
+            <el-input
+              v-model="otherDeviceIdInput"
+              class="me-merge-input"
+              placeholder="粘贴另一设备的设备码（UUID）"
+              clearable
+            />
+            <el-button
+              type="primary"
+              plain
+              :loading="mergingOtherDevice"
+              :disabled="!otherDeviceIdInput.trim()"
+              @click="mergeOtherGuestDevice"
+            >
+              合并
+            </el-button>
+          </div>
+        </section>
+
+        <section v-if="snapshot.userId != null" class="card">
+          <h2>画像与记忆数据</h2>
+          <p class="card-hint">
+            导出为 JSON（含跨会话画像标签与分层记忆片段）；删除后对话记录仍在，但模型侧个性化记忆与计数摘要将清空，且须重新绑定设备与账号关系。
+          </p>
+          <div class="me-actions">
+            <el-button size="small" type="primary" plain :loading="exporting" @click="downloadProfileExport">
+              导出 JSON
+            </el-button>
+            <el-button size="small" type="danger" plain :loading="purging" @click="confirmPurgeProfile">
+              删除画像与记忆
+            </el-button>
+          </div>
+        </section>
       </template>
     </div>
   </div>
@@ -61,9 +100,12 @@
 
 <script setup lang="ts">
 import { ArrowLeft } from "@element-plus/icons-vue";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
+import { exportProfileDataJson, mergeGuestDevice, purgeProfileData } from "../../api/profile";
 import { http } from "../../plugins/http";
+import { copyTextToUserClipboard } from "../../utils/clipboard";
 import { apiRequestErrorMessage } from "../../utils/apiRequestErrorMessage";
 import { TENANT_CODE_PATH_RE } from "../../utils/outboundTenant";
 
@@ -131,6 +173,77 @@ const tenantDisplay = computed(() => {
 
 const loading = ref(true);
 const err = ref("");
+const exporting = ref(false);
+const purging = ref(false);
+const otherDeviceIdInput = ref("");
+const mergingOtherDevice = ref(false);
+
+async function mergeOtherGuestDevice() {
+  const id = otherDeviceIdInput.value.trim();
+  if (!id) return;
+  mergingOtherDevice.value = true;
+  try {
+    const r = await mergeGuestDevice(id);
+    if (!r.ran) {
+      ElMessage.info("未提供有效设备码");
+      return;
+    }
+    if (r.conversationsReassigned === 0 && r.memoryChunksReassigned === 0) {
+      ElMessage.success("已处理：未找到该设备在本租户下的访客数据（或此前已合并）");
+    } else {
+      ElMessage.success(
+        `已归并：会话 ${r.conversationsReassigned} 条，记忆片段 ${r.memoryChunksReassigned} 条`,
+      );
+    }
+    otherDeviceIdInput.value = "";
+    await load();
+  } catch (e: unknown) {
+    ElMessage.error(apiRequestErrorMessage(e, "合并失败"));
+  } finally {
+    mergingOtherDevice.value = false;
+  }
+}
+
+async function downloadProfileExport() {
+  exporting.value = true;
+  try {
+    const data = await exportProfileDataJson();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ai-profile-export-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    ElMessage.success("已开始下载导出文件");
+  } catch (e: unknown) {
+    ElMessage.error(apiRequestErrorMessage(e, "导出失败"));
+  } finally {
+    exporting.value = false;
+  }
+}
+
+async function confirmPurgeProfile() {
+  try {
+    await ElMessageBox.confirm(
+      "将删除本租户下与画像、分层记忆相关的数据（对话列表不会删除）。此操作不可恢复，是否继续？",
+      "删除画像与记忆",
+      { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" },
+    );
+  } catch {
+    return;
+  }
+  purging.value = true;
+  try {
+    await purgeProfileData();
+    ElMessage.success("已删除画像与记忆数据");
+    await load();
+  } catch (e: unknown) {
+    ElMessage.error(apiRequestErrorMessage(e, "删除失败"));
+  } finally {
+    purging.value = false;
+  }
+}
 
 async function load() {
   loading.value = true;
@@ -153,10 +266,10 @@ function reload() {
 async function copyDevice() {
   const id = snapshot.value?.deviceId;
   if (!id) return;
-  try {
-    await navigator.clipboard.writeText(id);
+  const ok = await copyTextToUserClipboard(id);
+  if (ok) {
     ElMessage.success("已复制到剪贴板");
-  } catch {
+  } else {
     ElMessage.warning("复制失败，请手动选择文本复制");
   }
 }
@@ -278,5 +391,25 @@ onMounted(() => {
   border-radius: 4px;
   background: #f4f4f5;
   color: #52525b;
+}
+
+.me-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.me-merge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.me-merge-input {
+  flex: 1 1 200px;
+  min-width: 0;
 }
 </style>

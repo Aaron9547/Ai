@@ -21,10 +21,12 @@ import org.springframework.stereotype.Service;
 public class UserProfileApplicationService {
 
     private final TenProfileTagRepository tenProfileTagRepository;
+    private final UserMemoryApplicationService userMemoryApplicationService;
 
-    /** 用户发言落库后调用：跨会话累加主体发言计数、记录最近一条输入摘要（均写入画像，非单会话维度）。 */
-    public void ingestAfterUserUtterance(TenantSnapshot snap, String utterance) {
-        String subjectKey = subjectKey(snap);
+    /** 用户发言落库后调用：跨会话累加主体发言计数、记录最近一条输入摘要；并写入具体层记忆片段。 */
+    public void ingestAfterUserUtterance(
+            TenantSnapshot snap, String utterance, Long conversationIdOrNull, String modelAliasOrNull) {
+        String subjectKey = ProfileSubjectKey.fromSnapshot(snap);
         if (subjectKey == null) {
             return;
         }
@@ -46,30 +48,45 @@ public class UserProfileApplicationService {
                     subjectKey,
                     ex);
         }
+        userMemoryApplicationService.afterUserUtterance(snap, utterance, conversationIdOrNull, modelAliasOrNull);
     }
 
     /**
      * 拼入首条 system 前的短摘要；无数据时返回空串。字段含义须与模型可读性一致：计数为<strong>跨会话历史累计</strong>，勿与会话内轮次混淆。
+     *
+     * @param recallQuery 当前用户输入，用于具体层记忆的关键词召回（无命中时附最近片段）。
      */
-    public String buildPromptAddendum(TenantSnapshot snap) {
-        String subjectKey = subjectKey(snap);
+    public String buildPromptAddendum(TenantSnapshot snap, String recallQuery) {
+        String subjectKey = ProfileSubjectKey.fromSnapshot(snap);
         if (subjectKey == null) {
             return "";
         }
+        long tenantId = snap.getTenantId();
         List<TenProfileTag> rows =
-                tenProfileTagRepository.listByTenantAndSubjectKey(snap.getTenantId(), subjectKey);
-        if (rows.isEmpty()) {
-            return "";
-        }
-        var j = new StringJoiner("；");
+                tenProfileTagRepository.listByTenantAndSubjectKey(tenantId, subjectKey);
+        var tagJoiner = new StringJoiner("；");
         for (TenProfileTag t : rows) {
             if (t.getTagCode() == ProfileTagCode.TURN_COUNT) {
-                j.add("历史累计发言约 " + t.getTagValue() + " 次（跨会话统计，非本条会话内轮数）");
+                tagJoiner.add("累计发言约 " + t.getTagValue() + " 次（跨会话，非本会话轮数）");
             } else if (t.getTagCode() == ProfileTagCode.LAST_USER_EXCERPT && !t.getTagValue().isBlank()) {
-                j.add("跨会话最近一条用户输入摘要：" + t.getTagValue());
+                tagJoiner.add("最近输入摘要：" + t.getTagValue());
             }
         }
-        return j.toString();
+        String tagPart = tagJoiner.toString();
+        String memoryPart =
+                userMemoryApplicationService.buildMemoryPromptSection(
+                        snap, recallQuery == null ? "" : recallQuery);
+        if (tagPart.isBlank() && memoryPart.isBlank()) {
+            return "";
+        }
+        var out = new StringJoiner("\n\n");
+        if (!tagPart.isBlank()) {
+            out.add(tagPart);
+        }
+        if (!memoryPart.isBlank()) {
+            out.add(memoryPart.trim());
+        }
+        return out.toString();
     }
 
     private void upsertTag(long tenantId, String subjectKey, ProfileTagCode code, String value) {
@@ -86,16 +103,6 @@ public class UserProfileApplicationService {
             n.setTagValue(value);
             tenProfileTagRepository.insert(n);
         }
-    }
-
-    private static String subjectKey(TenantSnapshot snap) {
-        if (snap.getUserId() != null) {
-            return "u:" + snap.getUserId();
-        }
-        if (snap.getDeviceId() != null && !snap.getDeviceId().isBlank()) {
-            return "d:" + snap.getDeviceId().trim();
-        }
-        return null;
     }
 
     private static int parsePositiveInt(String raw, int defaultVal) {

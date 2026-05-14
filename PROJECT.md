@@ -4,7 +4,8 @@
 
 - **坐标**：`com.aaron.cloud:Ai`（Maven）。
 - **定位**：以 AI 对话为核心的 **AI 中台**（多模型、RAG/Milvus、智能体与工具、画像与长记忆、访客设备码、一键网页入库等）；前后端同仓，后端 Java（JDK 25），前端 Vue 3（`web/user-web` / `web/admin-web`）。
-- **详细架构与编码约束**：见仓库根目录 **`.cursorrules`**（权威）；本文档侧重**对外说明**与**版本演进记录**；**运行时键与可选值说明**见 **`src/main/resources/application.yml`**（键旁注释 + `${ENV:默认}`；EPP 桥接见 **`AiEnvironmentBridgePostProcessor`**）。
+- **详细架构与编码约束**：见仓库根目录 **`.cursorrules`**（权威）；本文档侧重**对外说明**与**版本演进记录**。**`application.yml`** 侧重**进程启动、Bean 选路与基础设施连接**（键旁注释 + `${ENV:默认}`；EPP 桥接见 **`AiEnvironmentBridgePostProcessor`**，登记于 **`META-INF/spring.factories`**）。**按租户免重启的运行参数**（**`ten_runtime_setting`** / **`TenantRuntimeSettingKey`**，管理端「租户运行参数」API）与 yml 的分层约定见 **`.cursorrules` §3.8**。
+- **管理端双语**：页面级文案以 **`web/admin-web`** 的 **vue-i18n** 为主；**部分接口返回的 label/placeholder** 由后端按 **`Accept-Language`** 拼装，见下文 **「管理端 Accept-Language 与 LLM 元数据（服务端文案）」**。
 - **管理端租户成员与审计**：字段级契约见下文 **「管理端租户成员与审计写入规则（约定）」**；**重点逻辑注释及逻辑变更时须同步更新注释/专节** 见仓库根目录 **`.cursorrules` §7.2**。
 - **本地中间件**：根目录 **`docker-compose.yml`** 提供 MySQL 与 **RocketMQ** 示例；端口与发现等见 **`application.yml`** 注释。
 
@@ -12,7 +13,38 @@
 
 ## 运行时配置
 
-**键名、默认值、主要可选值与能力** 在 **`src/main/resources/application.yml`** 以键旁注释维护（无历史版「分区横幅」式长索引）；与 **`AiEnvironmentBridgePostProcessor`** 的派生键关系见该类 Javadoc。本文档不重复展开全表。
+**进程启动、环境变量与中间件接入**仍以 **`src/main/resources/application.yml`** 及键旁注释为协作真源（与 **`AiEnvironmentBridgePostProcessor`** 的派生键关系见该类 Javadoc）。**按租户动态可调、不要求随应用重启才生效的参数**（如 **`WEB_SEARCH_GROUNDING_*`**、开放注册、出差报销 Coze、记忆嵌入模型 id 等）权威存储为 **`ten_runtime_setting`**（枚举 **`TenantRuntimeSettingKey`**）；**yml 与运行参数表的分层原则**见仓库根目录 **`.cursorrules` §3.8**。**Redis** 无 `ai.redis.enabled` 之类总闸：须配置 **`spring.data.redis.*`** 并成功建连，否则应用启动失败。本文档不重复展开全表。
+
+---
+
+## 管理端 Accept-Language 与 LLM 元数据（服务端文案）
+
+与 **vue-i18n**（`viewMessages.*` 等）分工：**页面壳、按钮、校验提示** 仍走前端 i18n；**由接口下发的表单/表格元数据**（Tab 标题、列头、表单项 label 与 placeholder、枚举选项展示名）可走后端 **`MessageSource`**，以便与枚举、字段策略同仓演进。
+
+| 环节 | 说明 |
+|------|------|
+| **接口** | **`GET /api/v1/admin/llm-models/meta`**：返回各 **`LlmModelKind`** 的 Tab、列表列、表单字段及 **`vectorBackends` / `webSearchProviders` / `connectorKinds`** 等 option 列表的展示文案；**VECTOR** 与 **WEB_SEARCH** 的列表/表单共用字段名 **`integrationBackend`**（库列 **`llm_model.integration_backend`**），下拉分别绑定 **`vectorBackends`** 与 **`webSearchProviders`**。 |
+| **请求头** | 管理端 **`web/admin-web/src/plugins/http.ts`** 在拦截器中设置 **`Accept-Language`**，取值来自 **`localStorage`** 键 **`AI_ADMIN_LOCALE_LS_KEY`**（**`web/admin-web/src/stores/uiPreferences.ts`** 导出，与 Pinia 语言一致）；合法值为 **`zh-CN`**、**`en-US`**，否则回退 **`zh-CN`**。 |
+| **Spring** | **`LlmModelAdminRestController#meta(Locale locale)`** 由 MVC 注入 **`Locale`**（默认 **`AcceptHeaderLocaleResolver`**，随 **`Accept-Language`** 解析）。 |
+| **文案源** | **`application.yml`**：`spring.messages.basename: llm-admin-meta`；资源文件 **`src/main/resources/llm-admin-meta_zh_CN.properties`**、**`llm-admin-meta_en.properties`**（键前缀 **`llm.meta.*`**）。**`LlmModelAdminUiMetaService#buildMeta(Locale)`** 使用 **`MessageSource`**；缺 key 时回退 **`zh-CN`**，再缺则返回 key 避免 500。 |
+| **前端刷新** | **`LlmModelManageView.vue`**：监听 **`useI18n().locale`**，切换语言后重新请求 meta；若当前 Tab 的 **`kind`** 在新响应中仍存在则保持选中。 |
+
+扩展其它「接口驱动 UI 文案」时：复用同一 **`Accept-Language`** 约定，新增 basename 或共用 **`llm-admin-meta`** 并在对应 Service 中注入 **`MessageSource`** 即可。
+
+---
+
+## 联网搜索（功能模块索引）
+
+**稳定边界（不写迭代清单）**
+
+- **产品语义**：租户级 **对话前置联网检索**；用户侧可开关「联网」，须租户存在**已启用**的 **`LlmModelKind.WEB_SEARCH`** 实例（可用性见 **`GET /open/v1/chat/web-search-availability`**）。
+- **配置入口**：管理端 **「大模型管理 → 联网搜索」** Tab，维护 **`llm_model`** 行（**`model_kind = WEB_SEARCH`**）；**`integration_backend`** 存 **`LlmWebSearchProvider`** 码，与 **VECTOR** 共用列名、分选项 **`webSearchProviders`**（见 **「管理端 Accept-Language 与 LLM 元数据」** 表内说明）。
+- **编排位置**：**`ChatWebSearchGroundingService`** 由 **`ChatApplicationService#openAssistantSseStream`** 在 RAG 等之后、主 **`ModelInvokePort`** 之前注入网络检索 **system**；请求体 **`webSearchEnabled`**（及重试覆盖项）参与决策。
+- **多轮检索与提示后缀**：轮数及各轮拼在用户问题后的说明为租户运行参数 **`WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT`**、**`WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON`**（**`TenantRuntimeSettingKey`**）；与 **`application.yml` 分层**见 **`.cursorrules` §3.8**。
+- **引用持久化与 SSE**：检索归一化条目落 **`chat_message.meta_json#webSearchReferences`**（助手行写入；**同一轮 user 行**在助手落库后同步写入或移除该键，便于按轮次导出）；主流式前下发 **`webSearchRefs`** 分帧（**`v`** 为 **`{"references":[…]}`**）。**`GET …/conversations/{id}/messages`** 经 **`ChatMessageView`** 对 **user / assistant** 均解析 **`webSearchReferences`**。**`VolcArkBotWebSearchProvider`** 合并根 **`references`** 与 **`bot_usage…tool_details…results`**（按 URL 去重）。用户端 **`web/user-web`**（**`chat.ts` / `ChatView.vue`**）与管理端类型 **`chatAdmin.ts`** 对齐字段；迭代明细见 **「变更记录」** 当前顶 **`###`** 节。
+- **扩展与实现真源**：**`WebSearchProviderRegistry`** / **`WebSearchModelProvider`**（首版 **`VolcArkBotWebSearchProvider`** 等）、**`SysLlmModel`** 解析、计量回写、**`WebSearchFlagDeserializer`** 等与周边模块的细则以代码及 **`LlmModelKind`** 注释为准。
+
+**迭代写在哪里**：本专节**不随每次提交加长**。**文件、迁移、行为、前后端联调等变更**一律写在下方 **「变更记录」** 中**当前开发线对应的 `### x.y.z-SNAPSHOT` 节**（与 **`pom.xml` `<version>`** 对齐；**小改**并入该节，**大改** bump 后新开顶节，见 **「版本策略」**表）。**禁止**把迭代清单搬进本节以代替「变更记录」。
 
 ---
 
@@ -91,13 +123,138 @@
 | 项 | 约定 |
 |----|------|
 | **权威来源** | `pom.xml` 中 `<version>`，与本文档「变更记录」**同步更新**。 |
-| **开发线** | **0.1.x**：从 **0.1.0** 起；**补丁位仅在「实质编码迭代」时递增**（见下行）。 |
+| **开发线** | **0.1.x**：从 **0.1.0** 起；**补丁位**在「实质编码迭代」下按下行 **bump** 规则递增。 |
 | **快照** | 开发阶段统一使用 **`-SNAPSHOT`** 后缀（例如 `0.1.0-SNAPSHOT`）。发布正式版时去掉 `-SNAPSHOT` 并按发布流程另开版本线（不在本文档展开）。 |
-| **何时 bump** | **须**递增 `pom.xml` 补丁并新增变更节：**合并入主线且涉及** `src/main/java`、`src/test/java`、`web/user-web/`、`web/admin-web/` 等业务代码，或 **`pom.xml` 新增/升级依赖**、**可运行配置**（如 `application*.yml`）、**数据库迁移脚本** 等。 |
-| **何时不 bump** | **尚未开始实质编码**阶段：仅修订 **`.cursorrules`**、**`PROJECT.md`**、其它说明类 **`.md`** 时，**不递增**版本号；可在**当前版本**变更记录下追加「修订说明」子要点。 |
-| **修订说明（2026-05）** | 若连续多次变更均为**同一主题**（如仅 `application.yml` / EPP / 注释）且**可合并叙述**，**优先在本节追加要点**，避免为极小 diff **连升多档补丁**；确属独立能力或破坏性变更时再新开一节。 |
+| **变更记录（必写）** | 凡合并入主线且改动了 **`src/main/java`**、**`src/test/java`**、**`web/user-web/`**、**`web/admin-web/`**、**`db/mysql/`** 迁移、**`pom.xml`**（含 **`<version>`** 与**生产依赖**）、**`application*.yml`** 等可运行产物，**必须**在「变更记录」留痕：**小改**在**当前** `### x.y.z-SNAPSHOT` 节内**追加或改写**条目（同一主题可合并为一条）；**大改**（独立能力、破坏性变更、需单独阅读的一整块主题）则 **bump `pom.xml` 补丁位**并**新增**一节 **`### x.y.(z+1)-SNAPSHOT`**，不宜继续挤在上一个补丁节里。 |
+| **专节（`## …`）** | **一类：功能模块索引**——**新增可独立命名的产品能力**时增加短 **`##` 节**（例如 **`PROJECT.md`** 中的 **「联网搜索（功能模块索引）」**）：只写**稳定边界与入口**（产品语义、配置/编排位置、与周边关系、关键类型或表意），**不写迭代清单**。**二类：长期约定 / 协作说明**——如 **「★ 用户端路由与租户」**、**「管理端租户成员与审计写入规则」**、**「管理端 Accept-Language 与 LLM 元数据」**等，可作为字段级或流程真源保留表格与较长说明；**仍禁止**用任一类 **`##` 节**的扩写**代替**「变更记录」记录每次代码改动（动代码则变更记录必有条目）。 |
+| **何时 bump `pom.xml`** | 与上表「大改」一致：出现**新一节变更记录**时，**须**同步递增 **`pom.xml`** 补丁位，使文档版本与构件版本一致。 |
+| **何时不 bump** | **仅**修订 **`.cursorrules`**、**`PROJECT.md`**、其它**纯说明类 `.md`**（不涉及上表「变更记录必写」路径）时，**不递增**版本号；若有需要可在**当前** `###` 节下追加一句「文档修订」类说明。 |
+| **修订说明（2026-05）** | 同质、同主题的**极小**文档或注释调整可合并叙述；**不**免除「动代码则变更记录必有条目」；**不**用专节顶替变更记录。 |
 
 ## 变更记录
+
+### 0.1.229-SNAPSHOT
+
+- **租户运行参数（对话 / 记忆 / 护栏）**：**`TenantRuntimeSettingKey`** 增加 **`CHAT_PROMPT_LIMITS_JSON`**、**`MEMORY_POLICY_JSON`**、**`CHAT_INPUT_GUARD_JSON`**（**`{}`** 表示代码默认）；**`ChatPromptLimitsRuntime`**、**`MemoryPolicyRuntime`**、**`ChatInputGuardRuntime`** 解析；**`TenantRuntimeSettingApplicationService`** 暴露 **`chatPromptLimits` / `memoryPolicy` / `chatInputGuardEffective`** 并在 **`validateAndNormalize`** 校验 JSON 对象。**`ChatApplicationService`**、**`ChatInputGuardService`**、**`UserMemoryApplicationService`**、**`MemoryAbstractAsyncPublisher`**、**`UserMemoryAbstractLlmWorker`**、**`MemoryAbstractRedisQueuePoller`** 按 **`tenantId`** 或消息内租户取策略；删除 **`AiChatPromptProperties`**、**`AiChatInputGuardProperties`**；**`AiMemoryProperties`** 仅保留 **`vector-enabled` / `milvus-collection` / abstract Redis 队列名与轮询间隔**。**`application.yml`** 去掉 **`ai.chat.prompt`**、**`ai.chat.input-guard`** 及已迁的 **`ai.memory.*` 策略键**。**`migrate_0_1_220_tenant_runtime_chat_memory_input_guard.sql`** 与 **`schema_v1.sql`** 种子 **`INSERT IGNORE`**。**`.cursorrules` §3.8** 与本文档对齐。
+- **管理端系统参数页**：**`GET /api/v1/admin/tenant-runtime-settings`** 支持 **`current` / `size` / `keyword`** 分页与筛选（**`TenantRuntimeSettingApplicationService#pageEffectiveRows`**，与 MyBatis **`Page`** JSON 字段 **`records` / `total` / `size` / `current`** 对齐）；**`TenantRuntimeSettingsView.vue`** 检索 + **分页条**；**`tenantRuntimeSettings.ts`** 使用 **`fetchTenantRuntimeSettingsPage`**。
+- **对话主链短期记忆（多轮 history）**：**`ChatPromptLimitsRuntime`** 扩展 **`historyMaxMessages` / `historyMaxCharsPerMessage` / `historyTotalMaxChars`**（仍由 **`CHAT_PROMPT_LIMITS_JSON`** 解析，缺省 40 / 12000 / 48000）；**`ChatApplicationService#openAssistantSseStream`** 在首条 system 之后按 **`lnk_chat_conversation_message`** 顺序注入当前 user 之前的 **user/assistant** **`MessageTurn`**（截断策略见上）；意图 SSE 外部长链不经此路径。**`TenantRuntimeSettingKey.CHAT_PROMPT_LIMITS_JSON`** 注释同步。
+- **助手回合摘要与会话标题**：新增 **`ChatTurnDigestApplicationService`**，助手落库后异步调用语言模型写入 **`meta_json.contentSummary`**；会话内仅 **user→assistant** 两条且标题仍为「新会话」/「新对话*」占位时，用模型短 **`conversationTitle`** 更新 **`chat_conversation.title`**（**不再**在首条用户发送时用首句问题改标题）。主链、输入护栏模板回复、**`TravelReimbursementIntentRunner#finishPersist`** 均调度 digest；构建历史时助手侧**优先**使用已生成的 **`contentSummary`**。**`ChatMessageView`** 与 **`toChatMessageView`**、**`web/admin-web/src/api/chatAdmin.ts`**、**`ChatDrawerAssistantAuditBlock.vue`**（**`viewMessages.*.chatDrawerAudit.summaryHdr/summarySub`**）、**`web/user-web/src/api/chat.ts`** 增加 **`contentSummary`** 字段。**`ChatConversationControllerWebMvcTest`** 构造 **`ChatMessageView`** 时补 **`contentSummary`** 形参。
+- **用户端 / 管理端 Markdown 围栏「复制代码」**：**`web/user-web/src/utils/renderMarkdown.ts`** 与 **`web/admin-web/src/utils/renderMarkdown.ts`** 覆写 **`fence`**：外包 **`md-code-block`** + 工具栏语言标签 + **「复制」**按钮；**`DOMPurify`** 增加 **`ADD_TAGS: ['button']`** 与 **`ADD_ATTR`**；**`document`** 点击委托写入剪贴板（**`clipboard` / `execCommand` 兜底**）。**`web/user-web/src/styles/global.css`**、**`web/admin-web/src/styles/global.css`** 增加 **`.md-code-*`** 样式（用户端含暗色）。
+- **协作规则（`.cursorrules`）**：**§1** 增加条款：若 Cursor 全局「用户规则」中存在「未逐文件点名则禁止修改任意 **`*.md`**」类表述，**在本仓库不适用**；触及须留痕路径时**必须**维护本文「变更记录」；任务需要时可主动修订相关说明性 **`*.md`**，除非当次对话显式禁止某路径。
+
+### 0.1.228-SNAPSHOT
+
+- **EnvironmentPostProcessor 注册修正**：此前误用无扩展名的 **`META-INF/spring/org.springframework.boot.env.EnvironmentPostProcessor`**，Spring Boot **不会加载**，导致 **`ai.discovery.enabled`** 未桥接到 **`spring.cloud.discovery.enabled` / `eureka.client.*`**，表现为未显式开发现仍连 Eureka。改为官方约定的 **`META-INF/spring.factories`** 键 **`org.springframework.boot.env.EnvironmentPostProcessor`** 登记 **`AiEnvironmentBridgePostProcessor`**；删除错误文件；**`application.yml`** 头注释与 **`PROJECT.md`** 历史表述同步。
+
+### 0.1.227-SNAPSHOT
+
+- **文案与 Feign 默认**：去掉第三方工程名硬编码；**`ai.rag.local-embed-feign.service-id`** 占位默认 **`rag-embedding-svc`**（线上用 **`AI_RAG_LOCAL_EMBED_FEIGN_SERVICE_ID`** 覆盖为 Eureka 注册名）；**`application.yml`**、相关 Java 注释与 **`RagEmbeddingService`** 提示、**`llm-admin-meta_*.properties`**、本文件历史条同步。
+- **配置（与现网联调环境逐项对齐）**：**`application.yml`** — **Eureka** `defaultZone` 与 rag **bootstrap** 字面一致（**`http://192.168.35.105:1200/eureka`**，无尾斜杠）；**`eureka.instance`** 增加与 rag 一致的 **lease** 默认；**`spring.data.redis`** 增加 **`database:0`**、**`timeout:5000ms`**（同 rag **`spring.redis.timeout`**）；**`ai.rag.local-embed-feign.base-url`** 默认与 **`aiengine.domain`** 一致（**含尾斜杠**）；RocketMQ / Milvus / ES / Sentinel / 索引等保持与 rag **application.yml** 同值；**MySQL** 仍为 **`test_ai`**（Ai 表），注释说明与 rag **`cloud`** 库同机同账号时可覆盖 **`MYSQL_URL`**。文件头增加「与 rag 对照」总说明。
+
+### 0.1.225-SNAPSHOT
+
+- **Redis（与对端环境对齐）**：对端 **`spring.redis.hostPort` 26379–26381** 为 **Sentinel**，非 Redis Cluster。**`AiEnvironmentBridgePostProcessor`** 新增 **`ai.redis.mode=sentinel`**，桥接 **`spring.data.redis.sentinel.master` / `sentinel.nodes[]`**；**`application.yml`** 默认 **`AI_REDIS_MODE=sentinel`**、**`AI_REDIS_SENTINEL_*`** 与 rag 同形；**`cluster`** 仍仅用于真 Cluster（数据端口）。**`AiEnvironmentBridgePostProcessorTest`** 覆盖 Sentinel 桥接与非法 mode。
+- **RAG / 注册中心默认值**：**`ai.rag.elasticsearch.index-name`** 默认 **`rag_agent_documents`**（与 rag **`ElasticsearchProperties`** 一致）；**`ai.rag.local-embed-feign.base-url`** 默认 **`http://192.168.37.31/ly-ai-rag`**（与 rag **`aiengine.domain`** 去尾斜杠等价）；**`EUREKA_DEFAULT_ZONE`** 默认示例与 rag **bootstrap** 同网段（**192.168.35.105:1200**）。**`AiRagProperties` / `ElasticsearchRagSearchClient`** 空配置兜底索引名同步为 **`rag_agent_documents`**。
+
+### 0.1.224-SNAPSHOT
+
+- **联网检索功能模块（`WEB_SEARCH`）**：**`LlmModelKind.WEB_SEARCH`**；管理端「大模型管理 → 联网搜索」Tab；**`WebSearchProviderRegistry`** + **`WebSearchModelProvider`**，首版 **`VolcArkBotWebSearchProvider`**（**`RestClient`** 调火山 Ark Bot **Chat Completions** 非流式，配置来自 **`SysLlmModel`** 行，无硬编码密钥）。**`ChatWebSearchGroundingService`** 由 **`ChatApplicationService#openAssistantSseStream`** 在 RAG 等之后、主 **`ModelInvokePort`** 前注入网络检索 **system**；**`ChatSendPayload.webSearchEnabled`**、**`ChatRegenerateRequest`** 覆盖项；**`WebSearchFlagDeserializer`** 兼容布尔反序列化（若有）。
+- **`llm_model.integration_backend`**：原 **`vector_backend`** 与 **`web_search_provider`** 合并为单列，**按 `model_kind`** 存 **`LlmVectorBackend`** 码或 **`LlmWebSearchProvider`** 码；**`migrate_0_1_217_llm_web_search.sql`**、**`migrate_0_1_218_llm_model_integration_backend.sql`**，**`schema_v1.sql`**；**`SysLlmModel#resolveVectorBackend` / `resolveWebSearchProvider`**；**`RagEmbeddingService`** 等改用 **`resolveVectorBackend`**。
+- **可用性与网关**：**`GET /open/v1/chat/web-search-availability`**（**`WebSearchAvailabilityView`**）；**`gw_api_endpoint_catalog_inserts.sql`** 登记；**`SysLlmModelRepository`** 启用实例查询与默认实例选取。
+- **计量**：**`ChatWebSearchGroundingService`** 解析 **`usage`** 与 **`bot_usage.model_usage[]`** 累加 token，**`LlmModelUsageRecorder`** 入账。
+- **管理端 LLM**：**`LlmModelAdminUiMetaService` / DTO / ApplicationService`** 与 **`integrationBackend`**、**`llm-admin-meta_*.properties`**；**`web/admin-web`**：**`models.ts`**、**`LlmModelKindTabPanel.vue`**（列表 **启用** **`el-switch`** 直接 **`PUT`** 局部更新；编辑时 **API Key 留空不校验必填**；**`LlmModelFormFields`** 编辑态 API Key 不标必填）。
+- **用户端**：**`chat.ts`**、**`ChatView.vue`**：**`getWebSearchAvailability`**、**`webSearchEnabled`** 与发送/重试联动。
+- **文档**：「版本策略」与「联网搜索」专节按 **索引 + 变更记录** 分工维护：**「专节」表行**区分**功能模块短索引**与**长期约定 / 协作说明 `##` 节**；**「变更记录（必写）」**行补充 **`pom.xml` `<version>`**；「联网搜索」节条列稳定边界并泛化迭代落点（对齐「变更记录」当前 `###` 顶节与 **小改 / 大改**，不写死某一补丁号）。
+- **联网引用（对话记录与回显）**：**`WebSearchReference` / `WebSearchReferenceView`** 扩展站点、logo、时效、`extraJson` 等；**`VolcArkBotWebSearchProvider`** 解析根 **`references`** 并兜底 **`bot_usage.action_details[].tool_details[].output.data.data.results[]`**，按 URL 去重合并。**`ChatApplicationService`**：主流式前 **`sendSseWebSearchRefFrames`**（SSE **`type: webSearchRefs`**）；**`buildAssistantMetaJson`** 写入 **`webSearchReferences`**；**`openAssistantSseStream`** 增加 **`pairedUserMessageId`**（首轮发送与重新生成均传入配对 **user** 消息 id），助手 **`insert`** 后 **`mergeWebSearchReferencesIntoUserMessageMeta`** 将引用写入或清空 **user** 行 **`meta_json`**；**`buildPriorVersionsChainBeforeReplace`** 快照保留 **`webSearchReferences`**。**`ChatMessageView` / `toChatMessageView`** 对 **user / assistant** 解析 **`webSearchReferences`**。**`web/user-web`**：**`chat.ts`**（**`WebSearchRefItem`、`StreamPart`、`parseSsePayload`**）、**`ChatView.vue`**（流式与历史、用户/助手气泡下「联网参考」条）。**`web/admin-web`**：**`chatAdmin.ts`**（**`WebSearchRefAdmin`**）。**`fillWebSearchReferencesArray` / `parseWebSearchReferencesFromRoot`** 复用落库与解析。**测试**：**`ChatConversationControllerWebMvcTest`** 中 **`ChatMessageView`** 构造参数对齐 **`webSearchReferences`** 字段。
+- **配置**：**`application.yml`** 修正 Redis 默认值——**`spring.data.redis.port`** 与 **`ai.redis.cluster.nodes`** 不再误用 Sentinel 端口（26379–26381）作 Cluster 引导，改为数据端口示例（6379 起）；若环境为 **Sentinel+主从**，设 **`AI_REDIS_MODE=standalone`** 并指向可写主 **`host:6379`**，或覆盖 **`AI_REDIS_CLUSTER_NODES`**。
+- **配置（注释）**：**`application.yml`** 的 **`ai.rag`** 段补充与 **对端 RAG 工程** 的对照说明（**`AI_RAG_ES_INDEX`** 与 RAG 侧 **`elasticsearch.index-name`**、**`AI_RAG_*_BASE_URL`** 与 **`aiengine.domain`**、**勿将对端环境下 `spring.redis`/`26379` hostPort 当作本工程 Cluster 节点**）。
+
+### 0.1.223-SNAPSHOT
+
+- **修订说明（规则）**：**`.cursorrules` §9 / §10** 已写明：触及「须写变更记录的路径」时 **`PROJECT.md`「变更记录」**为强制同步项；细则以 **§9 / §10** 为准。
+- **文档**：本文档新增 **「管理端 Accept-Language 与 LLM 元数据（服务端文案）」** 专节，说明与 **vue-i18n** 的分工、**`Accept-Language`** 注入位置及 **`llm-admin-meta*.properties`** 维护方式。
+- **管理端数据概览**：**`GET /api/v1/admin/dashboard/summary`**（**`AdminReadController`** → **`AdminDashboardApplicationService`**）按当前租户只读聚合 KPI、近 **24h**、近 **7** 日（北京日）HTTP/计量按日序列、**`last_login_region`** 分布、**`sys_http_access_log`** 客户端 IP TOP；**`/dashboard`** 页 **`DashboardView.vue`** + **`adminDashboard.ts`**，**ECharts** 折线/世界与中国地图（CDN GeoJSON，内网不可达时有告警）、柱状图，随 **`locale` / `isDark`** 重绘。**前端补充（同页迭代）**：KPI 数字用 **`@vueuse/core`** 的 **`useTransition`**（子组件 **`DashboardKpiBlock.vue`**，每次成功拉数后 **`kpiAnimKey`** 重挂载以从零缓动）；**`dash-data`** 在「已有 **`summary`** 时再次请求」上 **`v-loading`**（文案 **`views.dashboard.reloadingOverlay`**）；工作区切换成功后 **`window`** 派发 **`ai-admin-workspace-changed`**（**`src/constants/adminWorkspace.ts`**，**`AdminLayout.vue`** 成功切换后派发，**`DashboardView.vue`** 在 **`/dashboard`** 监听并 **`reload()`**），避免停留在概览页时数据仍属旧租户 JWT。
+- **LLM 管理元数据多语言**：**`GET /api/v1/admin/llm-models/meta`** 按请求 **`Locale`**（来自 **`Accept-Language`**）从 **`MessageSource`** 拼装 Tab/列/表单/枚举展示名；**`LlmModelAdminUiMetaService`**、**`LlmModelAdminRestController`**、**`application.yml`** 与 **`llm-admin-meta_*.properties`**。**`web/admin-web`**：**`http.ts`** 统一带 **`Accept-Language`**（**`AI_ADMIN_LOCALE_LS_KEY`**）；**`LlmModelManageView.vue`** 监听 **`useUiPreferencesStore().locale`**（与顶栏 Pinia 一致）重拉 meta，**`el-tabs`** 加 **`key`**；**`LlmModelKindTabPanel.vue`** 接收 **`locale-tag`** 并为 **`el-table`** 加 **`key`**，避免英→中后 Tab/表头仍残留英文文案。
+- **管理端意图弹窗**：**`IntentManageView.vue`** 再增大 **`el-dialog` 头/体/底** 与 **`intent-dlg-scroll`**、**`intent-dlg-form`** 留白；表单项纵向间距略增。**处理器 `el-select`**：触发器 **`el-select__wrapper`** 与下拉 **`popper-class`** 圆角与内边距优化（下拉挂载 body，独立非 scoped 样式）。
+
+### 0.1.222-SNAPSHOT
+
+- **管理端意图弹窗**：**`IntentManageView.vue`** 增大标题区、正文、底部与滚动区内边距；弹窗与表单区圆角、分隔线、轻阴影与渐变背景；表单项间距与输入圆角微调；**`el-dialog`** 宽度上限 **860px**。
+
+### 0.1.221-SNAPSHOT
+
+- **修订**：**`IntentHandlerParamSpec`** 将 **`name()`** 更名为 **`paramName()`**，避免实现类为枚举时与 **`Enum.name()`**（`final`）冲突。
+- **意图处理器参数枚举真源**：新增 **`IntentHandlerParamSpec`** + **`TravelReimbursementHandlerParam`**（含 **`travelRouting`** 与 **`handlerParams`** 键），**`IntentHandlerParamSchemaBuilder`** 生成 **`IntentHandlerConfigFieldMeta`**；**`ChatIntentHandlerPlugin`** 以 **`handlerParamEnumClass()`** 声明枚举，**`configSchema()`** 默认推导。**`IntentHandlerConfigFieldMeta`** 增加 **`paramStorage`**（**`HANDLER_PARAMS` / `TRAVEL_ROUTING`**）、**`INT`** 类型及 **`intMin`/`intMax`**。**`ChatIntentHandlerKind`** 增加管理端 **`adminLabelZh` / `adminDescription`**；**`GET /api/v1/admin/chat/intent-handler-kinds`** 返回已注册类型；**`gw_api_endpoint_catalog_inserts.sql`** 追加目录行。**`web/admin-web`**：意图弹窗**移除扩展 JSON 与硬编码处理器列表**，处理器与表单项**完全由接口**驱动，保存时 **`mergeIntentExtraFromSchema`** 写回 **`extra_config_json`**。
+
+### 0.1.220-SNAPSHOT
+
+- **出差意图首轮顺序与 Coze 正文**：**`openStream`** 先处理<strong>首轮触发词</strong>重置为 DOC，再计算 **PLAN 直达**（修复同轮含续办默认词时误走第二工作流）；**`evaluateKeywordMatch`** 与之一致，触发词优先于续办匹配。**`TravelCozeResponseParser`** 过滤仅含 **`debug_url` / `node_execute_uuid`** 的 Coze 帧，避免当正文回显；**`TravelReimbursementIntentRunner`** 为各 **`workflowStage`** 补全步骤标题。**`web/user-web`**：**`ChatView.vue`** 意图分段改为与「思考」类似的顶栏 + 折叠、**Markdown** 渲染正文；新步骤 **loading** 时自动折叠上一步 **done**。
+
+### 0.1.219-SNAPSHOT
+
+- **意图处理器插件化与动态配置**：**`ChatIntentHandlerPlugin`** + **`IntentHandlerPluginRegistry`**；**`ChatIntentStreamRouter`** 按 **`chat_intent_definition.handler_kind`** 从注册表解析，不再硬编码出差分支。**`TravelReimbursementIntentRunner`** 实现插件接口，**`extra_config_json.handlerParams`** 与租户 **`ten_runtime_setting`**（**`TravelCozeRuntimeConfig`**）**非空合并**（意图侧优先）。**`GET /api/v1/admin/chat/intent-handlers/{kind}/config-schema`** 返回 **`IntentHandlerConfigFieldMeta`** 列表；**`gw_api_endpoint_catalog_inserts.sql`** 追加目录行。**`web/admin-web`**：**`IntentManageView.vue`** 按 schema 渲染 **`handlerParams`** 表单项（含 **`SECRET_STRING`** 遮罩），提交时 **`mergeIntentExtraConfig`** 写入 **`travelRouting` + `handlerParams`**。
+
+### 0.1.218-SNAPSHOT
+
+- **租户运行时参数敏感展示**：**`TenantRuntimeSettingKey`** 增加 **`maskSensitiveInAdminUi`**（当前 **`TRAVEL_REIMBURSE_*_COZE_API_KEY`** 为 **true**）；**`TenantRuntimeSettingApplicationService.TenantRuntimeSettingRow`** 增加 **`sensitive`**（API 仍返回明文 **`valueText`**，仅提示前端遮罩）。**`TenantRuntimeSettingsView.vue`**：有值且敏感时默认 **`••••••••`**，**「显示 / 隐藏」**切换表格内明文，**「修改」**或展开后点链接打开弹窗编辑。
+
+### 0.1.217-SNAPSHOT
+
+- **管理端系统参数页**：**`TenantRuntimeSettingsView.vue`** 字符串值去掉「点击编辑」文案，改为**主色 + 字重 + 下划线**的链接式可点样式，悬停略浅；完整值悬停 **`title`** 提示。
+
+### 0.1.216-SNAPSHOT
+
+- **`.cursorrules` §7.1**：增补**产品设计与工程实现分工**（用户可见文案与表/缓存/实现细节分离；工程说明落 **`PROJECT.md` / Javadoc / 折叠帮助**）。
+- **管理端系统参数页**：**`TenantRuntimeSettingsView.vue`** 顶部说明改为**产品向**表述（工作区范围、保存后生效），不再在 Alert 中展开库表与 Redis 细节。
+
+### 0.1.215-SNAPSHOT
+
+- **管理端租户运行时参数页**：**`STRING`** 整行值区可点击（含「点击编辑」提示）打开弹窗；顶部说明写明 **MySQL `ten_runtime_setting` 落库**与 **Redis 仅缓存、写后双删**。
+- **`TenantRuntimeSettingApplicationService`** 类注释标明权威存储为 **`ten_runtime_setting`** 及 Redis 双删语义，便于与「只改缓存」区分。
+
+### 0.1.214-SNAPSHOT
+
+- **管理端租户运行时参数页**：**`TenantRuntimeSettingsView.vue`**「重新加载」移至卡片标题栏右上角；去掉底部「保存」；**BOOLEAN** 开关切换即单键写库并刷新列表；**STRING** 表格内展示摘要与「修改」入口，弹窗编辑后「确定」即保存（`value_text` 与库 **`VARCHAR(1024)`** 对齐 **1024** 字上限）。
+
+### 0.1.213-SNAPSHOT
+
+- **出差报销两轮 Coze**：租户 **`ten_runtime_setting`** 增加 **`TenantRuntimeSettingKey`**：**`TRAVEL_REIMBURSE_COZE_DOMAIN`**、**`TRAVEL_REIMBURSE_DOC_COZE_API_KEY`**、**`TRAVEL_REIMBURSE_DOC_WORKFLOW_ID`**、**`TRAVEL_REIMBURSE_PLAN_COZE_API_KEY`**、**`TRAVEL_REIMBURSE_PLAN_WORKFLOW_ID`**（与 ly **`SystemConfigKey`** 下 **`TRAVEL_REIMBURSE_`** 前缀各键对齐）；**`STRING`** 类键允许空串写入。四轮工作流键均非空时，**`TravelReimbursementIntentRunner`** 在 **DOC** 调用文档工作流、**PLAN** 在模拟审批/冲突/知识库步骤后调用行程工作流（**`TravelCozeWorkflowClient`**）；否则仍为演示模拟。DOC 入参为 **`input`** + **`document_text`**（附件 **`extracted_text`** 拼接），无 ly 侧二进制 **`file`** 上传，Coze 工作流需兼容或后续接对象存储链路。**`TravelCozeRuntimeConfig`**、**`TenantRuntimeSettingApplicationService#travelCozeRuntimeConfig`** 收口读取。
+
+### 0.1.212-SNAPSHOT
+
+- **管理端意图关键词抽屉**：**`IntentManageView.vue`** 关键词抽屉由 **520px** 加宽至 **760px**，表格外包 **`overflow-x: auto`**、**`min-width`** 与操作列 **`fixed="right"`**，避免「命中」等列在窄抽屉内被裁切。
+- **出差报销 PLAN 多轮续接**：**`TravelReimbursementIntentRunner.runPlanPhases`** 在「您还未发起出差申请单」模拟分支**不再** **`CACHE.remove`**，保留 **PLAN** 与 **`docSummary`**，后续「继续 / 下一步」及 **`PLAN_CONTINUE`** 配置词可再次命中；**`evaluateKeywordMatch`** 流程续接条件**去掉**对 **`planDirectConsumed`** 的绑定（该标志仅约束 **`openStream`** 内一次性 **PLAN 直达**），避免用过一次直达后续接词永远进不了意图。
+
+### 0.1.211-SNAPSHOT
+
+- **意图多轮与配置通用化**：**`TravelIntentRoutingConfig`** 从 **`chat_intent_definition.extra_config_json`** 解析 **`travelRouting`**（**`allowDocAdvanceWithAttachmentOnly`** 默认 **true** 保持历史行为；**false** 时 DOC 阶段须正文含首轮触发词才命中，「仅附件」走大模型）；可选 **`sessionExpiredUserHint`** 覆盖会话失效 SSE 提示。**`TravelReimbursementIntentRunner.evaluateKeywordMatch`** 接入该开关。**`web/admin-web`**：**`intentAdminMeta.ts`** 集中处理器/关键词类型展示名；**`IntentManageView.vue`** 顶部说明与处理器下拉去硬编码出差文案，关键词类型改为「首轮/单轮」「流程续接」；**材料阶段**开关与扩展 JSON 同步写入 **`travelRouting`**。
+
+#### 意图 `extra_config_json.travelRouting`（`TRAVEL_REIMBURSEMENT`）
+
+| 键 | 类型 | 默认 | 说明 |
+|----|------|------|------|
+| **`allowDocAdvanceWithAttachmentOnly`** | boolean | **true** | **true**：DOC 等待材料时，用户仅带附件也可命中意图（多轮兼容）。**false**：须同轮正文含「首轮」触发短语（可与附件同发）；仅附件不命中，走大模型主链。 |
+| **`sessionExpiredUserHint`** | string | 内置中文 | 会话缓存缺失时 SSE **`content`** 提示文案（勿写密钥）。 |
+
+### 0.1.210-SNAPSHOT
+
+- **意图对话体验**：**`TravelReimbursementIntentRunner.evaluateKeywordMatch`** 将 **首轮触发词** 判定提前到 **DOC+附件** 之前，避免会话卡在 DOC 时第二轮「触发语 + 附件」永远只命中 `DOC_ATTACHMENT` 而无法按触发语重置状态；**`web/user-web` `ChatView.vue`** 在存在 **`workflowSegments`** 时不再渲染主 Markdown 气泡（分段卡片与落库 `content` 拼接正文重复的问题）。
+
+### 0.1.209-SNAPSHOT
+
+- **意图关键词命中可追溯与统计**：用户/助手消息 **`meta_json`** 写入 **`intentHitKeywordId`**、**`intentHitPhrase`**、**`intentHitKeywordKind`**、**`intentMatchSource`** 等（与 **`ChatIntentMatchSource`** 对齐）；**`GET /open/v1/chat/conversations/{id}/messages`** 响应 **`ChatMessageView`** 增加 **`intentTurnHit`**。**`chat_intent_keyword.hit_count`** 在带库关键词 id 的意图 SSE 完成后 **`+1`**（内置续办/DOC 无 id 不计）；存量库可执行 **`db/mysql/migrate_0_1_209_chat_intent_keyword_hit_count.sql`**。**管理端** 关键词列表 **`KeywordRow.hitCount`** 与 **`IntentManageView`**「命中次数」列；**用户端** 历史加载后在用户气泡下展示简短命中说明（短语 + 来源中文）。
+
+### 0.1.208-SNAPSHOT
+
+- **意图链路可观测日志**：**`ChatIntentStreamRouter`**、**`ChatApplicationService`**（用户消息落库后意图路由前后）、**`TravelReimbursementIntentRunner`**（openStream 入参摘要、PLAN 直达、DOC 缺附件、会话状态缺失）增加 **`[意图链路]`** 前缀 **INFO** 日志，与 ly **`DialogueApiService`** 排障风格对齐；**`messagePreview`** 取用户正文前 **80** 字。
+
+### 0.1.207-SNAPSHOT
+
+- **管理端意图识别租户范围**：列表与 CRUD **仅 JWT 当前工作区租户**；**`AdminQueryTenantSupport.resolveIntentAdminDataTenantId`** 收口（创始人亦不得借 **`filterTenantId` / `targetTenantId`** 跨租户）。**`IntentRow`** 不再返回 **`tenantId`**；**`ChatIntentDefinitionRepository.listForAdmin`** 已移除（避免创始人全量跨租户列表）。**`web/admin-web`** 意图页去掉租户列、筛选与「目标租户」表单项；**`chatIntent.ts`** 与接口路径不再传租户查询参数。
+
+### 0.1.206-SNAPSHOT
+
+- **MySQL 767 字节索引与意图关键词表**：**`chat_intent_keyword.phrase`** 由 **`VARCHAR(255)`** 改为 **`VARCHAR(128)`**，保证 **`UNIQUE KEY uk_chat_intent_kw_intent_phrase (intent_id, phrase)`** 在 **`utf8mb4`** + 旧 **`innodb_large_prefix`/行格式** 下不超过 **767** 字节，避免 **`SQL 错误 [1071]`**。**`schema_v1.sql`** 与 **`migrate_0_1_205_chat_intent.sql`** 已同步；若曾用旧 DDL 仅 **`CREATE TABLE chat_intent_keyword`** 失败，可重跑更新后的 **`migrate_0_1_205`**（**`IF NOT EXISTS`** 跳过已建表）。若库中已是 **`VARCHAR(255)`** 且需保留数据，执行 **`db/mysql/migrate_0_1_206_chat_intent_keyword_phrase_len.sql`**（短语须均 **≤128** 字符）。**`ChatIntentAdminDtos`** 关键词 **`phrase`** 增加 **`@Size(max = 128)`**。
 
 ### 0.1.205-SNAPSHOT
 
@@ -129,19 +286,19 @@
 
 ### 0.1.198-SNAPSHOT
 
-- **RAG Elasticsearch 去掉 `uris`**：**Ai** 侧节点**仅** **`ai.rag.elasticsearch.config.host-ports`**（与 ly-ai-rag-svc **`elasticsearch.config.hostPorts`** 一致），删除 **`ai.rag.elasticsearch.uris`** / **`AI_RAG_ES_URIS`** 及 **`AiRagProperties.Elasticsearch#uris`**；**`ElasticsearchRagHostParser`**、**`ElasticsearchRagClientEnabledCondition`**、**`ElasticsearchRagSearchClient`**、**`ElasticsearchRagHostParserTest`**、**`application.yml`** 同步。历史节 **0.1.85 / 0.1.86** 中「`uris` 非空」表述改为 **`config.host-ports` 非空**。
+- **RAG Elasticsearch 去掉 `uris`**：**Ai** 侧节点**仅** **`ai.rag.elasticsearch.config.host-ports`**（与对端 RAG 工程 **`elasticsearch.config.hostPorts`** 一致），删除 **`ai.rag.elasticsearch.uris`** / **`AI_RAG_ES_URIS`** 及 **`AiRagProperties.Elasticsearch#uris`**；**`ElasticsearchRagHostParser`**、**`ElasticsearchRagClientEnabledCondition`**、**`ElasticsearchRagSearchClient`**、**`ElasticsearchRagHostParserTest`**、**`application.yml`** 同步。历史节 **0.1.85 / 0.1.86** 中「`uris` 非空」表述改为 **`config.host-ports` 非空**。
 
 ### 0.1.197-SNAPSHOT
 
-- **关 Eureka 时的本地嵌入**：**`ai.rag.local-embed-feign.base-url`** 支持 **`${AI_RAG_LOCAL_EMBED_FEIGN_BASE_URL:${AI_RAG_ENGINE_BASE_URL:}}`**（**`AI_RAG_ENGINE_BASE_URL`** 与 ly-ai-rag-svc **`aiengine.domain`** 同语义）；**`RagEmbeddingService`** 在未装配 Feign 时按 **`ai.discovery.enabled`** 分支给出明确 **`IllegalStateException`** 说明。**`application.yml`** 注释与 **`AiRagProperties`** / **`RagLocalEmbeddingFeignAutoConfiguration`** Javadoc 同步；顺带修正 **`ai.rag.elasticsearch`** 占位与 **`enabled`** 默认与 **0.1.196** 约定一致。
+- **关 Eureka 时的本地嵌入**：**`ai.rag.local-embed-feign.base-url`** 支持 **`${AI_RAG_LOCAL_EMBED_FEIGN_BASE_URL:${AI_RAG_ENGINE_BASE_URL:}}`**（**`AI_RAG_ENGINE_BASE_URL`** 与对端 RAG 工程 **`aiengine.domain`** 同语义）；**`RagEmbeddingService`** 在未装配 Feign 时按 **`ai.discovery.enabled`** 分支给出明确 **`IllegalStateException`** 说明。**`application.yml`** 注释与 **`AiRagProperties`** / **`RagLocalEmbeddingFeignAutoConfiguration`** Javadoc 同步；顺带修正 **`ai.rag.elasticsearch`** 占位与 **`enabled`** 默认与 **0.1.196** 约定一致。
 
 ### 0.1.196-SNAPSHOT
 
-- **RAG Elasticsearch 配置收敛**：**`ai.rag.elasticsearch`** 与 ly-ai-rag-svc **`elasticsearch`** 同形——**`enabled`** 总闸（默认 **false**）、**`config.cluster-name` / `host-ports` / `user-name` / `password`**、**`index-name`**；**`host-ports`** 默认空，启用混合检索时再填或设 **`AI_RAG_ES_HOST_PORTS`**；可选 **`uris`**。去掉顶层重复 **`host-ports`** 与 **`AI_RAG_ES_CONFIG_*`**。**`ElasticsearchRagHostParser`** / **`ElasticsearchRagClientEnabledCondition`** / **`AiRagProperties`** / **`ElasticsearchRagHostParserTest`** 同步。
+- **RAG Elasticsearch 配置收敛**：**`ai.rag.elasticsearch`** 与对端 RAG 工程 **`elasticsearch`** 同形——**`enabled`** 总闸（默认 **false**）、**`config.cluster-name` / `host-ports` / `user-name` / `password`**、**`index-name`**；**`host-ports`** 默认空，启用混合检索时再填或设 **`AI_RAG_ES_HOST_PORTS`**；可选 **`uris`**。去掉顶层重复 **`host-ports`** 与 **`AI_RAG_ES_CONFIG_*`**。**`ElasticsearchRagHostParser`** / **`ElasticsearchRagClientEnabledCondition`** / **`AiRagProperties`** / **`ElasticsearchRagHostParserTest`** 同步。
 
 ### 0.1.195-SNAPSHOT
 
-- **RAG Elasticsearch 与 ly-ai-rag-svc 对齐**：**`ElasticsearchRagHostParser`** 统一解析 **`ai.rag.elasticsearch.uris`**（逗号/分号多节点）、**`host-ports`**、**`config.host-ports`**（与 RAG 服务 **`elasticsearch.config.hostPorts`** 同形，缺省 **`http://`**）；**`ElasticsearchRagSearchClient`** 使用 **`RestClient.builder(多 HttpHost)`**；**`AiRagProperties.Elasticsearch`** 增加 **`hostPorts`** 与 **`config`**（**`userName`/`password`** 作顶层 **`username`** 缺省时的账号来源）。**`ElasticsearchRagClientEnabledCondition`** 与 **`application.yml`** / **`ElasticsearchRagHostParserTest`** 同步。
+- **RAG Elasticsearch 与对端 RAG 工程 对齐**：**`ElasticsearchRagHostParser`** 统一解析 **`ai.rag.elasticsearch.uris`**（逗号/分号多节点）、**`host-ports`**、**`config.host-ports`**（与 RAG 服务 **`elasticsearch.config.hostPorts`** 同形，缺省 **`http://`**）；**`ElasticsearchRagSearchClient`** 使用 **`RestClient.builder(多 HttpHost)`**；**`AiRagProperties.Elasticsearch`** 增加 **`hostPorts`** 与 **`config`**（**`userName`/`password`** 作顶层 **`username`** 缺省时的账号来源）。**`ElasticsearchRagClientEnabledCondition`** 与 **`application.yml`** / **`ElasticsearchRagHostParserTest`** 同步。
 
 ### 0.1.194-SNAPSHOT
 
@@ -154,7 +311,7 @@
 ### 0.1.192-SNAPSHOT
 
 - **配置与运行时可观测（合并叙述，原 0.1.189～0.1.192 同类改动）**
-  - **统一环境桥接**：**`AiEnvironmentBridgePostProcessor`** 单类注册（**`META-INF/spring/...EnvironmentPostProcessor`** 一行）；**`ai.discovery.enabled`** → **`spring.cloud.discovery.enabled`** / **`eureka.client.enabled`**；**`ai.redis.enabled=false`** → **`spring.autoconfigure.exclude`**（Redis 自动配置）；**`ai.rocketmq.name-server`**、**`producer-group`** → **`rocketmq.*`**；**`ai.providers.oauth2-resource-server.jwt-issuer-uri`**（**`AI_OAUTH2_JWT_ISSUER_URI`**）→ **`spring.security.oauth2.resourceserver.jwt.issuer-uri`**；**`MANAGEMENT_HEALTH_ELASTICSEARCH_ENABLED`**（优先）否则 **`AI_RAG_ES_ENABLED`** → **`management.health.elasticsearch.enabled`**。**`AiEnvironmentBridgePostProcessorTest`** 覆盖桥接。
+  - **统一环境桥接**：**`AiEnvironmentBridgePostProcessor`** 在 **`META-INF/spring.factories`** 登记为 **`EnvironmentPostProcessor`**（**0.1.228** 前曾误用无扩展名路径，见该版修正）；**`ai.discovery.enabled`** → **`spring.cloud.discovery.enabled`** / **`eureka.client.enabled`**；**`ai.rocketmq.name-server`**、**`producer-group`** → **`rocketmq.*`**；**`ai.providers.oauth2-resource-server.jwt-issuer-uri`**（**`AI_OAUTH2_JWT_ISSUER_URI`**）→ **`spring.security.oauth2.resourceserver.jwt.issuer-uri`**；**`MANAGEMENT_HEALTH_ELASTICSEARCH_ENABLED`**（优先）否则 **`AI_RAG_ES_ENABLED`** → **`management.health.elasticsearch.enabled`**。**`AiEnvironmentBridgePostProcessorTest`** 覆盖桥接。（**注**：曾存在的 **`ai.redis.enabled=false` → `spring.autoconfigure.exclude`（Redis）** 已移除，Redis 为必选。）
   - **`application.yml`**：**`ai.discovery`** 为发现总闸唯一 YAML 占位；去掉与 EPP 重复的 **`rocketmq.*`**、**`spring.security.oauth2.*`**、**`management.health.elasticsearch.enabled`**；删除已无引用的 **`ai.rag.embedding.*`**（向量化以 **`llm_model`** VECTOR + **`RagEmbeddingService`** 为准）；去掉与默认相同的 **`ai.cors`** / **`ai.chat.input-guard`** 冗余键；**`AiRagProperties`** 去掉 **`Embedding`**、**`LocalEmbedFeign.serviceId`** 与 YAML 对齐；**`AiProvidersProperties`** / **`RocketMqAppProperties`** 与上述键对齐。随后在保持精简的前提下，为 **`auth` / `vector-store` / `remoting` / `rag` / Redis·MQ·发现** 等恢复**可选值与能力说明**类键旁注释（无历史版长分区横幅）。
   - **说明**：上列若属**同批次小步提交**，变更记录**并为本节**，不单开 **`0.1.189`～`0.1.191`** 多节；见上表「修订说明（2026-05）」。
 
@@ -168,7 +325,7 @@
 
 ### 0.1.186-SNAPSHOT
 
-- **Redis 单总闸**：**`AI_REDIS_ENABLED` / `ai.redis.enabled`**（默认 **true**，与「中台须依赖 Redis」一致）为 **false** 时，由 **`AiRedisToggleEnvironmentPostProcessor`** 合并 **`spring.autoconfigure.exclude`**，排除 **`RedisAutoConfiguration`**、**`RedisRepositoriesAutoConfiguration`**，**不建连**；为 **true** 时仍仅 **`spring.data.redis.*`**（如 **`SPRING_DATA_REDIS_HOST`**）描述连接。**`application.yml`** 注释与 **`META-INF/spring/org.springframework.boot.env.EnvironmentPostProcessor`** 注册同步。**`AiRedisToggleEnvironmentPostProcessorTest`** 覆盖排除合并逻辑。
+- **Redis 单总闸（历史）**：**`AI_REDIS_ENABLED` / `ai.redis.enabled`** 曾为 **false** 时合并 **`spring.autoconfigure.exclude`** 排除 **`RedisAutoConfiguration`** 等；**该开关与排除逻辑已移除**，Redis 须可用，见上文 **「运行时配置」**。
 
 ### 0.1.185-SNAPSHOT
 
@@ -180,7 +337,7 @@
 
 ### 0.1.183-SNAPSHOT
 
-- **本地嵌入 Feign 与 Eureka**：**`RagLocalEmbeddingFeignClient`** 的 **`name`** 改为 **`ai.rag.local-embed-feign.service-id`**（默认 **`ly-ai-rag-svc`**，与 ly-ai-rag-svc **`spring.application.name`** 对齐）；**`url`** 为 **`ai.rag.local-embed-feign.base-url`**，**空则走 LoadBalancer + Eureka**，非空则直连。**`RagLocalEmbeddingFeignCondition`** 在 **`base-url` 非空** 或 **（发现已开且 `service-id` 非空）** 时装配（**0.1.184** 起「发现已开」以 **`ai.discovery.enabled`** 为准）；**`application.yml`** 增加 **`service-id`** 与注释。**`RagEmbeddingService`** 异常文案同步。
+- **本地嵌入 Feign 与 Eureka**：**`RagLocalEmbeddingFeignClient`** 的 **`name`** 改为 **`ai.rag.local-embed-feign.service-id`**（默认占位 **`rag-embedding-svc`**，须与对端在 Eureka 上的 **`spring.application.name`** 一致）；**`url`** 为 **`ai.rag.local-embed-feign.base-url`**，**空则走 LoadBalancer + Eureka**，非空则直连。**`RagLocalEmbeddingFeignCondition`** 在 **`base-url` 非空** 或 **（发现已开且 `service-id` 非空）** 时装配（**0.1.184** 起「发现已开」以 **`ai.discovery.enabled`** 为准）；**`application.yml`** 增加 **`service-id`** 与注释。**`RagEmbeddingService`** 异常文案同步。
 
 ### 0.1.182-SNAPSHOT
 
@@ -196,7 +353,7 @@
 
 ### 0.1.179-SNAPSHOT
 
-- **llm_model.local_deploy**：库表与管理端 **`localDeploy`**（默认 **false**）；**VECTOR** 且为 **true** 时 **`RagEmbeddingService`** 经 **`RagLocalEmbeddingFeignClient`** 调用 **`POST …/{tenantCode}/privateModel/embedding`**，与 ly-ai-rag-svc **`PrivateModelController`** 对齐；路径变量 **`tenantCode`** 为 **`sys_tenant.code`**。根地址：**`ai.rag.local-embed-feign.base-url` 非空则直连**；否则 **`ai.discovery.enabled=true`**（**`AI_DISCOVERY_ENABLED`**，**0.1.184** 起与 **`spring.cloud.discovery.enabled` / `eureka.client.enabled`** 同源）时以 **`ai.rag.local-embed-feign.service-id`**（默认 **`ly-ai-rag-svc`**）经 Eureka + LoadBalancer 解析（**0.1.183** 起）。请求体 **`model` + `input`**；响应 **`data[0]`** 为向量。迁移 **`migrate_0_1_179_llm_model_local_deploy.sql`**；**`schema_v1.sql`**、**`application.yml`**、**`RagLocalEmbeddingFeignSupportTest`**；管理端 **`models.ts`** / **`LlmModelKindTabPanel`** 同步。
+- **llm_model.local_deploy**：库表与管理端 **`localDeploy`**（默认 **false**）；**VECTOR** 且为 **true** 时 **`RagEmbeddingService`** 经 **`RagLocalEmbeddingFeignClient`** 调用 **`POST …/{tenantCode}/privateModel/embedding`**，与对端嵌入网关 **`PrivateModelController`** 同类接口；路径变量 **`tenantCode`** 为 **`sys_tenant.code`**。根地址：**`ai.rag.local-embed-feign.base-url` 非空则直连**；否则 **`ai.discovery.enabled=true`**（**`AI_DISCOVERY_ENABLED`**，**0.1.184** 起与 **`spring.cloud.discovery.enabled` / `eureka.client.enabled`** 同源）时以 **`ai.rag.local-embed-feign.service-id`**（默认 **`rag-embedding-svc`**）经 Eureka + LoadBalancer 解析（**0.1.183** 起）。请求体 **`model` + `input`**；响应 **`data[0]`** 为向量。迁移 **`migrate_0_1_179_llm_model_local_deploy.sql`**；**`schema_v1.sql`**、**`application.yml`**、**`RagLocalEmbeddingFeignSupportTest`**；管理端 **`models.ts`** / **`LlmModelKindTabPanel`** 同步。
 
 ### 0.1.178-SNAPSHOT
 
@@ -296,7 +453,7 @@
 
 ### 0.1.156-SNAPSHOT
 
-- **RAG × Elasticsearch**：**`ai.rag.elasticsearch.config.user-name` / `password`**（**`AI_RAG_ES_USERNAME`**、**`AI_RAG_ES_PASSWORD`**）；可选 **`ai.rag.elasticsearch.username`** 非空时覆盖 **config**（与 ly-ai-rag-svc **`elasticsearch.username` / `config.userName`** 一致）。与 **`management.health.elasticsearch`** 分流见类 Javadoc。
+- **RAG × Elasticsearch**：**`ai.rag.elasticsearch.config.user-name` / `password`**（**`AI_RAG_ES_USERNAME`**、**`AI_RAG_ES_PASSWORD`**）；可选 **`ai.rag.elasticsearch.username`** 非空时覆盖 **config**（与对端 RAG 工程 **`elasticsearch.username` / `config.userName`** 一致）。与 **`management.health.elasticsearch`** 分流见类 Javadoc。
 
 ### 0.1.155-SNAPSHOT
 
@@ -313,7 +470,7 @@
 
 ### 0.1.152-SNAPSHOT
 
-- **无遗留环境兼容**：删除 **`MilvusLegacyUrlEnvironmentPostProcessor`**、**`AiLegacyRabbitMqToRocketMqEnvironmentPostProcessor`** 及 **`META-INF/spring/org.springframework.boot.env.EnvironmentPostProcessor`** 注册；**`application.yml`** 移除顶层 **`milvus.config.url`**。**Milvus** 仅配置 **`com.aaron.cloud.providers.milvus.*`**（占位符仍可用 **`AI_MILVUS_*`** 等）。**RocketMQ** 统一在 **`rocketmq.*`**（**0.1.153** 起含 **`rocketmq.app.*`** 开关与 topic；此前曾写在 **`com.aaron.cloud.rocketmq.*`**）。
+- **无遗留环境兼容**：删除 **`MilvusLegacyUrlEnvironmentPostProcessor`**、**`AiLegacyRabbitMqToRocketMqEnvironmentPostProcessor`** 及错误的 **`META-INF/spring/...EnvironmentPostProcessor`** 无扩展名占位；**`application.yml`** 移除顶层 **`milvus.config.url`**。**Milvus** 仅配置 **`com.aaron.cloud.providers.milvus.*`**（占位符仍可用 **`AI_MILVUS_*`** 等）。**RocketMQ** 统一在 **`rocketmq.*`**（**0.1.153** 起含 **`rocketmq.app.*`** 开关与 topic；此前曾写在 **`com.aaron.cloud.rocketmq.*`**）。
 
 ### 0.1.151-SNAPSHOT
 
@@ -527,7 +684,7 @@
 
 ### 0.1.104-SNAPSHOT
 
-- **管理端按租户筛选（创始人）**：**`GET /api/v1/admin/access-logs`、`audit-events`、`metering-events`** 与 **`GET /api/v1/admin/chat/conversations`** 增加可选查询参数 **`filterTenantId`**；创始人不传或清空表示**不按租户过滤（全量）**，传入则仅该租户；非创始人传其它租户 **403**。解析集中 **`AdminQueryTenantSupport`**（**`common.security`**）；**`SysHttpAccessLogRepository` / `SysAuditEventRepository` / `MeteringUsageEventRepository` / `ChatConversationRepository`** 增加 **`pageForAdmin`**。
+- **管理端按租户筛选（创始人）**：**`GET /api/v1/admin/access-logs`、`audit-events`、`metering-events`** 与 **`GET /api/v1/admin/chat/conversations`** 增加可选查询参数 **`filterTenantId`**；创始人不传或清空表示**不按租户过滤（全量）**，传入则仅该租户；非创始人传其它租户 **403**。解析集中 **`AdminQueryTenantSupport`**（**`common.security`**）；**`SysHttpAccessLogRepository` / `SysAuditEventRepository` / `MeteringUsageEventRepository` / `ChatConversationRepository`** 增加 **`pageForAdmin`**。（**意图识别** **`/api/v1/admin/chat/intents`** 不在此列，见 **0.1.207**：仅当前工作区租户。）
 - **管理端对话消息**：**`listConversationMessagesForAdmin`** 先 **`findByIdForAdmin`** 再按会话 **`tenantId`** 拉消息；非创始人仅允许查看本会话所属租户（与 JWT 租户一致），避免创始人换工作区后会话与消息租户不一致。
 - **敏感词**：**`GET .../sensitive-terms/platform` 与 `.../tenant`** 分页 + 可选 **`q`**；租户池可选 **`filterTenantId`**（创始人指定数据租户，缺省 JWT 工作区）；**`POST`** / **`import`** 体可选 **`targetTenantId`**（创始人写他租扩展池）；删除租户池词时创始人可删任意租户行。已上线库按需执行 **`migrate_0_1_104_admin_tenant_filter_sensitive_pages.sql`**；**`schema_v1.sql`** 网关限流种子同步新 GET 路径。
 - **管理端 UI**：**`AccessLogsView` / `AuditEventsView` / `MeteringView` / `ChatConversationsView`** 创始人侧增加租户下拉（可清空=全量）；**`ChatSensitiveTermsView`** 双表分页 + 关键词筛选 + 固定高度滚动；**`useAdminFounderTenantOptions` / `useAdminFounderListTenantFilter`**（**`web/admin-web/src/composables`**）；**`admin.ts` / `chatAdmin.ts`** 请求参数对齐。
@@ -633,7 +790,7 @@
 ### 0.1.85-SNAPSHOT
 
 - **RAG 检索模式**（`com.aaron.cloud.rag.retrieval-mode` / `RagRetrievalMode`）：**`milvus`**（Milvus 近似检索 + MySQL 分片元数据拼装）、**`milvus_es_hybrid`**（Milvus + Elasticsearch `match` 关键词合并去重；引用侧 ES 命中需索引含 **`chunk_id`** 等字段，见 **`ElasticsearchRagSearchClient#searchCitationHits`**）。向量化由 **`RagEmbeddingPort`**（`hash` 或 **`openai_compatible`**）与 **`com.aaron.cloud.providers.milvus.vector-dimension`** 对齐。统一由 **`RagQueryBridgeService`** 实现 **`RagQueryPort`**。
-- **Elasticsearch（可选）**：依赖 **`co.elastic.clients:elasticsearch-java`**；`com.aaron.cloud.rag.elasticsearch.enabled=true` 且 **`config.host-ports` 非空** 时启用（见 **0.1.86** 条件类，**0.1.198** 起无 **`uris`**）；索引字段约定 **`tenant_id`、`kb_id`、`content`**（默认索引名 **`ai_rag_chunk`**）。产品路径仍以 **Milvus** 为唯一向量库；ES 仅作 **BM25/全文** 侧车，与 `.cursorrules` 中「禁止并列第二套向量库」不冲突。
+- **Elasticsearch（可选）**：依赖 **`co.elastic.clients:elasticsearch-java`**；`com.aaron.cloud.rag.elasticsearch.enabled=true` 且 **`config.host-ports` 非空** 时启用（见 **0.1.86** 条件类，**0.1.198** 起无 **`uris`**）；索引字段约定 **`tenant_id`、`kb_id`、`content`**（默认索引名 **`rag_agent_documents`**，与对端默认一致）。产品路径仍以 **Milvus** 为唯一向量库；ES 仅作 **BM25/全文** 侧车，与 `.cursorrules` 中「禁止并列第二套向量库」不冲突。
 - **用户画像与对话**：表 **`ten_profile_tag`**（迁移脚本 **`db/mysql/migrate_0_1_85_ten_profile_tag_rag_modes.sql`**）；**`UserProfileApplicationService`** 在用户发言落库后更新轮次与最近摘要，**`ChatApplicationService`** 在首条 system 前注入 **「【用户画像…】」** 追加段。
 
 ### 0.1.84-SNAPSHOT

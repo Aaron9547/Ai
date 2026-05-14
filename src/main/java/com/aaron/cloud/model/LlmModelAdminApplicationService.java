@@ -5,6 +5,7 @@ import com.aaron.cloud.common.api.enums.LlmModelKind;
 import com.aaron.cloud.common.api.enums.LlmModelStatus;
 import com.aaron.cloud.common.api.enums.LlmThinkingCapability;
 import com.aaron.cloud.common.api.enums.LlmVectorBackend;
+import com.aaron.cloud.common.api.enums.LlmWebSearchProvider;
 import com.aaron.cloud.common.context.TenantContextHolder;
 import com.aaron.cloud.common.modelcfg.SysLlmModelRepository;
 import com.aaron.cloud.common.modelcfg.quota.LlmTokenQuotaCoordinator;
@@ -50,10 +51,7 @@ public class LlmModelAdminApplicationService {
         row.setOpenaiModelId(req.getOpenaiModelId().trim());
         LlmModelKind kind = req.getModelKind() != null ? req.getModelKind() : LlmModelKind.LANGUAGE;
         row.setModelKind(kind);
-        row.setVectorBackend(
-                kind == LlmModelKind.VECTOR && req.getVectorBackend() != null
-                        ? req.getVectorBackend()
-                        : LlmVectorBackend.OPENAI_COMPATIBLE);
+        row.setIntegrationBackend(normalizeIntegrationBackendForCreate(kind, req.getIntegrationBackend()));
         String apiKeyRaw = req.getApiKey() == null ? "" : req.getApiKey().trim();
         if (kind != LlmModelKind.VECTOR && apiKeyRaw.isEmpty()) {
             throw new IllegalArgumentException("API Key 不能为空");
@@ -61,9 +59,16 @@ public class LlmModelAdminApplicationService {
         row.setApiKeyCipher(apiKeyRaw.isEmpty() ? null : aesSecretCipher.encryptToBase64(apiKeyRaw));
         row.setAllowAnonymous(
                 req.isAllowAnonymous() ? LlmAnonymousAccess.ALLOWED : LlmAnonymousAccess.DISALLOWED);
-        row.setMaxAttachments(clampMax(req.getMaxAttachments()));
+        row.setMaxAttachments(
+                kind == LlmModelKind.VECTOR || kind == LlmModelKind.WEB_SEARCH
+                        ? 0
+                        : clampMax(req.getMaxAttachments()));
         row.setSupportsThinking(
-                req.isSupportsThinking() ? LlmThinkingCapability.SUPPORTED : LlmThinkingCapability.NONE);
+                kind == LlmModelKind.VECTOR || kind == LlmModelKind.WEB_SEARCH
+                        ? LlmThinkingCapability.NONE
+                        : (req.isSupportsThinking()
+                                ? LlmThinkingCapability.SUPPORTED
+                                : LlmThinkingCapability.NONE));
         row.setStatus(req.isEnabled() ? LlmModelStatus.ACTIVE : LlmModelStatus.DISABLED);
         row.setSortOrder(req.getSortOrder() == null ? 0 : req.getSortOrder());
         row.setTokenQuotaTotal(req.getTokenQuotaTotal());
@@ -91,8 +96,10 @@ public class LlmModelAdminApplicationService {
         if (req.getModelKind() != null) {
             row.setModelKind(req.getModelKind());
         }
-        if (req.getVectorBackend() != null) {
-            row.setVectorBackend(req.getVectorBackend());
+        if (req.getIntegrationBackend() != null) {
+            LlmModelKind kind = row.getModelKind() != null ? row.getModelKind() : LlmModelKind.LANGUAGE;
+            row.setIntegrationBackend(
+                    normalizeIntegrationBackendForCreate(kind, req.getIntegrationBackend()));
         }
         if (req.getApiKey() != null && !req.getApiKey().isBlank()) {
             row.setApiKeyCipher(aesSecretCipher.encryptToBase64(req.getApiKey().trim()));
@@ -143,6 +150,12 @@ public class LlmModelAdminApplicationService {
 
     private LlmModelAdminView toView(SysLlmModel m) {
         boolean hasKey = m.getApiKeyCipher() != null && !m.getApiKeyCipher().isBlank();
+        String ib = m.getIntegrationBackend();
+        if (ib == null || ib.isBlank()) {
+            ib = LlmVectorBackend.OPENAI_COMPATIBLE.getCode();
+        } else {
+            ib = ib.trim();
+        }
         return new LlmModelAdminView(
                 m.getId(),
                 m.getAlias(),
@@ -150,9 +163,7 @@ public class LlmModelAdminApplicationService {
                 m.getOpenaiBaseUrl(),
                 m.getOpenaiModelId(),
                 m.getModelKind() != null ? m.getModelKind() : LlmModelKind.LANGUAGE,
-                m.getModelKind() == LlmModelKind.VECTOR
-                        ? (m.getVectorBackend() != null ? m.getVectorBackend() : LlmVectorBackend.OPENAI_COMPATIBLE)
-                        : null,
+                ib,
                 hasKey,
                 m.getAllowAnonymous() == LlmAnonymousAccess.ALLOWED,
                 m.getMaxAttachments() == null ? 10 : m.getMaxAttachments(),
@@ -162,6 +173,36 @@ public class LlmModelAdminApplicationService {
                 m.getTokenQuotaTotal(),
                 m.getTokensUsed() == null ? 0L : m.getTokensUsed(),
                 Boolean.TRUE.equals(m.getLocalDeploy()));
+    }
+
+    /**
+     * 写入 {@code llm_model.integration_backend}：VECTOR 为 {@link LlmVectorBackend} 码；WEB_SEARCH 为 {@link LlmWebSearchProvider} 码；其余类型默认
+     * OPENAI_COMPATIBLE。
+     */
+    private static String normalizeIntegrationBackendForCreate(LlmModelKind kind, String raw) {
+        String s = raw == null ? "" : raw.trim();
+        return switch (kind) {
+            case VECTOR -> {
+                if (s.isEmpty()) {
+                    yield LlmVectorBackend.OPENAI_COMPATIBLE.getCode();
+                }
+                if (LlmWebSearchProvider.fromCode(s) != null) {
+                    throw new IllegalArgumentException("向量模型的集成策略不能选择联网检索实现");
+                }
+                yield LlmVectorBackend.fromCode(s).getCode();
+            }
+            case WEB_SEARCH -> {
+                if (s.isEmpty()) {
+                    throw new IllegalArgumentException("联网搜索模型须指定 integrationBackend（检索实现）");
+                }
+                LlmWebSearchProvider p = LlmWebSearchProvider.fromCode(s);
+                if (p == null) {
+                    throw new IllegalArgumentException("不支持的联网检索实现码：" + s);
+                }
+                yield p.getCode();
+            }
+            default -> LlmVectorBackend.OPENAI_COMPATIBLE.getCode();
+        };
     }
 
     private static void validateAlias(String alias) {

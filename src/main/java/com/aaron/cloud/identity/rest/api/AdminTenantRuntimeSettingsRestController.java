@@ -3,7 +3,7 @@ package com.aaron.cloud.identity.rest.api;
 import com.aaron.cloud.common.context.TenantContextHolder;
 import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService;
 import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService.PutItem;
-import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService.TenantRuntimeSettingRow;
+import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService.TenantRuntimeSettingsPage;
 import com.aaron.cloud.common.web.rest.ApiV1ControllerBases;
 import java.util.List;
 import lombok.Data;
@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -24,8 +25,13 @@ public class AdminTenantRuntimeSettingsRestController extends ApiV1ControllerBas
     private final TenantRuntimeSettingApplicationService tenantRuntimeSettingApplicationService;
 
     @GetMapping
-    public List<TenantRuntimeSettingRow> list() {
-        return tenantRuntimeSettingApplicationService.listEffectiveRows(TenantContextHolder.require().getTenantId());
+    public TenantRuntimeSettingsPage list(
+            @RequestParam(defaultValue = "1") long current,
+            @RequestParam(defaultValue = "10") long size,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String valueKind) {
+        return tenantRuntimeSettingApplicationService.pageEffectiveRows(
+                TenantContextHolder.require().getTenantId(), current, size, keyword, valueKind);
     }
 
     @PutMapping

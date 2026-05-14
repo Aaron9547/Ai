@@ -1,12 +1,12 @@
 package com.aaron.cloud.common.chat;
 
 import com.aaron.cloud.common.chat.entity.ChatConversation;
+import com.aaron.cloud.common.time.BeijingTime;
 import com.aaron.cloud.common.chat.mapper.ChatConversationMapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -81,11 +81,16 @@ public class ChatConversationRepository {
                 new LambdaUpdateWrapper<ChatConversation>()
                         .eq(ChatConversation::getId, id)
                         .eq(ChatConversation::getTenantId, tenantId)
-                        .set(ChatConversation::getUpdatedAt, LocalDateTime.now(ZoneOffset.UTC)));
+                        .set(ChatConversation::getUpdatedAt, BeijingTime.nowLocal()));
     }
 
     public int insert(ChatConversation row) {
         return mapper.insert(row);
+    }
+
+    public long countByTenant(long tenantId) {
+        return mapper.selectCount(
+                Wrappers.<ChatConversation>lambdaQuery().eq(ChatConversation::getTenantId, tenantId));
     }
 
     public int updateById(ChatConversation row) {
@@ -102,6 +107,24 @@ public class ChatConversationRepository {
                         .eq(ChatConversation::getId, id)
                         .eq(ChatConversation::getTenantId, tenantId)
                         .set(ChatConversation::getTitle, title.trim())
-                        .set(ChatConversation::getUpdatedAt, LocalDateTime.now(ZoneOffset.UTC)));
+                        .set(ChatConversation::getUpdatedAt, BeijingTime.nowLocal()));
+    }
+
+    /**
+     * 注册归并：将该租户下访客设备会话挂到用户，并清空 {@code device_id}（后续仅按 {@code user_id} 访问）。
+     */
+    public int attachGuestConversationsToUser(long tenantId, String deviceId, long userId) {
+        if (deviceId == null || deviceId.isBlank()) {
+            return 0;
+        }
+        return mapper.update(
+                null,
+                new LambdaUpdateWrapper<ChatConversation>()
+                        .eq(ChatConversation::getTenantId, tenantId)
+                        .eq(ChatConversation::getDeviceId, deviceId.trim())
+                        .isNull(ChatConversation::getUserId)
+                        .set(ChatConversation::getUserId, userId)
+                        .set(ChatConversation::getDeviceId, null)
+                        .set(ChatConversation::getUpdatedAt, BeijingTime.nowLocal()));
     }
 }

@@ -4,10 +4,10 @@
 			"path": "."
 		},
 		{
-			"path": "../ly-ai-rag-svc"
+			"path": "../ly-ai-application-svc"
 		},
 		{
-			"path": "../ly-ai-application-svc"
+			"path": "../ly-mc-electricity-meter-svc"
 		}
 	],
 	"settings": {

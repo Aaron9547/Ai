@@ -1,7 +1,8 @@
 package com.aaron.cloud;
 
-import com.aaron.cloud.common.config.properties.AiChatInputGuardProperties;
+import com.aaron.cloud.common.config.properties.AiChatAttachmentProperties;
 import com.aaron.cloud.common.config.properties.AiCorsProperties;
+import com.aaron.cloud.common.config.properties.AiMemoryProperties;
 import com.aaron.cloud.common.config.properties.AiProvidersProperties;
 import com.aaron.cloud.common.config.properties.AiRagProperties;
 import com.aaron.cloud.common.config.properties.RocketMqAppProperties;
@@ -18,8 +19,9 @@ import org.springframework.scheduling.annotation.EnableScheduling;
     AiProvidersProperties.class,
     AiCorsProperties.class,
     AiRagProperties.class,
-    AiChatInputGuardProperties.class,
-    RocketMqAppProperties.class
+    AiChatAttachmentProperties.class,
+    RocketMqAppProperties.class,
+    AiMemoryProperties.class
 })
 @EnableScheduling
 public class AiApplication {

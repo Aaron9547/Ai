@@ -5,6 +5,7 @@ import com.aaron.cloud.common.api.enums.LlmModelKind;
 import com.aaron.cloud.common.api.enums.LlmModelStatus;
 import com.aaron.cloud.common.api.enums.LlmThinkingCapability;
 import com.aaron.cloud.common.api.enums.LlmVectorBackend;
+import com.aaron.cloud.common.api.enums.LlmWebSearchProvider;
 import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
@@ -29,14 +30,18 @@ public class SysLlmModel {
     /** 模型类型；对话流仅 {@link LlmModelKind#LANGUAGE}。 */
     private LlmModelKind modelKind;
 
-    /** 仅 {@link LlmModelKind#VECTOR} 语义有效；嵌入 URL 路径策略。 */
-    private LlmVectorBackend vectorBackend;
+    /**
+     * 与 {@code llm_model.integration_backend}：按 {@link #modelKind} 解释——{@link LlmModelKind#VECTOR} 时为
+     * {@link LlmVectorBackend} 嵌入路径策略；{@link LlmModelKind#WEB_SEARCH} 时为 {@link LlmWebSearchProvider} 联网实现码；其余类型可存默认
+     * {@code OPENAI_COMPATIBLE} 不参与编排。
+     */
+    private String integrationBackend;
 
     /**
      * 是否本地部署（默认否）：为 true 且 {@link LlmModelKind#VECTOR} 时，嵌入经 Feign 调用
      * {@code POST .../{tenantCode}/privateModel/embedding}（{@code tenantCode}={@code sys_tenant.code}）。根地址为
      * {@code ai.rag.local-embed-feign.base-url}（非空则直连），或 Eureka 上 {@code ai.rag.local-embed-feign.service-id}
-     *（如 {@code ly-ai-rag-svc}，须 {@code ai.discovery.enabled=true} / {@code AI_DISCOVERY_ENABLED=true}）。非向量类型可存 0，不参与编排。
+     *（如 {@code rag-embedding-svc}，须 {@code ai.discovery.enabled=true} / {@code AI_DISCOVERY_ENABLED=true}）。非向量类型可存 0，不参与编排。
      */
     private Boolean localDeploy;
 
@@ -60,4 +65,14 @@ public class SysLlmModel {
 
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
+
+    /** VECTOR 行：解析 {@link #integrationBackend} 为嵌入路径策略。 */
+    public LlmVectorBackend resolveVectorBackend() {
+        return LlmVectorBackend.fromCode(integrationBackend);
+    }
+
+    /** WEB_SEARCH 行：解析 {@link #integrationBackend} 为联网检索实现；非法或未配置时返回 {@code null}。 */
+    public LlmWebSearchProvider resolveWebSearchProvider() {
+        return LlmWebSearchProvider.fromCode(integrationBackend);
+    }
 }

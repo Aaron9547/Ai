@@ -3,34 +3,34 @@
     <el-card shadow="never" class="panel">
       <template #header>
         <div class="hdr">
-          <span class="title">接口与限流</span>
-          <p class="hdr-sub">维护可调用的接口目录，并为路径配置每分钟请求上限；创始人可切换「全局限流」或指定租户。</p>
+          <span class="title">{{ t("views.gateway.title") }}</span>
+          <p class="hdr-sub">{{ t("views.gateway.sub") }}</p>
         </div>
       </template>
 
       <el-tabs v-model="activeTab" class="hub-tabs">
-        <el-tab-pane label="接口管理" name="endpoints">
+        <el-tab-pane :label="t('views.gateway.tabEndpoints')" name="endpoints">
           <div class="tab-toolbar">
-            <el-button type="primary" @click="openEndpointCreate">新建接口</el-button>
-            <el-button text type="primary" :loading="epLoading" @click="loadEndpoints">刷新</el-button>
+            <el-button type="primary" @click="openEndpointCreate">{{ t("views.gateway.newEndpoint") }}</el-button>
+            <el-button text type="primary" :loading="epLoading" @click="loadEndpoints">{{ t("views.gateway.refresh") }}</el-button>
           </div>
-          <el-table v-loading="epLoading" :data="epRows" stripe border empty-text="暂无接口目录项">
-            <el-table-column prop="displayName" label="名称" min-width="140" show-overflow-tooltip />
-            <el-table-column prop="pathPattern" label="路径模式 (Ant)" min-width="220" show-overflow-tooltip />
-            <el-table-column prop="httpMethod" label="方法" width="88" />
-            <el-table-column prop="sortOrder" label="排序" width="72" align="right" />
-            <el-table-column label="启用" width="88" align="center">
+          <el-table v-loading="epLoading" :data="epRows" stripe border :empty-text="t('views.gateway.emptyEndpoints')">
+            <el-table-column prop="displayName" :label="t('views.gateway.colName')" min-width="140" show-overflow-tooltip />
+            <el-table-column prop="pathPattern" :label="t('views.gateway.colPathAnt')" min-width="220" show-overflow-tooltip />
+            <el-table-column prop="httpMethod" :label="t('views.gateway.colMethod')" width="88" />
+            <el-table-column prop="sortOrder" :label="t('views.gateway.colSort')" width="72" align="right" />
+            <el-table-column :label="t('views.gateway.colEnabled')" width="88" align="center">
               <template #default="{ row }">
                 <el-tag :type="row.enabled === 'ON' ? 'success' : 'info'" size="small">
-                  {{ row.enabled === "ON" ? "是" : "否" }}
+                  {{ row.enabled === "ON" ? t("views.gateway.yes") : t("views.gateway.no") }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="remark" label="说明" min-width="120" show-overflow-tooltip />
-            <el-table-column label="操作" width="140" fixed="right">
+            <el-table-column prop="remark" :label="t('views.gateway.colRemark')" min-width="120" show-overflow-tooltip />
+            <el-table-column :label="t('views.gateway.colActions')" width="140" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" size="small" @click="openEndpointEdit(row)">编辑</el-button>
-                <el-button link type="danger" size="small" @click="onEndpointDelete(row)">删除</el-button>
+                <el-button link type="primary" size="small" @click="openEndpointEdit(row)">{{ t("views.gateway.edit") }}</el-button>
+                <el-button link type="danger" size="small" @click="onEndpointDelete(row)">{{ t("views.gateway.delete") }}</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -48,52 +48,54 @@
           </div>
         </el-tab-pane>
 
-        <el-tab-pane label="限流控制" name="limits">
+        <el-tab-pane :label="t('views.gateway.tabLimits')" name="limits">
           <div class="tab-toolbar limits-toolbar">
             <template v-if="showFounderScope">
-              <span class="lbl">查看范围</span>
+              <span class="lbl">{{ t("views.gateway.scopeLabel") }}</span>
               <el-select v-model="rateScopeUi" style="width: 200px" @change="onRateScopeChange">
-                <el-option label="全局限流（tenant 为空）" value="GLOBAL" />
-                <el-option label="指定租户" value="TENANT" />
+                <el-option :label="t('views.gateway.scopeGlobal')" value="GLOBAL" />
+                <el-option :label="t('views.gateway.scopeTenant')" value="TENANT" />
               </el-select>
               <el-select
                 v-if="rateScopeUi === 'TENANT'"
                 v-model="rateTenantId"
                 filterable
-                placeholder="选择租户"
+                :placeholder="t('views.gateway.selectTenant')"
                 style="width: 260px"
                 :loading="tenantLoading"
                 @change="onRateTenantChange"
               >
-                <el-option v-for="t in tenantOptions" :key="t.id" :label="tenantOptionLabel(t)" :value="t.id" />
+                <el-option v-for="row in tenantOptions" :key="row.id" :label="tenantOptionLabel(row)" :value="row.id" />
               </el-select>
             </template>
-            <span v-else class="muted">当前仅可管理本租户的限流规则。</span>
-            <el-button type="primary" :disabled="limitsLoadBlocked" @click="openLimitCreate">新建规则</el-button>
-            <el-button text type="primary" :loading="rlLoading" @click="loadRateLimits">刷新</el-button>
+            <span v-else class="muted">{{ t("views.gateway.tenantOnlyHint") }}</span>
+            <el-button type="primary" :disabled="limitsLoadBlocked" @click="openLimitCreate">{{ t("views.gateway.newRule") }}</el-button>
+            <el-button text type="primary" :loading="rlLoading" @click="loadRateLimits">{{ t("views.gateway.refresh") }}</el-button>
           </div>
           <el-alert v-if="limitsLoadBlocked" type="warning" show-icon :closable="false" class="scope-alert">
-            创始人请先选择「指定租户」下的具体租户，再查看或配置该租户的限流。
+            {{ t("views.gateway.scopeAlert") }}
           </el-alert>
-          <el-table v-loading="rlLoading" :data="rlRows" stripe border empty-text="暂无规则">
-            <el-table-column label="租户" min-width="140" show-overflow-tooltip>
+          <el-table v-loading="rlLoading" :data="rlRows" stripe border :empty-text="t('views.gateway.emptyRules')">
+            <el-table-column :label="t('views.gateway.colTenant')" min-width="140" show-overflow-tooltip>
               <template #default="{ row }">
                 {{ formatRateLimitTenantCell(row.tenantId) }}
               </template>
             </el-table-column>
-            <el-table-column prop="pathPattern" label="路径模式 (Ant)" min-width="220" show-overflow-tooltip />
-            <el-table-column prop="httpMethod" label="方法" width="90" />
-            <el-table-column prop="requestsPerMinute" label="每分钟上限" width="120" align="right" />
-            <el-table-column label="启用" width="88" align="center">
+            <el-table-column prop="pathPattern" :label="t('views.gateway.colPathAnt')" min-width="220" show-overflow-tooltip />
+            <el-table-column prop="httpMethod" :label="t('views.gateway.colMethod')" width="90" />
+            <el-table-column prop="requestsPerMinute" :label="t('views.gateway.limitsRpm')" width="120" align="right" />
+            <el-table-column :label="t('views.gateway.colEnabled')" width="88" align="center">
               <template #default="{ row }">
-                <el-tag :type="row.enabled === 'ON' ? 'success' : 'info'" size="small">{{ row.enabled === "ON" ? "是" : "否" }}</el-tag>
+                <el-tag :type="row.enabled === 'ON' ? 'success' : 'info'" size="small">{{
+                  row.enabled === "ON" ? t("views.gateway.yes") : t("views.gateway.no")
+                }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="remark" label="说明" min-width="140" show-overflow-tooltip />
-            <el-table-column label="操作" width="140" fixed="right">
+            <el-table-column prop="remark" :label="t('views.gateway.colRemark')" min-width="140" show-overflow-tooltip />
+            <el-table-column :label="t('views.gateway.colActions')" width="140" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" size="small" @click="openLimitEdit(row)">编辑</el-button>
-                <el-button link type="danger" size="small" @click="onLimitDelete(row)">删除</el-button>
+                <el-button link type="primary" size="small" @click="openLimitEdit(row)">{{ t("views.gateway.edit") }}</el-button>
+                <el-button link type="danger" size="small" @click="onLimitDelete(row)">{{ t("views.gateway.delete") }}</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -114,42 +116,54 @@
     </el-card>
 
     <!-- 接口目录弹窗 -->
-    <el-dialog v-model="epDlg" :title="epEditId ? '编辑接口' : '新建接口'" width="560px" destroy-on-close @closed="resetEpDlg">
+    <el-dialog
+      v-model="epDlg"
+      :title="epEditId ? t('views.gateway.dlgEndpointTitleEdit') : t('views.gateway.dlgEndpointTitleNew')"
+      width="560px"
+      destroy-on-close
+      @closed="resetEpDlg"
+    >
       <el-form label-width="108px">
-        <el-form-item label="展示名称" required>
+        <el-form-item :label="t('views.gateway.labelDisplayName')" required>
           <el-input v-model="epForm.displayName" maxlength="128" show-word-limit />
         </el-form-item>
-        <el-form-item label="路径模式" required>
-          <el-input v-model="epForm.pathPattern" placeholder="如 /api/v1/admin/users/**" clearable />
+        <el-form-item :label="t('views.gateway.labelPathPattern')" required>
+          <el-input v-model="epForm.pathPattern" :placeholder="t('views.gateway.pathPh')" clearable />
         </el-form-item>
-        <el-form-item label="HTTP 方法">
-          <el-input v-model="epForm.httpMethod" placeholder="* 或 GET / POST" clearable />
+        <el-form-item :label="t('views.gateway.labelHttpMethod')">
+          <el-input v-model="epForm.httpMethod" :placeholder="t('views.gateway.methodPh')" clearable />
         </el-form-item>
-        <el-form-item label="排序">
+        <el-form-item :label="t('views.gateway.labelSort')">
           <el-input-number v-model="epForm.sortOrder" :min="0" :max="999999" controls-position="right" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="启用">
-          <el-switch v-model="epForm.enabledOn" active-text="是" inactive-text="否" />
+        <el-form-item :label="t('views.gateway.labelEnabled')">
+          <el-switch v-model="epForm.enabledOn" :active-text="t('views.gateway.yes')" :inactive-text="t('views.gateway.no')" />
         </el-form-item>
-        <el-form-item label="说明">
+        <el-form-item :label="t('views.gateway.labelRemark')">
           <el-input v-model="epForm.remark" type="textarea" :rows="2" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="epDlg = false">取消</el-button>
-        <el-button type="primary" :loading="epSaving" @click="submitEndpoint">保存</el-button>
+        <el-button @click="epDlg = false">{{ t("views.gateway.cancel") }}</el-button>
+        <el-button type="primary" :loading="epSaving" @click="submitEndpoint">{{ t("views.gateway.save") }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 限流规则弹窗 -->
-    <el-dialog v-model="rlDlg" :title="rlEditId ? '编辑限流规则' : '新建限流规则'" width="600px" destroy-on-close @closed="resetRlDlg">
+    <el-dialog
+      v-model="rlDlg"
+      :title="rlEditId ? t('views.gateway.dlgLimitTitleEdit') : t('views.gateway.dlgLimitTitleNew')"
+      width="600px"
+      destroy-on-close
+      @closed="resetRlDlg"
+    >
       <el-form label-width="112px">
-        <el-form-item label="快捷选择">
+        <el-form-item :label="t('views.gateway.quickPick')">
           <el-select
             v-model="pickedEndpointId"
             filterable
             clearable
-            placeholder="从接口目录带入路径与方法（可再改）"
+            :placeholder="t('views.gateway.quickPickPh')"
             style="width: 100%"
             @change="applyPickedEndpoint"
           >
@@ -161,41 +175,41 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="showFounderScope" label="租户范围">
+        <el-form-item v-if="showFounderScope" :label="t('views.gateway.tenantScope')">
           <el-radio-group v-model="rlFormScope">
-            <el-radio-button label="GLOBAL">全局</el-radio-button>
-            <el-radio-button label="TENANT">指定租户</el-radio-button>
+            <el-radio-button label="GLOBAL">{{ t("views.gateway.scopeRadioGlobal") }}</el-radio-button>
+            <el-radio-button label="TENANT">{{ t("views.gateway.scopeRadioTenant") }}</el-radio-button>
           </el-radio-group>
           <el-select
             v-if="rlFormScope === 'TENANT'"
             v-model="rlFormTenantId"
             filterable
-            placeholder="选择租户"
+            :placeholder="t('views.gateway.selectTenant')"
             style="width: 100%; margin-top: 8px"
           >
-            <el-option v-for="t in tenantOptions" :key="t.id" :label="tenantOptionLabel(t)" :value="t.id" />
+            <el-option v-for="row in tenantOptions" :key="row.id" :label="tenantOptionLabel(row)" :value="row.id" />
           </el-select>
-          <div class="hint">全局规则对所有租户上下文生效；租户级仅匹配对应租户请求。</div>
+          <div class="hint">{{ t("views.gateway.tenantScopeHint") }}</div>
         </el-form-item>
-        <el-form-item label="路径模式" required>
-          <el-input v-model="rlForm.pathPattern" placeholder="如 /api/v1/admin/users/**" clearable />
+        <el-form-item :label="t('views.gateway.labelPathPattern')" required>
+          <el-input v-model="rlForm.pathPattern" :placeholder="t('views.gateway.pathPh')" clearable />
         </el-form-item>
-        <el-form-item label="HTTP 方法">
-          <el-input v-model="rlForm.httpMethod" placeholder="* 或 GET / POST" clearable />
+        <el-form-item :label="t('views.gateway.labelHttpMethod')">
+          <el-input v-model="rlForm.httpMethod" :placeholder="t('views.gateway.methodPh')" clearable />
         </el-form-item>
-        <el-form-item label="每分钟请求数">
+        <el-form-item :label="t('views.gateway.rpm')">
           <el-input-number v-model="rlForm.requestsPerMinute" :min="1" :max="1000000" controls-position="right" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="启用">
-          <el-switch v-model="rlForm.enabledOn" active-text="是" inactive-text="否" />
+        <el-form-item :label="t('views.gateway.labelEnabled')">
+          <el-switch v-model="rlForm.enabledOn" :active-text="t('views.gateway.yes')" :inactive-text="t('views.gateway.no')" />
         </el-form-item>
-        <el-form-item label="说明">
+        <el-form-item :label="t('views.gateway.labelRemark')">
           <el-input v-model="rlForm.remark" type="textarea" :rows="2" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="rlDlg = false">取消</el-button>
-        <el-button type="primary" :loading="rlSaving" @click="submitLimit">保存</el-button>
+        <el-button @click="rlDlg = false">{{ t("views.gateway.cancel") }}</el-button>
+        <el-button type="primary" :loading="rlSaving" @click="submitLimit">{{ t("views.gateway.save") }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -204,6 +218,7 @@
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import * as epApi from "@/api/gatewayApiEndpoints";
 import * as gwApi from "@/api/gatewayRateLimits";
 import { AI_ADMIN_ACCESS_TOKEN_KEY } from "@/plugins/http";
@@ -212,6 +227,8 @@ import { readJwtTid, readJwtTmr } from "@/utils/jwtSubject";
 import { apiRequestErrorMessage } from "@/utils/apiRequestErrorMessage";
 import type { TenantRow } from "@/api/tenants";
 import { formatTenantNameCode, formatTenantRowOptionLabel } from "@/utils/adminListDisplay";
+
+const { t } = useI18n();
 
 const activeTab = ref<"endpoints" | "limits">("endpoints");
 
@@ -273,10 +290,10 @@ function tenantOptionLabel(t: TenantRow): string {
 }
 
 function formatRateLimitTenantCell(tenantId: number | null | undefined): string {
-  if (tenantId == null) return "全局";
-  const t = tenantOptions.value.find((o) => o.id === tenantId);
-  if (t) return formatTenantNameCode({ tenantName: t.name, tenantCode: t.code });
-  return "—";
+  if (tenantId == null) return t("views.gateway.tenantGlobal");
+  const row = tenantOptions.value.find((o) => o.id === tenantId);
+  if (row) return formatTenantNameCode({ tenantName: row.name, tenantCode: row.code });
+  return t("common.dash");
 }
 
 function rateListParams(): gwApi.RateLimitListParams | undefined {
@@ -293,7 +310,7 @@ async function loadEndpoints() {
     epRows.value = data.records ?? [];
     epTotal.value = data.total ?? 0;
   } catch (e: unknown) {
-    ElMessage.error(apiRequestErrorMessage(e, "加载接口目录失败"));
+    ElMessage.error(apiRequestErrorMessage(e, t("views.gateway.loadEndpointsFailed")));
   } finally {
     epLoading.value = false;
   }
@@ -324,7 +341,7 @@ async function loadRateLimits() {
     rlRows.value = data.records ?? [];
     rlTotal.value = data.total ?? 0;
   } catch (e: unknown) {
-    ElMessage.error(apiRequestErrorMessage(e, "加载限流规则失败"));
+    ElMessage.error(apiRequestErrorMessage(e, t("views.gateway.loadLimitsFailed")));
   } finally {
     rlLoading.value = false;
   }
@@ -391,7 +408,7 @@ async function submitEndpoint() {
         enabled: epForm.enabledOn ? "ON" : "OFF",
         remark: epForm.remark || undefined,
       });
-      ElMessage.success("已创建");
+      ElMessage.success(t("views.gateway.created"));
     } else {
       await epApi.updateApiEndpoint(epEditId.value, {
         displayName: epForm.displayName.trim(),
@@ -401,13 +418,13 @@ async function submitEndpoint() {
         enabled: epForm.enabledOn ? "ON" : "OFF",
         remark: epForm.remark,
       });
-      ElMessage.success("已保存");
+      ElMessage.success(t("views.gateway.saved"));
     }
     epDlg.value = false;
     await loadEndpoints();
     await loadPicker();
   } catch (e: unknown) {
-    ElMessage.error(apiRequestErrorMessage(e, "保存失败"));
+    ElMessage.error(apiRequestErrorMessage(e, t("views.gateway.saveFailed")));
   } finally {
     epSaving.value = false;
   }
@@ -415,14 +432,16 @@ async function submitEndpoint() {
 
 async function onEndpointDelete(row: epApi.ApiEndpointRow) {
   try {
-    await ElMessageBox.confirm(`确定删除接口「${row.displayName}」?`, "确认", { type: "warning" });
+    await ElMessageBox.confirm(t("views.gateway.deleteEndpointConfirm", { name: row.displayName }), t("views.gateway.confirm"), {
+      type: "warning",
+    });
     await epApi.deleteApiEndpoint(row.id);
     await loadEndpoints();
     await loadPicker();
-    ElMessage.success("已删除");
+    ElMessage.success(t("views.gateway.deleted"));
   } catch (e: unknown) {
     if (e !== "cancel") {
-      ElMessage.error(apiRequestErrorMessage(e, "删除失败"));
+      ElMessage.error(apiRequestErrorMessage(e, t("views.gateway.deleteFailed")));
     }
   }
 }
@@ -500,11 +519,11 @@ async function submitLimit() {
   rlSaving.value = true;
   try {
     if (showFounderScope.value && rlFormScope.value === "TENANT" && rlFormTenantId.value == null) {
-      ElMessage.warning("请选择租户");
+      ElMessage.warning(t("views.gateway.pickTenantWarning"));
       return;
     }
     if (!rlForm.pathPattern.trim()) {
-      ElMessage.warning("请填写路径模式");
+      ElMessage.warning(t("views.gateway.fillPathWarning"));
       return;
     }
     const tid = resolveLimitFormTenantIdForSubmit();
@@ -517,7 +536,7 @@ async function submitLimit() {
         enabled: rlForm.enabledOn ? "ON" : "OFF",
         remark: rlForm.remark || undefined,
       });
-      ElMessage.success("已创建");
+      ElMessage.success(t("views.gateway.created"));
     } else {
       await gwApi.updateRateLimit(rlEditId.value, {
         tenantId: tid,
@@ -527,12 +546,12 @@ async function submitLimit() {
         enabled: rlForm.enabledOn ? "ON" : "OFF",
         remark: rlForm.remark,
       });
-      ElMessage.success("已保存");
+      ElMessage.success(t("views.gateway.saved"));
     }
     rlDlg.value = false;
     await loadRateLimits();
   } catch (e: unknown) {
-    ElMessage.error(apiRequestErrorMessage(e, "保存失败"));
+    ElMessage.error(apiRequestErrorMessage(e, t("views.gateway.saveFailed")));
   } finally {
     rlSaving.value = false;
   }
@@ -541,22 +560,22 @@ async function submitLimit() {
 async function onLimitDelete(row: gwApi.RateLimitRow) {
   try {
     await ElMessageBox.confirm(
-      `确定删除限流规则？\n${row.httpMethod} ${row.pathPattern}`,
-      "确认",
+      t("views.gateway.deleteLimitConfirm", { method: row.httpMethod, path: row.pathPattern }),
+      t("views.gateway.confirm"),
       { type: "warning" },
     );
     await gwApi.deleteRateLimit(row.id);
     await loadRateLimits();
-    ElMessage.success("已删除");
+    ElMessage.success(t("views.gateway.deleted"));
   } catch (e: unknown) {
     if (e !== "cancel") {
-      ElMessage.error(apiRequestErrorMessage(e, "删除失败"));
+      ElMessage.error(apiRequestErrorMessage(e, t("views.gateway.deleteFailed")));
     }
   }
 }
 
-watch(activeTab, (t) => {
-  if (t === "limits") void loadRateLimits();
+watch(activeTab, (tab) => {
+  if (tab === "limits") void loadRateLimits();
 });
 
 onMounted(() => {
@@ -586,7 +605,7 @@ onMounted(() => {
 <style scoped>
 .panel {
   border-radius: 12px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--el-border-color);
 }
 .hdr {
   display: flex;
@@ -596,12 +615,12 @@ onMounted(() => {
 .title {
   font-weight: 600;
   font-size: 15px;
-  color: #0f172a;
+  color: var(--el-text-color-primary);
 }
 .hdr-sub {
   margin: 0;
   font-size: 12px;
-  color: #64748b;
+  color: var(--el-text-color-secondary);
   line-height: 1.5;
 }
 .hub-tabs :deep(.el-tabs__header) {
@@ -616,11 +635,11 @@ onMounted(() => {
 }
 .limits-toolbar .lbl {
   font-size: 13px;
-  color: #475569;
+  color: var(--el-text-color-regular);
 }
 .muted {
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--el-text-color-placeholder);
   margin-right: auto;
 }
 .scope-alert {
@@ -633,7 +652,7 @@ onMounted(() => {
 }
 .hint {
   font-size: 12px;
-  color: #64748b;
+  color: var(--el-text-color-secondary);
   margin-top: 4px;
 }
 </style>

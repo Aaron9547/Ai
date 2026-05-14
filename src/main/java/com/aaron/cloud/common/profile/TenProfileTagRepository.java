@@ -15,6 +15,13 @@ public class TenProfileTagRepository {
 
     private final TenProfileTagMapper mapper;
 
+    public long countByTenantAndSubject(long tenantId, String subjectKey) {
+        return mapper.selectCount(
+                Wrappers.<TenProfileTag>lambdaQuery()
+                        .eq(TenProfileTag::getTenantId, tenantId)
+                        .eq(TenProfileTag::getSubjectKey, subjectKey));
+    }
+
     public Optional<TenProfileTag> find(long tenantId, String subjectKey, ProfileTagCode code) {
         return Optional.ofNullable(
                 mapper.selectOne(
@@ -38,5 +45,12 @@ public class TenProfileTagRepository {
 
     public int updateById(TenProfileTag row) {
         return mapper.updateById(row);
+    }
+
+    public int deleteByTenantAndSubjectKey(long tenantId, String subjectKey) {
+        return mapper.delete(
+                Wrappers.<TenProfileTag>lambdaQuery()
+                        .eq(TenProfileTag::getTenantId, tenantId)
+                        .eq(TenProfileTag::getSubjectKey, subjectKey));
     }
 }

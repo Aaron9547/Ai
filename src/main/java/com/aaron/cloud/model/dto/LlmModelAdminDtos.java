@@ -1,7 +1,6 @@
 package com.aaron.cloud.model.dto;
 
 import com.aaron.cloud.common.api.enums.LlmModelKind;
-import com.aaron.cloud.common.api.enums.LlmVectorBackend;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -19,8 +18,11 @@ public final class LlmModelAdminDtos {
         @NotBlank private String openaiModelId;
         /** 默认 {@link LlmModelKind#LANGUAGE}；非语言模型不出现在 C 端对话选择器。 */
         private LlmModelKind modelKind;
-        /** 仅 {@link LlmModelKind#VECTOR} 有效；省略时 {@link LlmVectorBackend#OPENAI_COMPATIBLE}。 */
-        private LlmVectorBackend vectorBackend;
+        /**
+         * 与 {@code llm_model.integration_backend}：{@link LlmModelKind#VECTOR} 为嵌入路径策略码；{@link LlmModelKind#WEB_SEARCH} 为联网检索实现码；省略时向量默认
+         * {@code OPENAI_COMPATIBLE}。
+         */
+        private String integrationBackend;
         /**
          * 非 {@link LlmModelKind#VECTOR} 时须非空；{@link LlmModelKind#VECTOR} 可与内网免鉴权嵌入服务留空（不落库密文）。
          */
@@ -45,8 +47,8 @@ public final class LlmModelAdminDtos {
         private String openaiBaseUrl;
         private String openaiModelId;
         private LlmModelKind modelKind;
-        /** 仅向量类型可改；切换嵌入路径策略 */
-        private LlmVectorBackend vectorBackend;
+        /** 按当前 {@code model_kind} 校验并更新 {@code integration_backend} */
+        private String integrationBackend;
         /** 仅轮换密钥时传入；非空则写入新密文 */
         private String apiKey;
         /** true：清除已保存的 API Key（如向量模型改为免鉴权） */
@@ -74,8 +76,11 @@ public final class LlmModelAdminDtos {
             String openaiBaseUrl,
             String openaiModelId,
             LlmModelKind modelKind,
-            /** 仅 {@link LlmModelKind#VECTOR} 有值。 */
-            LlmVectorBackend vectorBackend,
+            /**
+             * {@code llm_model.integration_backend}：VECTOR 为嵌入策略码；WEB_SEARCH 为联网实现码；其他类型为库内默认值（多为
+             * OPENAI_COMPATIBLE）。
+             */
+            String integrationBackend,
             boolean apiKeyConfigured,
             boolean allowAnonymous,
             int maxAttachments,

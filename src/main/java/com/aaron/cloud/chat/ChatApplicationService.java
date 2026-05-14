@@ -1,10 +1,19 @@
 package com.aaron.cloud.chat;
 
+import com.aaron.cloud.chat.dto.ChatAttachmentMessageView;
+import com.aaron.cloud.chat.dto.ChatIntentTurnHitView;
 import com.aaron.cloud.chat.dto.ChatWorkflowSegmentView;
 import com.aaron.cloud.chat.dto.ChatMessageView;
 import com.aaron.cloud.chat.intent.ChatIntentStreamRouter;
+import com.aaron.cloud.chat.intent.IntentKeywordMatchHit;
+import com.aaron.cloud.chat.intent.IntentSseRoute;
+import com.aaron.cloud.common.chat.entity.ChatIntentDefinition;
 import com.aaron.cloud.chat.dto.ChatRegenerateRequest;
 import com.aaron.cloud.chat.dto.ChatSendPayload;
+import com.aaron.cloud.chat.websearch.ChatWebSearchGroundingService;
+import com.aaron.cloud.chat.websearch.WebGroundingBundle;
+import com.aaron.cloud.chat.dto.WebSearchReferenceView;
+import com.aaron.cloud.chat.websearch.WebSearchReference;
 import com.aaron.cloud.chat.dto.PriorAssistantVersionView;
 import com.aaron.cloud.chat.dto.RagCitationView;
 import com.aaron.cloud.chat.dto.LlmModelOption;
@@ -28,6 +37,8 @@ import com.aaron.cloud.common.chat.entity.ChatAttachment;
 import com.aaron.cloud.common.chat.entity.ChatConversation;
 import com.aaron.cloud.common.chat.entity.ChatMessage;
 import com.aaron.cloud.common.chat.entity.LnkChatConversationMessage;
+import com.aaron.cloud.common.tenant.runtime.ChatPromptLimitsRuntime;
+import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService;
 import com.aaron.cloud.common.config.properties.AiProvidersProperties;
 import com.aaron.cloud.common.config.properties.AiRagProperties;
 import com.aaron.cloud.common.config.providers.VectorStoreProviderMode;
@@ -36,9 +47,14 @@ import com.aaron.cloud.common.tenant.SysTenantRepository;
 import com.aaron.cloud.common.security.AdminQueryTenantSupport;
 import com.aaron.cloud.common.security.SecUserAccountRepository;
 import com.aaron.cloud.common.security.SysTenantMemberRepository;
+import com.aaron.cloud.common.profile.ProfileSubjectKey;
+import com.aaron.cloud.common.profile.UserMemoryApplicationService;
 import com.aaron.cloud.common.profile.UserProfileApplicationService;
+import com.aaron.cloud.common.profile.memory.MemoryAbstractAsyncPublisher;
+import com.aaron.cloud.common.profile.memory.MemoryAbstractRefreshMessage;
 import com.aaron.cloud.common.rag.RagKnowledgeBaseRepository;
 import com.aaron.cloud.common.rag.RagRetrievalHitCounter;
+import com.aaron.cloud.common.util.TextClamp;
 import com.aaron.cloud.common.modelcfg.LlmModelKindPolicy;
 import com.aaron.cloud.common.modelcfg.SysLlmModelRepository;
 import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
@@ -94,6 +110,11 @@ public class ChatApplicationService {
     private final RagKnowledgeBaseRepository ragKnowledgeBaseRepository;
     private final AiProvidersProperties aiProvidersProperties;
     private final ChatIntentStreamRouter chatIntentStreamRouter;
+    private final UserMemoryApplicationService userMemoryApplicationService;
+    private final MemoryAbstractAsyncPublisher memoryAbstractAsyncPublisher;
+    private final TenantRuntimeSettingApplicationService tenantRuntimeSettingApplicationService;
+    private final ChatWebSearchGroundingService chatWebSearchGroundingService;
+    private final ChatTurnDigestApplicationService chatTurnDigestApplicationService;
 
     public ChatConversation createConversation(String title) {
         var snap = TenantContextHolder.require();
@@ -104,6 +125,25 @@ public class ChatApplicationService {
         c.setTitle(title == null || title.isBlank() ? "新会话" : title);
         c.setStatus(ConversationRecordStatus.ACTIVE);
         conversationRepository.insert(c);
+        if (tenantRuntimeSettingApplicationService.memoryPolicy(snap.getTenantId()).enqueueAbstractOnConversationCreate()) {
+            String sk = ProfileSubjectKey.fromSnapshot(snap);
+            if (sk != null) {
+                llmModelRepository
+                        .listForCatalog(snap.getTenantId(), snap.getUserId() == null)
+                        .stream()
+                        .findFirst()
+                        .map(SysLlmModel::getAlias)
+                        .filter(a -> a != null && !a.isBlank() && !"mock".equalsIgnoreCase(a.trim()))
+                        .ifPresent(
+                                alias ->
+                                        memoryAbstractAsyncPublisher.publish(
+                                                new MemoryAbstractRefreshMessage(
+                                                        snap.getTenantId(),
+                                                        sk,
+                                                        alias.trim(),
+                                                        "conversation_create")));
+            }
+        }
         return c;
     }
 
@@ -220,9 +260,20 @@ public class ChatApplicationService {
         if (ids.isEmpty()) {
             return List.of();
         }
-        return messageRepository.listByTenantAndIdsInOrder(tenantId, ids).stream()
-                .map(this::toChatMessageView)
-                .toList();
+        List<ChatMessage> rows = messageRepository.listByTenantAndIdsInOrder(tenantId, ids);
+        LinkedHashSet<Long> allAttIds = new LinkedHashSet<>();
+        for (ChatMessage m : rows) {
+            if (m.getRole() == ChatMessageRole.USER) {
+                allAttIds.addAll(parseAttachmentIdsFromUserMeta(m.getMetaJson()));
+            }
+        }
+        Map<Long, ChatAttachment> attById = new HashMap<>();
+        if (!allAttIds.isEmpty()) {
+            for (ChatAttachment a : attachmentRepository.listByIds(tenantId, conversationId, allAttIds)) {
+                attById.put(a.getId(), a);
+            }
+        }
+        return rows.stream().map(m -> toChatMessageView(m, attById)).toList();
     }
 
     public List<LlmModelOption> listModelsForChatPicker() {
@@ -242,8 +293,15 @@ public class ChatApplicationService {
         return out;
     }
 
+    /** C 端是否展示「联网」开关：租户存在至少一条启用的 {@code WEB_SEARCH} 模型。 */
+    public boolean isWebSearchAvailableForCurrentTenant() {
+        var snap = TenantContextHolder.require();
+        return llmModelRepository.hasEnabledWebSearchModel(snap.getTenantId());
+    }
+
     public SseEmitter streamUserMessage(long conversationId, ChatSendPayload payload) {
         var snap = TenantContextHolder.require();
+        long pipelineT0 = System.currentTimeMillis();
         var convOpt = conversationRepository.findById(conversationId, snap.getTenantId());
         if (convOpt.isEmpty()) {
             throw new IllegalArgumentException("conversation not found");
@@ -273,6 +331,21 @@ public class ChatApplicationService {
             modelCfg = null;
         }
 
+        if (payload.isWebSearchEnabled()) {
+            if (!llmModelRepository.hasEnabledWebSearchModel(snap.getTenantId())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "租户未配置启用的联网搜索模型，无法开启联网");
+            }
+            SysLlmModel webRel =
+                    llmModelRepository
+                            .pickDefaultWebSearchModel(snap.getTenantId())
+                            .orElseThrow(
+                                    () ->
+                                            new ResponseStatusException(
+                                                    HttpStatus.BAD_REQUEST,
+                                                    "租户未配置启用的联网搜索模型，无法开启联网"));
+            llmTokenQuotaCoordinator.assertQuotaAllowsSend(webRel);
+        }
+
         List<Long> attIds = payload.getAttachmentIds() == null ? List.of() : payload.getAttachmentIds();
         if (attIds.size() > maxAttachmentsAllowed) {
             throw new IllegalArgumentException("附件数量超过该模型允许上限：" + maxAttachmentsAllowed);
@@ -284,6 +357,15 @@ public class ChatApplicationService {
 
         String augmentedUserText = buildUserMessageWithAttachments(payload.getContent(), attachments);
 
+        log.info(
+                "[对话阶段] phase=preflightDone tenantId={} conversationId={} elapsedMs={} mock={} webSearch={} attachCount={}",
+                snap.getTenantId(),
+                conversationId,
+                millisSince(pipelineT0),
+                isMock,
+                payload.isWebSearchEnabled(),
+                attachments.size());
+
         var userMsg = new ChatMessage();
         userMsg.setTenantId(snap.getTenantId());
         userMsg.setRole(ChatMessageRole.USER);
@@ -291,23 +373,74 @@ public class ChatApplicationService {
         userMsg.setMetaJson(buildUserMetaJson(payload, attIds));
         messageRepository.insert(userMsg);
         linkMessage(conversationId, userMsg.getId(), snap.getTenantId());
-        maybeRenameConversationFromFirstUserMessage(
-                convOpt.get(), conversationId, payload.getContent());
 
-        userProfileApplicationService.ingestAfterUserUtterance(snap, payload.getContent());
+        log.info(
+                "[对话阶段] phase=userMessageLinked tenantId={} conversationId={} elapsedMs={} userMsgId={}",
+                snap.getTenantId(),
+                conversationId,
+                millisSince(pipelineT0),
+                userMsg.getId());
 
-        var intentEmitter = chatIntentStreamRouter.maybeRouteIntentStream(conversationId, snap, payload, attachments);
-        if (intentEmitter.isPresent()) {
-            return intentEmitter.get();
+        // 画像/记忆写入含 Milvus 向量嵌入等 IO，同步会阻塞意图路由与主链首包；改为虚拟线程后台执行。
+        var snapForIngest = snap;
+        long convIdForIngest = conversationId;
+        String utteranceForIngest = payload.getContent();
+        String modelAliasForIngest = payload.getModelAlias();
+        Thread.startVirtualThread(
+                () -> {
+                    try {
+                        userProfileApplicationService.ingestAfterUserUtterance(
+                                snapForIngest, utteranceForIngest, convIdForIngest, modelAliasForIngest);
+                    } catch (Exception ex) {
+                        log.warn(
+                                "async profile/memory ingest failed tenantId={} conversationId={}",
+                                snapForIngest.getTenantId(),
+                                convIdForIngest,
+                                ex);
+                    }
+                });
+
+        Optional<IntentSseRoute> intentRoute =
+                chatIntentStreamRouter.maybeRouteIntentStream(conversationId, snap, payload, attachments);
+        log.info(
+                "[对话阶段] phase=intentRouterDone tenantId={} conversationId={} elapsedMs={} intentSseHit={}",
+                snap.getTenantId(),
+                conversationId,
+                millisSince(pipelineT0),
+                intentRoute.isPresent());
+        if (intentRoute.isPresent()) {
+            IntentSseRoute r = intentRoute.get();
+            mergeIntentHitIntoUserMessageMeta(userMsg.getId(), snap.getTenantId(), r.definition(), r.keywordHit());
+            log.info(
+                    "[意图链路] 已返回意图 SSE，本请求不再进入大模型主链 conversationId={} tenantId={} intentCode={} matchSource={}",
+                    conversationId,
+                    snap.getTenantId(),
+                    r.definition().getCode(),
+                    r.keywordHit().matchSource());
+            return r.emitter();
         }
 
+        log.info(
+                "[意图链路] 未走意图 SSE，进入大模型主链 conversationId={} tenantId={} messagePreview={}",
+                conversationId,
+                snap.getTenantId(),
+                intentChainMessagePreview(payload.getContent()));
+        log.info(
+                "[对话阶段] phase=enteringOpenAssistant tenantId={} conversationId={} elapsedMsSinceRequest={}",
+                snap.getTenantId(),
+                conversationId,
+                millisSince(pipelineT0));
         return openAssistantSseStream(
-                conversationId, snap, payload, augmentedUserText, modelCfg, isMock, attachments, null);
+                conversationId, snap, payload, augmentedUserText, modelCfg, isMock, attachments, userMsg.getId(), null);
     }
 
     /**
      * 自意图路由组装 turns、调用模型并以 SSE 下发，最后落库助手消息（调用方已插入 user 行或重试场景下不再插入 user）。
      *
+     * <p>在首条 system 之后注入本会话已链接的 user/assistant 历史（不含本轮 user；本轮正文为 {@code augmentedUserText}），条数与字数见
+     * {@link TenantRuntimeSettingKey#CHAT_PROMPT_LIMITS_JSON}。命中意图 SSE 走外部长链（如 Coze）时不经本方法。
+     *
+     * @param pairedUserMessageId 本轮配对的 user 消息 id（非 null 且开启联网时，将 {@code webSearchReferences} 同步写入该 user 行 meta，便于对话记录按轮次留存）
      * @param priorAssistantVersions 非 null 且非空时写入助手 meta {@code priorVersions}（重新生成链）
      */
     private SseEmitter openAssistantSseStream(
@@ -318,30 +451,80 @@ public class ChatApplicationService {
             SysLlmModel modelCfg,
             boolean isMock,
             List<ChatAttachment> attachments,
+            Long pairedUserMessageId,
             ArrayNode priorAssistantVersions) {
+        long openT0 = System.currentTimeMillis();
+        log.info(
+                "[对话阶段] phase=openAssistantEnter tenantId={} conversationId={} elapsedMs=0 mock={}",
+                snap.getTenantId(),
+                conversationId,
+                isMock);
         // 未接 Milvus（local 占位）时：对话侧等同无 RAG，不调检索、不注入片段，用户端无报错。
         // 仅拉取 rag_knowledge_base.chat_retrieval_enabled=ON 的知识库；无开启库时不做 RAG 检索。
         final List<Long> chatRagKbIds =
                 aiProvidersProperties.resolvedVectorStore() == VectorStoreProviderMode.milvus
                         ? ragKnowledgeBaseRepository.listIdsWithChatRetrievalEnabled(snap.getTenantId())
                         : List.of();
+        log.info(
+                "[对话阶段] phase=ragKbListLoaded tenantId={} conversationId={} elapsedMs={} kbCount={} vectorStore={}",
+                snap.getTenantId(),
+                conversationId,
+                millisSince(openT0),
+                chatRagKbIds.size(),
+                aiProvidersProperties.resolvedVectorStore());
         IntentRoute baseIntent = chatRagKbIds.isEmpty() ? IntentRoute.CHAT_ONLY : IntentRoute.RAG;
         String ragLexicalQuery = buildRagLexicalSearchQuery(payload, augmentedUserText);
         IntentRoute routeIntent =
                 baseIntent == IntentRoute.RAG && ragLexicalQuery.isBlank()
                         ? IntentRoute.CHAT_ONLY
                         : baseIntent;
+        log.info(
+                "[对话阶段] phase=ragLexicalReady tenantId={} conversationId={} elapsedMs={} baseIntent={} routeIntent={} lexicalChars={}",
+                snap.getTenantId(),
+                conversationId,
+                millisSince(openT0),
+                baseIntent,
+                routeIntent,
+                ragLexicalQuery.length());
         List<RagCitationHit> ragCitationHits = List.of();
         List<String> ragSnippets = List.of();
         if (routeIntent == IntentRoute.RAG) {
+            log.info(
+                    "[对话阶段] phase=ragCitationSearchStart tenantId={} conversationId={} elapsedMs={} topK={}",
+                    snap.getTenantId(),
+                    conversationId,
+                    millisSince(openT0),
+                    3);
+            long tCit = System.currentTimeMillis();
             ragCitationHits =
                     List.copyOf(
                             ragQueryPort.searchCitationHitsAcrossKnowledgeBases(
                                     snap.getTenantId(), chatRagKbIds, ragLexicalQuery, 3));
+            log.info(
+                    "[对话阶段] phase=ragCitationSearchDone tenantId={} conversationId={} elapsedMs={} stepMs={} hitCount={}",
+                    snap.getTenantId(),
+                    conversationId,
+                    millisSince(openT0),
+                    millisSince(tCit),
+                    ragCitationHits.size());
+            log.info(
+                    "[对话阶段] phase=ragSnippetSearchStart tenantId={} conversationId={} elapsedMs={}",
+                    snap.getTenantId(),
+                    conversationId,
+                    millisSince(openT0));
+            long tSnip = System.currentTimeMillis();
             ragSnippets =
-                    List.copyOf(
+                    clampRagSnippetsForPrompt(
+                            snap.getTenantId(),
                             ragQueryPort.searchSnippetsAcrossKnowledgeBases(
                                     snap.getTenantId(), chatRagKbIds, ragLexicalQuery, 3));
+            log.info(
+                    "[对话阶段] phase=ragSnippetSearchDone tenantId={} conversationId={} elapsedMs={} stepMs={} snippetCount={}",
+                    snap.getTenantId(),
+                    conversationId,
+                    millisSince(openT0),
+                    millisSince(tSnip),
+                    ragSnippets.size());
             // 向量阈值过滤或 ES 未命中后可能两侧皆空：本回合按纯对话编排，避免落库/展示无实质检索的「挂名引用」。
             if (ragCitationHits.isEmpty() && ragSnippets.isEmpty()) {
                 routeIntent = IntentRoute.CHAT_ONLY;
@@ -349,6 +532,14 @@ public class ChatApplicationService {
         }
         final IntentRoute intent = routeIntent;
         final List<RagCitationHit> ragHitsForStream = ragCitationHits;
+        log.info(
+                "[对话阶段] phase=ragRouteFinal tenantId={} conversationId={} elapsedMs={} intent={} citationHits={} snippets={}",
+                snap.getTenantId(),
+                conversationId,
+                millisSince(openT0),
+                intent,
+                ragCitationHits.size(),
+                ragSnippets.size());
         log.info(
                 "chatOpenStream start conversationId={} tenantId={} userId={} deviceIdPresent={} intent={} vectorStore={} retrievalMode={} chatRagKbCount={} userTextChars={} ragLexicalChars={} ragSnippetCount={} ragCitationCount={}",
                 conversationId,
@@ -365,13 +556,21 @@ public class ChatApplicationService {
                 ragCitationHits.size());
         List<ModelChatRequest.MessageTurn> turns = new ArrayList<>();
         // 画像为 ten_profile_tag 跨会话累计与最近摘要，非本会话消息列表；具体措辞见 UserProfileApplicationService.buildPromptAddendum
-        String profileAddendum = userProfileApplicationService.buildPromptAddendum(snap);
+        long tProfile = System.currentTimeMillis();
+        String profileAddendum = userProfileApplicationService.buildPromptAddendum(snap, augmentedUserText);
+        log.info(
+                "[对话阶段] phase=profileAddendumDone tenantId={} conversationId={} elapsedMs={} stepMs={} nonBlank={}",
+                snap.getTenantId(),
+                conversationId,
+                millisSince(openT0),
+                millisSince(tProfile),
+                !profileAddendum.isBlank());
         StringBuilder sys = new StringBuilder();
         if (!profileAddendum.isBlank()) {
-            sys.append("【用户画像（跨会话统计，非本会话消息条数）】\n").append(profileAddendum).append("\n\n");
+            sys.append("【画像·跨会话】\n").append(profileAddendum).append("\n\n");
         }
         if (intent == IntentRoute.RAG) {
-            sys.append("你是助手。可参考片段：");
+            sys.append("可参考知识片段：");
             for (String s : ragSnippets) {
                 sys.append("\n- ").append(s);
             }
@@ -386,6 +585,26 @@ public class ChatApplicationService {
             sysTurn.setContent(sys.toString());
             turns.add(sysTurn);
         }
+        ChatPromptLimitsRuntime promptLimits =
+                tenantRuntimeSettingApplicationService.chatPromptLimits(snap.getTenantId());
+        List<ModelChatRequest.MessageTurn> historyTurns =
+                buildPromptHistoryTurns(snap.getTenantId(), conversationId, pairedUserMessageId, promptLimits);
+        if (!historyTurns.isEmpty()) {
+            turns.addAll(historyTurns);
+        }
+        log.info(
+                "[对话阶段] phase=promptHistoryReady tenantId={} conversationId={} elapsedMs={} historyTurns={}",
+                snap.getTenantId(),
+                conversationId,
+                millisSince(openT0),
+                historyTurns.size());
+        final SysLlmModel webSearchModelForStream =
+                payload.isWebSearchEnabled()
+                        ? llmModelRepository
+                                .pickDefaultWebSearchModel(snap.getTenantId())
+                                .orElseThrow(() -> new IllegalStateException("联网搜索模型不可用"))
+                        : null;
+        final ArrayList<WebSearchReference> webSearchRefsForStream = new ArrayList<>();
         if (!attachments.isEmpty()) {
             var attSys = new ModelChatRequest.MessageTurn();
             attSys.setRole("system");
@@ -429,10 +648,52 @@ public class ChatApplicationService {
                     });
         }
 
+        final long openAssistantWallMs = openT0;
         Runnable run =
                 () -> {
                     try {
+                        log.info(
+                                "[对话阶段] phase=llmStreamThreadStart tenantId={} conversationId={} elapsedMsSinceOpenAssistant={}",
+                                snap.getTenantId(),
+                                conversationId,
+                                millisSince(openAssistantWallMs));
                         long streamStartedAt = System.currentTimeMillis();
+                        if (payload.isWebSearchEnabled() && webSearchModelForStream != null) {
+                            log.info(
+                                    "[对话阶段] phase=webSearchGroundingStart tenantId={} conversationId={} elapsedMsSinceOpenAssistant={}",
+                                    snap.getTenantId(),
+                                    conversationId,
+                                    millisSince(openAssistantWallMs));
+                            long tWeb = System.currentTimeMillis();
+                            WebGroundingBundle wb =
+                                    chatWebSearchGroundingService.groundMultiRoundsWithRaw(
+                                            snap,
+                                            webSearchModelForStream,
+                                            augmentedUserText,
+                                            conversationId,
+                                            cumulative ->
+                                                    sendSseWebSearchRefFrames(emitter, seq, cumulative));
+                            webSearchRefsForStream.clear();
+                            if (wb.references() != null) {
+                                webSearchRefsForStream.addAll(wb.references());
+                            }
+                            String webCtx = formatWebGroundingContent(wb, snap.getTenantId());
+                            log.info(
+                                    "[对话阶段] phase=webSearchGroundingDone tenantId={} conversationId={} elapsedMsSinceOpenAssistant={} stepMs={} refCount={} injected={}",
+                                    snap.getTenantId(),
+                                    conversationId,
+                                    millisSince(openAssistantWallMs),
+                                    millisSince(tWeb),
+                                    webSearchRefsForStream.size(),
+                                    webCtx != null && !webCtx.isBlank());
+                            if (webCtx != null && !webCtx.isBlank()) {
+                                var webSys = new ModelChatRequest.MessageTurn();
+                                webSys.setRole("system");
+                                webSys.setContent(webCtx);
+                                List<ModelChatRequest.MessageTurn> msgs = modelReq.getMessages();
+                                msgs.add(msgs.size() - 1, webSys);
+                            }
+                        }
                         sendSseRagDocTitleFrames(emitter, seq, ragHitsForStream);
                         modelInvokePort.streamCompletion(
                                 modelReq,
@@ -481,9 +742,14 @@ public class ChatApplicationService {
                                         reasoningBuf.toString(),
                                         usageRef.get(),
                                         priorAssistantVersions,
-                                        ragHitsForStream));
+                                        ragHitsForStream,
+                                        webSearchRefsForStream));
                         messageRepository.insert(asst);
                         linkMessage(conversationId, asst.getId(), snap.getTenantId());
+                        if (pairedUserMessageId != null && payload.isWebSearchEnabled()) {
+                            mergeWebSearchReferencesIntoUserMessageMeta(
+                                    pairedUserMessageId, snap.getTenantId(), webSearchRefsForStream);
+                        }
                         ragRetrievalHitCounter.recordHits(snap.getTenantId(), ragHitsForStream);
                         log.info(
                                 "chatOpenStream completed conversationId={} tenantId={} durationMs={} intent={} assistantChars={} usageTotalTokens={}",
@@ -494,6 +760,33 @@ public class ChatApplicationService {
                                 assistantBuf.length(),
                                 usageRef.get() != null ? usageRef.get().totalTokens() : 0);
                         emitter.complete();
+                        final String assistantTextForMemory = assistantBuf.toString();
+                        final String modelAliasForMemory = payload.getModelAlias().trim();
+                        final long assistantRowId = asst.getId();
+                        Thread.startVirtualThread(
+                                () -> {
+                                    try {
+                                        userMemoryApplicationService.afterAssistantUtterance(
+                                                snap,
+                                                assistantTextForMemory,
+                                                conversationId,
+                                                modelAliasForMemory);
+                                    } catch (Exception memEx) {
+                                        log.warn(
+                                                "afterAssistantUtterance failed conversationId={} tenantId={}",
+                                                conversationId,
+                                                snap.getTenantId(),
+                                                memEx);
+                                    }
+                                    chatTurnDigestApplicationService.scheduleTurnDigest(
+                                            snap,
+                                            conversationId,
+                                            assistantRowId,
+                                            payload.getContent(),
+                                            assistantTextForMemory,
+                                            modelAliasForMemory,
+                                            isMock);
+                                });
                     } catch (Exception e) {
                         log.error(
                                 "stream completion failed conversationId={} tenantId={} userId={} modelAlias={} mock={} llmModelId={} intent={} thinking={} msgTurns={} userTextChars={}",
@@ -588,6 +881,21 @@ public class ChatApplicationService {
             modelCfg = null;
         }
 
+        if (payload.isWebSearchEnabled()) {
+            if (!llmModelRepository.hasEnabledWebSearchModel(snap.getTenantId())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "租户未配置启用的联网搜索模型，无法开启联网");
+            }
+            SysLlmModel webRel =
+                    llmModelRepository
+                            .pickDefaultWebSearchModel(snap.getTenantId())
+                            .orElseThrow(
+                                    () ->
+                                            new ResponseStatusException(
+                                                    HttpStatus.BAD_REQUEST,
+                                                    "租户未配置启用的联网搜索模型，无法开启联网"));
+            llmTokenQuotaCoordinator.assertQuotaAllowsSend(webRel);
+        }
+
         List<Long> attIds = payload.getAttachmentIds() == null ? List.of() : payload.getAttachmentIds();
         if (attIds.size() > maxAttachmentsAllowed) {
             throw new IllegalArgumentException("附件数量超过该模型允许上限：" + maxAttachmentsAllowed);
@@ -603,7 +911,15 @@ public class ChatApplicationService {
         messageRepository.deleteById(assistantMessageId, snap.getTenantId());
 
         return openAssistantSseStream(
-                conversationId, snap, payload, augmentedUserText, modelCfg, isMock, attachments, priorChain);
+                conversationId,
+                snap,
+                payload,
+                augmentedUserText,
+                modelCfg,
+                isMock,
+                attachments,
+                userMsgId,
+                priorChain);
     }
 
     private static void applyRegenerateOverrides(ChatSendPayload payload, ChatRegenerateRequest regenerateOpts) {
@@ -615,6 +931,9 @@ public class ChatApplicationService {
         }
         if (regenerateOpts.getThinkingEnabled() != null) {
             payload.setThinkingEnabled(Boolean.TRUE.equals(regenerateOpts.getThinkingEnabled()));
+        }
+        if (regenerateOpts.getWebSearchEnabled() != null) {
+            payload.setWebSearchEnabled(Boolean.TRUE.equals(regenerateOpts.getWebSearchEnabled()));
         }
     }
 
@@ -654,6 +973,9 @@ public class ChatApplicationService {
                 if (root.has("ragCitations") && root.get("ragCitations").isArray()) {
                     snap.set("ragCitations", root.get("ragCitations").deepCopy());
                 }
+                if (root.has("webSearchReferences") && root.get("webSearchReferences").isArray()) {
+                    snap.set("webSearchReferences", root.get("webSearchReferences").deepCopy());
+                }
             } catch (Exception e) {
                 log.warn("failed to parse assistant meta for prior snapshot messageId={}", asst.getId(), e);
             }
@@ -675,6 +997,7 @@ public class ChatApplicationService {
             }
             p.setModelAlias(n.path("modelAlias").asText());
             p.setThinkingEnabled(n.path("thinkingEnabled").asBoolean(false));
+            p.setWebSearchEnabled(n.path("webSearchEnabled").asBoolean(false));
             List<Long> att = new ArrayList<>();
             if (n.has("attachmentIds") && n.get("attachmentIds").isArray()) {
                 for (JsonNode x : n.get("attachmentIds")) {
@@ -684,6 +1007,12 @@ public class ChatApplicationService {
                 }
             }
             p.setAttachmentIds(att);
+            if (n.has("intentFlowTicket") && n.get("intentFlowTicket").isTextual()) {
+                String t = n.get("intentFlowTicket").asText();
+                if (t != null && !t.isBlank()) {
+                    p.setIntentFlowTicket(t.trim());
+                }
+            }
             return p;
         } catch (IllegalArgumentException e) {
             throw e;
@@ -700,7 +1029,7 @@ public class ChatApplicationService {
             ChatSendPayload payload,
             ChatInputGuardService.InputGuardOutcome outcome) {
         SseEmitter emitter = new SseEmitter(120_000L);
-        String template = chatInputGuardService.blockedReplyTemplate();
+        String template = chatInputGuardService.blockedReplyTemplate(snap.getTenantId());
         AtomicInteger seq = new AtomicInteger(0);
         Runnable run =
                 () -> {
@@ -720,6 +1049,24 @@ public class ChatApplicationService {
                         asst.setMetaJson(buildAssistantGuardTemplateMeta(payload.getModelAlias().trim()));
                         messageRepository.insert(asst);
                         linkMessage(conversationId, asst.getId(), snap.getTenantId());
+                        try {
+                            userMemoryApplicationService.afterAssistantUtterance(
+                                    snap, template, conversationId, payload.getModelAlias().trim());
+                        } catch (Exception memEx) {
+                            log.warn(
+                                    "afterAssistantUtterance (input guard) failed conversationId={} tenantId={}",
+                                    conversationId,
+                                    snap.getTenantId(),
+                                    memEx);
+                        }
+                        chatTurnDigestApplicationService.scheduleTurnDigest(
+                                snap,
+                                conversationId,
+                                asst.getId(),
+                                userMsg.getContent(),
+                                template,
+                                payload.getModelAlias().trim(),
+                                "mock".equalsIgnoreCase(payload.getModelAlias().trim()));
 
                         emitter.send(
                                 SseEmitter.event()
@@ -866,6 +1213,43 @@ public class ChatApplicationService {
         }
     }
 
+    /** 主模型流式 token 之前下发联网引用（JSON 在 {@code v} 内，形如 {@code {"references":[...]}}）。 */
+    private void sendSseWebSearchRefFrames(
+            SseEmitter emitter, AtomicInteger seq, List<WebSearchReference> refs) {
+        if (refs == null || refs.isEmpty()) {
+            return;
+        }
+        try {
+            ObjectNode root = objectMapper.createObjectNode();
+            ArrayNode arr = root.putArray("references");
+            for (WebSearchReference r : refs) {
+                WebSearchReferenceView v = r.toView();
+                ObjectNode o = arr.addObject();
+                o.put("title", v.title() != null ? v.title() : "");
+                o.put("url", v.url() != null ? v.url() : "");
+                o.put("summary", v.summary() != null ? v.summary() : "");
+                if (v.siteName() != null) {
+                    o.put("siteName", v.siteName());
+                }
+                if (v.logoUrl() != null) {
+                    o.put("logoUrl", v.logoUrl());
+                }
+                if (v.publishTime() != null) {
+                    o.put("publishTime", v.publishTime());
+                }
+                if (v.extraJson() != null) {
+                    o.put("extraJson", v.extraJson());
+                }
+            }
+            emitter.send(
+                    SseEmitter.event()
+                            .data(sseChunk("webSearchRefs", objectMapper.writeValueAsString(root)))
+                            .id(String.valueOf(seq.incrementAndGet())));
+        } catch (Exception ex) {
+            log.warn("sse webSearchRefs frame send failed seq={}", seq.get(), ex);
+        }
+    }
+
     private String sseChunk(String type, String value) throws JsonProcessingException {
         ObjectNode o = objectMapper.createObjectNode();
         o.put("type", type);
@@ -883,52 +1267,6 @@ public class ChatApplicationService {
             u.put("totalTokens", usage.totalTokens());
         }
         return objectMapper.writeValueAsString(o);
-    }
-
-    /**
-     * 浼氳瘽鏍囬浠嶄负榛樿鍗犱綅锛堝銆屾柊浼氳瘽銆嶃€屾柊瀵硅瘽 鈥︺€嶏級涓旀湰浼氳瘽浠呮湁鍒氭彃鍏ョ殑涓€鏉℃秷鎭椂锛岀敤鐢ㄦ埛棣栨潯闂鐢熸垚鏍囬銆?     */
-    private void maybeRenameConversationFromFirstUserMessage(
-            ChatConversation conv, long conversationId, String plainUserText) {
-        if (!isDefaultConversationTitle(conv.getTitle())) {
-            return;
-        }
-        int n = lnkRepository.listMessageIdsByConversationOrderByLinkIdAsc(conversationId).size();
-        if (n != 1) {
-            return;
-        }
-        String newTitle = titleFromFirstUserQuestion(plainUserText);
-        conversationRepository.updateTitle(conversationId, conv.getTenantId(), newTitle);
-    }
-
-    private static boolean isDefaultConversationTitle(String title) {
-        if (title == null) {
-            return true;
-        }
-        String t = title.trim();
-        if (t.isEmpty()) {
-            return true;
-        }
-        if ("新会话".equals(t)) {
-            return true;
-        }
-        return t.startsWith("新对话");
-    }
-
-    private static String titleFromFirstUserQuestion(String raw) {
-        if (raw == null) {
-            return "新会话";
-        }
-        String normalized = raw.replace('\r', '\n');
-        int nl = normalized.indexOf('\n');
-        String firstLine = (nl >= 0 ? normalized.substring(0, nl) : normalized).trim();
-        if (firstLine.isEmpty()) {
-            return "新会话";
-        }
-        int max = 120;
-        if (firstLine.length() > max) {
-            return firstLine.substring(0, max) + "…";
-        }
-        return firstLine;
     }
 
     private void assertConversationAccess(ChatConversation conv) {
@@ -952,22 +1290,76 @@ public class ChatApplicationService {
         }
     }
 
-    private ChatMessageView toChatMessageView(ChatMessage m) {
+    private List<Long> parseAttachmentIdsFromUserMeta(String metaJson) {
+        if (metaJson == null || metaJson.isBlank()) {
+            return List.of();
+        }
+        try {
+            JsonNode n = objectMapper.readTree(metaJson);
+            if (!n.has("attachmentIds") || !n.get("attachmentIds").isArray()) {
+                return List.of();
+            }
+            List<Long> out = new ArrayList<>();
+            for (JsonNode x : n.get("attachmentIds")) {
+                if (x != null && x.isIntegralNumber()) {
+                    out.add(x.longValue());
+                }
+            }
+            return out;
+        } catch (Exception ex) {
+            log.warn("parse attachmentIds from user meta failed", ex);
+            return List.of();
+        }
+    }
+
+    private List<ChatAttachmentMessageView> buildUserMessageAttachmentViews(
+            String metaJson, Map<Long, ChatAttachment> attById) {
+        List<Long> ids = parseAttachmentIdsFromUserMeta(metaJson);
+        if (ids.isEmpty() || attById.isEmpty()) {
+            return List.of();
+        }
+        List<ChatAttachmentMessageView> out = new ArrayList<>();
+        for (Long id : ids) {
+            ChatAttachment a = attById.get(id);
+            if (a != null) {
+                out.add(new ChatAttachmentMessageView(a.getId(), a.getFileName(), a.getCharLength()));
+            }
+        }
+        return out;
+    }
+
+    private ChatMessageView toChatMessageView(ChatMessage m, Map<Long, ChatAttachment> attById) {
         String role =
                 switch (m.getRole()) {
                     case USER -> "user";
                     case ASSISTANT -> "assistant";
                     default -> "system";
                 };
+        ChatIntentTurnHitView intentTurnHit = null;
+        if (m.getMetaJson() != null && !m.getMetaJson().isBlank()) {
+            intentTurnHit = parseIntentTurnHitFromMeta(m.getMetaJson(), m.getId());
+        }
         String reasoning = null;
         Integer pt = null;
         Integer ct = null;
         Integer tt = null;
         String modelAlias = null;
         String userFeedback = null;
+        String contentSummary = null;
         List<PriorAssistantVersionView> priorVersions = null;
         List<RagCitationView> ragCitations = null;
         List<ChatWorkflowSegmentView> workflowSegments = null;
+        List<WebSearchReferenceView> webSearchReferences = null;
+        if (m.getRole() == ChatMessageRole.USER
+                && m.getMetaJson() != null
+                && !m.getMetaJson().isBlank()) {
+            try {
+                webSearchReferences =
+                        parseWebSearchReferencesFromRoot(objectMapper.readTree(m.getMetaJson()));
+            } catch (Exception ex) {
+                log.warn("user message meta parse failed messageId={}", m.getId(), ex);
+            }
+        }
         if (m.getRole() == ChatMessageRole.ASSISTANT
                 && m.getMetaJson() != null
                 && !m.getMetaJson().isBlank()) {
@@ -984,6 +1376,13 @@ public class ChatApplicationService {
                 }
                 if (root.has("modelAlias") && root.get("modelAlias").isTextual()) {
                     modelAlias = root.get("modelAlias").asText();
+                }
+                if (root.has(ChatTurnDigestApplicationService.META_CONTENT_SUMMARY)
+                        && root.get(ChatTurnDigestApplicationService.META_CONTENT_SUMMARY).isTextual()) {
+                    String cs = root.get(ChatTurnDigestApplicationService.META_CONTENT_SUMMARY).asText().trim();
+                    if (!cs.isEmpty()) {
+                        contentSummary = cs;
+                    }
                 }
                 if (root.has("userFeedback") && root.get("userFeedback").isTextual()) {
                     String uf = root.get("userFeedback").asText();
@@ -1045,10 +1444,15 @@ public class ChatApplicationService {
                         workflowSegments = List.copyOf(ws);
                     }
                 }
+                webSearchReferences = parseWebSearchReferencesFromRoot(root);
             } catch (Exception ex) {
                 log.warn("chat message meta parse failed messageId={}", m.getId(), ex);
             }
         }
+        List<ChatAttachmentMessageView> attachments =
+                m.getRole() == ChatMessageRole.USER
+                        ? buildUserMessageAttachmentViews(m.getMetaJson(), attById)
+                        : List.of();
         return new ChatMessageView(
                 m.getId(),
                 role,
@@ -1062,7 +1466,228 @@ public class ChatApplicationService {
                 userFeedback,
                 priorVersions,
                 ragCitations,
-                workflowSegments);
+                workflowSegments,
+                webSearchReferences,
+                contentSummary,
+                intentTurnHit,
+                attachments);
+    }
+
+    private static String metaTextOrNull(JsonNode c, String field) {
+        if (!c.has(field) || c.get(field).isNull()) {
+            return null;
+        }
+        JsonNode v = c.get(field);
+        if (!v.isTextual()) {
+            return null;
+        }
+        String t = v.asText().trim();
+        return t.isEmpty() ? null : t;
+    }
+
+    private List<WebSearchReferenceView> parseWebSearchReferencesFromRoot(JsonNode root) {
+        if (root == null
+                || !root.has("webSearchReferences")
+                || !root.get("webSearchReferences").isArray()) {
+            return null;
+        }
+        List<WebSearchReferenceView> wr = new ArrayList<>();
+        for (JsonNode c : root.get("webSearchReferences")) {
+            if (c == null || !c.isObject()) {
+                continue;
+            }
+            String summary = c.path("summary").asText("");
+            if (summary.isEmpty()) {
+                summary = c.path("snippet").asText("");
+            }
+            wr.add(
+                    new WebSearchReferenceView(
+                            c.path("title").asText(""),
+                            c.path("url").asText(""),
+                            summary,
+                            metaTextOrNull(c, "siteName"),
+                            metaTextOrNull(c, "logoUrl"),
+                            metaTextOrNull(c, "publishTime"),
+                            metaTextOrNull(c, "extraJson")));
+        }
+        return wr.isEmpty() ? null : List.copyOf(wr);
+    }
+
+    private void fillWebSearchReferencesArray(ArrayNode warr, List<WebSearchReference> refs) {
+        if (refs == null) {
+            return;
+        }
+        for (WebSearchReference r : refs) {
+            WebSearchReferenceView v = r.toView();
+            ObjectNode o = warr.addObject();
+            o.put("title", v.title() != null ? v.title() : "");
+            o.put("url", v.url() != null ? v.url() : "");
+            o.put("summary", v.summary() != null ? v.summary() : "");
+            if (v.siteName() != null) {
+                o.put("siteName", v.siteName());
+            }
+            if (v.logoUrl() != null) {
+                o.put("logoUrl", v.logoUrl());
+            }
+            if (v.publishTime() != null) {
+                o.put("publishTime", v.publishTime());
+            }
+            if (v.extraJson() != null) {
+                o.put("extraJson", v.extraJson());
+            }
+        }
+    }
+
+    private void mergeWebSearchReferencesIntoUserMessageMeta(
+            long userMessageId, long tenantId, List<WebSearchReference> refs) {
+        var opt = messageRepository.findById(userMessageId, tenantId);
+        if (opt.isEmpty() || opt.get().getRole() != ChatMessageRole.USER) {
+            return;
+        }
+        ChatMessage m = opt.get();
+        ObjectNode root;
+        try {
+            if (m.getMetaJson() != null && !m.getMetaJson().isBlank()) {
+                root = (ObjectNode) objectMapper.readTree(m.getMetaJson());
+            } else {
+                root = objectMapper.createObjectNode();
+            }
+        } catch (Exception e) {
+            log.warn(
+                    "merge web search user meta: reset meta tenantId={} messageId={}",
+                    tenantId,
+                    userMessageId,
+                    e);
+            root = objectMapper.createObjectNode();
+        }
+        try {
+            if (refs == null || refs.isEmpty()) {
+                root.remove("webSearchReferences");
+            } else {
+                ArrayNode warr = root.putArray("webSearchReferences");
+                fillWebSearchReferencesArray(warr, refs);
+            }
+            messageRepository.updateMetaJson(userMessageId, tenantId, objectMapper.writeValueAsString(root));
+        } catch (Exception e) {
+            log.error(
+                    "merge web search refs into user meta failed tenantId={} messageId={}",
+                    tenantId,
+                    userMessageId,
+                    e);
+        }
+    }
+
+    private ChatIntentTurnHitView parseIntentTurnHitFromMeta(String metaJson, long messageId) {
+        try {
+            JsonNode root = objectMapper.readTree(metaJson);
+            boolean routed = root.path("intentRouted").asBoolean(false);
+            boolean handled = root.path("intentHandled").asBoolean(false);
+            boolean hasFlowTicket =
+                    root.has("intentFlowTicket")
+                            && root.get("intentFlowTicket").isTextual()
+                            && !root.get("intentFlowTicket").asText().isBlank();
+            if (!routed && !handled && !hasFlowTicket) {
+                return null;
+            }
+            long intentId = root.has("intentId") ? root.get("intentId").asLong(0L) : 0L;
+            String code = root.path("intentCode").asText("");
+            Long kwId = null;
+            if (root.has("intentHitKeywordId") && root.get("intentHitKeywordId").isIntegralNumber()) {
+                kwId = root.get("intentHitKeywordId").asLong();
+            }
+            String phrase =
+                    root.has("intentHitPhrase") && root.get("intentHitPhrase").isTextual()
+                            ? root.get("intentHitPhrase").asText()
+                            : "";
+            String kk =
+                    root.has("intentHitKeywordKind") && root.get("intentHitKeywordKind").isTextual()
+                            ? root.get("intentHitKeywordKind").asText()
+                            : null;
+            String src =
+                    root.has("intentMatchSource") && root.get("intentMatchSource").isTextual()
+                            ? root.get("intentMatchSource").asText()
+                            : "";
+            String flowTicket =
+                    root.has("intentFlowTicket") && root.get("intentFlowTicket").isTextual()
+                            ? root.get("intentFlowTicket").asText()
+                            : null;
+            String flowEp =
+                    root.has("intentFlowEpisodeId") && root.get("intentFlowEpisodeId").isTextual()
+                            ? root.get("intentFlowEpisodeId").asText()
+                            : null;
+            String flowRound =
+                    root.has("intentFlowRound") && root.get("intentFlowRound").isTextual()
+                            ? root.get("intentFlowRound").asText()
+                            : null;
+            Integer flowSeq = null;
+            if (root.has("intentFlowRoundSeq") && root.get("intentFlowRoundSeq").isIntegralNumber()) {
+                flowSeq = root.get("intentFlowRoundSeq").asInt();
+            }
+            if (intentId <= 0 && code.isEmpty() && !hasFlowTicket) {
+                return null;
+            }
+            return new ChatIntentTurnHitView(intentId, code, kwId, phrase, kk, src, flowTicket, flowEp, flowRound, flowSeq);
+        } catch (Exception ex) {
+            log.warn("intent turn meta parse failed messageId={}", messageId, ex);
+            return null;
+        }
+    }
+
+    private void mergeIntentHitIntoUserMessageMeta(
+            long userMessageId, long tenantId, ChatIntentDefinition def, IntentKeywordMatchHit hit) {
+        var opt = messageRepository.findById(userMessageId, tenantId);
+        if (opt.isEmpty()) {
+            return;
+        }
+        ChatMessage m = opt.get();
+        ObjectNode root;
+        try {
+            if (m.getMetaJson() != null && !m.getMetaJson().isBlank()) {
+                root = (ObjectNode) objectMapper.readTree(m.getMetaJson());
+            } else {
+                root = objectMapper.createObjectNode();
+            }
+        } catch (Exception e) {
+            log.warn(
+                    "merge intent hit user meta: reset meta tenantId={} messageId={}",
+                    tenantId,
+                    userMessageId,
+                    e);
+            root = objectMapper.createObjectNode();
+        }
+        try {
+            root.put("intentRouted", true);
+            root.put("intentId", def.getId());
+            root.put("intentCode", def.getCode());
+            root.put("intentDisplayName", def.getDisplayName());
+            root.put("intentMatchSource", hit.matchSource().name());
+            if (hit.keywordId() != null) {
+                root.put("intentHitKeywordId", hit.keywordId());
+            }
+            root.put("intentHitPhrase", hit.matchedPhrase() == null ? "" : hit.matchedPhrase());
+            if (hit.keywordKind() != null) {
+                root.put("intentHitKeywordKind", hit.keywordKind().name());
+            }
+            if (hit.intentFlowTicket() != null) {
+                root.put("intentFlowTicket", hit.intentFlowTicket());
+            }
+            if (hit.intentFlowEpisodeId() != null) {
+                root.put("intentFlowEpisodeId", hit.intentFlowEpisodeId());
+            }
+            if (hit.intentFlowRound() != null) {
+                root.put("intentFlowRound", hit.intentFlowRound());
+            }
+            if (hit.intentFlowRoundSeq() != null) {
+                root.put("intentFlowRoundSeq", hit.intentFlowRoundSeq());
+            }
+            messageRepository.updateMetaJson(userMessageId, tenantId, objectMapper.writeValueAsString(root));
+        } catch (Exception e) {
+            log.error(
+                    "merge intent hit user meta failed tenantId={} messageId={}",
+                    tenantId,
+                    userMessageId,
+                    e);
+        }
     }
 
     private static PriorAssistantVersionView parsePriorAssistantVersionSnapshot(JsonNode x) {
@@ -1112,6 +1737,7 @@ public class ChatApplicationService {
             ObjectNode n = objectMapper.createObjectNode();
             n.put("modelAlias", payload.getModelAlias());
             n.put("thinkingEnabled", payload.isThinkingEnabled());
+            n.put("webSearchEnabled", payload.isWebSearchEnabled());
             n.putPOJO("attachmentIds", attIds);
             return objectMapper.writeValueAsString(n);
         } catch (Exception e) {
@@ -1125,7 +1751,8 @@ public class ChatApplicationService {
             String reasoning,
             ModelTokenUsage usage,
             ArrayNode priorAssistantVersions,
-            List<RagCitationHit> ragCitations) {
+            List<RagCitationHit> ragCitations,
+            List<WebSearchReference> webSearchReferences) {
         try {
             ObjectNode n = objectMapper.createObjectNode();
             n.put("modelAlias", modelAlias);
@@ -1154,9 +1781,115 @@ public class ChatApplicationService {
                     o.put("contentPreview", h.contentPreview() != null ? h.contentPreview() : "");
                 }
             }
+            if (webSearchReferences != null && !webSearchReferences.isEmpty()) {
+                ArrayNode warr = n.putArray("webSearchReferences");
+                fillWebSearchReferencesArray(warr, webSearchReferences);
+            }
             return objectMapper.writeValueAsString(n);
         } catch (Exception e) {
             throw new IllegalStateException(e);
+        }
+    }
+
+    /**
+     * 本会话短期记忆：当前 user 之前的已链接消息，按角色展开为模型 turns；条数与总长受 {@link ChatPromptLimitsRuntime} 约束。
+     */
+    private List<ModelChatRequest.MessageTurn> buildPromptHistoryTurns(
+            long tenantId,
+            long conversationId,
+            Long pairedUserMessageId,
+            ChatPromptLimitsRuntime lim) {
+        if (pairedUserMessageId == null) {
+            return List.of();
+        }
+        int maxMsgs = lim.resolvedHistoryMaxMessages();
+        if (maxMsgs <= 0) {
+            return List.of();
+        }
+        List<Long> linkIds = lnkRepository.listMessageIdsByConversationOrderByLinkIdAsc(conversationId);
+        if (linkIds.isEmpty()) {
+            return List.of();
+        }
+        if (!Objects.equals(linkIds.get(linkIds.size() - 1), pairedUserMessageId)) {
+            log.warn(
+                    "prompt history skipped: last linked message id {} != pairedUserMessageId {} conversationId={} tenantId={}",
+                    linkIds.get(linkIds.size() - 1),
+                    pairedUserMessageId,
+                    conversationId,
+                    tenantId);
+            return List.of();
+        }
+        if (linkIds.size() <= 1) {
+            return List.of();
+        }
+        List<Long> prefix = linkIds.subList(0, linkIds.size() - 1);
+        int from = Math.max(0, prefix.size() - maxMsgs);
+        List<Long> window = prefix.subList(from, prefix.size());
+        List<ChatMessage> rows = messageRepository.listByTenantAndIdsInOrder(tenantId, window);
+        int perCap = lim.resolvedHistoryMaxCharsPerMessage();
+        var out = new ArrayList<ModelChatRequest.MessageTurn>();
+        for (ChatMessage row : rows) {
+            if (row.getRole() != ChatMessageRole.USER && row.getRole() != ChatMessageRole.ASSISTANT) {
+                continue;
+            }
+            String raw =
+                    row.getRole() == ChatMessageRole.ASSISTANT
+                            ? assistantHistoryText(row)
+                            : (row.getContent() == null ? "" : row.getContent().trim());
+            if (raw.isEmpty()) {
+                continue;
+            }
+            String clipped = TextClamp.ellipsis(raw, perCap);
+            var t = new ModelChatRequest.MessageTurn();
+            t.setRole(row.getRole() == ChatMessageRole.USER ? "user" : "assistant");
+            t.setContent(clipped);
+            out.add(t);
+        }
+        trimHistoryTurnsToTotalCharBudget(out, lim.resolvedHistoryTotalMaxChars());
+        return List.copyOf(out);
+    }
+
+    /**
+     * 短期记忆：已落库的助手消息优先使用 {@code meta.contentSummary}，避免极长回复占满上下文。
+     */
+    private String assistantHistoryText(ChatMessage row) {
+        String sum = parseAssistantContentSummaryMeta(row.getMetaJson());
+        if (sum != null && !sum.isBlank()) {
+            return sum.trim();
+        }
+        return row.getContent() == null ? "" : row.getContent().trim();
+    }
+
+    private String parseAssistantContentSummaryMeta(String metaJson) {
+        if (metaJson == null || metaJson.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(metaJson);
+            JsonNode n = root.path(ChatTurnDigestApplicationService.META_CONTENT_SUMMARY);
+            if (n.isTextual()) {
+                String t = n.asText().trim();
+                return t.isEmpty() ? null : t;
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private static void trimHistoryTurnsToTotalCharBudget(List<ModelChatRequest.MessageTurn> turns, int totalMax) {
+        if (turns.isEmpty() || totalMax <= 0) {
+            return;
+        }
+        while (true) {
+            long sum = 0L;
+            for (ModelChatRequest.MessageTurn t : turns) {
+                String c = t.getContent();
+                sum += c == null ? 0 : c.length();
+            }
+            if (sum <= totalMax || turns.isEmpty()) {
+                break;
+            }
+            turns.remove(0);
         }
     }
 
@@ -1199,9 +1932,84 @@ public class ChatApplicationService {
         return "";
     }
 
+    private static long millisSince(long t0) {
+        return System.currentTimeMillis() - t0;
+    }
+
+    /** 意图链路日志：截取用户输入前 80 字（与 ly DialogueApiService、{@link ChatIntentStreamRouter} 一致）。 */
+    private static String intentChainMessagePreview(String message) {
+        if (message == null) {
+            return "";
+        }
+        String t = message.strip();
+        if (t.length() <= 80) {
+            return t;
+        }
+        return t.substring(0, 80) + "...";
+    }
+
+    private List<String> clampRagSnippetsForPrompt(long tenantId, List<String> raw) {
+        if (raw == null || raw.isEmpty()) {
+            return List.of();
+        }
+        ChatPromptLimitsRuntime lim = tenantRuntimeSettingApplicationService.chatPromptLimits(tenantId);
+        int n = Math.min(raw.size(), lim.resolvedRagMaxSnippets());
+        int cap = lim.resolvedRagSnippetMaxChars();
+        var out = new ArrayList<String>(n);
+        for (int i = 0; i < n; i++) {
+            out.add(TextClamp.ellipsis(raw.get(i), cap));
+        }
+        return List.copyOf(out);
+    }
+
+    private String formatWebGroundingContent(WebGroundingBundle wb, long tenantId) {
+        if (wb == null) {
+            return "";
+        }
+        ChatPromptLimitsRuntime limits = tenantRuntimeSettingApplicationService.chatPromptLimits(tenantId);
+        int sumCap = limits.resolvedWebSummaryMaxChars();
+        int refCap = limits.resolvedWebMaxReferences();
+        int snipCap = limits.resolvedWebReferenceSnippetMaxChars();
+        int urlCap = limits.resolvedWebReferenceUrlMaxChars();
+        int totalCap = limits.resolvedWebGroundingTotalMaxChars();
+
+        String sum = wb.summaryText() == null ? "" : wb.summaryText().trim();
+        StringBuilder sb = new StringBuilder();
+        if (!sum.isBlank()) {
+            sb.append("【网络检索摘要】\n").append(TextClamp.ellipsis(sum, sumCap));
+        }
+        if (wb.references() != null && !wb.references().isEmpty() && refCap > 0) {
+            if (!sb.isEmpty()) {
+                sb.append("\n\n");
+            }
+            sb.append("【引用】\n");
+            int i = 1;
+            for (WebSearchReference r : wb.references()) {
+                if (i > refCap) {
+                    break;
+                }
+                String title = r.title() == null ? "" : r.title().trim();
+                String url = r.url() == null ? "" : r.url().trim();
+                String snip = r.snippet() == null ? "" : r.snippet().trim();
+                title = TextClamp.ellipsis(title, 240);
+                url = TextClamp.ellipsis(url, urlCap);
+                snip = TextClamp.ellipsis(snip, snipCap);
+                sb.append(i++).append(". ").append(title.isBlank() ? url : title).append("\n");
+                if (!url.isBlank()) {
+                    sb.append("   URL: ").append(url).append("\n");
+                }
+                if (!snip.isBlank()) {
+                    sb.append("   ").append(snip).append("\n");
+                }
+            }
+        }
+        String built = sb.toString().trim();
+        return TextClamp.ellipsis(built, totalCap);
+    }
+
     /**
-     * 閲嶆柊鐢熸垚鍔╂墜鍥炲鏃讹紝鍙戠粰妯″瀷鐨?user 杞锛氬湪銆屾垜鐨勯棶棰樻槸锛氥€嶅悗鎺ョ敤鎴峰師濮嬭緭鍏ワ紝鍐嶆寜闇€鎷兼帴闄勪欢鎽樺綍锛堜笌
-     * {@link #buildUserMessageWithAttachments} 瑙勫垯涓€鑷达級銆備細璇濊〃涓敤鎴锋秷鎭鏂囦繚鎸佸師鏍枫€?     */
+     * 重新生成时发给模型的 user 正文：在「我的问题是：」前加重生成引导语，再按 {@link #buildUserMessageWithAttachments} 拼附件。
+     */
     private static String buildRegenerateUserPromptForModel(String rawUserQuestion, List<ChatAttachment> attachments) {
         String q = rawUserQuestion == null ? "" : rawUserQuestion.trim();
         String head =
