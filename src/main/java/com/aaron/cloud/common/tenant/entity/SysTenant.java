@@ -18,6 +18,16 @@ public class SysTenant {
 
     private String code;
     private String name;
+
+    /** 管理端侧栏 LOGO（HTTPS URL）；空则前端使用占位样式 */
+    private String adminLogoUrl;
+
+    /** 管理端主标题；空则回退 {@link #name} */
+    private String adminPortalTitle;
+
+    /** 管理端页脚纯文本；空则前端可隐藏 */
+    private String adminFooterText;
+
     private TenantStatus status;
 
     @TableField(fill = FieldFill.INSERT)

@@ -186,6 +186,15 @@ export type StreamPart =
   | { type: "webSearchRefs"; references: WebSearchRefItem[] }
   | { type: "workflowStage"; stage: WorkflowStagePayload }
   | { type: "inputBlocked"; reason?: string }
+  | {
+      type: "error";
+      code?: string;
+      message?: string;
+      httpStatus?: number;
+      retryAfterMs?: number;
+      kind?: string;
+      bodySnippet?: string;
+    }
   | { type: "end"; usage?: TokenUsageChunk };
 
 function parseSsePayload(raw: string): StreamPart | null {
@@ -197,9 +206,26 @@ function parseSsePayload(raw: string): StreamPart | null {
       v?: string;
       usage?: TokenUsageChunk;
       reason?: string;
+      code?: string;
+      message?: string;
+      httpStatus?: number;
+      retryAfterMs?: number;
+      kind?: string;
+      bodySnippet?: string;
     };
     if (o.type === "content" || o.type === "reasoning") {
       return { type: o.type, v: o.v };
+    }
+    if (o.type === "error") {
+      return {
+        type: "error",
+        code: typeof o.code === "string" ? o.code : undefined,
+        message: typeof o.message === "string" ? o.message : undefined,
+        httpStatus: typeof o.httpStatus === "number" ? o.httpStatus : undefined,
+        retryAfterMs: typeof o.retryAfterMs === "number" ? o.retryAfterMs : undefined,
+        kind: typeof o.kind === "string" ? o.kind : undefined,
+        bodySnippet: typeof o.bodySnippet === "string" ? o.bodySnippet : undefined,
+      };
     }
     if (o.type === "ragDoc") {
       try {

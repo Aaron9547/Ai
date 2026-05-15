@@ -29,6 +29,8 @@ import com.aaron.cloud.common.api.enums.LlmThinkingCapability;
 import com.aaron.cloud.common.api.dto.RagCitationHit;
 import com.aaron.cloud.common.api.ports.ModelInvokePort;
 import com.aaron.cloud.common.api.ports.RagQueryPort;
+import com.aaron.cloud.common.outbound.LlmOutboundException;
+import com.aaron.cloud.common.outbound.OutboundKind;
 import com.aaron.cloud.common.chat.ChatAttachmentRepository;
 import com.aaron.cloud.common.chat.ChatConversationRepository;
 import com.aaron.cloud.common.chat.ChatMessageRepository;
@@ -373,6 +375,8 @@ public class ChatApplicationService {
         userMsg.setMetaJson(buildUserMetaJson(payload, attIds));
         messageRepository.insert(userMsg);
         linkMessage(conversationId, userMsg.getId(), snap.getTenantId());
+        maybeSyncConversationTitleFromFirstUserUtterance(
+                snap.getTenantId(), conversationId, payload.getContent());
 
         log.info(
                 "[对话阶段] phase=userMessageLinked tenantId={} conversationId={} elapsedMs={} userMsgId={}",
@@ -624,6 +628,8 @@ public class ChatApplicationService {
         modelReq.setThinkingEnabled(!isMock && shouldStreamThinking(payload, modelCfg));
         modelReq.setMessages(turns);
 
+        modelReq.setResolvedLlmModelIdRef(new AtomicReference<>());
+
         AtomicReference<ModelTokenUsage> usageRef = new AtomicReference<>();
         if (!isMock && modelCfg != null) {
             modelReq.setStreamUsageConsumer(usageRef::set);
@@ -719,9 +725,20 @@ public class ChatApplicationService {
                                 });
                         long durationMs = System.currentTimeMillis() - streamStartedAt;
                         if (!isMock && modelCfg != null) {
+                            SysLlmModel billingCfg = modelCfg;
+                            var resolvedRef = modelReq.getResolvedLlmModelIdRef();
+                            if (resolvedRef != null) {
+                                Long rid = resolvedRef.get();
+                                if (rid != null && !rid.equals(billingCfg.getId())) {
+                                    billingCfg =
+                                            llmModelRepository
+                                                    .findById(snap.getTenantId(), rid)
+                                                    .orElse(billingCfg);
+                                }
+                            }
                             llmModelUsageRecorder.recordAfterLlmUsage(
                                     snap,
-                                    modelCfg,
+                                    billingCfg,
                                     payload.getModelAlias().trim(),
                                     conversationId,
                                     usageRef.get(),
@@ -807,10 +824,19 @@ public class ChatApplicationService {
                                 e.getMessage() == null || e.getMessage().isBlank()
                                         ? "模型调用失败"
                                         : e.getMessage();
+                        LlmOutboundException lo =
+                                toStreamOutboundException(e, hint, payload.getModelAlias().trim());
                         try {
                             emitter.send(
                                     SseEmitter.event()
-                                            .data(sseChunk("content", "\n\n（调用失败）" + hint))
+                                            .data(sseErrorPayload(lo))
+                                            .id(String.valueOf(seq.incrementAndGet())));
+                            emitter.send(
+                                    SseEmitter.event()
+                                            .data(
+                                                    sseChunk(
+                                                            "content",
+                                                            "\n\n（调用失败）" + shortUserFacingMessage(lo)))
                                             .id(String.valueOf(seq.incrementAndGet())));
                             emitter.send(
                                     SseEmitter.event()
@@ -1041,6 +1067,8 @@ public class ChatApplicationService {
                         userMsg.setMetaJson(buildBlockedUserMetaJson(payload, outcome));
                         messageRepository.insert(userMsg);
                         linkMessage(conversationId, userMsg.getId(), snap.getTenantId());
+                        maybeSyncConversationTitleFromFirstUserUtterance(
+                                snap.getTenantId(), conversationId, userMsg.getContent());
 
                         var asst = new ChatMessage();
                         asst.setTenantId(snap.getTenantId());
@@ -1267,6 +1295,61 @@ public class ChatApplicationService {
             u.put("totalTokens", usage.totalTokens());
         }
         return objectMapper.writeValueAsString(o);
+    }
+
+    private String sseErrorPayload(LlmOutboundException e) throws JsonProcessingException {
+        ObjectNode o = objectMapper.createObjectNode();
+        o.put("type", "error");
+        o.put("code", e.getCode());
+        String msg = e.getMessage();
+        o.put("message", msg != null && !msg.isBlank() ? msg : e.getCode());
+        if (e.getHttpStatus() != null) {
+            o.put("httpStatus", e.getHttpStatus());
+        }
+        if (e.getRetryAfterMs() != null) {
+            o.put("retryAfterMs", e.getRetryAfterMs());
+        }
+        if (e.getKind() != null) {
+            o.put("kind", e.getKind().name());
+        }
+        if (e.getBodySnippet() != null && !e.getBodySnippet().isBlank()) {
+            o.put("bodySnippet", e.getBodySnippet());
+        }
+        return objectMapper.writeValueAsString(o);
+    }
+
+    private static LlmOutboundException toStreamOutboundException(
+            Exception e, String hint, String modelAliasTrim) {
+        if (e instanceof LlmOutboundException lo) {
+            return lo;
+        }
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof LlmOutboundException lo) {
+                return lo;
+            }
+        }
+        if (e instanceof ResponseStatusException rse) {
+            int st = rse.getStatusCode().value();
+            String reason = rse.getReason();
+            return LlmOutboundException.upstreamHttp(
+                    OutboundKind.LLM_STREAM,
+                    st,
+                    reason != null && !reason.isBlank() ? reason : hint,
+                    null,
+                    modelAliasTrim,
+                    null);
+        }
+        return LlmOutboundException.wrap(
+                OutboundKind.LLM_STREAM, "STREAM_FAILED", hint, modelAliasTrim, e);
+    }
+
+    private static String shortUserFacingMessage(LlmOutboundException e) {
+        String m = e.getMessage();
+        if (m == null || m.isBlank()) {
+            m = e.getCode();
+        }
+        String t = m.replace('\n', ' ').trim();
+        return t.length() > 200 ? t.substring(0, 200) + "…" : t;
     }
 
     private void assertConversationAccess(ChatConversation conv) {
@@ -2052,7 +2135,58 @@ public class ChatApplicationService {
         return s.substring(0, max) + "\n…（已截断）";
     }
 
-    /** 鍏宠仈浼氳瘽涓庢秷鎭紱娴佸紡瀹屾垚鍦ㄨ櫄鎷熺嚎绋嬫墽琛岋紝椤绘樉寮忎紶鍏?tenantId锛堝嬁渚濊禆 {@link TenantContextHolder}锛夈€?*/
+    private static final int CONVERSATION_TITLE_FROM_USER_MAX = 36;
+
+    /**
+     * 会话内首条用户消息（当前链接后仅 1 条）且标题仍为占位时，立即用用户原文同步更新标题（首行 + 截断），不等待助手落库或
+     * digest LLM。
+     */
+    private void maybeSyncConversationTitleFromFirstUserUtterance(
+            long tenantId, long conversationId, String userPlainText) {
+        String raw = userPlainText == null ? "" : userPlainText.trim();
+        if (raw.isEmpty()) {
+            return;
+        }
+        List<Long> ids = lnkRepository.listMessageIdsByConversationOrderByLinkIdAsc(conversationId);
+        if (ids.size() != 1) {
+            return;
+        }
+        var convOpt = conversationRepository.findById(conversationId, tenantId);
+        if (convOpt.isEmpty() || !isPlaceholderConversationTitle(convOpt.get().getTitle())) {
+            return;
+        }
+        String title = conversationTitleFromUserUtterance(raw);
+        if (title == null || title.isBlank()) {
+            return;
+        }
+        conversationRepository.updateTitle(conversationId, tenantId, title);
+    }
+
+    private static boolean isPlaceholderConversationTitle(String title) {
+        if (title == null) {
+            return true;
+        }
+        String t = title.trim();
+        if (t.isEmpty()) {
+            return true;
+        }
+        if ("新会话".equals(t)) {
+            return true;
+        }
+        return t.startsWith("新对话");
+    }
+
+    private static String conversationTitleFromUserUtterance(String userContent) {
+        String normalized = userContent.replace('\r', '\n');
+        int nl = normalized.indexOf('\n');
+        String firstLine = (nl >= 0 ? normalized.substring(0, nl) : normalized).trim();
+        if (firstLine.isEmpty()) {
+            return null;
+        }
+        return TextClamp.ellipsis(firstLine, CONVERSATION_TITLE_FROM_USER_MAX);
+    }
+
+    /** 关联会话与消息；流式完成在虚拟线程执行，须显式传入 tenantId（勿依赖 {@link TenantContextHolder}）。 */
     private void linkMessage(long conversationId, long messageId, long tenantId) {
         var lnk = new LnkChatConversationMessage();
         lnk.setConversationId(conversationId);

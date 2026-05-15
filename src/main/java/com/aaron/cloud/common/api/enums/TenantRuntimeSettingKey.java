@@ -19,38 +19,6 @@ public enum TenantRuntimeSettingKey {
             SettingValueKind.BOOLEAN,
             "true",
             false),
-    /** Coze OpenAPI 域名，如 {@code https://api.coze.cn}；留空则运行时使用官方默认 */
-    TRAVEL_REIMBURSE_COZE_DOMAIN(
-            "TRAVEL_REIMBURSE_COZE_DOMAIN",
-            "出差报销 Coze 域名",
-            SettingValueKind.STRING,
-            "https://api.coze.cn",
-            false),
-    /** 文档解析工作流 PAT，Bearer */
-    TRAVEL_REIMBURSE_DOC_COZE_API_KEY(
-            "TRAVEL_REIMBURSE_DOC_COZE_API_KEY",
-            "文档解析工作流 API Key",
-            SettingValueKind.STRING,
-            "",
-            true),
-    TRAVEL_REIMBURSE_DOC_WORKFLOW_ID(
-            "TRAVEL_REIMBURSE_DOC_WORKFLOW_ID",
-            "文档解析工作流 ID",
-            SettingValueKind.STRING,
-            "",
-            false),
-    TRAVEL_REIMBURSE_PLAN_COZE_API_KEY(
-            "TRAVEL_REIMBURSE_PLAN_COZE_API_KEY",
-            "行程规划工作流 API Key",
-            SettingValueKind.STRING,
-            "",
-            true),
-    TRAVEL_REIMBURSE_PLAN_WORKFLOW_ID(
-            "TRAVEL_REIMBURSE_PLAN_WORKFLOW_ID",
-            "行程规划工作流 ID",
-            SettingValueKind.STRING,
-            "",
-            false),
     /**
      * 用户分层记忆写入 Milvus 时使用的嵌入模型：值为 {@code sys_llm_model.id}（须为 VECTOR、启用）；留空则退化为哈希占位向量。
      */
@@ -85,6 +53,16 @@ public enum TenantRuntimeSettingKey {
     CHAT_INPUT_GUARD_JSON(
             "CHAT_INPUT_GUARD_JSON",
             "输入护栏（JSON，{}=默认）",
+            SettingValueKind.STRING,
+            "{}",
+            false),
+    /**
+     * 出站超时、重试、退避、租户隔离等（JSON 对象；与 {@code ai.outbound} 进程基线深度合并；{@code circuitBreaker}
+     * 子树仅来自进程基线，租户 JSON 中同名键忽略）。
+     */
+    OUTBOUND_RESILIENCE_JSON(
+            "OUTBOUND_RESILIENCE_JSON",
+            "出站韧性（JSON，{}=仅基线）",
             SettingValueKind.STRING,
             "{}",
             false),
@@ -125,6 +103,22 @@ public enum TenantRuntimeSettingKey {
         }
         String t = raw.trim();
         return Arrays.stream(values()).filter(k -> k.storage.equalsIgnoreCase(t)).findFirst();
+    }
+
+    /**
+     * 不在管理端「系统参数（本租户）」列表展示；请在对应专页配置（如意图识别、租户外观与模型调用）。
+     */
+    public boolean excludedFromAdminRuntimeList() {
+        return switch (this) {
+            case OUTBOUND_RESILIENCE_JSON,
+                    MEMORY_EMBEDDING_VECTOR_MODEL_ID,
+                    CHAT_PROMPT_LIMITS_JSON,
+                    MEMORY_POLICY_JSON,
+                    CHAT_INPUT_GUARD_JSON,
+                    WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT,
+                    WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON -> true;
+            default -> false;
+        };
     }
 
     public enum SettingValueKind {

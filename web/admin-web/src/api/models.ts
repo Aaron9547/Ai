@@ -85,6 +85,8 @@ export interface LlmModelAdminView {
   tokensUsed: number;
   /** 本地部署：向量模型为 true 时经 Feign 调 RAG 网关 */
   localDeploy: boolean;
+  /** 仅 LANGUAGE：主备链备用模型别名 */
+  fallbackModelAlias?: string | null;
 }
 
 export interface CreateLlmModelBody {
@@ -107,6 +109,8 @@ export interface CreateLlmModelBody {
   tokenQuotaTotal?: number | null;
   /** 默认 false */
   localDeploy?: boolean;
+  /** 仅 LANGUAGE：主备备用别名；可空 */
+  fallbackModelAlias?: string | null;
 }
 
 /** 须传入当前界面语言；协商参数见 {@link adminUiNegotiationHeaders}。 */
@@ -140,6 +144,7 @@ export async function updateLlmModel(
     tokenQuotaUnlimited?: boolean;
     tokenQuotaTotal?: number | null;
     localDeploy?: boolean;
+    fallbackModelAlias?: string | null;
   },
 ): Promise<LlmModelAdminView> {
   const { data } = await http.put<LlmModelAdminView>(`/api/v1/admin/llm-models/${id}`, body);

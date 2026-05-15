@@ -62,7 +62,8 @@ public final class AdminHttpMenuRoutes {
         if (uri.startsWith("/api/v1/admin/chat")) {
             return AdminMenuCode.CHAT;
         }
-        if (uri.startsWith("/api/v1/admin/tenant-runtime-settings")) {
+        if (uri.startsWith("/api/v1/admin/tenant-shell-config")
+                || uri.startsWith("/api/v1/admin/tenant-runtime-settings")) {
             return AdminMenuCode.SYSTEM_SETTINGS;
         }
         if (uri.startsWith("/api/v1/admin/menu-items")) {

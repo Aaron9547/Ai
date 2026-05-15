@@ -39,6 +39,8 @@ public final class LlmModelAdminDtos {
         private Long tokenQuotaTotal;
         /** 是否本地部署；默认 false；向量模型为 true 时走 Feign（base-url 直连或 Eureka + service-id） */
         private Boolean localDeploy;
+        /** 仅 {@link LlmModelKind#LANGUAGE}：主备链下一跳别名（须已存在且为 LANGUAGE）。 */
+        private String fallbackModelAlias;
     }
 
     @Data
@@ -67,6 +69,8 @@ public final class LlmModelAdminDtos {
         private Long tokenQuotaTotal;
         /** 是否本地部署；全类型可持久化；仅 {@link LlmModelKind#VECTOR} 且为 true 时嵌入经 Feign（路径变量为租户 code） */
         private Boolean localDeploy;
+        /** 仅 LANGUAGE：主备别名；传空字符串可清空 */
+        private String fallbackModelAlias;
     }
 
     public record LlmModelAdminView(
@@ -89,5 +93,6 @@ public final class LlmModelAdminDtos {
             int sortOrder,
             Long tokenQuotaTotal,
             long tokensUsed,
+            String fallbackModelAlias,
             boolean localDeploy) {}
 }

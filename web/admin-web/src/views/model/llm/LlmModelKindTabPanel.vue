@@ -182,6 +182,7 @@ function initFormCreate() {
       form[f.key] = props.tab.kind === "WEB_SEARCH" ? "VOLCENGINE_ARK_BOT" : "OPENAI_COMPATIBLE";
     else if (f.key === "clearApiKey") form[f.key] = false;
     else if (f.key === "localDeploy") form[f.key] = false;
+    else if (f.key === "fallbackModelAlias") form[f.key] = "";
     else form[f.key] = "";
   }
 }
@@ -209,6 +210,7 @@ function initFormEdit(row: LlmModelAdminView) {
   form.tokenQuotaTotal = row.tokenQuotaTotal ?? 1_000_000;
   form.clearApiKey = false;
   form.localDeploy = !!row.localDeploy;
+  form.fallbackModelAlias = row.fallbackModelAlias ?? "";
 }
 
 function openCreate() {
@@ -270,6 +272,9 @@ async function save() {
           props.tab.kind === "VECTOR" || props.tab.kind === "WEB_SEARCH" ? false : !!form.supportsThinking,
         enabled: !!form.enabled,
         sortOrder: Number(form.sortOrder ?? 0),
+        ...(props.tab.kind === "LANGUAGE"
+          ? { fallbackModelAlias: String(form.fallbackModelAlias ?? "").trim() }
+          : {}),
         ...(form.tokenQuotaUnlimited
           ? { tokenQuotaUnlimited: true as const }
           : { tokenQuotaTotal: Number(form.tokenQuotaTotal) }),
@@ -296,6 +301,9 @@ async function save() {
         sortOrder: Number(form.sortOrder ?? 0),
         tokenQuotaTotal: form.tokenQuotaUnlimited ? null : Number(form.tokenQuotaTotal),
         localDeploy: !!form.localDeploy,
+        ...(props.tab.kind === "LANGUAGE"
+          ? { fallbackModelAlias: String(form.fallbackModelAlias ?? "").trim() }
+          : {}),
       };
       if (props.tab.kind !== "VECTOR" && props.tab.kind !== "WEB_SEARCH" && !body.apiKey?.trim()) {
         ElMessage.warning(t("views.llmKindTab.apiKeyWarning"));

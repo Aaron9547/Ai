@@ -31,6 +31,7 @@ public final class OpenAiChatStreamClient {
      * 404。规则：已以 {@code /chat/completions} 结尾则原样；已以 {@code /v1} 结尾则只补 {@code /chat/completions}；否则仅补
      * {@code /chat/completions}。OpenAI 官方请将 Base 配到 {@code https://api.openai.com/v1}，火山方舟配到 {@code …/api/v3} 等。
      */
+    /** 供 {@link OpenAiUpstreamStreamService} 等复用 URL 规则。 */
     public static String resolveChatCompletionsUrl(String baseUrl) {
         if (baseUrl == null || baseUrl.isBlank()) {
             throw new IllegalArgumentException("openai_base_url 为空");
@@ -49,7 +50,8 @@ public final class OpenAiChatStreamClient {
     /**
      * 请求体摘要：含上游 {@code model}、消息条数、角色序列、JSON 长度；**不**输出各条 message 的 content，避免日志泄露对话原文。
      */
-    static String summarizeChatJsonBody(ObjectMapper om, String jsonBody) {
+    /** 供上游流式客户端打日志摘要（不含正文）。 */
+    public static String summarizeChatJsonBody(ObjectMapper om, String jsonBody) {
         if (jsonBody == null || jsonBody.isBlank()) {
             return "upstreamJsonLen=0";
         }

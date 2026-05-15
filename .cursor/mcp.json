@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "smd-online-mcp": {
+      "url": "http://smd.thunisoft.com:8089/sse",
+      "env": {}
+    },
+    "artery-mcp-server": {
+      "command": "npx",
+      "args": [
+        "--registry=http://npm.thunisoft.com",
+        "@com.thunisoft.artery/artery-mcp-server"
+      ]
+    },
+    "artery7-mcp-server": {
+      "command": "npx",
+      "args": [
+        "--registry=http://npm.thunisoft.com",
+        "@com.thunisoft.artery/artery7-mcp-server"
+      ]
+    }
+  }
+}

@@ -111,6 +111,10 @@ const router = createRouter({
           path: "system/runtime-settings",
           component: () => import("../views/system/TenantRuntimeSettingsView.vue"),
         },
+        {
+          path: "system/tenant-shell-config",
+          component: () => import("../views/system/TenantShellConfigView.vue"),
+        },
       ],
     },
   ],

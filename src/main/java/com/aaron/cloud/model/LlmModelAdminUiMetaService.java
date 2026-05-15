@@ -165,6 +165,9 @@ public class LlmModelAdminUiMetaService {
         }
         c.add(new ListColumnMeta("openaiBaseUrl", msg("llm.meta.col.openaiBaseUrl", locale), "text"));
         c.add(new ListColumnMeta("openaiModelId", msg("llm.meta.col.openaiModelId", locale), "text"));
+        if (k == LlmModelKind.LANGUAGE) {
+            c.add(new ListColumnMeta("fallbackModelAlias", msg("llm.meta.col.fallbackModelAlias", locale), "text"));
+        }
         if (k != LlmModelKind.WEB_SEARCH) {
             c.add(new ListColumnMeta("localDeploy", msg("llm.meta.col.localDeploy", locale), "boolTag"));
         }
@@ -259,6 +262,17 @@ public class LlmModelAdminUiMetaService {
                                 ? msg("llm.meta.form.openaiModelId.placeholder.webSearch", locale)
                                 : msg("llm.meta.form.openaiModelId.placeholder", locale),
                         null));
+        if (k == LlmModelKind.LANGUAGE) {
+            f.add(
+                    new FormFieldMeta(
+                            "fallbackModelAlias",
+                            msg("llm.meta.form.fallbackModelAlias.label", locale),
+                            "text",
+                            false,
+                            false,
+                            msg("llm.meta.form.fallbackModelAlias.placeholder", locale),
+                            null));
+        }
         if (k != LlmModelKind.WEB_SEARCH) {
             f.add(
                     new FormFieldMeta(

@@ -15,6 +15,9 @@ CREATE TABLE IF NOT EXISTS sys_tenant (
   id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
   code VARCHAR(64) NOT NULL COMMENT '租户唯一编码（英文），用于 HTTP 头 X-Tenant-Code 等',
   name VARCHAR(255) NOT NULL COMMENT '租户展示名称',
+  admin_logo_url VARCHAR(2048) NULL COMMENT '管理端侧栏 LOGO（HTTPS 或本服务 /open/v1/admin-brand-logos/...；空则占位符）',
+  admin_portal_title VARCHAR(255) NULL COMMENT '管理端展示标题（空则回退 name）',
+  admin_footer_text VARCHAR(2000) NULL COMMENT '管理端页脚纯文本（空则隐藏或默认短文案）',
   status TINYINT NOT NULL DEFAULT 1 COMMENT 'TenantStatus：0=DISABLED 停用 1=ACTIVE 启用',
   created_at DATETIME(3) NOT NULL COMMENT '创建时间 UTC',
   updated_at DATETIME(3) NOT NULL COMMENT '更新时间 UTC',
@@ -532,6 +535,7 @@ CREATE TABLE IF NOT EXISTS llm_model (
   display_name VARCHAR(128) NOT NULL COMMENT '展示名称',
   openai_base_url VARCHAR(512) NOT NULL COMMENT 'OpenAI 兼容 Chat Completions Base URL',
   openai_model_id VARCHAR(128) NOT NULL COMMENT '厂商模型 ID',
+  fallback_model_alias VARCHAR(64) NULL COMMENT '主备：失败时可切换的租户内模型 alias（LANGUAGE 且启用）',
   model_kind VARCHAR(32) NOT NULL DEFAULT 'LANGUAGE' COMMENT 'LlmModelKind：LANGUAGE/SPEECH/VISION/VECTOR/SMART_ROUTING/WEB_SEARCH',
   integration_backend VARCHAR(48) NOT NULL DEFAULT 'OPENAI_COMPATIBLE' COMMENT '按 model_kind：VECTOR=LlmVectorBackend 嵌入路径；WEB_SEARCH=LlmWebSearchProvider；其他默认 OPENAI_COMPATIBLE',
   local_deploy TINYINT NOT NULL DEFAULT 0 COMMENT '是否本地部署：1=向量嵌入经 Feign 调 RAG 网关（路径变量为 sys_tenant.code）；0=直连 openai_base_url',
@@ -666,6 +670,10 @@ FROM sys_tenant t;
 
 INSERT IGNORE INTO ten_runtime_setting (tenant_id, setting_key, value_text, created_at, updated_at)
 SELECT t.id, 'CHAT_INPUT_GUARD_JSON', '{}', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)
+FROM sys_tenant t;
+
+INSERT IGNORE INTO ten_runtime_setting (tenant_id, setting_key, value_text, created_at, updated_at)
+SELECT t.id, 'OUTBOUND_RESILIENCE_JSON', '{}', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)
 FROM sys_tenant t;
 
 -- 租户级：全量后台菜单码（AdminMenuCode）

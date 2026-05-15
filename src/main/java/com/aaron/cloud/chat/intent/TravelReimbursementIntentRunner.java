@@ -25,7 +25,6 @@ import com.aaron.cloud.common.chat.entity.ChatMessage;
 import com.aaron.cloud.common.chat.entity.LnkChatConversationMessage;
 import com.aaron.cloud.common.context.TenantContextHolder;
 import com.aaron.cloud.common.profile.UserMemoryApplicationService;
-import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService;
 import com.aaron.cloud.common.tenant.runtime.TravelCozeRuntimeConfig;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -48,8 +47,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 /**
  * 出差报销意图：分 DOC（材料）/ PLAN（审批与行程）阶段；与 ly-ai-application {@code TravelReimbursementService} 语义对齐。
  *
- * <p>Coze 启用条件：意图 {@code extra_config_json.handlerParams} 与租户 {@code ten_runtime_setting} <strong>合并</strong>后，文档/行程的
- * API Key 与 workflow id 四项均非空则 DOC/PLAN 各调用 Coze {@code /v1/workflow/stream_run}；否则走<strong>演示模拟</strong>。
+ * <p>Coze 启用条件：意图 {@code extra_config_json.handlerParams} 中文档/行程的 API Key 与 workflow id 四项均非空则 DOC/PLAN 各调用 Coze
+ * {@code /v1/workflow/stream_run}；否则走<strong>演示模拟</strong>。
  * <strong>两阶段与 ly 一致</strong>：首轮 SSE 仅跑 DOC（材料工作流），结束后会话进入 PLAN、等待用户<strong>再发一条消息</strong>；下一轮再跑 PLAN（行程工作流），不在同一次 SSE 内串行两段 Coze。
  * DOC 入参与 ly {@code TravelReimbursementService#buildDocParameters} 对齐：{@code file}（先 {@code /v1/files/upload}，再传 {@code {"file_id":"..."}} 或列表）、{@code input}；
  * 另附 {@code document_text} 便于工作流选用。原始文件按会话附件 id 从 {@link com.aaron.cloud.chat.ChatAttachmentBinStore} 落盘目录读取后上传 Coze（不入库）；无落盘文件时（例如旧数据）用抽取文本生成
@@ -100,7 +99,6 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
     private final ChatIntentKeywordRepository intentKeywordRepository;
     private final TravelCozeWorkflowClient travelCozeWorkflowClient;
     private final ChatAttachmentBinStore attachmentBinStore;
-    private final TenantRuntimeSettingApplicationService tenantRuntimeSettingApplicationService;
     private final UserMemoryApplicationService userMemoryApplicationService;
     private final IntentFlowSessionStore intentFlowSessionStore;
     private final ChatTurnDigestApplicationService chatTurnDigestApplicationService;
@@ -157,9 +155,8 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
         return TravelReimbursementHandlerParam.class;
     }
 
-    private TravelCozeRuntimeConfig resolveTravelCoze(ChatIntentDefinition def, long tenantId) {
-        TravelHandlerParams hp = TravelHandlerParams.parse(def.getExtraConfigJson(), objectMapper);
-        return hp.mergeOver(tenantRuntimeSettingApplicationService.travelCozeRuntimeConfig(tenantId));
+    private TravelCozeRuntimeConfig resolveTravelCoze(ChatIntentDefinition def) {
+        return TravelHandlerParams.parse(def.getExtraConfigJson(), objectMapper).toRuntimeConfig();
     }
 
     @Override
@@ -436,7 +433,7 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
         AtomicInteger seq = new AtomicInteger(0);
         Thread.startVirtualThread(
                 () -> {
-                    TravelCozeRuntimeConfig cozeCfg = resolveTravelCoze(def, snap.getTenantId());
+                    TravelCozeRuntimeConfig cozeCfg = resolveTravelCoze(def);
                     List<ChatWorkflowSegmentView> segments = new ArrayList<>();
                     StringBuilder plainBuf = new StringBuilder();
                     try {

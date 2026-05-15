@@ -2,9 +2,15 @@
   <el-container class="admin-shell">
     <el-aside width="240px" class="admin-aside">
       <div class="brand">
-        <span class="brand-mark" aria-hidden="true" />
+        <img
+          v-if="brandLogoSrc"
+          class="brand-logo"
+          :src="brandLogoSrc"
+          alt=""
+        />
+        <span v-else class="brand-mark" aria-hidden="true" />
         <div class="brand-text">
-          <span class="brand-title">{{ t("admin.brandTitle") }}</span>
+          <span class="brand-title">{{ displayBrandTitle }}</span>
           <span class="brand-sub">{{ t("admin.brandSub") }}</span>
         </div>
       </div>
@@ -134,6 +140,10 @@
             <el-icon><Setting /></el-icon>
             <span>{{ t("admin.menu.runtimeSettings") }}</span>
           </el-menu-item>
+          <el-menu-item index="/system/tenant-shell-config">
+            <el-icon><Picture /></el-icon>
+            <span>{{ t("admin.menu.tenantShell") }}</span>
+          </el-menu-item>
         </el-sub-menu>
 
         <!-- 7. 跨租户平台治理（创始人） -->
@@ -205,6 +215,7 @@
           </div>
         </el-scrollbar>
       </el-main>
+      <el-footer class="admin-shell-footer" height="auto">{{ footerLine }}</el-footer>
     </el-container>
   </el-container>
 </template>
@@ -225,6 +236,7 @@ import {
   Monitor,
   Odometer,
   OfficeBuilding,
+  Picture,
   Promotion,
   Reading,
   Setting,
@@ -234,13 +246,14 @@ import {
   UserFilled,
   Warning,
 } from "@element-plus/icons-vue";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { ElLoading, ElMessage, ElMessageBox } from "element-plus";
 import LocaleThemeToolbar from "@/components/LocaleThemeToolbar.vue";
+import * as tenantShellConfigApi from "@/api/tenantShellConfig";
 import * as tenantsApi from "@/api/tenants";
-import { AI_ADMIN_WORKSPACE_CHANGED_EVENT } from "@/constants/adminWorkspace";
+import { AI_ADMIN_TENANT_SHELL_CHANGED_EVENT, AI_ADMIN_WORKSPACE_CHANGED_EVENT } from "@/constants/adminWorkspace";
 import { postAdminContextSwitch } from "@/api/authAdminContext";
 import { fetchAdminMe, type AdminMeMembership, type AdminMeView } from "@/api/adminMe";
 import {
@@ -272,6 +285,18 @@ const pageTitle = computed(() => {
   return t("admin.defaultPageTitle");
 });
 
+const displayBrandTitle = computed(() => {
+  const r = shellBranding.value?.portalTitleResolved?.trim();
+  if (r) return r;
+  return t("admin.brandTitle");
+});
+
+const footerLine = computed(() => {
+  const ft = shellBranding.value?.footerText?.trim();
+  if (ft) return ft;
+  return t("admin.shell.defaultFooter");
+});
+
 const displayUserLabel = computed(() => {
   if (import.meta.env.VITE_ADMIN_AUTH_SKIP === "true") {
     return t("common.authSkipPreview");
@@ -293,6 +318,20 @@ const isFounder = computed(() => {
 });
 
 const tenantOptions = ref<tenantsApi.TenantRow[]>([]);
+
+/** 侧栏 / 页脚：租户壳配置（独立接口） */
+const shellBranding = ref<tenantShellConfigApi.TenantShellBranding | null>(null);
+
+function resolvePublicAssetUrl(raw: string | undefined | null): string {
+  const u = (raw ?? "").trim();
+  if (!u) return "";
+  if (/^https?:\/\//i.test(u)) return u;
+  const base = (import.meta.env.VITE_API_BASE || "").replace(/\/$/, "");
+  const path = u.startsWith("/") ? u : `/${u}`;
+  return base ? `${base}${path}` : path;
+}
+
+const brandLogoSrc = computed(() => resolvePublicAssetUrl(shellBranding.value?.logoUrl));
 
 /** 最近一次 /admin/me（用于下拉展示租户名等） */
 const meSnapshot = ref<AdminMeView | null>(null);
@@ -449,6 +488,7 @@ async function applyWorkspaceSwitch(tenantId: number, role: string) {
     }
     ElMessage.success(t("common.workspaceSwitched"));
     window.dispatchEvent(new Event(AI_ADMIN_WORKSPACE_CHANGED_EVENT));
+    void reloadShellBranding();
   } catch (e: unknown) {
     console.warn("[workspace switch]", e);
     ElMessage.error(t("common.workspaceSwitchFailed"));
@@ -472,7 +512,28 @@ function menuAllowed(code: string): boolean {
   return list.includes(code);
 }
 
+async function reloadShellBranding() {
+  if (import.meta.env.VITE_ADMIN_AUTH_SKIP === "true") {
+    return;
+  }
+  if (!localStorage.getItem(AI_ADMIN_ACCESS_TOKEN_KEY)) {
+    shellBranding.value = null;
+    return;
+  }
+  try {
+    const cfg = await tenantShellConfigApi.getTenantShellConfig();
+    shellBranding.value = cfg.branding;
+  } catch {
+    shellBranding.value = null;
+  }
+}
+
+function onTenantShellChanged() {
+  void reloadShellBranding();
+}
+
 onMounted(() => {
+  window.addEventListener(AI_ADMIN_TENANT_SHELL_CHANGED_EVENT, onTenantShellChanged);
   if (import.meta.env.VITE_ADMIN_AUTH_SKIP !== "true") {
     void fetchAdminMe()
       .then((me) => {
@@ -482,6 +543,7 @@ onMounted(() => {
       .catch(() => {
         allowedMenuCodes.value = [];
       });
+    void reloadShellBranding();
   }
   if (isFounder.value) {
     void tenantsApi
@@ -493,6 +555,10 @@ onMounted(() => {
         tenantOptions.value = [];
       });
   }
+});
+
+onUnmounted(() => {
+  window.removeEventListener(AI_ADMIN_TENANT_SHELL_CHANGED_EVENT, onTenantShellChanged);
 });
 
 const avatarLetter = computed(() => {

@@ -1,9 +1,9 @@
 package com.aaron.cloud.common.tenant.runtime;
 
 /**
- * 出差报销意图对接 Coze 工作流时的合并后参数（来自 {@code extra_config_json.handlerParams} 覆盖项 + {@code ten_runtime_setting} 回退）。
+ * 出差报销意图对接 Coze 工作流时的参数（来自意图 {@code extra_config_json.handlerParams}）。
  *
- * <p>与 ly-ai-application {@code SystemConfigKey.TRAVEL_REIMBURSE_*} 对齐；域名可空，解析时回退官方默认。
+ * <p>域名可空，解析时回退官方默认 {@code https://api.coze.cn}。
  */
 public record TravelCozeRuntimeConfig(
         String domain,

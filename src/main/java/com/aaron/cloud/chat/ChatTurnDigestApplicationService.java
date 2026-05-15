@@ -6,7 +6,6 @@ import com.aaron.cloud.common.api.enums.LlmModelKind;
 import com.aaron.cloud.common.api.ports.ModelInvokePort;
 import com.aaron.cloud.common.chat.ChatConversationRepository;
 import com.aaron.cloud.common.chat.ChatMessageRepository;
-import com.aaron.cloud.common.chat.LnkChatConversationMessageRepository;
 import com.aaron.cloud.common.chat.entity.ChatConversation;
 import com.aaron.cloud.common.chat.entity.ChatMessage;
 import com.aaron.cloud.common.context.TenantContextHolder;
@@ -18,15 +17,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
- * 每轮助手落库后：生成 {@code meta.contentSummary} 供短期记忆与抽检展示；首轮且会话标题仍为占位时，用模型短标题替换（不再用首句用户原文）。
+ * 每轮助手落库后：生成 {@code meta.contentSummary} 供短期记忆与抽检展示。会话标题由 {@link ChatApplicationService} 在首条用户发送时同步
+ * 更新，本服务不再改标题。
  */
 @Slf4j
 @Service
@@ -51,7 +49,6 @@ public class ChatTurnDigestApplicationService {
 
     private final ChatMessageRepository messageRepository;
     private final ChatConversationRepository conversationRepository;
-    private final LnkChatConversationMessageRepository lnkRepository;
     private final ModelInvokePort modelInvokePort;
     private final ObjectMapper objectMapper;
     private final SysLlmModelRepository sysLlmModelRepository;
@@ -104,7 +101,7 @@ public class ChatTurnDigestApplicationService {
             return;
         }
         String userQ = userQuestionPlain == null ? "" : userQuestionPlain.trim();
-        boolean needTitle = shouldOfferConversationTitle(tenantId, conversationId, assistantMessageId);
+        boolean needTitle = false;
 
         String summary;
         String titleCandidate = "";
@@ -242,18 +239,6 @@ public class ChatTurnDigestApplicationService {
         } catch (Exception ignored) {
         }
         return objectMapper.createObjectNode();
-    }
-
-    private boolean shouldOfferConversationTitle(long tenantId, long conversationId, long assistantMessageId) {
-        List<Long> ids = lnkRepository.listMessageIdsByConversationOrderByLinkIdAsc(conversationId);
-        if (ids.size() != 2) {
-            return false;
-        }
-        if (!Objects.equals(ids.get(1), assistantMessageId)) {
-            return false;
-        }
-        Optional<ChatMessage> first = messageRepository.findById(ids.get(0), tenantId);
-        return first.isPresent() && first.get().getRole() == ChatMessageRole.USER;
     }
 
     private static boolean isPlaceholderConversationTitle(String title) {

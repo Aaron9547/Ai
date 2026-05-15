@@ -99,4 +99,15 @@ public class SysTenantRepository {
     public int updateById(SysTenant row) {
         return mapper.updateById(row);
     }
+
+    /** 仅更新管理端外观三列；显式写入 null，以便清空配置回退默认展示。 */
+    public int updateAdminBranding(long tenantId, String logoUrl, String portalTitle, String footerText) {
+        return mapper.update(
+                null,
+                Wrappers.<SysTenant>lambdaUpdate()
+                        .set(SysTenant::getAdminLogoUrl, logoUrl)
+                        .set(SysTenant::getAdminPortalTitle, portalTitle)
+                        .set(SysTenant::getAdminFooterText, footerText)
+                        .eq(SysTenant::getId, tenantId));
+    }
 }

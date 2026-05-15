@@ -26,6 +26,8 @@ public class SysLlmModel {
     private String displayName;
     private String openaiBaseUrl;
     private String openaiModelId;
+    /** 主备：失败时可切换的租户内模型别名（须为 LANGUAGE 且启用）。 */
+    private String fallbackModelAlias;
 
     /** 模型类型；对话流仅 {@link LlmModelKind#LANGUAGE}。 */
     private LlmModelKind modelKind;

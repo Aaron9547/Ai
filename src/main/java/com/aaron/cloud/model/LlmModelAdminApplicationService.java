@@ -74,6 +74,7 @@ public class LlmModelAdminApplicationService {
         row.setTokenQuotaTotal(req.getTokenQuotaTotal());
         row.setTokensUsed(0L);
         row.setLocalDeploy(Boolean.TRUE.equals(req.getLocalDeploy()));
+        row.setFallbackModelAlias(normalizeAndValidateFallback(tenantId, kind, alias, req.getFallbackModelAlias()));
         llmModelRepository.insert(row);
         var created = llmModelRepository.findById(tenantId, row.getId()).orElseThrow();
         llmTokenQuotaCoordinator.onModelConfigChanged(created);
@@ -131,6 +132,19 @@ public class LlmModelAdminApplicationService {
         if (req.getLocalDeploy() != null) {
             row.setLocalDeploy(req.getLocalDeploy());
         }
+        if (req.getFallbackModelAlias() != null) {
+            LlmModelKind effKind = row.getModelKind() != null ? row.getModelKind() : LlmModelKind.LANGUAGE;
+            if (effKind != LlmModelKind.LANGUAGE) {
+                throw new IllegalArgumentException("仅对话语言模型可配置主备 fallback");
+            }
+            String v = req.getFallbackModelAlias().trim();
+            if (v.isEmpty()) {
+                row.setFallbackModelAlias(null);
+            } else {
+                row.setFallbackModelAlias(
+                        normalizeAndValidateFallback(tenantId, LlmModelKind.LANGUAGE, row.getAlias(), v));
+            }
+        }
         llmModelRepository.updateById(row);
         var saved = llmModelRepository.findById(tenantId, id).orElseThrow();
         llmTokenQuotaCoordinator.onModelConfigChanged(saved);
@@ -172,7 +186,50 @@ public class LlmModelAdminApplicationService {
                 m.getSortOrder(),
                 m.getTokenQuotaTotal(),
                 m.getTokensUsed() == null ? 0L : m.getTokensUsed(),
+                m.getFallbackModelAlias(),
                 Boolean.TRUE.equals(m.getLocalDeploy()));
+    }
+
+    private String normalizeAndValidateFallback(long tenantId, LlmModelKind kind, String selfAlias, String raw) {
+        if (kind != LlmModelKind.LANGUAGE) {
+            return null;
+        }
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String fb = raw.trim();
+        if (fb.equalsIgnoreCase(selfAlias)) {
+            throw new IllegalArgumentException("备用别名不能与自身相同");
+        }
+        assertFallbackLanguageTarget(tenantId, fb);
+        assertFallbackNoCycle(tenantId, selfAlias, fb);
+        return fb;
+    }
+
+    private void assertFallbackLanguageTarget(long tenantId, String fbAlias) {
+        SysLlmModel t =
+                llmModelRepository
+                        .findByTenantAndAlias(tenantId, fbAlias)
+                        .orElseThrow(() -> new IllegalArgumentException("备用模型不存在或未启用：" + fbAlias));
+        LlmModelKind k = t.getModelKind() != null ? t.getModelKind() : LlmModelKind.LANGUAGE;
+        if (k != LlmModelKind.LANGUAGE) {
+            throw new IllegalArgumentException("备用模型须为 LANGUAGE 类型");
+        }
+    }
+
+    private void assertFallbackNoCycle(long tenantId, String selfAlias, String firstHop) {
+        String next = firstHop;
+        for (int i = 0; i < 8 && next != null; i++) {
+            if (next.trim().equalsIgnoreCase(selfAlias)) {
+                throw new IllegalArgumentException("主备链成环：请勿使备用链回到当前模型");
+            }
+            SysLlmModel m = llmModelRepository.findByTenantAndAlias(tenantId, next.trim()).orElse(null);
+            if (m == null) {
+                return;
+            }
+            String fb = m.getFallbackModelAlias();
+            next = (fb == null || fb.isBlank()) ? null : fb.trim();
+        }
     }
 
     /**

@@ -37,16 +37,6 @@ public class TenantRuntimeSettingApplicationService {
         return Boolean.parseBoolean(raw.trim());
     }
 
-    /** 出差报销意图：Coze 域名与两轮工作流密钥（与 ly {@code SystemConfigKey.TRAVEL_REIMBURSE_*} 对齐）。 */
-    public TravelCozeRuntimeConfig travelCozeRuntimeConfig(long tenantId) {
-        String domain = effectiveValueText(tenantId, TenantRuntimeSettingKey.TRAVEL_REIMBURSE_COZE_DOMAIN).trim();
-        String docKey = effectiveValueText(tenantId, TenantRuntimeSettingKey.TRAVEL_REIMBURSE_DOC_COZE_API_KEY).trim();
-        String docWf = effectiveValueText(tenantId, TenantRuntimeSettingKey.TRAVEL_REIMBURSE_DOC_WORKFLOW_ID).trim();
-        String planKey = effectiveValueText(tenantId, TenantRuntimeSettingKey.TRAVEL_REIMBURSE_PLAN_COZE_API_KEY).trim();
-        String planWf = effectiveValueText(tenantId, TenantRuntimeSettingKey.TRAVEL_REIMBURSE_PLAN_WORKFLOW_ID).trim();
-        return new TravelCozeRuntimeConfig(domain, docKey, docWf, planKey, planWf);
-    }
-
     /** 用户记忆 Milvus 嵌入：{@code sys_llm_model.id}，未配置或非法时为空。 */
     public java.util.Optional<Long> memoryEmbeddingVectorModelId(long tenantId) {
         String raw = effectiveValueText(tenantId, TenantRuntimeSettingKey.MEMORY_EMBEDDING_VECTOR_MODEL_ID).trim();
@@ -135,6 +125,13 @@ public class TenantRuntimeSettingApplicationService {
     }
 
     /**
+     * 读取某键当前有效文本（Redis / DB）；供出站合并等只读路径。
+     */
+    public String getEffectiveValueText(long tenantId, TenantRuntimeSettingKey key) {
+        return effectiveValueText(tenantId, key);
+    }
+
+    /**
      * 管理端列表：关键词匹配「键 / 说明 / 值」子串（值与说明同时支持原文与 ASCII 小写匹配）；可选按 {@code valueKind}
      *（{@code STRING} / {@code BOOLEAN}）筛选。分页字段与 MyBatis-Plus {@code Page} JSON 对齐。
      */
@@ -182,6 +179,9 @@ public class TenantRuntimeSettingApplicationService {
     private List<TenantRuntimeSettingRow> buildAllRows(long tenantId) {
         List<TenantRuntimeSettingRow> out = new ArrayList<>();
         for (TenantRuntimeSettingKey key : TenantRuntimeSettingKey.values()) {
+            if (key.excludedFromAdminRuntimeList()) {
+                continue;
+            }
             String vt = effectiveValueText(tenantId, key);
             out.add(
                     new TenantRuntimeSettingRow(
@@ -322,7 +322,8 @@ public class TenantRuntimeSettingApplicationService {
         }
         if (key == TenantRuntimeSettingKey.CHAT_PROMPT_LIMITS_JSON
                 || key == TenantRuntimeSettingKey.MEMORY_POLICY_JSON
-                || key == TenantRuntimeSettingKey.CHAT_INPUT_GUARD_JSON) {
+                || key == TenantRuntimeSettingKey.CHAT_INPUT_GUARD_JSON
+                || key == TenantRuntimeSettingKey.OUTBOUND_RESILIENCE_JSON) {
             if (valueText == null || valueText.isBlank()) {
                 return "{}";
             }

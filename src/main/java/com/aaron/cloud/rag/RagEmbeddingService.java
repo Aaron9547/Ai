@@ -5,8 +5,14 @@ import com.aaron.cloud.common.api.enums.LlmModelStatus;
 import com.aaron.cloud.common.api.enums.LlmVectorBackend;
 import com.aaron.cloud.common.api.ports.RagEmbeddingPort;
 import com.aaron.cloud.common.config.properties.AiProvidersProperties;
+import com.aaron.cloud.common.outbound.TenantOutboundResilienceRuntime;
 import com.aaron.cloud.common.modelcfg.SysLlmModelRepository;
 import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
+import com.aaron.cloud.common.outbound.LlmOutboundException;
+import com.aaron.cloud.common.outbound.OutboundCircuitBreakerSupport;
+import com.aaron.cloud.common.outbound.OutboundKind;
+import com.aaron.cloud.common.outbound.OutboundMetricsSupport;
+import com.aaron.cloud.common.outbound.OutboundTenantUpstreamQuarantine;
 import com.aaron.cloud.common.rag.RagKnowledgeBaseRepository;
 import com.aaron.cloud.common.rag.entity.RagKnowledgeBase;
 import com.aaron.cloud.common.security.crypto.AesSecretCipher;
@@ -16,6 +22,7 @@ import com.aaron.cloud.rag.remote.dto.LocalEmbeddingRpcRequest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import feign.FeignException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -23,6 +30,8 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -47,6 +56,10 @@ public class RagEmbeddingService implements RagEmbeddingPort {
             HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build();
 
     private final AiProvidersProperties aiProvidersProperties;
+    private final TenantOutboundResilienceRuntime outboundResilienceRuntime;
+    private final OutboundCircuitBreakerSupport outboundCircuitBreakerSupport;
+    private final OutboundMetricsSupport outboundMetricsSupport;
+    private final OutboundTenantUpstreamQuarantine outboundTenantUpstreamQuarantine;
     private final RagKnowledgeBaseRepository ragKnowledgeBaseRepository;
     private final SysLlmModelRepository sysLlmModelRepository;
     private final SysTenantRepository sysTenantRepository;
@@ -93,13 +106,28 @@ public class RagEmbeddingService implements RagEmbeddingPort {
             }
         }
         try {
+            outboundTenantUpstreamQuarantine.assertStreamAllowed(tenantId);
+            float[] out;
             if (Boolean.TRUE.equals(m.getLocalDeploy())) {
-                return embedViaLocalDeployFeign(tenantId, m, t, apiKey);
+                out = embedViaLocalDeployFeign(tenantId, m, t, apiKey);
+            } else {
+                LlmVectorBackend vb = m.resolveVectorBackend();
+                out =
+                        callEmbeddingsUpstream(
+                                tenantId,
+                                m.getId(),
+                                m.getOpenaiBaseUrl().trim(),
+                                apiKey,
+                                m.getOpenaiModelId().trim(),
+                                t,
+                                vb);
             }
-            LlmVectorBackend vb = m.resolveVectorBackend();
-            return callEmbeddingsUpstream(
-                    m.getOpenaiBaseUrl().trim(), apiKey, m.getOpenaiModelId().trim(), t, vb);
+            outboundTenantUpstreamQuarantine.recordTenantSuccess(tenantId);
+            return out;
+        } catch (LlmOutboundException e) {
+            throw toResponseStatus(e);
         } catch (ResponseStatusException e) {
+            outboundTenantUpstreamQuarantine.recordHardFailureIfSignal(tenantId, e);
             throw e;
         } catch (IllegalStateException e) {
             throw e;
@@ -107,6 +135,17 @@ public class RagEmbeddingService implements RagEmbeddingPort {
             log.error("向量模型嵌入调用失败 tenantId={} kbId={} llmModelId={}", tenantId, kbId, mid, e);
             throw new IllegalStateException("向量模型嵌入调用失败: " + e.getMessage(), e);
         }
+    }
+
+    private static ResponseStatusException toResponseStatus(LlmOutboundException e) {
+        Integer st = e.getHttpStatus();
+        org.springframework.http.HttpStatus hs =
+                st != null ? org.springframework.http.HttpStatus.resolve(st) : null;
+        if (hs == null) {
+            hs = org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE;
+        }
+        return new ResponseStatusException(
+                hs, e.getMessage() != null ? e.getMessage() : "模型上游暂不可用", e);
     }
 
     private float[] embedViaLocalDeployFeign(long tenantId, SysLlmModel m, String text, String apiKey)
@@ -142,9 +181,24 @@ public class RagEmbeddingService implements RagEmbeddingPort {
         LocalEmbeddingRpcRequest req = new LocalEmbeddingRpcRequest(modelId, List.of(text));
         String auth = StringUtils.hasText(apiKey) ? "Bearer " + apiKey : null;
         String raw;
+        Optional<CircuitBreaker> cb =
+                outboundResilienceRuntime.effective(tenantId).isEnabled()
+                        ? outboundCircuitBreakerSupport.forEmbeddingFeign(tenantId, m.getId())
+                        : Optional.empty();
+        long t0 = System.nanoTime();
+        if (cb.isPresent() && !cb.get().tryAcquirePermission()) {
+            outboundMetricsSupport.recordError(OutboundKind.LLM_EMBEDDING_FEIGN, "CIRCUIT_OPEN", 503);
+            throw new ResponseStatusException(
+                    HttpStatus.SERVICE_UNAVAILABLE, "本地嵌入上游繁忙，请稍后重试");
+        }
         try {
             raw = client.callPrivateEmbedding(tenantCode, req, auth);
+            cb.ifPresent(c -> c.onSuccess(System.nanoTime() - t0, TimeUnit.NANOSECONDS));
         } catch (FeignException e) {
+            cb.ifPresent(c -> c.onError(System.nanoTime() - t0, TimeUnit.NANOSECONDS, e));
+            outboundMetricsSupport.recordError(
+                    OutboundKind.LLM_EMBEDDING_FEIGN, "HTTP_" + e.status(), e.status());
+            outboundTenantUpstreamQuarantine.recordHardFailureIfSignal(tenantId, e);
             log.warn(
                     "本地嵌入 Feign 调用失败 status={} tenantCode={} llmModelId={}",
                     e.status(),
@@ -183,7 +237,13 @@ public class RagEmbeddingService implements RagEmbeddingPort {
     }
 
     private float[] callEmbeddingsUpstream(
-            String openaiBaseUrl, String apiKey, String modelId, String text, LlmVectorBackend vectorBackend)
+            long tenantId,
+            long llmModelId,
+            String openaiBaseUrl,
+            String apiKey,
+            String modelId,
+            String text,
+            LlmVectorBackend vectorBackend)
             throws Exception {
         String url = VectorEmbeddingsUrl.resolve(openaiBaseUrl, vectorBackend);
         if (url.isBlank()) {
@@ -199,11 +259,42 @@ public class RagEmbeddingService implements RagEmbeddingPort {
             rb.header("Authorization", "Bearer " + apiKey);
         }
         HttpRequest req = rb.build();
-        HttpResponse<String> resp = HTTP.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        HttpResponse<String> resp;
+        if (outboundResilienceRuntime.effective(tenantId).isEnabled()) {
+            var cb = outboundCircuitBreakerSupport.forEmbeddingHttp(tenantId, llmModelId);
+            long t0 = System.nanoTime();
+            if (cb.isPresent() && !cb.get().tryAcquirePermission()) {
+                outboundMetricsSupport.recordError(OutboundKind.LLM_EMBEDDING, "CIRCUIT_OPEN", 503);
+                throw new ResponseStatusException(
+                        HttpStatus.SERVICE_UNAVAILABLE, "嵌入上游繁忙，请稍后重试");
+            }
+            try {
+                resp = HTTP.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                cb.ifPresent(c -> c.onSuccess(System.nanoTime() - t0, TimeUnit.NANOSECONDS));
+            } catch (Exception e) {
+                cb.ifPresent(c -> c.onError(System.nanoTime() - t0, TimeUnit.NANOSECONDS, e));
+                if (!(e instanceof IllegalArgumentException)) {
+                    outboundMetricsSupport.recordError(
+                            OutboundKind.LLM_EMBEDDING, e.getClass().getSimpleName(), null);
+                }
+                throw e;
+            }
+        } else {
+            resp = HTTP.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        }
         if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
             String bodyStr = resp.body() == null ? "" : resp.body();
             String prefix = bodyStr.substring(0, Math.min(400, bodyStr.length()));
             log.warn("embeddings upstream HTTP {} url={} bodyPrefix={}", resp.statusCode(), url, prefix);
+            outboundTenantUpstreamQuarantine.recordHardFailureIfSignal(
+                    tenantId,
+                    LlmOutboundException.upstreamHttp(
+                            OutboundKind.LLM_EMBEDDING,
+                            resp.statusCode(),
+                            "embeddings HTTP " + resp.statusCode() + " url=" + url,
+                            prefix,
+                            "",
+                            null));
             String vendor = extractEmbeddingsProviderErrorHint(bodyStr);
             if (resp.statusCode() >= 500) {
                 throw new ResponseStatusException(
@@ -303,13 +394,28 @@ public class RagEmbeddingService implements RagEmbeddingPort {
             }
         }
         try {
+            outboundTenantUpstreamQuarantine.assertStreamAllowed(tenantId);
+            float[] out;
             if (Boolean.TRUE.equals(m.getLocalDeploy())) {
-                return embedViaLocalDeployFeign(tenantId, m, t, apiKey);
+                out = embedViaLocalDeployFeign(tenantId, m, t, apiKey);
+            } else {
+                LlmVectorBackend vb = m.resolveVectorBackend();
+                out =
+                        callEmbeddingsUpstream(
+                                tenantId,
+                                m.getId(),
+                                m.getOpenaiBaseUrl().trim(),
+                                apiKey,
+                                m.getOpenaiModelId().trim(),
+                                t,
+                                vb);
             }
-            LlmVectorBackend vb = m.resolveVectorBackend();
-            return callEmbeddingsUpstream(
-                    m.getOpenaiBaseUrl().trim(), apiKey, m.getOpenaiModelId().trim(), t, vb);
+            outboundTenantUpstreamQuarantine.recordTenantSuccess(tenantId);
+            return out;
+        } catch (LlmOutboundException e) {
+            throw toResponseStatus(e);
         } catch (Exception e) {
+            outboundTenantUpstreamQuarantine.recordHardFailureIfSignal(tenantId, e);
             log.warn("memory embed fallback hash tenantId={} llmModelId={}", tenantId, m.getId(), e);
             return RagQueryEmbeddingHasher.hashToVector(t, dimensions());
         }

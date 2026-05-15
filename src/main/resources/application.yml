@@ -66,6 +66,10 @@ ai:
   # 租户运行时表 ten_runtime_setting 读穿缓存 TTL（秒）；无 Redis 时直读库。
   tenant-runtime-settings:
     cache-ttl-seconds: ${AI_TENANT_RUNTIME_SETTINGS_CACHE_TTL:600}
+  # 管理端租户 LOGO 上传落盘（匿名读取路径见 OpenAdminBrandLogoRestController）；多实例须共享此目录或改对象存储。
+  admin:
+    brand-logo:
+      storage-dir: ${AI_ADMIN_BRAND_LOGO_STORAGE_DIR:}
   # RocketMQ：enabled=true 导入 starter 并启用 Job/用量消费者；name-server、producer-group 由 EPP 映射到 rocketmq.*。
   rocketmq:
     enabled: ${AI_ROCKETMQ_ENABLED:false}
@@ -89,6 +93,13 @@ ai:
   remoting:
     mode: ${AI_REMOTING_MODE:local}
     model-base-url: ${AI_MODEL_BASE_URL:http://127.0.0.1:8080}
+  # 出站韧性 ai.outbound.*：默认值在 AiOutboundResilienceProperties；勿在 yml 堆叠副本时，用环境变量或 JVM 系统属性覆盖即可（Spring Boot 松散绑定）。
+  # 命名规则：前缀 AI_OUTBOUND_ + 属性路径，点/中划线改为下划线并全大写，例如：
+  #   AI_OUTBOUND_ENABLED=false
+  #   AI_OUTBOUND_STREAM_MAX_ATTEMPTS=5
+  #   AI_OUTBOUND_CIRCUIT_BREAKER_FAILURE_RATE_THRESHOLD=60
+  #   AI_OUTBOUND_TENANT_QUARANTINE_ENABLED=false
+  # JVM：-Dai.outbound.enabled=false -Dai.outbound.stream-max-attempts=5
   providers:
     # auth：permit=免 JWT（仅联调）；jwt-local=管理端/业务 JWT；oauth2-resource=OAuth2 Resource Server，须配 jwt-issuer-uri。
     auth: ${AI_PROVIDERS_AUTH:jwt-local}

@@ -122,7 +122,7 @@ cd web/admin-web && npm install && npm run dev
 
 以下内容随版本迭代；**完整条目以 [`PROJECT.md`](PROJECT.md) 顶部 `### x.y.z-SNAPSHOT` 为准**。
 
-- **0.1.229**：租户运行参数扩展（对话提示上限、记忆策略、输入护栏 JSON）；管理端租户运行参数分页检索；主链多轮 **history** 注入与截断；助手回合摘要 **`contentSummary`** 与会话占位标题更新；Markdown 代码块复制；`.cursorrules` 与全局 user rules 关于 `*.md` 的冲突说明。
+- **0.1.229**：租户运行参数扩展（对话提示上限、记忆策略、输入护栏 JSON）；管理端租户运行参数分页检索；主链多轮 **history** 注入与截断；助手回合摘要 **`contentSummary`**（digest）；首轮会话标题在**用户首条发送后同步**由用户首行截断更新；Markdown 代码块复制；`.cursorrules` 与全局 user rules 关于 `*.md` 的冲突说明。
 - **0.1.228**：`EnvironmentPostProcessor` 改为 **`META-INF/spring.factories`** 注册，修复发现未桥接问题。
 - **0.1.224 及更早**：联网搜索（`WEB_SEARCH`）、`integration_backend` 列合并、仪表盘与 LLM 管理端 i18n、意图处理器插件化等——见 **`PROJECT.md`** 对应节。
 

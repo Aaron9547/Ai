@@ -7,7 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * 出差报销意图在 {@code extra_config_json.handlerParams} 下的可选 Coze 覆盖项；空白字段回退 {@link TravelCozeRuntimeConfig}（租户系统参数）。
+ * 出差报销意图在 {@code extra_config_json.handlerParams} 下的 Coze 配置；由管理端「意图识别」维护。
  *
  * <p>键名与管理端 schema 一致：{@code cozeDomain}、{@code docCozeApiKey}、{@code docWorkflowId}、{@code planCozeApiKey}、{@code planWorkflowId}。
  */
@@ -50,20 +50,7 @@ public record TravelHandlerParams(
         return t.isEmpty() ? null : t;
     }
 
-    /** 意图级非空项覆盖租户默认；均为空则等价于仅用 {@code ten_runtime_setting}。 */
-    public TravelCozeRuntimeConfig mergeOver(TravelCozeRuntimeConfig tenant) {
-        return new TravelCozeRuntimeConfig(
-                pick(cozeDomain, tenant.domain()),
-                pick(docCozeApiKey, tenant.docApiKey()),
-                pick(docWorkflowId, tenant.docWorkflowId()),
-                pick(planCozeApiKey, tenant.planApiKey()),
-                pick(planWorkflowId, tenant.planWorkflowId()));
-    }
-
-    private static String pick(String handlerVal, String tenantVal) {
-        if (handlerVal != null && !handlerVal.isBlank()) {
-            return handlerVal.trim();
-        }
-        return tenantVal;
+    public TravelCozeRuntimeConfig toRuntimeConfig() {
+        return new TravelCozeRuntimeConfig(cozeDomain, docCozeApiKey, docWorkflowId, planCozeApiKey, planWorkflowId);
     }
 }

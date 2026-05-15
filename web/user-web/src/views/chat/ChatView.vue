@@ -1544,6 +1544,11 @@ async function retryAssistantAt(assistantIdx: number) {
       } else if (part.type === "reasoning" && part.v) {
         m.reasoningStreaming = true;
         tail.reasoning = (tail.reasoning ?? "") + part.v;
+      } else if (part.type === "error") {
+        const msg = (part.message || part.code || "模型调用失败").replace(/\s+/g, " ").trim();
+        const short = msg.length > 140 ? msg.slice(0, 140) + "…" : msg;
+        ElMessage.warning(`${short}：可尝试点击「重新生成」重试。`);
+        tail.content += `\n\n（${msg}）`;
       } else if (part.type === "workflowStage") {
         mergeWorkflowStage(m, part.stage);
       } else if (part.type === "end") {
@@ -1872,6 +1877,11 @@ async function send() {
         } else if (part.type === "reasoning" && part.v) {
           m.reasoningStreaming = true;
           m.reasoning = (m.reasoning ?? "") + part.v;
+        } else if (part.type === "error") {
+          const msg = (part.message || part.code || "模型调用失败").replace(/\s+/g, " ").trim();
+          const short = msg.length > 140 ? msg.slice(0, 140) + "…" : msg;
+          ElMessage.warning(`${short}：可尝试点击「重新生成」重试。`);
+          m.content += `\n\n（${msg}）`;
         } else if (part.type === "workflowStage") {
           mergeWorkflowStage(m, part.stage);
         } else if (part.type === "end") {

@@ -1,7 +1,12 @@
 package com.aaron.cloud.chat.websearch;
 
 import com.aaron.cloud.common.api.enums.LlmWebSearchProvider;
+import com.aaron.cloud.common.outbound.TenantOutboundResilienceRuntime;
 import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
+import com.aaron.cloud.common.outbound.OutboundCircuitBreakerSupport;
+import com.aaron.cloud.common.outbound.OutboundKind;
+import com.aaron.cloud.common.outbound.OutboundMetricsSupport;
+import com.aaron.cloud.common.outbound.OutboundTenantUpstreamQuarantine;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -11,6 +16,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -24,6 +30,10 @@ import org.springframework.web.client.RestClient;
 public class VolcArkBotWebSearchProvider implements WebSearchModelProvider {
 
     private final ObjectMapper objectMapper;
+    private final TenantOutboundResilienceRuntime outboundResilienceRuntime;
+    private final OutboundCircuitBreakerSupport outboundCircuitBreakerSupport;
+    private final OutboundMetricsSupport outboundMetricsSupport;
+    private final OutboundTenantUpstreamQuarantine outboundTenantUpstreamQuarantine;
 
     @Override
     public LlmWebSearchProvider supports() {
@@ -32,6 +42,42 @@ public class VolcArkBotWebSearchProvider implements WebSearchModelProvider {
 
     @Override
     public WebSearchExecutionResult execute(SysLlmModel row, String apiKeyPlaintext, String userQueryPlaintext)
+            throws Exception {
+        long tid = row.getTenantId() == null ? 0L : row.getTenantId();
+        outboundTenantUpstreamQuarantine.assertStreamAllowed(tid);
+        if (!outboundResilienceRuntime.effective(tid).isEnabled()) {
+            try {
+                WebSearchExecutionResult r = doExecute(row, apiKeyPlaintext, userQueryPlaintext);
+                outboundTenantUpstreamQuarantine.recordTenantSuccess(tid);
+                return r;
+            } catch (Exception e) {
+                outboundTenantUpstreamQuarantine.recordHardFailureIfSignal(tid, e);
+                throw e;
+            }
+        }
+        var cb = outboundCircuitBreakerSupport.forWebSearch(row.getTenantId(), row.getId());
+        long t0 = System.nanoTime();
+        if (cb.isPresent() && !cb.get().tryAcquirePermission()) {
+            outboundMetricsSupport.recordError(OutboundKind.LLM_WEB_SEARCH, "CIRCUIT_OPEN", 503);
+            throw OutboundCircuitBreakerSupport.circuitOpen(OutboundKind.LLM_WEB_SEARCH, row.getAlias());
+        }
+        try {
+            WebSearchExecutionResult r = doExecute(row, apiKeyPlaintext, userQueryPlaintext);
+            cb.ifPresent(c -> c.onSuccess(System.nanoTime() - t0, TimeUnit.NANOSECONDS));
+            outboundTenantUpstreamQuarantine.recordTenantSuccess(tid);
+            return r;
+        } catch (Exception e) {
+            cb.ifPresent(c -> c.onError(System.nanoTime() - t0, TimeUnit.NANOSECONDS, e));
+            if (!(e instanceof IllegalArgumentException)) {
+                outboundMetricsSupport.recordError(
+                        OutboundKind.LLM_WEB_SEARCH, e.getClass().getSimpleName(), null);
+            }
+            outboundTenantUpstreamQuarantine.recordHardFailureIfSignal(tid, e);
+            throw e;
+        }
+    }
+
+    private WebSearchExecutionResult doExecute(SysLlmModel row, String apiKeyPlaintext, String userQueryPlaintext)
             throws Exception {
         String url = ArkBotChatCompletionsUrl.normalize(row.getOpenaiBaseUrl());
         if (url.isBlank()) {
