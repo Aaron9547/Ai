@@ -299,13 +299,18 @@ export default {
             "Leave empty to keep built-in jailbreak regexes. Any non-empty line replaces the entire built-in list. Invalid regex lines are skipped server-side.",
           blockedReplyTemplate: "Leave empty to use the server default blocked-reply text.",
         },
+        placeholders: {
+          blockedReplyTemplate: "e.g. Sorry, I can't continue with that—please rephrase your request.",
+          sensitiveWords: "One phrase per line, e.g.:\ncredential harvesting\nbypass paywall",
+          regexPatterns: "One Java regex per line, e.g.:\n(?i)ignore\\\\s+previous\\\\s+instructions",
+        },
         validation: {
           embeddingId: "Embedding model id must be numeric or empty",
           guardRange: "Min must be ≥1 and max must be ≥ min",
         },
         tooltips: {
           memoryEmbedding:
-            "MEMORY_EMBEDDING_VECTOR_MODEL_ID.\nVECTOR model used when layered user memory is embedded into Milvus; options come from Model admin (VECTOR).\nDisabled rows can only stay selected if they match the current saved id. Clear to unset (server fallback).",
+            "MEMORY_EMBEDDING_VECTOR_MODEL_ID.\nVECTOR model used when layered user memory is embedded into Milvus; options come from Model admin (VECTOR).\nClear: no upstream embedding call—the server uses RagQueryEmbeddingHasher to build a deterministic placeholder vector from the text and configured vector dimension so background indexing keeps running (not a real semantic embedding; recall is weaker than a proper VECTOR).\nSame hash fallback also applies if the id is missing, not VECTOR/inactive, key decrypt fails, or the upstream embedding call errors.",
           ragSnippetMaxChars: "ragSnippetMaxChars: max chars per injected RAG snippet.\nDefault 900; server clamps (~120–16000).",
           ragMaxSnippets: "ragMaxSnippets: max RAG snippets to inject.\nDefault 3; ~1–12.",
           webSummaryMaxChars: "webSummaryMaxChars: max chars for web-search summary in system.\nDefault 1600.",

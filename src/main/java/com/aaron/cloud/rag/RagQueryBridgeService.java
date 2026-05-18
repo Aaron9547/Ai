@@ -16,6 +16,10 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -28,6 +32,11 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 public class RagQueryBridgeService implements RagQueryPort {
+
+    /**
+     * 多知识库检索并行度：虚拟线程承载阻塞式 Milvus/ES I/O，同嵌入模型分组内共享一次 embed 后并行 search。
+     */
+    private static final Executor RAG_MULTI_KB_PARALLEL = Executors.newVirtualThreadPerTaskExecutor();
 
     private final AiProvidersProperties aiProvidersProperties;
     private final AiRagProperties aiRagProperties;
@@ -99,22 +108,13 @@ public class RagQueryBridgeService implements RagQueryPort {
             return List.of();
         }
         RagRetrievalMode mode = aiRagProperties.resolvedRetrievalMode();
-        LinkedHashSet<String> set = new LinkedHashSet<>();
-        for (Long kb : kbIds) {
-            if (kb == null) {
-                continue;
-            }
-            List<String> part =
-                    switch (mode) {
-                        case MILVUS -> searchMilvusSnippets(tid, kb, query, topK);
-                        case MILVUS_ES_HYBRID -> searchHybridSnippets(tid, kb, query, topK);
-                    };
-            addUpTo(set, part, topK);
-            if (set.size() >= topK) {
-                break;
-            }
-        }
-        List<String> out = truncateList(new ArrayList<>(set), topK);
+        List<String> out =
+                switch (mode) {
+                    case MILVUS -> mergeSnippetListsInKbOrder(
+                            tid, kbIds, query, topK, this::searchMilvusSnippetsWithVec);
+                    case MILVUS_ES_HYBRID -> mergeSnippetListsInKbOrder(
+                            tid, kbIds, query, topK, this::searchHybridSnippetsWithMilvusVec);
+                };
         log.info(
                 "ragQueryPort.searchSnippetsAcrossKnowledgeBases tenantId={} kbCount={} mode={} topK={} queryChars={} resultCount={}",
                 tid,
@@ -138,24 +138,13 @@ public class RagQueryBridgeService implements RagQueryPort {
             return List.of();
         }
         RagRetrievalMode mode = aiRagProperties.resolvedRetrievalMode();
-        Map<Long, RagCitationHit> byChunk = new LinkedHashMap<>();
-        for (Long kb : kbIds) {
-            if (kb == null) {
-                continue;
-            }
-            List<RagCitationHit> part =
-                    switch (mode) {
-                        case MILVUS -> searchMilvusCitations(tid, kb, query, topK);
-                        case MILVUS_ES_HYBRID -> searchHybridCitations(tid, kb, query, topK);
-                    };
-            for (RagCitationHit h : part) {
-                byChunk.putIfAbsent(h.chunkId(), h);
-                if (byChunk.size() >= topK) {
-                    return new ArrayList<>(byChunk.values());
-                }
-            }
-        }
-        List<RagCitationHit> out = new ArrayList<>(byChunk.values());
+        List<RagCitationHit> out =
+                switch (mode) {
+                    case MILVUS -> mergeCitationHitsInKbOrder(
+                            tid, kbIds, query, topK, this::searchMilvusCitationsWithVec);
+                    case MILVUS_ES_HYBRID -> mergeCitationHitsInKbOrder(
+                            tid, kbIds, query, topK, this::searchHybridCitationsWithMilvusVec);
+                };
         log.info(
                 "ragQueryPort.searchCitationHitsAcrossKnowledgeBases tenantId={} kbCount={} retrievalMode={} topK={} queryChars={} resultCount={}",
                 tid,
@@ -167,20 +156,205 @@ public class RagQueryBridgeService implements RagQueryPort {
         return out;
     }
 
+    @FunctionalInterface
+    private interface PerKbMilvusSnippetSearch {
+        List<String> search(long tenantId, long kbId, String query, int topK, float[] milvusQueryVec);
+    }
+
+    @FunctionalInterface
+    private interface PerKbMilvusCitationSearch {
+        List<RagCitationHit> search(long tenantId, long kbId, String query, int topK, float[] milvusQueryVec);
+    }
+
+    /**
+     * 多库：相同 {@code assigned_embedding_model_id} 只 embed 一次；各库 Milvus（及混合模式下各库 ES）并行；合并顺序与
+     * {@code kbIds} 一致。
+     */
+    private List<String> mergeSnippetListsInKbOrder(
+            long tenantId,
+            List<Long> kbIds,
+            String query,
+            int topK,
+            PerKbMilvusSnippetSearch perKbSearch) {
+        String q = query == null ? "" : query;
+        List<Long> orderedKbs = kbIds.stream().filter(Objects::nonNull).toList();
+        if (orderedKbs.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, Long> kbToMid = resolveKbToEmbeddingModelIdOrThrow(tenantId, orderedKbs, q);
+        Map<Long, float[]> vecByMid = buildQueryVectorByEmbeddingModelId(tenantId, orderedKbs, kbToMid, q);
+        if (orderedKbs.size() > 1) {
+            log.debug(
+                    "rag multi-kb snippets parallel tenantId={} kbCount={} distinctEmbedModels={}",
+                    tenantId,
+                    orderedKbs.size(),
+                    vecByMid.size());
+        }
+        Map<Long, List<String>> byKb =
+                runPerKbSearchParallel(tenantId, orderedKbs, kbToMid, vecByMid, q, topK, perKbSearch);
+        LinkedHashSet<String> set = new LinkedHashSet<>();
+        for (Long kb : orderedKbs) {
+            addUpTo(set, byKb.getOrDefault(kb, List.of()), topK);
+            if (set.size() >= topK) {
+                break;
+            }
+        }
+        return truncateList(new ArrayList<>(set), topK);
+    }
+
+    private List<RagCitationHit> mergeCitationHitsInKbOrder(
+            long tenantId,
+            List<Long> kbIds,
+            String query,
+            int topK,
+            PerKbMilvusCitationSearch perKbSearch) {
+        String q = query == null ? "" : query;
+        List<Long> orderedKbs = kbIds.stream().filter(Objects::nonNull).toList();
+        if (orderedKbs.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, Long> kbToMid = resolveKbToEmbeddingModelIdOrThrow(tenantId, orderedKbs, q);
+        Map<Long, float[]> vecByMid = buildQueryVectorByEmbeddingModelId(tenantId, orderedKbs, kbToMid, q);
+        if (orderedKbs.size() > 1) {
+            log.debug(
+                    "rag multi-kb citations parallel tenantId={} kbCount={} distinctEmbedModels={}",
+                    tenantId,
+                    orderedKbs.size(),
+                    vecByMid.size());
+        }
+        Map<Long, List<RagCitationHit>> byKb =
+                runPerKbSearchParallel(tenantId, orderedKbs, kbToMid, vecByMid, q, topK, perKbSearch);
+        Map<Long, RagCitationHit> byChunk = new LinkedHashMap<>();
+        for (Long kb : orderedKbs) {
+            for (RagCitationHit h : byKb.getOrDefault(kb, List.of())) {
+                byChunk.putIfAbsent(h.chunkId(), h);
+                if (byChunk.size() >= topK) {
+                    return new ArrayList<>(byChunk.values());
+                }
+            }
+        }
+        return new ArrayList<>(byChunk.values());
+    }
+
+    /**
+     * 与原先逐库顺序调用一致：在列表顺序上首次遇到缺失库或未绑定向量模型时由 {@link RagEmbeddingPort#embed} 抛错。
+     */
+    private Map<Long, Long> resolveKbToEmbeddingModelIdOrThrow(long tenantId, List<Long> orderedKbs, String query) {
+        Map<Long, Long> kbToMid = new LinkedHashMap<>();
+        for (Long kb : orderedKbs) {
+            RagKnowledgeBase row = ragKnowledgeBaseRepository.findByIdAndTenant(kb, tenantId);
+            Long mid = row == null ? null : row.getAssignedEmbeddingModelId();
+            if (mid == null) {
+                ragEmbeddingPort.embed(tenantId, kb, query);
+            }
+            kbToMid.put(kb, Objects.requireNonNull(mid));
+        }
+        return kbToMid;
+    }
+
+    /** 每个不同的嵌入模型主键只调用一次上游 embed（以该组内在 kb 列表中首次出现的库为代表）。 */
+    private Map<Long, float[]> buildQueryVectorByEmbeddingModelId(
+            long tenantId, List<Long> orderedKbs, Map<Long, Long> kbToMid, String query) {
+        Map<Long, float[]> vecByMid = new LinkedHashMap<>();
+        for (Long kb : orderedKbs) {
+            Long mid = kbToMid.get(kb);
+            vecByMid.computeIfAbsent(mid, __ -> ragEmbeddingPort.embed(tenantId, kb, query));
+        }
+        return vecByMid;
+    }
+
+    private Map<Long, List<String>> runPerKbSearchParallel(
+            long tenantId,
+            List<Long> orderedKbs,
+            Map<Long, Long> kbToMid,
+            Map<Long, float[]> vecByMid,
+            String query,
+            int topK,
+            PerKbMilvusSnippetSearch perKbSearch) {
+        List<CompletableFuture<Map.Entry<Long, List<String>>>> futures = new ArrayList<>();
+        for (Long kb : orderedKbs) {
+            float[] vec = vecByMid.get(kbToMid.get(kb));
+            futures.add(
+                    CompletableFuture.supplyAsync(
+                            () -> Map.entry(kb, perKbSearch.search(tenantId, kb, query, topK, vec)),
+                            RAG_MULTI_KB_PARALLEL));
+        }
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        Map<Long, List<String>> out = new LinkedHashMap<>();
+        for (CompletableFuture<Map.Entry<Long, List<String>>> f : futures) {
+            Map.Entry<Long, List<String>> e = f.join();
+            out.put(e.getKey(), e.getValue());
+        }
+        return out;
+    }
+
+    private Map<Long, List<RagCitationHit>> runPerKbSearchParallel(
+            long tenantId,
+            List<Long> orderedKbs,
+            Map<Long, Long> kbToMid,
+            Map<Long, float[]> vecByMid,
+            String query,
+            int topK,
+            PerKbMilvusCitationSearch perKbSearch) {
+        List<CompletableFuture<Map.Entry<Long, List<RagCitationHit>>>> futures = new ArrayList<>();
+        for (Long kb : orderedKbs) {
+            float[] vec = vecByMid.get(kbToMid.get(kb));
+            futures.add(
+                    CompletableFuture.supplyAsync(
+                            () -> Map.entry(kb, perKbSearch.search(tenantId, kb, query, topK, vec)),
+                            RAG_MULTI_KB_PARALLEL));
+        }
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        Map<Long, List<RagCitationHit>> out = new LinkedHashMap<>();
+        for (CompletableFuture<Map.Entry<Long, List<RagCitationHit>>> f : futures) {
+            Map.Entry<Long, List<RagCitationHit>> e = f.join();
+            out.put(e.getKey(), e.getValue());
+        }
+        return out;
+    }
+
     private List<String> searchMilvusSnippets(long tenantId, long kbId, String query, int topK) {
         float[] vec = ragEmbeddingPort.embed(tenantId, kbId, query == null ? "" : query);
-        List<RagVectorRecallHit> hits = vectorStorePort.searchVectors(tenantId, collectionName(kbId), vec, topK);
+        return searchMilvusSnippetsWithVec(tenantId, kbId, vec, topK);
+    }
+
+    private List<String> searchMilvusSnippetsWithVec(long tenantId, long kbId, float[] queryVec, int topK) {
+        List<RagVectorRecallHit> hits =
+                vectorStorePort.searchVectors(tenantId, collectionName(kbId), queryVec, topK);
         return hitsToSnippets(tenantId, kbId, hits, topK);
+    }
+
+    private List<String> searchMilvusSnippetsWithVec(
+            long tenantId, long kbId, String queryIgnored, int topK, float[] milvusQueryVec) {
+        return searchMilvusSnippetsWithVec(tenantId, kbId, milvusQueryVec, topK);
     }
 
     private List<RagCitationHit> searchMilvusCitations(long tenantId, long kbId, String query, int topK) {
         float[] vec = ragEmbeddingPort.embed(tenantId, kbId, query == null ? "" : query);
-        List<RagVectorRecallHit> hits = vectorStorePort.searchVectors(tenantId, collectionName(kbId), vec, topK);
+        return searchMilvusCitationsWithVec(tenantId, kbId, vec, topK);
+    }
+
+    private List<RagCitationHit> searchMilvusCitationsWithVec(long tenantId, long kbId, float[] queryVec, int topK) {
+        List<RagVectorRecallHit> hits =
+                vectorStorePort.searchVectors(tenantId, collectionName(kbId), queryVec, topK);
         return hitsToCitations(tenantId, kbId, hits, topK);
     }
 
+    private List<RagCitationHit> searchMilvusCitationsWithVec(
+            long tenantId, long kbId, String queryIgnored, int topK, float[] milvusQueryVec) {
+        return searchMilvusCitationsWithVec(tenantId, kbId, milvusQueryVec, topK);
+    }
+
     private List<String> searchHybridSnippets(long tenantId, long kbId, String query, int topK) {
-        List<String> mil = searchMilvusSnippets(tenantId, kbId, query, topK);
+        return searchHybridSnippets(tenantId, kbId, query, topK, null);
+    }
+
+    private List<String> searchHybridSnippets(
+            long tenantId, long kbId, String query, int topK, float[] milvusQueryVecOrNull) {
+        List<String> mil =
+                milvusQueryVecOrNull != null
+                        ? searchMilvusSnippetsWithVec(tenantId, kbId, milvusQueryVecOrNull, topK)
+                        : searchMilvusSnippets(tenantId, kbId, query, topK);
         List<String> es = List.of();
         ElasticsearchRagSearchClient esClient = elasticsearchRagSearchClient.getIfAvailable();
         if (esClient != null) {
@@ -191,8 +365,21 @@ public class RagQueryBridgeService implements RagQueryPort {
         return mergeTwoListsDedupe(topK, mil, es);
     }
 
+    private List<String> searchHybridSnippetsWithMilvusVec(
+            long tenantId, long kbId, String query, int topK, float[] milvusQueryVec) {
+        return searchHybridSnippets(tenantId, kbId, query, topK, milvusQueryVec);
+    }
+
     private List<RagCitationHit> searchHybridCitations(long tenantId, long kbId, String query, int topK) {
-        List<RagCitationHit> mil = searchMilvusCitations(tenantId, kbId, query, topK);
+        return searchHybridCitations(tenantId, kbId, query, topK, null);
+    }
+
+    private List<RagCitationHit> searchHybridCitations(
+            long tenantId, long kbId, String query, int topK, float[] milvusQueryVecOrNull) {
+        List<RagCitationHit> mil =
+                milvusQueryVecOrNull != null
+                        ? searchMilvusCitationsWithVec(tenantId, kbId, milvusQueryVecOrNull, topK)
+                        : searchMilvusCitations(tenantId, kbId, query, topK);
         ElasticsearchRagSearchClient esClient = elasticsearchRagSearchClient.getIfAvailable();
         if (esClient == null) {
             return mil;
@@ -209,6 +396,11 @@ public class RagQueryBridgeService implements RagQueryPort {
             }
         }
         return new ArrayList<>(merged.values());
+    }
+
+    private List<RagCitationHit> searchHybridCitationsWithMilvusVec(
+            long tenantId, long kbId, String query, int topK, float[] milvusQueryVec) {
+        return searchHybridCitations(tenantId, kbId, query, topK, milvusQueryVec);
     }
 
     private List<String> hitsToSnippets(long tenantId, long kbId, List<RagVectorRecallHit> hits, int topK) {
@@ -256,7 +448,8 @@ public class RagQueryBridgeService implements RagQueryPort {
     /**
      * 单库对话向量阈值：仅使用 {@code rag_knowledge_base.chat_vector_min_cosine_score}（管理端高级设置 / 库默认
      * 0.65）。实体字段为 null 或未查到知识库行时用固定兜底 0.65（与列默认一致）。
-     * <p>多库检索（{@code *AcrossKnowledgeBases}）时对每个 {@code kbId} 分别检索并在本方法按库解析，互不混用。
+     * <p>多库检索（{@code *AcrossKnowledgeBases}）时对每个 {@code kbId} 分别检索并在本方法按库解析，互不混用；多库路径上对
+     * Milvus/ES 并行调用，合并顺序仍与 {@code kbIds} 列表一致。
      */
     private double resolveChatVectorMinCosineScore(long tenantId, long kbId) {
         RagKnowledgeBase kb = ragKnowledgeBaseRepository.findByIdAndTenant(kbId, tenantId);

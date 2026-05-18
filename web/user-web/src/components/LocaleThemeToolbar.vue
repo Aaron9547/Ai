@@ -1,13 +1,16 @@
 <template>
-  <div class="locale-theme-toolbar" role="toolbar" :aria-label="t('ui.toolbarAria')">
+  <div
+    class="locale-theme-toolbar"
+    :class="{ 'locale-theme-toolbar--compact': compact }"
+    role="toolbar"
+    :aria-label="t('ui.toolbarAria')"
+  >
     <div class="lt-group">
       <el-dropdown trigger="click" teleported popper-class="lt-dropdown-popper" @command="onLocale">
-        <button type="button" class="lt-trigger">
-          <span class="lt-icon-wrap" aria-hidden="true">
-            <el-icon><Postcard /></el-icon>
-          </span>
-          <span class="lt-value">{{ localeLabel(store.locale) }}</span>
-          <el-icon class="lt-caret" aria-hidden="true"><ArrowDown /></el-icon>
+        <button type="button" class="lt-trigger" :title="t('ui.language')">
+          <span class="lt-locale-mark" aria-hidden="true">{{ localeMark }}</span>
+          <span v-if="!compact" class="lt-value">{{ localeLabel(store.locale) }}</span>
+          <el-icon v-if="!compact" class="lt-caret" aria-hidden="true"><ArrowDown /></el-icon>
         </button>
         <template #dropdown>
           <el-dropdown-menu>
@@ -20,12 +23,12 @@
       <span class="lt-divider" aria-hidden="true" />
 
       <el-dropdown trigger="click" teleported popper-class="lt-dropdown-popper" @command="onColorMode">
-        <button type="button" class="lt-trigger">
+        <button type="button" class="lt-trigger" :title="t('ui.theme')">
           <span class="lt-icon-wrap" aria-hidden="true">
             <el-icon><component :is="themeIcon" /></el-icon>
           </span>
-          <span class="lt-value">{{ themeLabel(store.colorMode) }}</span>
-          <el-icon class="lt-caret" aria-hidden="true"><ArrowDown /></el-icon>
+          <span v-if="!compact" class="lt-value">{{ themeLabel(store.colorMode) }}</span>
+          <el-icon v-if="!compact" class="lt-caret" aria-hidden="true"><ArrowDown /></el-icon>
         </button>
         <template #dropdown>
           <el-dropdown-menu>
@@ -40,13 +43,23 @@
 </template>
 
 <script setup lang="ts">
-import { ArrowDown, Moon, Monitor, Postcard, Sunny } from "@element-plus/icons-vue";
+import { ArrowDown, Moon, Monitor, Sunny } from "@element-plus/icons-vue";
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useUiPreferencesStore, type AppLocale, type ColorMode } from "@/stores/uiPreferences";
 
+withDefaults(
+  defineProps<{
+    /** 顶栏紧凑模式：仅图标，适合对话区标题旁 */
+    compact?: boolean;
+  }>(),
+  { compact: false },
+);
+
 const { t } = useI18n();
 const store = useUiPreferencesStore();
+
+const localeMark = computed(() => (store.locale.startsWith("en") ? "En" : "中"));
 
 const themeIcon = computed(() => {
   if (store.colorMode === "dark") return Moon;
@@ -77,6 +90,7 @@ function onColorMode(cmd: string) {
 .locale-theme-toolbar {
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .lt-group {
@@ -111,6 +125,10 @@ html.dark .lt-group {
   transition: background-color 0.14s ease, color 0.14s ease;
 }
 
+.locale-theme-toolbar--compact .lt-trigger {
+  padding: 8px 10px;
+}
+
 .lt-trigger:hover {
   background: var(--el-fill-color-light);
 }
@@ -125,6 +143,28 @@ html.dark .lt-group {
   display: inline-flex;
   font-size: 16px;
   color: var(--el-text-color-secondary);
+}
+
+.locale-theme-toolbar--compact .lt-icon-wrap {
+  font-size: 18px;
+}
+
+.lt-locale-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35em;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  color: var(--el-text-color-primary);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.locale-theme-toolbar--compact .lt-locale-mark {
+  font-size: 13px;
+  min-width: 1.5em;
 }
 
 .lt-value {
@@ -146,6 +186,11 @@ html.dark .lt-group {
   margin: 6px 0;
   background: var(--el-border-color-lighter);
   flex-shrink: 0;
+}
+
+.locale-theme-toolbar--compact .lt-divider {
+  min-height: 32px;
+  margin: 4px 0;
 }
 </style>
 

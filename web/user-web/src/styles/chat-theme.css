@@ -1,0 +1,464 @@
+/* 对话页主题令牌：挂在 .chat-app 上，子组件与全局覆盖共用 */
+.chat-app {
+  --chat-bg-app: #ffffff;
+  --chat-bg-main: #fafafa;
+  --chat-bg-elevated: #ffffff;
+  --chat-bg-muted: #f4f4f5;
+  --chat-bg-subtle: #f9f9f9;
+  --chat-bg-bubble: #f4f4f4;
+  --chat-bg-chip: #ececec;
+  --chat-bg-input: #ffffff;
+  --chat-bg-reasoning: #f4f4f5;
+  --chat-bg-workflow: #fafafa;
+  --chat-bg-highlight-blue: #eff6ff;
+  --chat-bg-highlight-green: #f0fdf4;
+  --chat-bg-web-refs: #f8fafc;
+  --chat-border-web-refs: #e2e8f0;
+  --chat-text-web-refs: #0f172a;
+  --chat-web-chip-bg: #ffffff;
+  --chat-web-chip-border: #cbd5e1;
+  --chat-border: #ececec;
+  --chat-border-subtle: #e4e4e7;
+  --chat-border-input: #e5e5e5;
+  --chat-text-primary: #202020;
+  --chat-text-body: #18181b;
+  --chat-text-secondary: #3f3f46;
+  --chat-text-muted: #71717a;
+  --chat-text-hint: #6e6e6e;
+  --chat-text-meta: #64748b;
+  --chat-text-strong: #18181b;
+  --chat-hover: rgba(0, 0, 0, 0.04);
+  --chat-hover-strong: rgba(0, 0, 0, 0.06);
+  --chat-accent: #19c37d;
+  --chat-link: #2563eb;
+  --chat-toggle-think-glow: rgba(99, 102, 241, 0.32);
+  --chat-toggle-think-ring: rgba(99, 102, 241, 0.55);
+  --chat-toggle-web-glow: rgba(37, 99, 235, 0.28);
+  --chat-toggle-web-ring: rgba(37, 99, 235, 0.48);
+  --chat-md-heading: #18181b;
+  --chat-md-strong: #18181b;
+  --chat-md-muted: #52525b;
+  --chat-md-th-bg: #e4e4e7;
+  --chat-md-th-text: #18181b;
+  --chat-md-td-text: #18181b;
+  --chat-md-pre-bg: #ececec;
+  --chat-md-code-bg: #ececec;
+  --chat-md-table-border: #e4e4e7;
+  --chat-md-blockquote-border: #d4d4d8;
+  --chat-model-select-hover: #f4f4f4;
+}
+
+html.dark .chat-app {
+  --chat-bg-app: #0f0f0f;
+  --chat-bg-main: #141414;
+  --chat-bg-elevated: #1a1a1a;
+  --chat-bg-muted: #27272a;
+  --chat-bg-subtle: #1a1a1a;
+  --chat-bg-bubble: #27272a;
+  --chat-bg-chip: #3f3f46;
+  --chat-bg-input: #1a1a1a;
+  --chat-bg-reasoning: #27272a;
+  --chat-bg-workflow: #1f1f1f;
+  --chat-bg-highlight-blue: #1e293b;
+  --chat-bg-highlight-green: #14532d;
+  --chat-bg-web-refs: #1e293b;
+  --chat-border-web-refs: #334155;
+  --chat-text-web-refs: #cbd5e1;
+  --chat-web-chip-bg: #27272a;
+  --chat-web-chip-border: #475569;
+  --chat-border: #2e2e2e;
+  --chat-border-subtle: #3f3f46;
+  --chat-border-input: #3f3f46;
+  --chat-text-primary: #f4f4f5;
+  --chat-text-body: #e4e4e7;
+  --chat-text-secondary: #d4d4d8;
+  --chat-text-muted: #a1a1aa;
+  --chat-text-hint: #a1a1aa;
+  --chat-text-meta: #94a3b8;
+  --chat-text-strong: #fafafa;
+  --chat-hover: rgba(255, 255, 255, 0.06);
+  --chat-hover-strong: rgba(255, 255, 255, 0.1);
+  --chat-accent: #34d399;
+  --chat-link: #60a5fa;
+  --chat-toggle-think-glow: rgba(129, 140, 248, 0.38);
+  --chat-toggle-think-ring: rgba(165, 180, 252, 0.65);
+  --chat-toggle-web-glow: rgba(96, 165, 250, 0.34);
+  --chat-toggle-web-ring: rgba(147, 197, 253, 0.58);
+  --chat-md-heading: #fafafa;
+  --chat-md-strong: #fafafa;
+  --chat-md-muted: #a1a1aa;
+  --chat-md-th-bg: #3f3f46;
+  --chat-md-th-text: #f4f4f5;
+  --chat-md-td-text: #e4e4e7;
+  --chat-md-pre-bg: #27272a;
+  --chat-md-code-bg: #3f3f46;
+  --chat-md-table-border: #52525b;
+  --chat-md-blockquote-border: #52525b;
+  --chat-model-select-hover: #27272a;
+}
+
+/* 覆盖 ChatView / ChatSidebar 内 scoped 硬编码色（提高权重） */
+html.dark .chat-app .main,
+html.dark .chat-app .thread-head,
+html.dark .chat-app .messages-scroll,
+html.dark .chat-app .mobile-nav,
+html.dark .chat-app .composer,
+html.dark .chat-app .attach-strip {
+  background: var(--chat-bg-main) !important;
+  border-color: var(--chat-border) !important;
+}
+
+html.dark .chat-app .thread-title,
+html.dark .chat-app .mobile-nav-title {
+  color: var(--chat-text-primary) !important;
+}
+
+html.dark .chat-app .thread-hint,
+html.dark .chat-app .thread-tokens,
+html.dark .chat-app .composer-note,
+html.dark .chat-app .attach-limit {
+  color: var(--chat-text-hint) !important;
+}
+
+html.dark .chat-app .thread-tokens strong {
+  color: var(--chat-text-strong) !important;
+}
+
+html.dark .chat-app .composer-surface {
+  background: var(--chat-bg-elevated) !important;
+  border-color: var(--chat-border-subtle) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35) !important;
+}
+
+html.dark .chat-app .composer-surface:focus-within {
+  border-color: #52525b !important;
+}
+
+html.dark .chat-app .composer-input .el-textarea__inner {
+  color: var(--chat-text-primary) !important;
+}
+
+html.dark .chat-app .composer-input .el-textarea__inner::placeholder {
+  color: #71717a !important;
+}
+
+html.dark .chat-app .bubble-inner,
+html.dark .chat-app .bubble-row.assistant .bubble-inner,
+html.dark .chat-app .bubble-row.user .bubble-inner {
+  background: var(--chat-bg-bubble) !important;
+  color: var(--chat-text-body) !important;
+}
+
+/* Markdown 正文（勿用 :deep，全局样式无效） */
+html.dark .chat-app .bubble-md p,
+html.dark .chat-app .bubble-md li,
+html.dark .chat-app .bubble-md td,
+html.dark .chat-app .wf-body-md p,
+html.dark .chat-app .wf-body-md li,
+html.dark .chat-app .wf-body-md td {
+  color: var(--chat-md-td-text) !important;
+}
+
+html.dark .chat-app .bubble-md h1,
+html.dark .chat-app .bubble-md h2,
+html.dark .chat-app .bubble-md h3,
+html.dark .chat-app .bubble-md h4,
+html.dark .chat-app .bubble-md strong,
+html.dark .chat-app .bubble-md b,
+html.dark .chat-app .wf-body-md h1,
+html.dark .chat-app .wf-body-md h2,
+html.dark .chat-app .wf-body-md h3,
+html.dark .chat-app .wf-body-md h4,
+html.dark .chat-app .wf-body-md strong,
+html.dark .chat-app .wf-body-md b {
+  color: var(--chat-md-heading) !important;
+}
+
+html.dark .chat-app .bubble-md th,
+html.dark .chat-app .wf-body-md th {
+  background: var(--chat-md-th-bg) !important;
+  color: var(--chat-md-th-text) !important;
+}
+
+html.dark .chat-app .bubble-md th,
+html.dark .chat-app .bubble-md td,
+html.dark .chat-app .wf-body-md th,
+html.dark .chat-app .wf-body-md td {
+  border-color: var(--chat-md-table-border) !important;
+}
+
+html.dark .chat-app .bubble-md thead,
+html.dark .chat-app .wf-body-md thead {
+  background: var(--chat-md-th-bg) !important;
+}
+
+html.dark .chat-app .bubble-md a,
+html.dark .chat-app .wf-body-md a {
+  color: var(--chat-link) !important;
+}
+
+html.dark .chat-app .bubble-md hr,
+html.dark .chat-app .wf-body-md hr {
+  border-top-color: var(--chat-md-table-border) !important;
+}
+
+html.dark .chat-app .bubble-md blockquote,
+html.dark .chat-app .wf-body-md blockquote {
+  color: var(--chat-md-muted) !important;
+  border-left-color: var(--chat-md-blockquote-border) !important;
+}
+
+html.dark .chat-app .bubble-md pre,
+html.dark .chat-app .wf-body-md pre {
+  background: var(--chat-md-pre-bg) !important;
+}
+
+html.dark .chat-app .bubble-md :not(pre) > code,
+html.dark .chat-app .bubble-md p code,
+html.dark .chat-app .bubble-md li code,
+html.dark .chat-app .wf-body-md p code,
+html.dark .chat-app .wf-body-md li code {
+  background: var(--chat-md-code-bg) !important;
+  color: var(--chat-text-body) !important;
+}
+
+/* 模型选择器（composer 内 + 挂 body 的下拉） */
+html.dark .chat-app .model-pill-select {
+  --el-select-input-color: var(--chat-text-primary) !important;
+  --el-text-color-regular: var(--chat-text-primary) !important;
+  --el-text-color-placeholder: var(--chat-text-muted) !important;
+}
+
+html.dark .chat-app .model-pill-select .el-select__wrapper,
+html.dark .chat-app .model-pill-select .el-input__wrapper,
+html.dark .chat-app .model-pill-select .el-select__selection {
+  color: var(--chat-text-primary) !important;
+}
+
+html.dark .chat-app .model-pill-select .el-input__inner,
+html.dark .chat-app .model-pill-select .el-select__selected-item,
+html.dark .chat-app .model-pill-select .el-select__selected-item span,
+html.dark .chat-app .model-pill-select .el-select__placeholder {
+  color: var(--chat-text-primary) !important;
+}
+
+html.dark .chat-app .model-pill-select .el-select__wrapper:hover,
+html.dark .chat-app .model-pill-select .el-input__wrapper:hover {
+  background: var(--chat-model-select-hover) !important;
+}
+
+html.dark .chat-app .model-pill-select .el-select__caret,
+html.dark .chat-app .model-pill-select .el-input__suffix .el-icon {
+  color: var(--chat-text-muted) !important;
+}
+
+html.dark .el-select-dropdown.model-select-dropdown {
+  background: #1a1a1a !important;
+  border: 1px solid #3f3f46 !important;
+}
+
+html.dark .el-select-dropdown.model-select-dropdown .el-select-dropdown__item {
+  color: #e4e4e7 !important;
+}
+
+html.dark .el-select-dropdown.model-select-dropdown .el-select-dropdown__item.is-hovering {
+  background: #27272a !important;
+}
+
+html.dark .el-select-dropdown.model-select-dropdown .el-select-dropdown__item.is-selected {
+  color: #34d399 !important;
+  font-weight: 600;
+}
+
+html.dark .chat-app .empty-welcome,
+html.dark .chat-app .quick-prompt-chip {
+  color: var(--chat-text-secondary) !important;
+}
+
+html.dark .chat-app .quick-prompt-chip {
+  background: var(--chat-bg-elevated) !important;
+  border-color: var(--chat-border-input) !important;
+}
+
+html.dark .chat-app .quick-prompt-chip:hover {
+  background: var(--chat-bg-muted) !important;
+  border-color: #52525b !important;
+}
+
+html.dark .chat-app .reasoning,
+html.dark .chat-app .intent-workflow-shell {
+  background: var(--chat-bg-reasoning) !important;
+  border-color: var(--chat-border-subtle) !important;
+}
+
+html.dark .chat-app .intent-workflow-head {
+  background: var(--chat-bg-muted) !important;
+  border-bottom-color: var(--chat-border-subtle) !important;
+  color: var(--chat-text-muted) !important;
+}
+
+html.dark .chat-app .reasoning-bar,
+html.dark .chat-app .reasoning-body,
+html.dark .chat-app .wf-bar {
+  color: var(--chat-text-secondary) !important;
+}
+
+html.dark .chat-app .reasoning-bar-title,
+html.dark .chat-app .reasoning-meta,
+html.dark .chat-app .wf-bar-meta {
+  color: var(--chat-text-muted) !important;
+}
+
+html.dark .chat-app .reasoning-intent-hint strong {
+  color: var(--chat-text-strong) !important;
+}
+
+html.dark .chat-app .intent-hit-hint {
+  background: var(--chat-bg-highlight-blue) !important;
+  border-color: #334155 !important;
+  color: #93c5fd !important;
+}
+
+html.dark .chat-app .rag-sources-strip {
+  background: var(--chat-bg-highlight-green) !important;
+  border-color: #166534 !important;
+  color: #86efac !important;
+}
+
+html.dark .chat-app .web-search-refs-strip {
+  background: var(--chat-bg-web-refs) !important;
+  border-color: var(--chat-border-web-refs) !important;
+  color: var(--chat-text-web-refs) !important;
+}
+
+html.dark .chat-app .web-search-refs-strip .rag-sources-label {
+  color: var(--chat-text-body) !important;
+}
+
+html.dark .chat-app .rag-doc-chip,
+html.dark .chat-app .web-ref-chip {
+  background: var(--chat-web-chip-bg) !important;
+  border-color: var(--chat-web-chip-border) !important;
+  color: var(--chat-text-web-refs) !important;
+}
+
+html.dark .chat-app .web-ref-chip:hover {
+  border-color: #94a3b8 !important;
+  color: var(--chat-link) !important;
+}
+
+html.dark .chat-app .user-msg-attach-chip,
+html.dark .chat-app .attach-chip {
+  background: var(--chat-bg-elevated) !important;
+  border-color: var(--chat-border-subtle) !important;
+  color: var(--chat-text-secondary) !important;
+}
+
+html.dark .chat-app .attach-chip {
+  background: var(--chat-bg-chip) !important;
+}
+
+html.dark .chat-app .mobile-nav-btn {
+  background: var(--chat-bg-elevated) !important;
+  color: var(--chat-text-secondary) !important;
+  box-shadow: var(--chat-hover);
+}
+
+html.dark .chat-app .mobile-nav-btn--accent {
+  background: var(--chat-bg-highlight-blue) !important;
+  color: #93c5fd !important;
+}
+
+html.dark .chat-app .input-clear-btn,
+html.dark .chat-app .footer-icon-btn,
+html.dark .chat-app .deep-think-toggle,
+html.dark .chat-app .msg-act-ico-btn,
+html.dark .chat-app .user-msg-copy-btn {
+  color: var(--chat-text-muted) !important;
+}
+
+html.dark .chat-app .deep-think-toggle {
+  background: var(--chat-bg-muted) !important;
+  border-color: var(--chat-border-subtle) !important;
+  color: var(--chat-text-muted) !important;
+}
+
+html.dark .chat-app .deep-think-toggle:hover:not(.deep-think-toggle--on) {
+  background: var(--chat-bg-chip) !important;
+  border-color: #52525b !important;
+  color: var(--chat-text-secondary) !important;
+}
+
+html.dark .chat-app .deep-think-toggle--think {
+  --toggle-glow: var(--chat-toggle-think-glow);
+  --toggle-ring: var(--chat-toggle-think-ring);
+}
+
+html.dark .chat-app .deep-think-toggle--web {
+  --toggle-glow: var(--chat-toggle-web-glow);
+  --toggle-ring: var(--chat-toggle-web-ring);
+}
+
+html.dark .chat-app .deep-think-toggle--on {
+  background: var(--chat-bg-elevated) !important;
+  border-color: #a1a1aa !important;
+  color: var(--chat-text-primary) !important;
+}
+
+html.dark .chat-app .model-meta,
+html.dark .chat-app .token-meta {
+  color: var(--chat-text-meta) !important;
+}
+
+html.dark .chat-app .sidebar {
+  background: var(--chat-bg-subtle) !important;
+  border-right-color: var(--chat-border) !important;
+}
+
+html.dark .chat-app .btn-new {
+  background: var(--chat-bg-elevated) !important;
+  border-color: var(--chat-border-subtle) !important;
+  color: var(--chat-text-primary) !important;
+}
+
+html.dark .chat-app .conv-item {
+  color: var(--chat-text-secondary) !important;
+}
+
+html.dark .chat-app .conv-item:hover {
+  background: var(--chat-bg-muted) !important;
+}
+
+html.dark .chat-app .conv-item.active {
+  background: #3f3f46 !important;
+  border-left-color: var(--chat-text-primary) !important;
+}
+
+html.dark .chat-app .sidebar-foot {
+  border-top-color: var(--chat-border) !important;
+}
+
+html.dark .chat-app .foot-user {
+  color: var(--chat-text-muted) !important;
+}
+
+html.dark .chat-app .foot-btn {
+  background: var(--chat-bg-elevated) !important;
+  border-color: var(--chat-border-subtle) !important;
+  color: var(--chat-text-secondary) !important;
+}
+
+html.dark .chat-app .foot-btn--primary {
+  background: var(--chat-bg-highlight-blue) !important;
+  border-color: #334155 !important;
+  color: #93c5fd !important;
+}
+
+html.dark .chat-app .foot-link {
+  color: var(--chat-text-muted) !important;
+}
+
+html.dark .chat-app .foot-link:hover {
+  background: var(--chat-bg-muted) !important;
+  color: var(--chat-text-primary) !important;
+}

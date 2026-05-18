@@ -2,6 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import vue from "@vitejs/plugin-vue";
 import AutoImport from "unplugin-auto-import/vite";
+import Components from "unplugin-vue-components/vite";
 import { ElementPlusResolver } from "unplugin-vue-components/resolvers";
 import { defineConfig } from "vite";
 
@@ -15,7 +16,23 @@ export default defineConfig({
       resolvers: [ElementPlusResolver()],
       dts: "src/auto-imports.d.ts",
     }),
+    Components({
+      resolvers: [ElementPlusResolver()],
+      dts: "src/components.d.ts",
+    }),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules/element-plus")) return "element-plus";
+          if (id.includes("node_modules/markdown-it") || id.includes("node_modules/dompurify")) {
+            return "markdown";
+          }
+        },
+      },
+    },
+  },
   resolve: {
     alias: { "@": path.resolve(__dirname, "src") },
   },

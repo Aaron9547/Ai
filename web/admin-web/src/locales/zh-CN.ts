@@ -299,13 +299,18 @@ export default {
             "留空则使用服务端内置越狱正则。若填写任意一行，将整表替换内置列表（请谨慎）。错误正则会在服务端被跳过。",
           blockedReplyTemplate: "留空则使用服务端内置中文拦截话术。",
         },
+        placeholders: {
+          blockedReplyTemplate: "示例：抱歉，该内容无法继续处理，请调整表述后重试。",
+          sensitiveWords: "每行一条，示例：\n赌博网站\n代写论文",
+          regexPatterns: "每行一条 Java 正则，示例：\n(?i)ignore\\\\s+previous\\\\s+instructions",
+        },
         validation: {
           embeddingId: "记忆嵌入模型 id 须为数字主键或留空",
           guardRange: "最短字符须 ≥1，且最长 ≥ 最短",
         },
         tooltips: {
           memoryEmbedding:
-            "写入 MEMORY_EMBEDDING_VECTOR_MODEL_ID。\n用户分层记忆写入 Milvus 时调用的嵌入模型，选项来自「模型管理」中类型为 VECTOR 的条目。\n已停用模型仅在选择与当前配置一致时可选中；清空表示未单独指定（按服务端退化逻辑）。",
+            "写入 MEMORY_EMBEDDING_VECTOR_MODEL_ID。\n用户分层记忆写入 Milvus 时使用的嵌入模型，选项来自「模型管理」中 VECTOR。\n清空：不调用上游嵌入接口，服务端用 RagQueryEmbeddingHasher 按用户正文与当前向量维数生成确定性占位向量，避免异步写入因嵌入失败而中断（非真实语义向量，检索效果弱于配置好的 VECTOR）。\n此外：配置的 id 不存在、类型非 VECTOR、模型未启用、API Key 解密失败或上游嵌入异常时，也会回退到同一套占位向量逻辑。",
           ragSnippetMaxChars:
             "ragSnippetMaxChars：单条 RAG 检索片段注入 system 时的最大字符。\n默认 900；服务端限制约 120～16000。",
           ragMaxSnippets: "ragMaxSnippets：最多拼接几条 RAG 片段。\n默认 3；约 1～12。",

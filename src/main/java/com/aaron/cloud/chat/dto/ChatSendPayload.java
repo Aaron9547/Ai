@@ -38,6 +38,12 @@ public class ChatSendPayload {
     @Pattern(regexp = "^[A-Za-z0-9]*$", message = "意图流票据仅允许字母数字")
     private String intentFlowTicket;
 
+    /**
+     * 用户端 UI 所选回复语种（与前端 i18n 一致）：{@code zh-CN} 或 {@code en-US}；注入 system 提示约束助手输出语言。
+     */
+    @Pattern(regexp = "^(zh-CN|en-US)?$", message = "responseLocale 仅支持 zh-CN 或 en-US")
+    private String responseLocale;
+
     /** 供编排与落库 meta 使用；与 {@link #webSearchEnabled} 字段分离，避免 Jackson 将 {@code isX} 误作独立属性。 */
     @JsonIgnore
     public boolean isWebSearchEnabled() {

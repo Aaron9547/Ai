@@ -109,7 +109,7 @@ ai:
     # vector-store：milvus=向量库 RAG/检索；local=不接 Milvus，相关写向量与检索路径关闭。
     vector-store: ${AI_PROVIDERS_VECTOR_STORE:milvus}
     # file-storage：minio=对象存储；local=本机占位。
-    file-storage: ${AI_PROVIDERS_FILE_STORAGE:local}
+    file-storage: ${AI_PROVIDERS_FILE_STORAGE:minio}
     # notification：local=占位；http=预留 HTTP 通知。
     notification: ${AI_PROVIDERS_NOTIFICATION:local}
     # infra-via-discovery：true 且 Eureka 可用时 Milvus/MinIO 优先用注册实例（与 ai.discovery 独立，默认 false）。
@@ -126,7 +126,7 @@ ai:
       vector-dimension: ${AI_MILVUS_VECTOR_DIM:2048}
     minio:
       service-id: ${AI_MINIO_EUREKA_SERVICE_ID:minio}
-      endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:9000}
+      endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:8991}
       access-key: ${MINIO_ACCESS_KEY:minioadmin}
       secret-key: ${MINIO_SECRET_KEY:minioadmin}
       region: ${MINIO_REGION:}

@@ -101,3 +101,8 @@ web/**/*.tsbuildinfo
 # AI Log Plugin 推荐忽略项
 .specstory/
 .ailog/
+
+### Cursor / Agent skills（本地安装，勿提交）###
+.agents/skills/
+.cursor/skills/
+skills-lock.json

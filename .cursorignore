@@ -1,0 +1,4 @@
+﻿# Cursor / Agent skills（本地工具依赖，不参与代码索引）
+.agents/skills/
+.cursor/skills/
+skills-lock.json

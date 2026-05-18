@@ -6,7 +6,7 @@
 
 - **`schema_v1.sql`**：全量 **DDL**（每列含 `COMMENT`、每表含 `COMMENT`）+ **幂等种子**（`INSERT IGNORE` 等）+ **接口限流清单**（仅当 `gw_api_rate_limit_rule` 为空时插入，避免重复执行整文件产生重复行）。
 - **`gw_api_endpoint_catalog_inserts.sql`**：网关 **`gw_api_endpoint`** 接口目录的**全量 `INSERT IGNORE` 清单**与**后续追加档**（与 **`.cursorrules` §4.1.3** 约定一致）；新增对外 REST 时在本文件末尾追加一行即可。
-- **新环境**：在空库上执行一次 `mysql ... < schema_v1.sql` 即可。
+- **新环境**：在空库上执行一次 `mysql ... < schema_v1.sql` 即可（含 **`chat_conversation_share`** 等当前全量表）。
 - **已存在数据的库**：请勿整文件重复执行；请用结构对比工具将库表对齐到本脚本，或仅摘取所需 `ALTER`/`INSERT` 片段。
 
 ## 运维附录
@@ -16,3 +16,4 @@
 - **`migrate_0_1_212_profile_memory_device.sql`**：设备与用户绑定表、分层记忆抽象层/具体层表（与 **0.1.212** 代码一致）；新库以 **`schema_v1.sql`** 为准可跳过。
 - **`migrate_0_1_90_rag_knowledge_workspace.sql`**：知识库工作台（分片策略、模型绑定、文档/分片逻辑删除等列，与 **0.1.90** 代码一致）；空库以 **`schema_v1.sql`** 为准可跳过。
 - **`migrate_0_1_119_gw_api_endpoint.sql`**：网关 **`gw_api_endpoint`** 接口目录表及种子、相关 **`gw_api_rate_limit_rule`** 清单行（与 **0.1.119** 代码一致）；新库以 **`schema_v1.sql`** 为准可跳过。
+- **`migrate_0_1_230_chat_conversation_share.sql`**：对话分享快照表 **`chat_conversation_share`**（**`share_code`** 全局唯一、**`snapshot_json`**、**`expires_at`**，与 **0.1.230** 后端及 **0.1.231** 用户端分享弹窗一致）；新库若 **`schema_v1.sql`** 已含该表可跳过。

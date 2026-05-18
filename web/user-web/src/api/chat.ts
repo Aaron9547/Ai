@@ -121,6 +121,32 @@ export async function listConversationMessages(conversationId: number): Promise<
   return data;
 }
 
+export interface ChatShareCreateResult {
+  shareCode: string;
+  sharePath: string;
+  expiresAt: string | null;
+}
+
+export async function createConversationShare(
+  conversationId: number,
+  body: { messageIds: number[] },
+): Promise<ChatShareCreateResult> {
+  const { data } = await http.post<ChatShareCreateResult>(
+    `/open/v1/chat/conversations/${conversationId}/shares`,
+    body,
+  );
+  return data;
+}
+
+export async function getPublicShare(shareCode: string): Promise<{
+  title: string;
+  messages: ChatHistoryMessage[];
+  sharedAt: string;
+}> {
+  const { data } = await http.get(`/open/v1/chat/shares/${encodeURIComponent(shareCode)}`);
+  return data as { title: string; messages: ChatHistoryMessage[]; sharedAt: string };
+}
+
 export interface LlmModelOption {
   alias: string;
   displayName: string;
@@ -162,6 +188,8 @@ export async function uploadChatAttachments(
   return data;
 }
 
+export type ChatResponseLocale = "zh-CN" | "en-US";
+
 export interface ChatSendPayload {
   content: string;
   modelAlias: string;
@@ -171,6 +199,8 @@ export interface ChatSendPayload {
   attachmentIds: number[];
   /** 多轮意图流票据（来自上一条助手消息 meta） */
   intentFlowTicket?: string | null;
+  /** 与 UI 语言一致，约束助手回复语种 */
+  responseLocale?: ChatResponseLocale;
 }
 
 export type TokenUsageChunk = {
@@ -307,6 +337,69 @@ export interface ChatRegenerateBody {
   modelAlias?: string;
   thinkingEnabled?: boolean;
   webSearchEnabled?: boolean;
+  responseLocale?: ChatResponseLocale;
+}
+
+export type ChatStreamOptions = {
+  signal?: AbortSignal;
+};
+
+async function readSseStream(
+  res: Response,
+  onPart: (p: StreamPart) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (!res.ok || !res.body) {
+    throw new Error("stream request failed: " + res.status);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      if (signal?.aborted) {
+        await reader.cancel();
+        throw new DOMException("Aborted", "AbortError");
+      }
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf("\n\n")) >= 0) {
+        const block = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        for (const line of block.split("\n")) {
+          if (line.startsWith("data:")) {
+            const raw = line.slice(5).trimStart();
+            const part = parseSsePayload(raw);
+            if (part) {
+              onPart(part);
+            }
+          }
+        }
+      }
+    }
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function streamFetchHeaders(): Record<string, string> {
+  const token = getUserAccessToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "text/event-stream",
+    ...sseOutboundTenantHeaders(),
+    "X-Device-Id": getOrCreateDeviceId(),
+  };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
 }
 
 /** 删除最后一条助手消息并基于前一条用户消息重新流式生成（SSE 帧与 {@link streamAssistantReply} 相同）。 */
@@ -315,51 +408,19 @@ export async function streamRegenerateAssistantReply(
   assistantMessageId: number,
   body: ChatRegenerateBody | undefined,
   onPart: (p: StreamPart) => void,
+  options?: ChatStreamOptions,
 ): Promise<void> {
   const base = resolveApiBaseForBrowser();
-  const token = getUserAccessToken();
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    Accept: "text/event-stream",
-    ...sseOutboundTenantHeaders(),
-    "X-Device-Id": getOrCreateDeviceId(),
-  };
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
   const res = await fetch(
     `${base}/open/v1/chat/conversations/${conversationId}/messages/${assistantMessageId}/retry`,
     {
       method: "POST",
-      headers,
+      headers: streamFetchHeaders(),
       body: JSON.stringify(body ?? {}),
+      signal: options?.signal,
     },
   );
-  if (!res.ok || !res.body) {
-    throw new Error("stream request failed: " + res.status);
-  }
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let idx;
-    while ((idx = buffer.indexOf("\n\n")) >= 0) {
-      const block = buffer.slice(0, idx);
-      buffer = buffer.slice(idx + 2);
-      for (const line of block.split("\n")) {
-        if (line.startsWith("data:")) {
-          const raw = line.slice(5).trimStart();
-          const part = parseSsePayload(raw);
-          if (part) {
-            onPart(part);
-          }
-        }
-      }
-    }
-  }
+  await readSseStream(res, onPart, options?.signal);
 }
 
 /** 使用 fetch 读取 SSE（携带 {@code X-Tenant-Id} 或 {@code X-Tenant-Code} 与 {@code X-Device-Id}）。data 行为 JSON 分帧：content / reasoning / ragDoc / webSearchRefs / end */
@@ -367,46 +428,14 @@ export async function streamAssistantReply(
   conversationId: number,
   payload: ChatSendPayload,
   onPart: (p: StreamPart) => void,
+  options?: ChatStreamOptions,
 ): Promise<void> {
   const base = resolveApiBaseForBrowser();
-  const token = getUserAccessToken();
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    Accept: "text/event-stream",
-    ...sseOutboundTenantHeaders(),
-    "X-Device-Id": getOrCreateDeviceId(),
-  };
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
   const res = await fetch(`${base}/open/v1/chat/conversations/${conversationId}/messages`, {
     method: "POST",
-    headers,
+    headers: streamFetchHeaders(),
     body: JSON.stringify(payload),
+    signal: options?.signal,
   });
-  if (!res.ok || !res.body) {
-    throw new Error("stream request failed: " + res.status);
-  }
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let idx;
-    while ((idx = buffer.indexOf("\n\n")) >= 0) {
-      const block = buffer.slice(0, idx);
-      buffer = buffer.slice(idx + 2);
-      for (const line of block.split("\n")) {
-        if (line.startsWith("data:")) {
-          const raw = line.slice(5).trimStart();
-          const part = parseSsePayload(raw);
-          if (part) {
-            onPart(part);
-          }
-        }
-      }
-    }
-  }
+  await readSseStream(res, onPart, options?.signal);
 }

@@ -35,6 +35,11 @@ const router = createRouter({
           component: () => import("../views/chat/ChatView.vue"),
         },
         {
+          path: "share/:shareCode",
+          name: "tenant-share",
+          component: () => import("../views/chat/ChatShareView.vue"),
+        },
+        {
           path: "system/me",
           name: "tenant-me",
           component: () => import("../views/system/MeView.vue"),

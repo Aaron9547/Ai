@@ -573,17 +573,20 @@ public class ChatApplicationService {
         if (!profileAddendum.isBlank()) {
             sys.append("【画像·跨会话】\n").append(profileAddendum).append("\n\n");
         }
+        String responseLocale = ChatResponseLocalePrompt.normalize(payload.getResponseLocale());
         if (intent == IntentRoute.RAG) {
             sys.append("可参考知识片段：");
             for (String s : ragSnippets) {
                 sys.append("\n- ").append(s);
             }
+            ChatResponseLocalePrompt.appendLanguageDirective(sys, responseLocale);
             var sysTurn = new ModelChatRequest.MessageTurn();
             sysTurn.setRole("system");
             sysTurn.setContent(sys.toString());
             turns.add(sysTurn);
         } else {
-            sys.append("你是 Ai 中台助手。");
+            sys.append(ChatResponseLocalePrompt.baseAssistantPersona(responseLocale));
+            ChatResponseLocalePrompt.appendLanguageDirective(sys, responseLocale);
             var sysTurn = new ModelChatRequest.MessageTurn();
             sysTurn.setRole("system");
             sysTurn.setContent(sys.toString());
@@ -961,6 +964,9 @@ public class ChatApplicationService {
         if (regenerateOpts.getWebSearchEnabled() != null) {
             payload.setWebSearchEnabled(Boolean.TRUE.equals(regenerateOpts.getWebSearchEnabled()));
         }
+        if (regenerateOpts.getResponseLocale() != null && !regenerateOpts.getResponseLocale().isBlank()) {
+            payload.setResponseLocale(regenerateOpts.getResponseLocale().trim());
+        }
     }
 
     /** 鍒犻櫎褰撳墠鍔╂墜琛屽墠锛屾妸宸叉湁 priorVersions 涓庡綋鍓嶇蹇収涓叉垚閾惧啓鍏ヤ笅涓€杞姪鎵?meta銆?*/
@@ -1038,6 +1044,9 @@ public class ChatApplicationService {
                 if (t != null && !t.isBlank()) {
                     p.setIntentFlowTicket(t.trim());
                 }
+            }
+            if (n.has("responseLocale") && n.get("responseLocale").isTextual()) {
+                p.setResponseLocale(ChatResponseLocalePrompt.normalize(n.get("responseLocale").asText()));
             }
             return p;
         } catch (IllegalArgumentException e) {
@@ -1352,7 +1361,7 @@ public class ChatApplicationService {
         return t.length() > 200 ? t.substring(0, 200) + "…" : t;
     }
 
-    private void assertConversationAccess(ChatConversation conv) {
+    void assertConversationAccess(ChatConversation conv) {
         var snap = TenantContextHolder.require();
         if (!snap.getTenantId().equals(conv.getTenantId())) {
             throw new IllegalArgumentException("conversation not found");
@@ -1821,6 +1830,7 @@ public class ChatApplicationService {
             n.put("modelAlias", payload.getModelAlias());
             n.put("thinkingEnabled", payload.isThinkingEnabled());
             n.put("webSearchEnabled", payload.isWebSearchEnabled());
+            n.put("responseLocale", ChatResponseLocalePrompt.normalize(payload.getResponseLocale()));
             n.putPOJO("attachmentIds", attIds);
             return objectMapper.writeValueAsString(n);
         } catch (Exception e) {

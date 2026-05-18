@@ -8,70 +8,56 @@
     }"
   >
     <div v-if="isMobile && sidebarOpen" class="sidebar-scrim" aria-hidden="true" @click="sidebarOpen = false" />
-    <aside class="sidebar" :class="{ 'sidebar--drawer-open': isMobile && sidebarOpen }">
-      <div class="sidebar-head">
-        <button type="button" class="btn-new" @click="newConv">
-          <el-icon><Plus /></el-icon>
-          新对话
-        </button>
-      </div>
-      <el-scrollbar class="conv-scroll">
-        <ul class="conv-list">
-          <li
-            v-for="c in convs"
-            :key="c.id"
-            :class="['conv-item', { active: c.id === convId }]"
-            @click="selectConv(c.id)"
-          >
-            <span class="conv-title">{{ c.title }}</span>
-          </li>
-        </ul>
-      </el-scrollbar>
-      <div class="sidebar-foot">
-        <div class="foot-auth">
-          <template v-if="loggedInUsername">
-            <span class="foot-user" :title="loggedInUsername">{{ loggedInUsername }}</span>
-            <button type="button" class="foot-btn" @click="logoutUser">退出</button>
-          </template>
-          <button v-else type="button" class="foot-btn foot-btn--primary" @click="authOpen = true">登录 / 注册</button>
-        </div>
-        <RouterLink class="foot-link" :to="mePagePath">
-          <el-icon><Cpu /></el-icon>
-          设备与登录
-        </RouterLink>
-      </div>
-    </aside>
-
+    <ChatSidebar
+      :convs="convs"
+      :conv-id="convId"
+      :logged-in-username="loggedInUsername"
+      :me-page-path="mePagePath"
+      :drawer-open="isMobile && sidebarOpen"
+      @select="selectConv"
+      @new-conv="newConv"
+      @logout="logoutUser"
+      @login="authOpen = true"
+    />
     <UserAuthDialog v-model="authOpen" @done="onAuthDone" />
 
     <section class="main">
       <header v-if="isMobile" class="mobile-nav">
-        <button type="button" class="mobile-nav-btn" aria-label="打开会话列表" @click="sidebarOpen = !sidebarOpen">
+        <button
+          type="button"
+          class="mobile-nav-btn"
+          :aria-label="t('chat.ariaOpenConvs')"
+          @click="sidebarOpen = !sidebarOpen"
+        >
           <el-icon :size="22"><Menu /></el-icon>
         </button>
         <span class="mobile-nav-title">{{ activeTitle }}</span>
-        <button type="button" class="mobile-nav-btn mobile-nav-btn--accent" aria-label="新对话" @click="onMobileNewConv">
+        <LocaleThemeToolbar v-if="isMobile" compact class="thread-head-tools" />
+        <button
+          type="button"
+          class="mobile-nav-btn mobile-nav-btn--accent"
+          :aria-label="t('chat.ariaNewChat')"
+          @click="onMobileNewConv"
+        >
           <el-icon :size="22"><Plus /></el-icon>
         </button>
       </header>
       <header class="thread-head">
-        <h1 v-if="!isMobile" class="thread-title">{{ activeTitle }}</h1>
+        <div class="thread-head-row">
+          <h1 v-if="!isMobile" class="thread-title">{{ activeTitle }}</h1>
+          <LocaleThemeToolbar v-if="!isMobile" compact class="thread-head-tools" />
+        </div>
         <p class="thread-hint">
-          {{
-            isMobile
-              ? "输入后点右下角发送；可点「+」加附件。"
-              : "Enter 发送，Shift+Enter 换行；附件点「+」或拖入输入框。"
-          }}
+          {{ isMobile ? t("chat.threadHintMobile") : t("chat.threadHintDesktop") }}
         </p>
-        <p v-if="sessionTokenTotal > 0" class="thread-tokens">
-          本会话已累计 <strong>{{ sessionTokenTotal }}</strong> tokens（各条助手回复落库用量之和）
-        </p>
+        <p v-if="sessionTokenTotal > 0" class="thread-tokens" v-html="t('chat.tokenLine', { n: sessionTokenTotal })" />
       </header>
 
-      <div ref="scrollAreaRef" class="messages-wrap">
+      <el-scrollbar ref="scrollAreaRef" class="messages-scroll" tag="div">
+        <div class="messages-scroll-inner">
         <div v-if="messages.length === 0" class="empty">
-          <div class="empty-brand">Ai</div>
-          <p class="empty-welcome">您好！我是 Ai 中台助手，有什么可以帮助您的吗？</p>
+          <div class="empty-brand">{{ t("chat.emptyBrand") }}</div>
+          <p class="empty-welcome">{{ t("chat.emptyWelcome") }}</p>
           <div class="quick-prompts" role="list">
             <button
               v-for="(q, i) in quickPrompts"
@@ -93,7 +79,7 @@
             <div
               class="avatar"
               :class="m.role === 'user' ? 'avatar--user' : 'avatar--assistant'"
-              :aria-label="m.role === 'user' ? '我' : '助手'"
+              :aria-label="m.role === 'user' ? t('chat.roleMe') : t('chat.roleAssistant')"
             >
               <el-icon :size="17">
                 <User v-if="m.role === 'user'" />
@@ -111,10 +97,10 @@
                   :class="{ 'reasoning-bar--live': m.reasoningStreaming }"
                   @click="onReasoningBarClick(m)"
                 >
-                  <span class="reasoning-bar-title">思考过程</span>
+                  <span class="reasoning-bar-title">{{ t("chat.reasoningTitle") }}</span>
                   <span v-if="m.reasoningStreaming" class="reasoning-live">{{ intentReasoningLiveLabel(m) }}</span>
                   <span v-else class="reasoning-meta">
-                    {{ m.reasoningCollapsed ? "已折叠 · 点击展开" : "点击收起" }}
+                    {{ m.reasoningCollapsed ? t("chat.reasoningCollapsed") : t("chat.reasoningExpand") }}
                   </span>
                   <el-icon class="reasoning-chevron">
                     <ArrowDown v-if="!isReasoningBodyVisible(m)" />
@@ -129,16 +115,15 @@
                     <p
                       v-else-if="reasoningIntentOrchestrationHint(m)"
                       class="reasoning-intent-hint"
-                    >
-                      已开启「思考」；本回复由<strong>意图编排</strong>完成，模型链式思考未参与。请关注下方「流程进度」各步骤输出。
-                    </p>
+                      v-html="t('chat.reasoningIntentHint')"
+                    />
                     <span v-else-if="m.reasoningStreaming" class="cursor" />
                   </div>
                 </div>
               </div>
               <div v-if="m.role === 'assistant' && showIntentWorkflowShell(m)" class="intent-workflow">
                 <div class="intent-workflow-shell">
-                  <div class="intent-workflow-head">流程进度</div>
+                  <div class="intent-workflow-head">{{ t("chat.workflowHead") }}</div>
                   <div v-for="seg in m.workflowSegments" :key="seg.segmentId" class="wf-step">
                     <button
                       type="button"
@@ -155,12 +140,14 @@
                         </el-icon>
                       </span>
                       <span class="wf-bar-title">{{ wfSegmentBarTitle(seg) }}</span>
-                      <span v-if="seg.status === 'loading'" class="wf-bar-meta">处理中…</span>
-                      <span v-else-if="seg.status === 'streaming'" class="wf-bar-meta">输出中…</span>
+                      <span v-if="seg.status === 'loading'" class="wf-bar-meta">{{ t("chat.wfProcessing") }}</span>
+                      <span v-else-if="seg.status === 'streaming'" class="wf-bar-meta">{{ t("chat.wfStreaming") }}</span>
                       <span v-else-if="seg.status === 'done'" class="wf-bar-meta">
-                        {{ isWfSegmentBodyVisible(seg) ? "点击收起" : "已完成 · 点击展开" }}
+                        {{
+                          isWfSegmentBodyVisible(seg) ? t("chat.wfDoneCollapse") : t("chat.wfDoneExpand")
+                        }}
                       </span>
-                      <span v-else class="wf-bar-meta">等待中…</span>
+                      <span v-else class="wf-bar-meta">{{ t("chat.wfWaiting") }}</span>
                       <el-icon class="wf-bar-chevron">
                         <ArrowDown v-if="!isWfSegmentBodyVisible(seg)" />
                         <ArrowUp v-else />
@@ -169,17 +156,20 @@
                     <div v-show="isWfSegmentBodyVisible(seg)" class="wf-body-outer">
                       <div v-if="seg.status === 'loading'" class="wf-loading">
                         <el-icon class="wf-spin" :size="18"><Loading /></el-icon>
-                        <span>处理中…</span>
+                        <span>{{ t("chat.wfProcessing") }}</span>
                       </div>
                       <template v-else-if="seg.status === 'streaming'">
-                        <div class="wf-body-md bubble-md" v-html="workflowSegmentStreamingHtml(seg)" />
+                        <div
+                          class="wf-body-md bubble-md bubble-md--streaming"
+                          v-html="workflowSegmentStreamingHtml(seg)"
+                        />
                       </template>
                       <template v-else-if="seg.status === 'done'">
                         <div class="wf-body-md bubble-md" v-html="workflowSegmentRichHtml(seg.text || '')" />
                       </template>
                       <div v-else class="wf-loading">
                         <el-icon class="wf-spin" :size="18"><Loading /></el-icon>
-                        <span>等待中…</span>
+                        <span>{{ t("chat.wfWaiting") }}</span>
                       </div>
                     </div>
                   </div>
@@ -189,27 +179,31 @@
                 v-if="m.role === 'assistant' && showAssistantMdBubble(m)"
                 class="bubble-inner bubble-inner--assistant"
               >
-                <div class="bubble-md" v-html="assistantMdStreamingHtml(m)" />
+                <div
+                  class="bubble-md"
+                  :class="{ 'bubble-md--streaming': m.streaming }"
+                  v-html="assistantMdStreamingHtml(m)"
+                />
               </div>
               <div v-else-if="m.role === 'user'" class="bubble-inner bubble-inner--user">
+                <span class="user-msg-text">{{ m.content }}<span v-if="m.streaming" class="cursor" /></span>
                 <button
                   type="button"
                   class="user-msg-copy-btn"
-                  title="复制提问"
-                  aria-label="复制提问"
+                  :title="t('chat.copyQuestion')"
+                  :aria-label="t('chat.copyQuestion')"
                   @click="copyUserMessage(m, idx)"
                 >
                   <el-icon v-if="userCopyFlashKey !== rowUserCopyKeyUser(idx)" :size="16"><DocumentCopy /></el-icon>
                   <el-icon v-else class="msg-act-ico-success" :size="16"><CircleCheck /></el-icon>
                 </button>
-                <span class="user-msg-text">{{ m.content }}<span v-if="m.streaming" class="cursor" /></span>
                 <div v-if="m.attachments?.length" class="user-msg-attach-strip" role="list">
-                  <span class="rag-sources-label">附件</span>
+                  <span class="rag-sources-label">{{ t("chat.attachments") }}</span>
                   <span
                     v-for="a in m.attachments"
                     :key="a.id"
                     class="user-msg-attach-chip"
-                    :title="a.fileName + (a.charLength != null ? `（${a.charLength} 字）` : '')"
+                    :title="a.fileName + (a.charLength != null ? t('chat.attachChars', { n: a.charLength }) : '')"
                   >
                     <el-icon class="user-msg-attach-ico"><Document /></el-icon>
                     <span class="user-msg-attach-name">{{ truncateName(a.fileName) }}</span>
@@ -222,11 +216,11 @@
                 role="note"
               >
                 <template v-if="m.intentTurnHit.keywordPhrase">
-                  已匹配关键词「{{ m.intentTurnHit.keywordPhrase }}」
+                  {{ t("chat.intentKeyword", { phrase: m.intentTurnHit.keywordPhrase }) }}
                   <span class="intent-hit-sub">（{{ formatIntentMatchSource(m.intentTurnHit.matchSource) }}）</span>
                 </template>
                 <template v-else>
-                  已进入意图流程
+                  {{ t("chat.intentFlow") }}
                   <span class="intent-hit-sub">（{{ formatIntentMatchSource(m.intentTurnHit.matchSource) }}）</span>
                 </template>
               </div>
@@ -236,56 +230,80 @@
                 role="status"
                 aria-live="polite"
               >
-                <span class="rag-sources-label">参考文档</span>
+                <span class="rag-sources-label">{{ t("chat.refDocs") }}</span>
                 <span v-for="(t, ti) in m.ragRetrievalTitles" :key="`${ti}-${t}`" class="rag-doc-chip">{{ t }}</span>
               </div>
               <div
                 v-if="m.webSearchReferences?.length && m.role === 'assistant'"
                 class="web-search-refs-strip"
-                role="list"
+                :class="{ 'web-search-refs-strip--foldable': webSearchRefsFoldable(m.webSearchReferences) }"
               >
-                <span class="rag-sources-label">联网参考</span>
-                <template v-for="(w, wi) in m.webSearchReferences" :key="`${wi}-${w.url || w.title || ''}`">
-                  <a
-                    v-if="(w.url ?? '').trim()"
-                    class="web-ref-chip"
-                    :href="w.url"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    :title="(w.summary || '').trim() || undefined"
-                  >
-                    <img
-                      v-if="(w.logoUrl ?? '').trim()"
-                      class="web-ref-logo"
-                      :src="w.logoUrl!"
-                      alt=""
-                    />
-                    <span class="web-ref-chip-text">{{ webRefLabel(w) }}</span>
-                  </a>
-                  <span v-else class="web-ref-chip web-ref-chip--nolink" :title="(w.summary || '').trim() || undefined">
-                    <img
-                      v-if="(w.logoUrl ?? '').trim()"
-                      class="web-ref-logo"
-                      :src="w.logoUrl!"
-                      alt=""
-                    />
-                    <span class="web-ref-chip-text">{{ webRefLabel(w) }}</span>
+                <button
+                  v-if="webSearchRefsFoldable(m.webSearchReferences)"
+                  type="button"
+                  class="web-search-refs-bar"
+                  @click="onWebSearchRefsBarClick(m)"
+                >
+                  <span class="rag-sources-label">{{ t("chat.webRefs") }}</span>
+                  <span class="web-search-refs-meta">
+                    {{
+                      isWebSearchRefsBodyVisible(m)
+                        ? t("chat.webRefsExpand")
+                        : t("chat.webRefsCollapsed", { n: m.webSearchReferences!.length })
+                    }}
                   </span>
-                </template>
+                  <el-icon class="web-search-refs-chevron">
+                    <ArrowDown v-if="!isWebSearchRefsBodyVisible(m)" />
+                    <ArrowUp v-else />
+                  </el-icon>
+                </button>
+                <span v-else class="rag-sources-label">{{ t("chat.webRefs") }}</span>
+                <div v-show="isWebSearchRefsBodyVisible(m)" class="web-search-refs-body" role="list">
+                  <template v-for="(w, wi) in m.webSearchReferences" :key="`${wi}-${w.url || w.title || ''}`">
+                    <a
+                      v-if="(w.url ?? '').trim()"
+                      class="web-ref-chip"
+                      :href="w.url"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      :title="(w.summary || '').trim() || undefined"
+                    >
+                      <img
+                        v-if="(w.logoUrl ?? '').trim()"
+                        class="web-ref-logo"
+                        :src="w.logoUrl!"
+                        alt=""
+                      />
+                      <span class="web-ref-chip-text">{{ webRefLabel(w) }}</span>
+                    </a>
+                    <span
+                      v-else
+                      class="web-ref-chip web-ref-chip--nolink"
+                      :title="(w.summary || '').trim() || undefined"
+                    >
+                      <img
+                        v-if="(w.logoUrl ?? '').trim()"
+                        class="web-ref-logo"
+                        :src="w.logoUrl!"
+                        alt=""
+                      />
+                      <span class="web-ref-chip-text">{{ webRefLabel(w) }}</span>
+                    </span>
+                  </template>
+                </div>
               </div>
               <div
-                v-if="
-                  m.role === 'assistant' &&
-                  (m.modelAlias || (showAssistantMainBubble(m) && !m.streaming))
-                "
+                v-if="m.role === 'assistant' && (m.modelAlias || showAssistantMainBubble(m))"
                 class="model-meta-row"
+                :class="{ 'model-meta-row--streaming': m.streaming && showAssistantMainBubble(m) }"
               >
-                <span v-if="m.modelAlias" class="model-meta">模型 {{ m.modelAlias }}</span>
+                <span v-if="m.modelAlias" class="model-meta">{{ t("chat.modelLabel", { alias: m.modelAlias }) }}</span>
                 <div
-                  v-if="showAssistantMainBubble(m) && !m.streaming"
+                  v-if="showAssistantMainBubble(m)"
                   class="msg-actions msg-actions--after-model"
+                  :class="{ 'msg-actions--during-stream': m.streaming }"
                   role="toolbar"
-                  aria-label="本条助手消息操作"
+                  :aria-label="t('chat.msgActionsAria')"
                 >
                   <div class="msg-actions-bar">
                   <span class="msg-copy-group">
@@ -307,7 +325,7 @@
                       </span>
                       <template #dropdown>
                         <el-dropdown-menu>
-                          <el-dropdown-item command="md">复制为 Markdown</el-dropdown-item>
+                          <el-dropdown-item command="md">{{ t("chat.copyAsMd") }}</el-dropdown-item>
                         </el-dropdown-menu>
                       </template>
                     </el-dropdown>
@@ -316,13 +334,13 @@
                     v-if="assistantVariantNavShow(m)"
                     class="msg-variant-nav"
                     role="group"
-                    aria-label="切换回答版本"
+                    :aria-label="t('chat.variantNavAria')"
                   >
                     <button
                       type="button"
                       class="msg-variant-btn"
                       :disabled="(m.activeVariantIndex ?? 0) <= 0"
-                      aria-label="上一版回答"
+                      :aria-label="t('chat.variantPrevAria')"
                       @click="stepAssistantVariant(m, -1)"
                     >
                       <el-icon :size="14"><ArrowLeft /></el-icon>
@@ -336,19 +354,19 @@
                       type="button"
                       class="msg-variant-btn"
                       :disabled="(m.activeVariantIndex ?? 0) >= m.replyVariants!.length - 1"
-                      aria-label="下一版回答"
+                      :aria-label="t('chat.variantNextAria')"
                       @click="stepAssistantVariant(m, 1)"
                     >
                       <el-icon :size="14"><ArrowRight /></el-icon>
                     </button>
                   </div>
                   <span class="msg-actions-sep" aria-hidden="true" />
-                  <div v-if="m.id" class="msg-act-vote" role="group" aria-label="评价">
+                  <div v-if="m.id" class="msg-act-vote" role="group" :aria-label="t('chat.voteAria')">
                     <button
                       type="button"
                       class="msg-act-ico-btn"
                       :class="{ 'msg-act-ico-btn--like-on': m.userFeedback === 'LIKE' }"
-                      title="赞同"
+                      :title="t('chat.likeTitle')"
                       :disabled="feedbackSendingId === m.id || !assistantFeedbackEligible(m)"
                       @click="toggleAssistantLike(m)"
                     >
@@ -361,7 +379,7 @@
                       type="button"
                       class="msg-act-ico-btn"
                       :class="{ 'msg-act-ico-btn--dislike-on': m.userFeedback === 'DISLIKE' }"
-                      title="不满意"
+                      :title="t('chat.dislikeTitle')"
                       :disabled="feedbackSendingId === m.id || !assistantFeedbackEligible(m)"
                       @click="toggleAssistantDislike(m)"
                     >
@@ -378,14 +396,19 @@
                     </button>
                   </div>
                   <span v-if="m.id" class="msg-actions-sep" aria-hidden="true" />
-                  <button type="button" class="msg-act-ico-btn" title="分享" @click="openShareDialog(m)">
+                  <button
+                    type="button"
+                    class="msg-act-ico-btn"
+                    :title="t('chat.shareTitle')"
+                    @click="openShareDialog(m, idx)"
+                  >
                     <el-icon :size="17"><Share /></el-icon>
                   </button>
                   <button
                     v-if="isLastAssistantIndex(idx) && assistantLatestPersistedDbId(m) != null"
                     type="button"
                     class="msg-act-ico-btn"
-                    title="重新生成"
+                    :title="t('chat.regenerateTitle')"
                     :disabled="sending"
                     @click="retryAssistantAt(idx)"
                   >
@@ -396,14 +419,14 @@
                     popper-class="msg-actions-dd-popper"
                     @command="(cmd: string) => onAssistantMore(cmd, idx)"
                   >
-                    <button type="button" class="msg-act-ico-btn" title="更多" aria-label="更多">
+                    <button type="button" class="msg-act-ico-btn" :title="t('chat.moreTitle')" :aria-label="t('chat.moreAria')">
                       <el-icon :size="17"><More /></el-icon>
                     </button>
                     <template #dropdown>
                       <el-dropdown-menu>
-                        <el-dropdown-item command="report">举报</el-dropdown-item>
-                        <el-dropdown-item command="editPrompt">修改提示词</el-dropdown-item>
-                        <el-dropdown-item command="speak">朗读本条</el-dropdown-item>
+                        <el-dropdown-item command="report">{{ t("chat.report") }}</el-dropdown-item>
+                        <el-dropdown-item command="editPrompt">{{ t("chat.editPrompt") }}</el-dropdown-item>
+                        <el-dropdown-item command="speak">{{ t("chat.speak") }}</el-dropdown-item>
                       </el-dropdown-menu>
                     </template>
                   </el-dropdown>
@@ -414,13 +437,19 @@
                 v-if="m.role === 'assistant' && m.usage && m.usage.totalTokens > 0"
                 class="token-meta"
               >
-                本条约 {{ m.usage.totalTokens }} tokens（提示 {{ m.usage.promptTokens }} / 生成
-                {{ m.usage.completionTokens }}）
+                {{
+                  t("chat.tokenLineMsg", {
+                    total: m.usage.totalTokens,
+                    prompt: m.usage.promptTokens,
+                    completion: m.usage.completionTokens,
+                  })
+                }}
               </div>
             </div>
           </div>
         </div>
-      </div>
+        </div>
+      </el-scrollbar>
 
       <footer class="composer">
         <div
@@ -436,7 +465,12 @@
               <span v-for="(f, i) in pendingFiles" :key="`${i}-${f.name}-${f.size}`" class="attach-chip">
                 <el-icon class="attach-chip-icon"><Document /></el-icon>
                 <span class="attach-chip-name" :title="f.name">{{ truncateName(f.name) }}</span>
-                <button type="button" class="attach-chip-remove" aria-label="移除附件" @click="removePending(i)">
+                <button
+                  type="button"
+                  class="attach-chip-remove"
+                  :aria-label="t('chat.removeAttachAria')"
+                  @click="removePending(i)"
+                >
                   <span aria-hidden="true">×</span>
                 </button>
               </span>
@@ -448,11 +482,11 @@
               v-show="input.length > 0"
               type="button"
               class="input-clear-btn"
-              title="清空"
-              aria-label="清空输入"
+              :title="t('chat.clearInput')"
+              :aria-label="t('chat.clearInputAria')"
               @click="input = ''"
             >
-              清空
+              {{ t("chat.clearInput") }}
             </button>
             <el-input
               v-model="input"
@@ -460,13 +494,13 @@
               :autosize="{ minRows: 2, maxRows: 8 }"
               resize="none"
               maxlength="8000"
-              placeholder="输入消息…"
+              :placeholder="t('chat.inputPlaceholder')"
               class="composer-input"
               @keydown="onKeydown"
             />
           </div>
           <div class="composer-footer-bar">
-            <div class="footer-bar-left">
+            <div class="footer-bar-primary">
               <el-upload
                 class="footer-upload"
                 :disabled="attachDisabled"
@@ -480,10 +514,10 @@
                     type="button"
                     class="footer-icon-btn"
                     :disabled="attachDisabled"
-                    title="添加附件"
-                    aria-label="添加附件"
+                    :title="t('chat.addAttachTitle')"
+                    :aria-label="t('chat.addAttachAria')"
                   >
-                    <el-icon :size="22"><Plus /></el-icon>
+                    <el-icon :size="22"><Paperclip /></el-icon>
                   </button>
                 </template>
               </el-upload>
@@ -491,7 +525,7 @@
               <el-select
                 v-model="modelAlias"
                 class="model-pill-select"
-                placeholder="选择模型"
+                :placeholder="t('chat.selectModel')"
                 size="default"
                 :disabled="!models.length"
                 :style="{ width: modelSelectWidthPx + 'px' }"
@@ -505,57 +539,62 @@
                   :disabled="m.quotaExhausted === true"
                 />
               </el-select>
-              <div v-if="currentModel?.supportsThinking" class="deep-think-wrap">
-                <button
-                  type="button"
-                  class="deep-think-toggle"
-                  :class="{ 'deep-think-toggle--on': thinkingEnabled }"
-                  :aria-pressed="thinkingEnabled"
-                  aria-label="思考"
-                  @click="thinkingEnabled = !thinkingEnabled"
-                >
-                  思考
-                </button>
-              </div>
-              <div v-if="webSearchAllowed" class="deep-think-wrap">
-                <button
-                  type="button"
-                  class="deep-think-toggle"
-                  :class="{ 'deep-think-toggle--on': webSearchEnabled }"
-                  :aria-pressed="webSearchEnabled"
-                  aria-label="联网检索"
-                  @click="webSearchEnabled = !webSearchEnabled"
-                >
-                  联网
-                </button>
+              <div
+                v-if="currentModel?.supportsThinking || webSearchAllowed"
+                class="deep-think-group"
+              >
+                <div v-if="currentModel?.supportsThinking" class="deep-think-wrap">
+                  <button
+                    type="button"
+                    class="deep-think-toggle deep-think-toggle--think"
+                    :class="{ 'deep-think-toggle--on': thinkingEnabled }"
+                    :aria-pressed="thinkingEnabled"
+                    :aria-label="t('chat.thinkingAria')"
+                    @click="thinkingEnabled = !thinkingEnabled"
+                  >
+                    {{ t("chat.thinking") }}
+                  </button>
+                </div>
+                <div v-if="webSearchAllowed" class="deep-think-wrap">
+                  <button
+                    type="button"
+                    class="deep-think-toggle deep-think-toggle--web"
+                    :class="{ 'deep-think-toggle--on': webSearchEnabled }"
+                    :aria-pressed="webSearchEnabled"
+                    :aria-label="t('chat.webSearchAria')"
+                    @click="webSearchEnabled = !webSearchEnabled"
+                  >
+                    {{ t("chat.webSearch") }}
+                  </button>
+                </div>
               </div>
             </div>
             <el-button
               class="send-fab"
               type="primary"
               circle
-              :loading="sending"
-              :disabled="!canSend"
-              aria-label="发送"
-              @click="send"
+              :loading="false"
+              :disabled="sending ? false : !canSend"
+              :aria-label="sending ? t('chat.ariaStop') : t('chat.ariaSend')"
+              @click="sending ? stopGenerating() : send()"
             >
-              <el-icon v-if="!sending"><Promotion /></el-icon>
+              <el-icon v-if="sending"><VideoPause /></el-icon>
+              <el-icon v-else><Promotion /></el-icon>
             </el-button>
           </div>
         </div>
-        <p class="composer-note">内容由 AI 生成，请核对重要信息。</p>
+        <p class="composer-note">{{ t("chat.composerNote") }}</p>
       </footer>
     </section>
 
-    <el-dialog v-model="shareOpen" title="分享" width="480px" destroy-on-close class="share-dlg">
-      <p class="share-hint">复制下方文案即可分享到 IM、邮件或笔记（为人可读节选）。</p>
-      <el-input v-model="shareText" type="textarea" :rows="10" readonly class="share-ta" />
-      <template #footer>
-        <el-button @click="shareOpen = false">关闭</el-button>
-        <el-button type="primary" @click="copyShareText">复制文案</el-button>
-        <el-button v-if="canWebShare" type="primary" plain @click="webShareSnippet">系统分享…</el-button>
-      </template>
-    </el-dialog>
+    <ChatShareDialog
+      v-model="shareOpen"
+      :conversation-id="convId"
+      :conversation-title="activeTitle"
+      :messages="messages"
+      :anchor-assistant-idx="shareAnchorAssistantIdx"
+      :tenant-code="tenantCodeParam"
+    />
   </div>
 </template>
 
@@ -568,14 +607,15 @@ import {
   ArrowUp,
   ChatLineRound,
   CircleCheck,
-  Cpu,
   Document,
   DocumentCopy,
   Loading,
   Menu,
   More,
+  Paperclip,
   Plus,
   Promotion,
+  VideoPause,
   RefreshRight,
   Share,
   Star,
@@ -583,22 +623,48 @@ import {
   User,
 } from "@element-plus/icons-vue";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
 import { useWindowBreakpoints } from "../../composables/useWindowBreakpoints";
+import ChatSidebar from "../../components/chat/ChatSidebar.vue";
+import ChatShareDialog from "../../components/chat/ChatShareDialog.vue";
+import LocaleThemeToolbar from "../../components/LocaleThemeToolbar.vue";
 import UserAuthDialog from "../../components/UserAuthDialog.vue";
 import * as chatApi from "../../api/chat";
 import { AI_USER_ACCESS_TOKEN_KEY, clearUserSession } from "../../plugins/http";
 import { TENANT_CODE_PATH_RE } from "../../utils/outboundTenant";
 import { copyTextToUserClipboard } from "../../utils/clipboard";
-import { renderMarkdownToSafeHtml } from "../../utils/renderMarkdown";
+import { renderMarkdownToSafeHtml, renderStreamingMarkdownToSafeHtml } from "../../utils/renderMarkdown";
 import { apiRequestErrorMessage } from "../../utils/apiRequestErrorMessage";
+import { isAbortError } from "../../utils/isAbortError";
+import { toChatResponseLocale } from "../../utils/chatResponseLocale";
+import { useUiPreferencesStore } from "../../stores/uiPreferences";
 
 const route = useRoute();
+const { t, locale } = useI18n();
+const uiPrefs = useUiPreferencesStore();
+const chatResponseLocale = computed(() => toChatResponseLocale(uiPrefs.locale));
 const { isMobile, isTablet } = useWindowBreakpoints();
 const sidebarOpen = ref(false);
 
 /** 每次发起新的助手流式回复自增；丢弃代数已过期的 SSE 分帧，避免上一轮 {@code ragDoc} 写入本轮气泡。 */
 let assistantStreamGeneration = 0;
+let activeStreamAbort: AbortController | null = null;
+
+function cancelActiveStream() {
+  assistantStreamGeneration++;
+  activeStreamAbort?.abort();
+  activeStreamAbort = null;
+}
+
+function beginActiveStream(): { signal: AbortSignal; generation: number } {
+  activeStreamAbort?.abort();
+  activeStreamAbort = null;
+  const generation = ++assistantStreamGeneration;
+  const ac = new AbortController();
+  activeStreamAbort = ac;
+  return { signal: ac.signal, generation };
+}
 
 const tenantCodeParam = computed(() => {
   const raw = route.params.tenantCode;
@@ -614,16 +680,30 @@ watch(isMobile, (m) => {
 });
 
 /** 模型下拉触发器宽度：随当前展示文案变化（避免占满半行）。 */
-function measureSelectLabelWidthPx(label: string): number {
+function measureSelectLabelWidthPx(label: string, extraPad = 44): number {
   if (typeof document === "undefined") return 120;
   const s = document.createElement("span");
-  s.textContent = label || "选择模型";
+  s.textContent = label || t("chat.selectModel");
   s.style.cssText =
     "position:fixed;left:-9999px;top:0;visibility:hidden;white-space:nowrap;font-size:13px;font-weight:400;font-family:'PingFang SC','Microsoft YaHei',system-ui,sans-serif";
   document.body.appendChild(s);
   const textW = s.getBoundingClientRect().width;
   document.body.removeChild(s);
-  return Math.min(280, Math.max(72, Math.ceil(textW + 44)));
+  return Math.min(280, Math.max(72, Math.ceil(textW + extraPad)));
+}
+
+/** 移动端：为附件、发送、思考/联网等预留宽度后再给模型选择器封顶。 */
+function mobileModelSelectMaxWidthPx(
+  hasThinking: boolean,
+  hasWebSearch: boolean,
+  viewportW: number,
+): number {
+  let reserved = 40 + 48 + 28;
+  if (hasThinking) reserved += 50;
+  if (hasWebSearch) reserved += 50;
+  if (hasThinking && hasWebSearch) reserved += 6;
+  const cap = viewportW - reserved;
+  return Math.max(84, Math.min(148, cap));
 }
 
 /** 与下拉项字号接近，用于量最长选项宽度（略小于真实 padding，后面统一加余量）。 */
@@ -652,6 +732,8 @@ type ReplyVariant = {
   ragRetrievalTitles?: string[];
   /** 联网引用（SSE {@code webSearchRefs}；历史由 meta {@code webSearchReferences} 恢复） */
   webSearchReferences?: chatApi.WebSearchRefItem[];
+  /** 引用条数较多时默认折叠 */
+  webSearchRefsCollapsed?: boolean;
 };
 
 type Msg = {
@@ -664,6 +746,8 @@ type Msg = {
   ragRetrievalTitles?: string[];
   /** 联网检索引用（SSE {@code webSearchRefs}；刷新后由 {@code webSearchReferences} 恢复） */
   webSearchReferences?: chatApi.WebSearchRefItem[];
+  /** 引用条数较多时默认折叠 */
+  webSearchRefsCollapsed?: boolean;
   streaming?: boolean;
   reasoning?: string;
   reasoningStreaming?: boolean;
@@ -685,23 +769,24 @@ type Msg = {
 };
 
 /** 后端 {@code segmentId} 缺省时用于顶栏标题（与 Java 侧步骤 id 对齐）。 */
-const WF_TITLE_FALLBACK: Record<string, string> = {
-  "doc-parse": "文档解析",
-  "doc-need-file": "材料准备",
-  "doc-parse-empty": "文档解析",
-  "doc-parse-error": "文档解析",
-  "doc-expired": "材料准备",
-  "plan-apply": "审批核验",
-  "plan-no-apply": "出差申请",
-  "plan-conflict": "行程冲突检测",
-  "plan-kb": "知识库检索",
-  "plan-final": "行程规划",
+const WF_TITLE_FALLBACK_KEY: Record<string, string> = {
+  "doc-parse": "chat.wfDocParse",
+  "doc-need-file": "chat.wfDocNeedFile",
+  "doc-parse-empty": "chat.wfDocParse",
+  "doc-parse-error": "chat.wfDocParse",
+  "doc-expired": "chat.wfDocNeedFile",
+  "plan-apply": "chat.wfPlanApply",
+  "plan-no-apply": "chat.wfPlanNoApply",
+  "plan-conflict": "chat.wfPlanConflict",
+  "plan-kb": "chat.wfPlanKb",
+  "plan-final": "chat.wfPlanFinal",
 };
 
 function wfSegmentBarTitle(seg: chatApi.WorkflowStagePayload): string {
-  const t = (seg.title ?? "").trim();
-  if (t) return t;
-  return WF_TITLE_FALLBACK[seg.segmentId] ?? "处理步骤";
+  const titleText = (seg.title ?? "").trim();
+  if (titleText) return titleText;
+  const key = WF_TITLE_FALLBACK_KEY[seg.segmentId];
+  return key ? t(key) : t("chat.wfStepDefault");
 }
 
 /** 进行中步骤始终展开；已完成步骤在新步骤进入 loading 时自动折叠。未完成（含等待）始终展开。 */
@@ -767,13 +852,44 @@ function citationsToTitles(c: chatApi.RagCitationItem[] | null | undefined): str
   return titles.length ? titles : undefined;
 }
 
+/** 超过该条数时联网参考默认折叠 */
+const WEB_SEARCH_REFS_FOLD_THRESHOLD = 4;
+
+function webSearchRefsFoldable(refs: chatApi.WebSearchRefItem[] | null | undefined): boolean {
+  return (refs?.length ?? 0) > WEB_SEARCH_REFS_FOLD_THRESHOLD;
+}
+
+function defaultWebSearchRefsCollapsed(
+  refs: chatApi.WebSearchRefItem[] | null | undefined,
+): boolean | undefined {
+  return webSearchRefsFoldable(refs) ? true : undefined;
+}
+
+function isWebSearchRefsBodyVisible(m: Msg): boolean {
+  if (!webSearchRefsFoldable(m.webSearchReferences)) {
+    return true;
+  }
+  return m.webSearchRefsCollapsed !== true;
+}
+
+function onWebSearchRefsBarClick(m: Msg) {
+  const nextCollapsed = isWebSearchRefsBodyVisible(m);
+  m.webSearchRefsCollapsed = nextCollapsed;
+  if (m.replyVariants?.length) {
+    const v = m.replyVariants[m.activeVariantIndex ?? 0];
+    if (v) {
+      v.webSearchRefsCollapsed = nextCollapsed;
+    }
+  }
+}
+
 function webRefLabel(w: chatApi.WebSearchRefItem): string {
-  const t = (w.title ?? "").trim();
-  if (t) return t;
+  const titleText = (w.title ?? "").trim();
+  if (titleText) return titleText;
   const s = (w.siteName ?? "").trim();
   if (s) return s;
   const u = (w.url ?? "").trim();
-  if (!u) return "来源";
+  if (!u) return t("chat.intentSourceFallback");
   try {
     return new URL(u).hostname;
   } catch {
@@ -781,17 +897,18 @@ function webRefLabel(w: chatApi.WebSearchRefItem): string {
   }
 }
 
-/** 将后端 {@code ChatIntentMatchSource} 枚举名转为简短中文说明 */
+/** 将后端 {@code ChatIntentMatchSource} 枚举名转为简短说明 */
 function formatIntentMatchSource(src: string | null | undefined): string {
-  if (!src) return "意图匹配";
+  if (!src) return t("chat.intentMatchFallback");
   const map: Record<string, string> = {
-    TRIGGER_PHRASE: "首轮关键词",
-    PLAN_CONTINUE_PHRASE: "续办关键词",
-    PLAN_CONTINUE_DEFAULT_PHRASE: "续办默认短语",
-    PLAN_CONTINUE_REGEX: "续办规则",
-    DOC_ATTACHMENT: "附件继续",
+    TRIGGER_PHRASE: "chat.intentSrcTrigger",
+    PLAN_CONTINUE_PHRASE: "chat.intentSrcPlanContinue",
+    PLAN_CONTINUE_DEFAULT_PHRASE: "chat.intentSrcPlanContinueDefault",
+    PLAN_CONTINUE_REGEX: "chat.intentSrcPlanContinueRegex",
+    DOC_ATTACHMENT: "chat.intentSrcDocAttachment",
   };
-  return map[src] ?? src.replace(/_/g, " ");
+  const key = map[src];
+  return key ? t(key) : src.replace(/_/g, " ");
 }
 
 function priorApiRowToVariant(pv: chatApi.PriorAssistantVersion): ReplyVariant {
@@ -845,6 +962,7 @@ function mapHistoryToMsgs(rows: chatApi.ChatHistoryMessage[]): Msg[] {
         userFeedback: r.userFeedback ?? undefined,
         ragRetrievalTitles: ragForTail,
         webSearchReferences: webRefs,
+        webSearchRefsCollapsed: defaultWebSearchRefsCollapsed(webRefs),
       });
       out.push({
         id: r.id,
@@ -857,6 +975,7 @@ function mapHistoryToMsgs(rows: chatApi.ChatHistoryMessage[]): Msg[] {
         userFeedback: r.userFeedback ?? undefined,
         ragRetrievalTitles: ragForFlat,
         webSearchReferences: webRefs,
+        webSearchRefsCollapsed: defaultWebSearchRefsCollapsed(webRefs),
         replyVariants: variants,
         activeVariantIndex: variants.length - 1,
         workflowSegments:
@@ -881,7 +1000,12 @@ function mapHistoryToMsgs(rows: chatApi.ChatHistoryMessage[]): Msg[] {
         ? { ragRetrievalTitles: [...ragSingle] }
         : {}),
       ...((r.role === "assistant" || r.role === "user") && r.webSearchReferences?.length
-        ? { webSearchReferences: [...r.webSearchReferences] }
+        ? {
+            webSearchReferences: [...r.webSearchReferences],
+            ...(r.role === "assistant"
+              ? { webSearchRefsCollapsed: defaultWebSearchRefsCollapsed(r.webSearchReferences) }
+              : {}),
+          }
         : {}),
       ...(r.role === "assistant" && r.workflowSegments?.length
         ? { workflowSegments: decorateHistoryWorkflowSegments([...r.workflowSegments]) }
@@ -938,6 +1062,8 @@ function syncAssistantActiveToFlat(m: Msg) {
     v.ragRetrievalTitles && v.ragRetrievalTitles.length > 0 ? [...v.ragRetrievalTitles] : undefined;
   m.webSearchReferences =
     v.webSearchReferences && v.webSearchReferences.length > 0 ? [...v.webSearchReferences] : undefined;
+  m.webSearchRefsCollapsed =
+    v.webSearchRefsCollapsed ?? defaultWebSearchRefsCollapsed(v.webSearchReferences);
 }
 
 function assistantFeedbackEligible(m: Msg): boolean {
@@ -967,63 +1093,92 @@ async function loadMessagesForConv(id: number) {
     const rows = await chatApi.listConversationMessages(id);
     messages.value = mapHistoryToMsgs(rows);
   } catch {
-    ElMessage.error("加载历史消息失败");
+    ElMessage.error(t("chat.loadHistoryFail"));
   }
   await scrollToBottom();
+}
+
+function threadContentMatches(local: Msg, server: Msg): boolean {
+  if (local.role !== server.role) {
+    return false;
+  }
+  return (local.content ?? "").trim() === (server.content ?? "").trim();
+}
+
+/** 流式结束后只同步库表 id / 用量等元数据，避免整表替换导致气泡 DOM 重建闪烁。 */
+function patchMsgMetadataFromServer(local: Msg, server: Msg): void {
+  local.id = server.id;
+  if (server.usage) {
+    local.usage = { ...server.usage };
+  }
+  if (server.userFeedback != null) {
+    local.userFeedback = server.userFeedback;
+  }
+  if (server.role !== "assistant") {
+    if (server.attachments?.length) {
+      local.attachments = server.attachments.map((a) => ({ ...a }));
+    }
+    return;
+  }
+  if (server.replyVariants?.length) {
+    local.replyVariants = deepCloneReplyVariants(server.replyVariants);
+    local.activeVariantIndex = server.activeVariantIndex ?? local.replyVariants.length - 1;
+    syncAssistantActiveToFlat(local);
+  }
+  if (server.workflowSegments?.length) {
+    local.workflowSegments = [...server.workflowSegments];
+  }
+  if (server.intentTurnHit) {
+    local.intentTurnHit = { ...server.intentTurnHit };
+  }
+  if (server.webSearchReferences?.length && !(local.webSearchReferences?.length)) {
+    local.webSearchReferences = [...server.webSearchReferences];
+    local.webSearchRefsCollapsed = defaultWebSearchRefsCollapsed(server.webSearchReferences);
+  }
+}
+
+async function syncThreadAfterStream(conversationId: number): Promise<void> {
+  try {
+    const rows = await chatApi.listConversationMessages(conversationId);
+    const serverMsgs = mapHistoryToMsgs(rows);
+    const local = messages.value;
+    if (!serverMsgs.length || serverMsgs.length !== local.length) {
+      messages.value = serverMsgs;
+      return;
+    }
+    for (let i = 0; i < local.length; i++) {
+      if (!threadContentMatches(local[i]!, serverMsgs[i]!)) {
+        messages.value = serverMsgs;
+        return;
+      }
+    }
+    for (let i = 0; i < local.length; i++) {
+      patchMsgMetadataFromServer(local[i]!, serverMsgs[i]!);
+    }
+  } catch {
+    /* 保留本地流式结果，仅缺库表 id 时影响反馈/重新生成 */
+  }
 }
 
 function assistantMdHtml(text: string): string {
   return renderMarkdownToSafeHtml(text ?? "");
 }
 
-/** 流式光标须落在正文末尾同一行；类名 stream-md-cursor 配合 :deep，因 v-html 节点无 scoped data 属性。 */
+/** 流式阶段行内光标（紧跟最后一个字符，不用 markdown 块级闭合标签注入） */
 const STREAM_CURSOR_HTML = '<span class="stream-md-cursor" aria-hidden="true"></span>';
 
-function injectStreamCursorBeforeLastBlockClose(html: string): string {
-  if (!html) {
-    return STREAM_CURSOR_HTML;
-  }
-  const closers = [
-    "</p>",
-    "</blockquote>",
-    "</pre>",
-    "</li>",
-    "</h6>",
-    "</h5>",
-    "</h4>",
-    "</h3>",
-    "</h2>",
-    "</h1>",
-    "</td>",
-    "</th>",
-  ];
-  let pos = -1;
-  for (const c of closers) {
-    const i = html.lastIndexOf(c);
-    if (i > pos) {
-      pos = i;
-    }
-  }
-  if (pos >= 0) {
-    return html.slice(0, pos) + STREAM_CURSOR_HTML + html.slice(pos);
-  }
-  return html + STREAM_CURSOR_HTML;
-}
-
 function assistantMdStreamingHtml(m: Msg): string {
-  const html = assistantMdHtml(m.content);
   if (m.role !== "assistant" || !m.streaming) {
-    return html;
+    return assistantMdHtml(m.content);
   }
-  return injectStreamCursorBeforeLastBlockClose(html);
+  return renderStreamingMarkdownToSafeHtml(m.content, STREAM_CURSOR_HTML);
 }
 
 function workflowSegmentStreamingHtml(seg: { status: string; text?: string | null }): string {
-  const html = workflowSegmentRichHtml(seg.text || "");
-  if (seg.status !== "streaming") {
-    return html;
+  if (seg.status === "streaming") {
+    return renderStreamingMarkdownToSafeHtml(seg.text || "", STREAM_CURSOR_HTML);
   }
-  return injectStreamCursorBeforeLastBlockClose(html);
+  return workflowSegmentRichHtml(seg.text || "");
 }
 
 /** 工作流阶段正文：Markdown 默认会合并单换行；将换行转为硬换行并兼容字面量 \\n。 */
@@ -1055,12 +1210,12 @@ function showAssistantReasoningShell(m: Msg): boolean {
 
 function intentReasoningLiveLabel(m: Msg): string {
   if (m.reasoning && m.reasoning.length > 0) {
-    return "思考中…";
+    return t("chat.thinkingLive");
   }
   if ((m.workflowSegments?.length ?? 0) > 0) {
-    return "意图编排中…";
+    return t("chat.intentOrchestrating");
   }
-  return "思考中…";
+  return t("chat.thinkingLive");
 }
 
 /** 思考区展示意图说明（模型无 reasoning 分片、且已有流程步骤；流结束后仍展示） */
@@ -1148,6 +1303,56 @@ function finishAssistantStreamState(m: Msg) {
   syncAssistantActiveToFlat(m);
 }
 
+function applyAssistantStreamPart(m: Msg, part: chatApi.StreamPart, tail: ReplyVariant | null) {
+  const body = tail ?? m;
+  if (part.type === "content" && part.v) {
+    if (!body.content && part.v.trim().length > 0 && (m.workflowSegments?.length ?? 0) === 0) {
+      if (tail) {
+        tail.reasoningCollapsed = true;
+      } else {
+        m.reasoningCollapsed = true;
+      }
+    }
+    body.content += part.v;
+  } else if (part.type === "ragDoc" && part.title) {
+    if (!m.streaming) {
+      return;
+    }
+    body.ragRetrievalTitles = [...(body.ragRetrievalTitles ?? []), part.title];
+  } else if (part.type === "webSearchRefs" && part.references?.length) {
+    if (!m.streaming) {
+      return;
+    }
+    body.webSearchReferences = [...part.references];
+    if (webSearchRefsFoldable(part.references)) {
+      m.webSearchRefsCollapsed = true;
+      body.webSearchRefsCollapsed = true;
+    }
+  } else if (part.type === "reasoning" && part.v) {
+    m.reasoningStreaming = true;
+    body.reasoning = (body.reasoning ?? "") + part.v;
+  } else if (part.type === "inputBlocked") {
+    finishAssistantStreamState(m);
+    const reason = (part.reason ?? "").trim();
+    ElMessage.warning(reason || t("chat.inputBlocked"));
+    if (!body.content) {
+      body.content = reason || t("chat.inputBlockedBody");
+    }
+  } else if (part.type === "error") {
+    const msg = (part.message || part.code || t("chat.modelFailDefault")).replace(/\s+/g, " ").trim();
+    const short = msg.length > 140 ? msg.slice(0, 140) + "…" : msg;
+    ElMessage.warning(t("chat.streamErrorRetry", { msg: short }));
+    body.content += `\n\n（${msg}）`;
+  } else if (part.type === "workflowStage") {
+    mergeWorkflowStage(m, part.stage);
+  } else if (part.type === "end") {
+    finishAssistantStreamState(m);
+    if ("usage" in part && part.usage && part.usage.totalTokens > 0) {
+      body.usage = { ...part.usage };
+    }
+  }
+}
+
 function rowCopyKey(m: Msg, idx: number): string {
   return `r-${idx}-${m.replyVariants?.length ? (m.activeVariantIndex ?? 0) : 0}`;
 }
@@ -1185,10 +1390,10 @@ async function copyUserMessage(m: Msg, idx: number) {
     .filter((n) => n && n.trim())
     .join("、");
   const body =
-    att ? `${m.content ?? ""}\n\n[附件：${att}]` : (m.content ?? "");
+    att ? `${m.content ?? ""}\n\n${t("chat.attachInCopy", { names: att })}` : (m.content ?? "");
   const ok = await copyTextToUserClipboard(body);
   if (ok) {
-    ElMessage.success("已复制");
+    ElMessage.success(t("chat.copied"));
     const k = rowUserCopyKeyUser(idx);
     userCopyFlashKey.value = k;
     window.setTimeout(() => {
@@ -1197,7 +1402,7 @@ async function copyUserMessage(m: Msg, idx: number) {
       }
     }, 2000);
   } else {
-    ElMessage.warning("复制失败，请手动选择文本");
+    ElMessage.warning(t("chat.copyFail"));
   }
 }
 
@@ -1210,20 +1415,20 @@ async function copyAssistantPlain(m: Msg, idx: number) {
   }
   const ok = await copyTextToUserClipboard(plain);
   if (ok) {
-    ElMessage.success("已复制");
+    ElMessage.success(t("chat.copied"));
     flashCopyRow(m, idx);
   } else {
-    ElMessage.warning("复制失败，请手动选择文本");
+    ElMessage.warning(t("chat.copyFail"));
   }
 }
 
 async function copyAssistantMarkdown(m: Msg, idx: number) {
   const ok = await copyTextToUserClipboard(m.content ?? "");
   if (ok) {
-    ElMessage.success("已复制为 Markdown");
+    ElMessage.success(t("chat.copiedMd"));
     flashCopyRow(m, idx);
   } else {
-    ElMessage.warning("复制失败，请手动选择文本");
+    ElMessage.warning(t("chat.copyFail"));
   }
 }
 
@@ -1234,38 +1439,11 @@ async function onAssistantCopyMenu(cmd: string, m: Msg, idx: number) {
 }
 
 const shareOpen = ref(false);
-const shareText = ref("");
+const shareAnchorAssistantIdx = ref(0);
 
-const canWebShare = computed(
-  () => typeof navigator !== "undefined" && typeof navigator.share === "function",
-);
-
-function openShareDialog(m: Msg) {
-  const title = activeTitle.value;
-  const plain = assistantPlainTextFromMd(m.content ?? "");
-  const clip = plain.length > 600 ? `${plain.slice(0, 600)}…` : plain;
-  shareText.value = `${title}\n\n${clip}\n\n—— 节选分享自 Ai 对话`;
+function openShareDialog(_m: Msg, assistantIdx: number) {
+  shareAnchorAssistantIdx.value = assistantIdx;
   shareOpen.value = true;
-}
-
-async function copyShareText() {
-  const ok = await copyTextToUserClipboard(shareText.value);
-  if (ok) {
-    ElMessage.success("已复制");
-  } else {
-    ElMessage.warning("复制失败，请手动选择文本");
-  }
-}
-
-async function webShareSnippet() {
-  try {
-    await navigator.share!({
-      title: activeTitle.value,
-      text: shareText.value,
-    });
-  } catch {
-    /* 用户取消 */
-  }
 }
 
 function isLastAssistantIndex(idx: number): boolean {
@@ -1295,7 +1473,7 @@ async function setAssistantFeedback(m: Msg, vote: chatApi.ChatAssistantFeedbackV
       }
     }
   } catch (e: unknown) {
-    ElMessage.error(apiRequestErrorMessage(e, "操作失败，请稍后重试"));
+    ElMessage.error(apiRequestErrorMessage(e, t("chat.feedbackFail")));
   } finally {
     feedbackSendingId.value = null;
   }
@@ -1311,16 +1489,16 @@ async function toggleAssistantDislike(m: Msg) {
 
 function onAssistantMore(cmd: string, idx: number) {
   if (cmd === "report") {
-    ElMessage.info("感谢反馈，举报入口即将开放。");
+    ElMessage.info(t("chat.reportThanks"));
     return;
   }
   if (cmd === "editPrompt") {
     const prev = messages.value[idx - 1];
     if (prev && prev.role === "user") {
       input.value = prev.content;
-      ElMessage.success("已填入上一条用户问题，可在输入框修改后重新发送。");
+      ElMessage.success(t("chat.editPromptFilled"));
     } else {
-      ElMessage.warning("未找到上一条用户消息。");
+      ElMessage.warning(t("chat.noPriorUserMsg"));
     }
     return;
   }
@@ -1331,11 +1509,11 @@ function onAssistantMore(cmd: string, idx: number) {
     }
     const t = assistantPlainTextFromMd(m.content ?? "");
     if (!t) {
-      ElMessage.warning("暂无可朗读内容。");
+      ElMessage.warning(t("chat.nothingToSpeak"));
       return;
     }
     if (typeof window === "undefined" || !window.speechSynthesis) {
-      ElMessage.warning("当前浏览器不支持朗读。");
+      ElMessage.warning(t("chat.speechUnsupported"));
       return;
     }
     window.speechSynthesis.cancel();
@@ -1360,17 +1538,17 @@ function newClientRowKey(): string {
 
 function messageRowKey(m: Msg, idx: number): string {
   const cid = convId.value ?? "n";
-  if (m.id != null) {
-    return `${cid}-db-${m.id}`;
-  }
   if (m.clientRowKey) {
     return `${cid}-c-${m.clientRowKey}`;
+  }
+  if (m.id != null) {
+    return `${cid}-db-${m.id}`;
   }
   return `${cid}-i-${idx}`;
 }
 
 const sending = ref(false);
-const scrollAreaRef = ref<HTMLElement | null>(null);
+const scrollAreaRef = ref<InstanceType<typeof import("element-plus").ElScrollbar> | null>(null);
 
 const models = ref<chatApi.LlmModelOption[]>([]);
 const modelAlias = ref("");
@@ -1383,7 +1561,7 @@ const pendingFiles = ref<File[]>([]);
 const dragDepth = ref(0);
 const dragOver = ref(false);
 
-const quickPrompts = ["写一首关于春天的诗", "解释量子力学", "生成周报模板"];
+const quickPrompts = computed(() => [t("chat.quick1"), t("chat.quick2"), t("chat.quick3")]);
 
 function applyQuickPrompt(q: string) {
   input.value = q;
@@ -1406,17 +1584,28 @@ const canSend = computed(
 
 function modelOptionLabel(m: chatApi.LlmModelOption): string {
   if (m.quotaExhausted) {
-    return `${m.displayName}（额度用尽）`;
+    return `${m.displayName}${t("chat.quotaExhausted")}`;
   }
   return m.displayName;
 }
 
 const modelSelectWidthPx = computed(() => {
   const m = currentModel.value;
-  const label = m ? modelOptionLabel(m) : modelAlias.value ? modelAlias.value : "选择模型";
+  const label = m ? modelOptionLabel(m) : modelAlias.value ? modelAlias.value : t("chat.selectModel");
+  if (typeof window === "undefined") {
+    return Math.min(measureSelectLabelWidthPx(label), 280);
+  }
+  if (isMobile.value) {
+    const raw = measureSelectLabelWidthPx(label, 36);
+    const cap = mobileModelSelectMaxWidthPx(
+      !!m?.supportsThinking,
+      webSearchAllowed.value,
+      window.innerWidth,
+    );
+    return Math.min(raw, cap);
+  }
   const raw = measureSelectLabelWidthPx(label);
-  const cap =
-    typeof window !== "undefined" ? Math.min(280, Math.max(120, Math.floor(window.innerWidth * 0.52))) : 280;
+  const cap = Math.min(280, Math.max(120, Math.floor(window.innerWidth * 0.52)));
   return Math.min(raw, cap);
 });
 
@@ -1425,7 +1614,7 @@ const modelDropdownMinWidthPx = computed(() => {
   const pad = 44;
   const vwCap =
     typeof window !== "undefined" ? Math.min(560, Math.floor(window.innerWidth * 0.92)) : 560;
-  let maxText = measureDropdownOptionTextWidthPx("选择模型");
+  let maxText = measureDropdownOptionTextWidthPx(t("chat.selectModel"));
   for (const m of models.value) {
     maxText = Math.max(maxText, measureDropdownOptionTextWidthPx(modelOptionLabel(m)));
   }
@@ -1442,13 +1631,18 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  cancelActiveStream();
+  if (scrollBottomRaf != null) {
+    cancelAnimationFrame(scrollBottomRaf);
+    scrollBottomRaf = null;
+  }
   document.documentElement.style.removeProperty("--chat-model-dd-min");
 });
 
 const activeTitle = computed(() => {
-  if (!convId.value) return "新对话";
+  if (!convId.value) return t("chat.titleNew");
   const c = convs.value.find((x) => x.id === convId.value);
-  return c?.title ?? "对话";
+  return c?.title ?? t("chat.titleChat");
 });
 
 const sessionTokenTotal = computed(() =>
@@ -1457,10 +1651,37 @@ const sessionTokenTotal = computed(() =>
 
 async function scrollToBottom() {
   await nextTick();
-  const el = scrollAreaRef.value;
-  if (el) {
-    el.scrollTop = el.scrollHeight;
+  const sb = scrollAreaRef.value;
+  if (!sb?.wrapRef) return;
+  sb.setScrollTop(sb.wrapRef.scrollHeight);
+}
+
+let scrollBottomRaf: number | null = null;
+
+function scheduleScrollToBottom() {
+  if (scrollBottomRaf != null) {
+    return;
   }
+  scrollBottomRaf = requestAnimationFrame(() => {
+    scrollBottomRaf = null;
+    void scrollToBottom();
+  });
+}
+
+function stopGenerating() {
+  if (!sending.value) {
+    return;
+  }
+  cancelActiveStream();
+  for (let i = messages.value.length - 1; i >= 0; i--) {
+    const m = messages.value[i];
+    if (m?.role === "assistant" && m.streaming) {
+      finishAssistantStreamState(m);
+      break;
+    }
+  }
+  sending.value = false;
+  void scrollToBottom();
 }
 
 async function retryAssistantAt(assistantIdx: number) {
@@ -1469,12 +1690,12 @@ async function retryAssistantAt(assistantIdx: number) {
     return;
   }
   if (!isLastAssistantIndex(assistantIdx)) {
-    ElMessage.warning("仅支持重试本对话最后一条助手回复。");
+    ElMessage.warning(t("chat.retryLastOnly"));
     return;
   }
   const oldDbId = assistantLatestPersistedDbId(prev);
   if (oldDbId == null) {
-    ElMessage.warning("请等待当前回复完成后再试。");
+    ElMessage.warning(t("chat.waitForReply"));
     return;
   }
 
@@ -1511,81 +1732,78 @@ async function retryAssistantAt(assistantIdx: number) {
   sending.value = true;
   await scrollToBottom();
 
-  const regenGen = ++assistantStreamGeneration;
+  const { signal: streamSignal, generation: regenGen } = beginActiveStream();
+  let syncHistory = true;
   try {
     await chatApi.streamRegenerateAssistantReply(
       convId.value,
       oldDbId,
-      { modelAlias: modelAlias.value, thinkingEnabled: think, webSearchEnabled: useWeb },
+      {
+        modelAlias: modelAlias.value,
+        thinkingEnabled: think,
+        webSearchEnabled: useWeb,
+        responseLocale: chatResponseLocale.value,
+      },
       (part) => {
-      if (regenGen !== assistantStreamGeneration) {
-        return;
-      }
-      const m = messages.value[assistantIdx];
-      if (!m?.replyVariants?.length) {
-        return;
-      }
-      const tail = m.replyVariants[m.replyVariants.length - 1]!;
-      if (part.type === "content" && part.v) {
-        if (!tail.content && part.v.trim().length > 0 && (m.workflowSegments?.length ?? 0) === 0) {
-          tail.reasoningCollapsed = true;
-        }
-        tail.content += part.v;
-      } else if (part.type === "ragDoc" && part.title) {
-        if (!m.streaming) {
+        if (regenGen !== assistantStreamGeneration) {
           return;
         }
-        tail.ragRetrievalTitles = [...(tail.ragRetrievalTitles ?? []), part.title];
-      } else if (part.type === "webSearchRefs" && part.references?.length) {
-        if (!m.streaming) {
+        const m = messages.value[assistantIdx];
+        if (!m?.replyVariants?.length) {
           return;
         }
-        tail.webSearchReferences = [...part.references];
-      } else if (part.type === "reasoning" && part.v) {
-        m.reasoningStreaming = true;
-        tail.reasoning = (tail.reasoning ?? "") + part.v;
-      } else if (part.type === "error") {
-        const msg = (part.message || part.code || "模型调用失败").replace(/\s+/g, " ").trim();
-        const short = msg.length > 140 ? msg.slice(0, 140) + "…" : msg;
-        ElMessage.warning(`${short}：可尝试点击「重新生成」重试。`);
-        tail.content += `\n\n（${msg}）`;
-      } else if (part.type === "workflowStage") {
-        mergeWorkflowStage(m, part.stage);
-      } else if (part.type === "end") {
-        finishAssistantStreamState(m);
-        if ("usage" in part && part.usage && part.usage.totalTokens > 0) {
-          tail.usage = { ...part.usage };
-        }
-      }
-      syncAssistantActiveToFlat(m);
-    });
+        const tail = m.replyVariants[m.replyVariants.length - 1]!;
+        applyAssistantStreamPart(m, part, tail);
+        syncAssistantActiveToFlat(m);
+        scheduleScrollToBottom();
+      },
+      { signal: streamSignal },
+    );
     const m = messages.value[assistantIdx];
     if (m) {
       finishAssistantStreamState(m);
     }
   } catch (e: unknown) {
-    ElMessage.error(apiRequestErrorMessage(e, "重新生成失败"));
+    if (isAbortError(e)) {
+      syncHistory = false;
+    } else {
+      ElMessage.error(apiRequestErrorMessage(e, t("chat.regenerateFail")));
+    }
   } finally {
+    activeStreamAbort = null;
     sending.value = false;
-    if (convId.value) {
-      await loadMessagesForConv(convId.value);
+    if (syncHistory && convId.value) {
+      await syncThreadAfterStream(convId.value);
     }
     await scrollToBottom();
   }
 }
 
+/** 流式时按内容体量分桶滚底，避免每个 token 触发 layout */
 watch(
-  () =>
-    messages.value
-      .map((m) => {
-        const vi = m.replyVariants?.length ? String(m.activeVariantIndex ?? 0) : "";
-        const rag = (m.ragRetrievalTitles ?? []).join("|");
-        const ws = (m.webSearchReferences ?? []).map((w) => `${w.url}\u0001${w.title}`).join("|");
-        return `${m.content}\u0001${m.reasoning ?? ""}\u0001${m.usage?.totalTokens ?? ""}\u0001${vi}\u0001${rag}\u0001${ws}`;
-      })
-      .join("\u0002"),
   () => {
-    void scrollToBottom();
+    if (!sending.value) {
+      return -1;
+    }
+    let total = 0;
+    for (const m of messages.value) {
+      if (m.streaming) {
+        total += (m.content?.length ?? 0) + (m.reasoning?.length ?? 0);
+      }
+    }
+    return Math.floor(total / 200);
+  },
+  () => {
+    if (sending.value) {
+      scheduleScrollToBottom();
+    }
+  },
+);
+
+watch(
+  () => messages.value.length,
+  () => {
+    scheduleScrollToBottom();
   },
 );
 
@@ -1601,6 +1819,10 @@ function clearThread() {
 }
 
 function selectConv(id: number) {
+  if (sending.value) {
+    cancelActiveStream();
+    sending.value = false;
+  }
   convId.value = id;
   webSearchEnabled.value = false;
   if (isMobile.value) {
@@ -1638,13 +1860,13 @@ async function loadChatShellForCurrentTenant() {
       webSearchEnabled.value = false;
     }
     if (!models.value.length) {
-      ElMessage.warning("当前租户暂无可用模型，请先在管理端配置 LLM。");
+      ElMessage.warning(t("chat.noModels"));
     } else if (!models.value.some((m) => m.alias === modelAlias.value)) {
       applyDefaultModelAlias();
     }
   } catch (e: unknown) {
     models.value = [];
-    ElMessage.warning(apiRequestErrorMessage(e, "加载模型列表失败。"));
+    ElMessage.warning(apiRequestErrorMessage(e, t("chat.loadModelsFail")));
   }
   await refresh();
   if (convId.value) {
@@ -1681,7 +1903,7 @@ function logoutUser() {
   webSearchEnabled.value = false;
   void refresh();
   clearThread();
-  ElMessage.success("已退出登录");
+  ElMessage.success(t("chat.loggedOut"));
 }
 
 watch(
@@ -1755,7 +1977,10 @@ watch(modelAlias, () => {
 });
 
 async function newConv() {
-  const c = await chatApi.createConversation("新对话 " + new Date().toLocaleString("zh-CN", { hour12: false }));
+  const dateLoc = locale.value.startsWith("en") ? "en-US" : "zh-CN";
+  const c = await chatApi.createConversation(
+    `${t("chat.newConvPrefix")} ${new Date().toLocaleString(dateLoc, { hour12: false })}`,
+  );
   convId.value = c.id;
   webSearchEnabled.value = false;
   if (isMobile.value) {
@@ -1763,7 +1988,7 @@ async function newConv() {
   }
   await refresh();
   clearThread();
-  ElMessage.success("已创建新对话");
+  ElMessage.success(t("chat.convCreated"));
 }
 
 function onKeydown(e: KeyboardEvent) {
@@ -1777,7 +2002,7 @@ async function send() {
   const text = input.value.trim();
   if (!text || sending.value) return;
   if (!modelAlias.value) {
-    ElMessage.warning("请先选择模型。");
+    ElMessage.warning(t("chat.pickModelFirst"));
     return;
   }
 
@@ -1810,7 +2035,7 @@ async function send() {
       }));
       pendingFiles.value = [];
     } catch (e: unknown) {
-      ElMessage.error(apiRequestErrorMessage(e, "附件上传失败"));
+      ElMessage.error(apiRequestErrorMessage(e, t("chat.uploadFail")));
       return;
     }
   }
@@ -1841,7 +2066,8 @@ async function send() {
   sending.value = true;
   await scrollToBottom();
 
-  const sendGen = ++assistantStreamGeneration;
+  const { signal: streamSignal, generation: sendGen } = beginActiveStream();
+  let syncHistory = true;
   try {
     await chatApi.streamAssistantReply(
       convId.value,
@@ -1852,62 +2078,44 @@ async function send() {
         webSearchEnabled: useWeb,
         attachmentIds,
         ...(intentFlowTicket ? { intentFlowTicket } : {}),
+        responseLocale: chatResponseLocale.value,
       },
       (part) => {
         if (sendGen !== assistantStreamGeneration) {
           return;
         }
         const m = messages.value[assistantIdx];
-        if (!m) return;
-        if (part.type === "content" && part.v) {
-          if (!m.content && part.v.trim().length > 0 && (m.workflowSegments?.length ?? 0) === 0) {
-            m.reasoningCollapsed = true;
-          }
-          m.content += part.v;
-        } else if (part.type === "ragDoc" && part.title) {
-          if (!m.streaming) {
-            return;
-          }
-          m.ragRetrievalTitles = [...(m.ragRetrievalTitles ?? []), part.title];
-        } else if (part.type === "webSearchRefs" && part.references?.length) {
-          if (!m.streaming) {
-            return;
-          }
-          m.webSearchReferences = [...part.references];
-        } else if (part.type === "reasoning" && part.v) {
-          m.reasoningStreaming = true;
-          m.reasoning = (m.reasoning ?? "") + part.v;
-        } else if (part.type === "error") {
-          const msg = (part.message || part.code || "模型调用失败").replace(/\s+/g, " ").trim();
-          const short = msg.length > 140 ? msg.slice(0, 140) + "…" : msg;
-          ElMessage.warning(`${short}：可尝试点击「重新生成」重试。`);
-          m.content += `\n\n（${msg}）`;
-        } else if (part.type === "workflowStage") {
-          mergeWorkflowStage(m, part.stage);
-        } else if (part.type === "end") {
-          finishAssistantStreamState(m);
-          if ("usage" in part && part.usage && part.usage.totalTokens > 0) {
-            m.usage = { ...part.usage };
-          }
+        if (!m) {
+          return;
         }
+        applyAssistantStreamPart(m, part, null);
+        scheduleScrollToBottom();
       },
+      { signal: streamSignal },
     );
     const m = messages.value[assistantIdx];
     if (m) {
       finishAssistantStreamState(m);
     }
   } catch (e: unknown) {
-    const m = messages.value[assistantIdx];
-    if (m) {
-      m.content = m.content || "（回复失败）";
-      finishAssistantStreamState(m);
+    if (isAbortError(e)) {
+      syncHistory = false;
+    } else {
+      const m = messages.value[assistantIdx];
+      if (m) {
+        m.content = m.content || t("chat.replyFailed");
+        finishAssistantStreamState(m);
+      }
+      ElMessage.error(apiRequestErrorMessage(e, t("chat.sendFail")));
     }
-    ElMessage.error(apiRequestErrorMessage(e, "发送失败"));
   } finally {
+    activeStreamAbort = null;
     sending.value = false;
-    await refresh();
-    if (convId.value) {
-      await loadMessagesForConv(convId.value);
+    if (syncHistory) {
+      await refresh();
+      if (convId.value) {
+        await syncThreadAfterStream(convId.value);
+      }
     }
     await scrollToBottom();
   }
@@ -1920,144 +2128,7 @@ async function send() {
   height: 100vh;
   min-height: 100vh;
   max-height: 100vh;
-  background: #fff;
-}
-
-.sidebar {
-  width: 260px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  background: #f9f9f9;
-  border-right: 1px solid #ececec;
-}
-
-.sidebar-head {
-  padding: 12px 10px 10px;
-}
-
-.btn-new {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid #e8e8e8;
-  background: #fff;
-  font-size: 14px;
-  font-weight: 500;
-  color: #202020;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
-}
-
-.btn-new:hover {
-  background: #f3f3f3;
-  border-color: #d9d9d9;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-}
-
-.conv-scroll {
-  flex: 1;
-  min-height: 0;
-}
-
-.conv-list {
-  list-style: none;
-  margin: 0;
-  padding: 4px 8px 12px;
-}
-
-.conv-item {
-  padding: 10px 12px 10px 9px;
-  margin-bottom: 2px;
-  border-radius: 8px;
-  border-left: 3px solid transparent;
-  font-size: 14px;
-  color: #3f3f46;
-  cursor: pointer;
-  line-height: 1.35;
-  transition: background 0.12s;
-}
-
-.conv-item:hover {
-  background: #e4e4e7;
-}
-
-.conv-item.active {
-  background: #ececec;
-  font-weight: 500;
-  border-left-color: #202020;
-}
-
-.conv-title {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.sidebar-foot {
-  padding: 10px 12px 14px;
-  border-top: 1px solid #e5e5e5;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.foot-auth {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.foot-user {
-  font-size: 12px;
-  color: #334155;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 0 2px;
-}
-
-.foot-btn {
-  font-size: 12px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  background: #fff;
-  color: #475569;
-  cursor: pointer;
-  text-align: center;
-}
-
-.foot-btn--primary {
-  border-color: #93c5fd;
-  background: #eff6ff;
-  color: #1d4ed8;
-}
-
-.foot-btn:hover {
-  border-color: #cbd5e1;
-}
-
-.foot-link {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: #52525b;
-  text-decoration: none;
-  padding: 8px 10px;
-  border-radius: 8px;
-}
-
-.foot-link:hover {
-  background: #e4e4e7;
-  color: #18181b;
+  background: var(--chat-bg-app, #fff);
 }
 
 .main {
@@ -2065,7 +2136,7 @@ async function send() {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: #fafafa;
+  background: var(--chat-bg-main, #fafafa);
 }
 
 .thread-head {
@@ -2075,16 +2146,30 @@ async function send() {
   width: 100%;
   box-sizing: border-box;
   padding: 14px 24px 12px;
-  border-bottom: 1px solid #ececec;
+  border-bottom: 1px solid var(--chat-border, #ececec);
   flex-shrink: 0;
-  background: #fafafa;
+  background: var(--chat-bg-main, #fafafa);
+}
+
+.thread-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.thread-head-tools {
+  flex-shrink: 0;
 }
 
 .thread-title {
   margin: 0;
+  flex: 1;
+  min-width: 0;
   font-size: 15px;
   font-weight: 600;
-  color: #202020;
+  color: var(--chat-text-primary, #202020);
   letter-spacing: -0.02em;
 }
 
@@ -2339,6 +2424,7 @@ async function send() {
 
 .bubble-md :deep(p) {
   margin: 0 0 0.65em;
+  color: var(--chat-text-body, #18181b);
 }
 
 .bubble-md :deep(p:last-child) {
@@ -2353,6 +2439,7 @@ async function send() {
 
 .bubble-md :deep(li) {
   margin: 0.2em 0;
+  color: var(--chat-md-td-text, #18181b);
 }
 
 .bubble-md :deep(h1),
@@ -2362,7 +2449,13 @@ async function send() {
   margin: 0.75em 0 0.45em;
   font-weight: 600;
   line-height: 1.35;
-  color: #18181b;
+  color: var(--chat-md-heading, #18181b);
+}
+
+.bubble-md :deep(strong),
+.bubble-md :deep(b) {
+  color: var(--chat-md-strong, #18181b);
+  font-weight: 600;
 }
 
 .bubble-md :deep(h1) {
@@ -2381,7 +2474,8 @@ async function send() {
   margin: 0.5em 0;
   padding: 10px 12px;
   border-radius: 8px;
-  background: #ececec;
+  background: var(--chat-md-pre-bg, #ececec);
+  color: var(--chat-text-body, #18181b);
   overflow-x: auto;
   font-size: 13px;
   line-height: 1.45;
@@ -2398,19 +2492,21 @@ async function send() {
 .bubble-md :deep(li code) {
   padding: 0.1em 0.35em;
   border-radius: 4px;
-  background: #ececec;
+  background: var(--chat-md-code-bg, #ececec);
+  color: var(--chat-text-body, #18181b);
 }
 
 .bubble-md :deep(pre code) {
   padding: 0;
   background: transparent;
+  color: inherit;
 }
 
 .bubble-md :deep(blockquote) {
   margin: 0.5em 0;
   padding: 0.35em 0 0.35em 12px;
-  border-left: 3px solid #d4d4d8;
-  color: #52525b;
+  border-left: 3px solid var(--chat-md-blockquote-border, #d4d4d8);
+  color: var(--chat-md-muted, #52525b);
 }
 
 .bubble-md :deep(table) {
@@ -2418,49 +2514,78 @@ async function send() {
   border-collapse: collapse;
   font-size: 13px;
   margin: 0.5em 0;
+  color: var(--chat-md-td-text, #18181b);
 }
 
 .bubble-md :deep(th),
 .bubble-md :deep(td) {
-  border: 1px solid #e4e4e7;
+  border: 1px solid var(--chat-md-table-border, #e4e4e7);
   padding: 6px 8px;
   text-align: left;
 }
 
 .bubble-md :deep(th) {
-  background: #ececec;
+  background: var(--chat-md-th-bg, #ececec);
+  color: var(--chat-md-th-text, #18181b);
+  font-weight: 600;
+}
+
+.bubble-md :deep(td) {
+  color: var(--chat-md-td-text, #18181b);
 }
 
 .bubble-md :deep(a) {
-  color: #2563eb;
+  color: var(--chat-link, #2563eb);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
 .bubble-md :deep(hr) {
   border: none;
-  border-top: 1px solid #e4e4e7;
+  border-top: 1px solid var(--chat-md-table-border, #e4e4e7);
   margin: 0.75em 0;
 }
 
-/* 经 v-html 注入的流式光标无 Vue scoped 的 data-v-*，普通 .cursor 选择器无法命中，故单独类名 + :deep */
+/* 流式结束前先占位操作条高度，避免结束后操作条插入引起跳动 */
+.model-meta-row--streaming {
+  min-height: 34px;
+}
+
+.msg-actions--during-stream {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* 经 v-html 注入的流式光标无 Vue scoped 的 data-v-*，须 :deep；紧跟文末同一行 */
 .bubble-md :deep(.stream-md-cursor) {
   display: inline-block;
-  width: 6px;
+  width: 2px;
+  min-width: 2px;
   height: 1em;
-  margin-left: 2px;
-  vertical-align: -2px;
+  margin-left: 1px;
+  vertical-align: baseline;
   border-radius: 1px;
-  background: #19c37d;
+  background: var(--chat-accent, #19c37d);
   animation: blink 1s step-end infinite;
 }
 
-.messages-wrap {
+.messages-scroll {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  background: var(--chat-bg-main, #fafafa);
+}
+
+.messages-scroll :deep(.el-scrollbar__wrap) {
+  overflow-x: hidden;
+}
+
+.messages-scroll :deep(.el-scrollbar__view) {
+  min-height: 100%;
+}
+
+.messages-scroll-inner {
   padding: 20px 0 16px;
-  background: #fafafa;
+  box-sizing: border-box;
 }
 
 .empty {
@@ -2626,24 +2751,27 @@ async function send() {
 }
 
 .bubble-inner--user {
-  padding-right: 40px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 8px;
+  row-gap: 6px;
+  align-items: start;
 }
 
 .user-msg-copy-btn {
-  position: absolute;
-  top: 8px;
-  right: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
+  margin: 0;
   padding: 0;
   border: none;
   border-radius: 8px;
   background: transparent;
   color: #71717a;
   cursor: pointer;
+  flex-shrink: 0;
   transition: background 0.12s, color 0.12s;
 }
 
@@ -2654,7 +2782,7 @@ async function send() {
 
 .user-msg-text {
   display: block;
-  padding-right: 4px;
+  min-width: 0;
 }
 
 .user-msg-attach-strip {
@@ -2662,7 +2790,8 @@ async function send() {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 8px;
-  margin-top: 10px;
+  grid-column: 1 / -1;
+  margin-top: 4px;
   padding-top: 8px;
   border-top: 1px solid #e4e4e7;
 }
@@ -2748,10 +2877,56 @@ async function send() {
   margin: 10px 0 0 2px;
   padding: 8px 10px;
   border-radius: 10px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--chat-bg-web-refs, #f8fafc);
+  border: 1px solid var(--chat-border-web-refs, #e2e8f0);
   font-size: 12px;
-  color: #0f172a;
+  color: var(--chat-text-web-refs, #0f172a);
+}
+
+.web-search-refs-strip--foldable {
+  display: block;
+  padding: 0;
+  overflow: hidden;
+}
+
+.web-search-refs-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  transition: background 0.12s;
+}
+
+.web-search-refs-bar:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.web-search-refs-meta {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: #64748b;
+}
+
+.web-search-refs-chevron {
+  flex-shrink: 0;
+  font-size: 14px;
+  color: #94a3b8;
+}
+
+.web-search-refs-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 0 10px 8px;
 }
 
 .web-ref-chip {
@@ -2761,16 +2936,16 @@ async function send() {
   max-width: 100%;
   padding: 2px 8px;
   border-radius: 999px;
-  background: #fff;
-  border: 1px solid #cbd5e1;
-  color: #0f172a;
+  background: var(--chat-web-chip-bg, #fff);
+  border: 1px solid var(--chat-web-chip-border, #cbd5e1);
+  color: var(--chat-text-web-refs, #0f172a);
   text-decoration: none;
   line-height: 1.35;
 }
 
 .web-ref-chip:hover {
   border-color: #94a3b8;
-  color: #0369a1;
+  color: var(--chat-link, #0369a1);
 }
 
 .web-ref-chip--nolink {
@@ -2819,7 +2994,7 @@ async function send() {
 .composer {
   flex-shrink: 0;
   padding: 8px 24px 16px;
-  background: #fafafa;
+  background: var(--chat-bg-main, #fafafa);
   border-top: none;
 }
 
@@ -2827,8 +3002,8 @@ async function send() {
   max-width: 58rem;
   margin: 0 auto;
   border-radius: 22px;
-  border: 1px solid #e3e3e3;
-  background: #fff;
+  border: 1px solid var(--chat-border-subtle, #e3e3e3);
+  background: var(--chat-bg-elevated, #fff);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
   overflow: hidden;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -2879,7 +3054,7 @@ async function send() {
   border-top: 1px solid #f0f0f0;
 }
 
-.footer-bar-left {
+.footer-bar-primary {
   display: flex;
   align-items: center;
   min-width: 0;
@@ -2926,6 +3101,36 @@ async function send() {
 
 .model-pill-select {
   flex: 0 0 auto;
+  --el-select-input-color: var(--chat-text-primary, #202020);
+  --el-text-color-regular: var(--chat-text-primary, #202020);
+  --el-text-color-placeholder: var(--chat-text-muted, #71717a);
+}
+
+.model-pill-select :deep(.el-select__selected-item),
+.model-pill-select :deep(.el-input__inner) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deep-think-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+
+.footer-bar-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.footer-bar-tools--inline {
+  flex: 0 0 auto;
+  margin-left: 6px;
 }
 
 /* 宽度由 :style 绑定；默认无框，悬停/聚焦才显形 */
@@ -2940,69 +3145,111 @@ async function send() {
   transition: background 0.12s, border-color 0.12s, box-shadow 0.12s !important;
 }
 
+.model-pill-select :deep(.el-select__selection),
 .model-pill-select :deep(.el-input__inner),
-.model-pill-select :deep(.el-select__selected-item) {
-  color: #202020;
+.model-pill-select :deep(.el-select__selected-item),
+.model-pill-select :deep(.el-select__selected-item span),
+.model-pill-select :deep(.el-select__placeholder) {
+  color: var(--chat-text-primary, #202020) !important;
   font-size: 13px;
 }
 
 .model-pill-select :deep(.el-input__wrapper:hover),
 .model-pill-select :deep(.el-select__wrapper:hover) {
-  background: #f4f4f4 !important;
+  background: var(--chat-model-select-hover, #f4f4f4) !important;
 }
 
 .model-pill-select :deep(.el-input__wrapper.is-focus),
 .model-pill-select :deep(.el-select__wrapper.is-focused) {
-  border-color: #d0d0d0 !important;
+  border-color: var(--chat-border-subtle, #d0d0d0) !important;
   box-shadow: none !important;
 }
 
 .model-pill-select :deep(.el-select__caret),
 .model-pill-select :deep(.el-input__suffix .el-icon) {
-  color: #909399;
+  color: var(--chat-text-muted, #909399);
 }
 
 .deep-think-wrap {
   display: inline-flex;
   align-items: center;
-  margin-left: 6px;
+  margin-left: 0;
 }
 
 .deep-think-toggle {
+  --toggle-glow: rgba(32, 32, 32, 0.12);
+  --toggle-ring: rgba(32, 32, 32, 0.35);
+  position: relative;
+  isolation: isolate;
   margin: 0;
-  padding: 6px 14px;
-  border: 1px solid transparent;
+  padding: 6px 12px;
+  border: 1px solid #e4e4e7;
   border-radius: 999px;
   font-size: 13px;
   font-weight: 500;
   font-family: inherit;
   line-height: 1.35;
-  color: #94a3b8;
-  background: transparent;
+  color: #71717a;
+  background: #fafafa;
   cursor: pointer;
   transition:
-    color 0.15s,
-    background 0.15s,
-    border-color 0.15s,
-    box-shadow 0.15s;
+    color 0.18s ease,
+    background 0.18s ease,
+    border-color 0.18s ease;
 }
 
-.deep-think-toggle:hover {
-  color: #64748b;
-  background: rgba(125, 180, 255, 0.14);
+.deep-think-toggle--think {
+  --toggle-glow: var(--chat-toggle-think-glow);
+  --toggle-ring: var(--chat-toggle-think-ring);
+}
+
+.deep-think-toggle--web {
+  --toggle-glow: var(--chat-toggle-web-glow);
+  --toggle-ring: var(--chat-toggle-web-ring);
+}
+
+.deep-think-toggle:hover:not(.deep-think-toggle--on) {
+  color: #3f3f46;
+  background: #f4f4f5;
+  border-color: #d4d4d8;
 }
 
 .deep-think-toggle--on {
-  color: #fff !important;
-  background: #7eb8fc;
-  border-color: #7eb8fc;
-  box-shadow: 0 1px 3px rgba(100, 160, 240, 0.28);
+  color: #18181b;
+  font-weight: 600;
+  background: #fff;
+  border-color: #202020;
+  animation: composer-toggle-breathe 2.6s ease-in-out infinite;
 }
 
 .deep-think-toggle--on:hover {
-  color: #fff !important;
-  background: #6aaef8;
-  border-color: #6aaef8;
+  color: #18181b;
+  background: #fff;
+  border-color: #202020;
+}
+
+@keyframes composer-toggle-breathe {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--toggle-ring) 35%, transparent),
+      0 0 0 0 var(--toggle-glow);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px var(--toggle-ring),
+      0 0 0 3px color-mix(in srgb, var(--toggle-glow) 55%, transparent),
+      0 0 16px 4px var(--toggle-glow);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deep-think-toggle--on {
+    animation: none;
+    box-shadow:
+      0 0 0 1px var(--toggle-ring),
+      0 0 10px 2px var(--toggle-glow);
+  }
 }
 
 .msg-actions {
@@ -3427,7 +3674,7 @@ async function send() {
 }
 
 /* —— 响应式：平板收窄侧栏；手机侧栏抽屉 + 顶栏 + 安全区 + 100dvh —— */
-.chat-app--tablet .sidebar {
+.chat-app--tablet :deep(.sidebar) {
   width: 216px;
 }
 
@@ -3471,7 +3718,7 @@ async function send() {
   touch-action: none;
 }
 
-.chat-app--mobile .sidebar {
+.chat-app--mobile :deep(.sidebar) {
   position: fixed;
   left: 0;
   top: 0;
@@ -3484,21 +3731,25 @@ async function send() {
   border-right: 1px solid #e5e5e5;
 }
 
-.chat-app--mobile .sidebar.sidebar--drawer-open {
+.chat-app--mobile :deep(.sidebar.sidebar--drawer-open) {
   transform: translateX(0);
 }
 
 .chat-app--mobile .mobile-nav {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 8px 10px;
   padding-left: max(10px, env(safe-area-inset-left));
   padding-right: max(10px, env(safe-area-inset-right));
   padding-top: max(8px, env(safe-area-inset-top));
-  border-bottom: 1px solid #ececec;
-  background: #fafafa;
+  border-bottom: 1px solid var(--chat-border, #ececec);
+  background: var(--chat-bg-main, #fafafa);
   flex-shrink: 0;
+}
+
+.chat-app--mobile .mobile-nav .thread-head-tools {
+  margin-left: auto;
 }
 
 .mobile-nav-title {
@@ -3552,8 +3803,17 @@ async function send() {
   font-size: 11px;
 }
 
-.chat-app--mobile .messages-wrap {
+.chat-app--mobile .messages-scroll-inner {
   padding: 12px 0 12px;
+}
+
+.chat-app--mobile .bubble-inner--user {
+  column-gap: 6px;
+}
+
+.chat-app--mobile .user-msg-copy-btn {
+  width: 26px;
+  height: 26px;
 }
 
 .chat-app--mobile .messages {
@@ -3586,14 +3846,32 @@ async function send() {
   row-gap: 8px;
 }
 
-.chat-app--mobile .footer-bar-left {
-  flex-wrap: wrap;
-  width: 100%;
+.chat-app--mobile .footer-bar-primary {
+  gap: 6px;
 }
 
-.chat-app--mobile .deep-think-wrap {
-  width: 100%;
-  justify-content: flex-start;
+.chat-app--mobile .footer-vmotion {
+  margin: 0;
+}
+
+.chat-app--mobile .model-pill-select {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: min(148px, calc(100vw - 11.5rem));
+}
+
+.chat-app--mobile .model-pill-select :deep(.el-select__wrapper),
+.chat-app--mobile .model-pill-select :deep(.el-input__wrapper) {
+  padding: 2px 6px !important;
+}
+
+.chat-app--mobile .deep-think-group {
+  margin-left: 0;
+  gap: 6px;
+}
+
+.chat-app--mobile .deep-think-toggle {
+  padding: 6px 9px;
 }
 
 .chat-app--mobile .send-fab {

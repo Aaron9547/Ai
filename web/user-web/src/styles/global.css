@@ -1,3 +1,5 @@
+@import "./chat-theme.css";
+
 /* 用户端：类 ChatGPT 浅色主界面 */
 html,
 body {
@@ -27,56 +29,8 @@ html.dark body {
   color: #e5e5e5;
 }
 
-/* 对话页侧栏：语言/主题控件 */
-.sidebar-prefs {
-  padding-bottom: 8px;
-  margin-bottom: 8px;
-  border-bottom: 1px solid #e5e5e5;
-}
-
-html.dark .sidebar-prefs {
-  border-bottom-color: #333;
-}
-
 html.dark .chat-app {
-  background: #141414;
-}
-
-html.dark .chat-app .sidebar {
-  background: #1a1a1a;
-  border-right-color: #2a2a2a;
-}
-
-html.dark .chat-app .main,
-html.dark .chat-app .thread-head {
-  background: #141414;
-}
-
-html.dark .chat-app .thread-title {
-  color: #f4f4f5;
-}
-
-html.dark .chat-app .thread-hint,
-html.dark .chat-app .thread-tokens {
-  color: #a1a1aa;
-}
-
-html.dark .chat-app .btn-new {
-  background: #262626;
-  border-color: #3f3f46;
-  color: #fafafa;
-}
-
-html.dark .chat-app .conv-item {
-  color: #d4d4d8;
-}
-
-html.dark .chat-app .conv-item:hover {
-  background: #27272a;
-}
-
-html.dark .chat-app .conv-item.active {
-  background: #3f3f46;
+  background: var(--chat-bg-app);
 }
 
 html.dark .me-page {

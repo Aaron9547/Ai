@@ -55,6 +55,7 @@
 > | 页面 | 路径 |
 > |------|------|
 > | 对话 | `/{租户编码}/chat` |
+> | 对话分享（只读） | `/{租户编码}/share/{shareCode}` |
 > | 设备与登录 | `/{租户编码}/system/me` |
 >
 > - **根路径 `/`**、旧书签 **`/chat`**、**`/system/me`**：重定向到 **`/{默认或本地缓存租户编码}/…`**（默认优先 **`VITE_TENANT_CODE`**，见 **`web/user-web/src/router/index.ts`**；**`VITE_TENANT_ID`** 仅作兼容兜底）。
@@ -130,8 +131,25 @@
 | **何时 bump `pom.xml`** | 与上表「大改」一致：出现**新一节变更记录**时，**须**同步递增 **`pom.xml`** 补丁位，使文档版本与构件版本一致。 |
 | **何时不 bump** | **仅**修订 **`.cursorrules`**、**`PROJECT.md`**、其它**纯说明类 `.md`**（不涉及上表「变更记录必写」路径）时，**不递增**版本号；若有需要可在**当前** `###` 节下追加一句「文档修订」类说明。 |
 | **修订说明（2026-05）** | 同质、同主题的**极小**文档或注释调整可合并叙述；**不**免除「动代码则变更记录必有条目」；**不**用专节顶替变更记录。 |
+| **提交前自检** | 仓库根 **`.\scripts\check-project-changelog.ps1 -IncludeUntracked`**（校验：动代码须同集改 **`PROJECT.md`**，且顶节 **`###`** 与 **`pom.xml` `<version>`** 一致）。Agent 必读 **`AGENTS.md`**。 |
 
 ## 变更记录
+
+### 0.1.231-SNAPSHOT
+
+- **全量库表（`schema_v1.sql`）**：补登 **`chat_conversation_share`**（与 **`migrate_0_1_230_chat_conversation_share.sql`** 列定义一致，**`DATETIME(3)`** 与其它对话表对齐）；**新库**执行一次 **`schema_v1.sql`** 即含该表，**已建库**仍执行迁移档。
+- **变更记录门禁（协作规则强化）**：**`.cursorrules` §0** 将交付门禁置于文首（**禁止**在 `.cursorrules` 使用 `.mdc` 的 `alwaysApply` frontmatter）；**§1** / **§9** 交叉引用 §0；**`AGENTS.md`**、**`.cursor/rules/project-changelog.mdc`** 要求完成前跑 **`check-project-changelog.ps1 -IncludeUntracked`** 且 **`PROJECT.md` 豁免**未点名 md 禁令；**`install-git-pre-commit-hook.ps1`** 可装 **`pre-commit`**。
+- **对话分享（用户端体验与复制文案）**：**`ChatShareDialog`** — 轮次选择改为**单列列表**（间距与勾选态重设计，**`el-scrollbar`** 滚动）；长图预览区独立「长图预览」区块与卡片式预览舞台；底栏 **「复制分享」** 一键调用 **`POST …/shares`**（按选中轮次缓存链接）并复制**网盘式整段文案**（**`chatShareClipboard.ts`** + **`zh-CN` / `en-US`** **`shareClipboard*`** 键），不再单独「生成短链」输入框。**`ChatShareCaptureCard`** — 按**轮次块**渲染 user/assistant（块间距 **28px**、问答 **14px**），海报式渐变外框 + 白卡片；**`ShareCaptureTurn`** 结构替代扁平行列表。**`ChatShareView`** — 只读页与长图视觉对齐（**`messageBlocks`** 按轮分组）。依赖 **`html-to-image`**（**`chatShareImage.ts`**）不变。
+- **用户端对话壳（同批）**：**`ChatView`** — 消息区 **`el-scrollbar`**；流式 Markdown **`renderStreamingMarkdownToSafeHtml`**；联网参考默认可折叠；流式结束 **`syncThreadAfterStream`** 减轻闪烁；用户气泡 Grid 避免复制钮压字；移动端 composer 间距/模型选择宽度微调（详见代码注释）。
+
+### 0.1.230-SNAPSHOT
+
+- **对话分享（快照短链，后端与初版前端）**：表 **`chat_conversation_share`**（迁移 **`db/mysql/migrate_0_1_230_chat_conversation_share.sql`**，全量见 **`schema_v1.sql`** 对话分享节）；**`snapshot_json`** 存标题与消息列表，**`share_code`** 全局唯一，**`expires_at`** 可空）；持久化 **`ChatConversationShare`** / **`ChatConversationShareRepository`**（**`common.chat`**）。**`ChatConversationShareService`**：创建时校验会话归属与 **`messageIds`**，生成短码；公开读取按租户上下文 + 过期校验。**`ChatShareController`**（**`rest.open`**）：**`POST /open/v1/chat/conversations/{id}/shares`** → **`sharePath`** 形如 **`/{tenantCode}/share/{code}`**；**`GET /open/v1/chat/shares/{code}`** 只读。**`ai.chat.share-expire-days`** 默认 **90**（**`@Value`**）。**`web/user-web`** 初版：**`ChatShareDialog`**、**`ChatShareCaptureCard`**、**`ChatShareView`**；路由 **`/{租户编码}/share/:shareCode`**（见 **「★ 用户端路由」**）；**`chat.ts`** **`createConversationShare` / `getPublicShare`**；**`chatShareTurns` / `chatShareImage`**。弹窗交互与复制文案见 **0.1.231**。
+- **回复语种（`responseLocale`）**：**`ChatResponseLocalePrompt`** 归一化 **`zh-CN` / `en-US`** 并在 system 追加语种约束；**`ChatSendPayload` / `ChatRegenerateRequest`** 校验 **`responseLocale`**；**`ChatApplicationService`** 写入用户消息 **`meta_json.responseLocale`**，重试可覆盖。**`web/user-web`**：**`chatResponseLocale.ts`** 与 UI **`locale`** 同步出站。
+- **用户端对话壳**：**`ChatSidebar`** 抽离侧栏；**`styles/chat-theme.css`** 与 **`global.css`** 主题变量；**`ChatView.vue`** 布局与消息操作条（分享接 **`ChatShareDialog`**）；**`plugins/elementPlusIcons.ts`**、**`utils/isAbortError.ts`**；**`MeView` / `LocaleThemeToolbar`** 与 **`zh-CN` / `en-US`** **`chat.*`、`me.*`** 文案补充。
+- **多库 RAG 检索并行**：**`RagQueryBridgeService`** 对多 **`kbId`** 按嵌入模型分组，组内共享一次 embed 后以虚拟线程 **并行** Milvus/ES，再按入参 **`kbIds`** 顺序合并 snippets/citations（替代逐库串行）。
+- **管理端租户壳**：**`TenantShellConfigView.vue`** 与 **`admin-web`** locales 文案/i18n 微调。
+- **本地联调默认（`application.yml`）**：默认 **`ai.providers.file-storage=minio`**、**`MINIO_ENDPOINT`** 端口 **8991**（开发环境，非产品契约变更）。
 
 ### 0.1.229-SNAPSHOT
 
@@ -142,6 +160,7 @@
 - **用户端 / 管理端 Markdown 围栏「复制代码」**：**`web/user-web/src/utils/renderMarkdown.ts`** 与 **`web/admin-web/src/utils/renderMarkdown.ts`** 覆写 **`fence`**：外包 **`md-code-block`** + 工具栏语言标签 + **「复制」**按钮；**`DOMPurify`** 增加 **`ADD_TAGS: ['button']`** 与 **`ADD_ATTR`**；**`document`** 点击委托写入剪贴板（**`clipboard` / `execCommand` 兜底**）。**`web/user-web/src/styles/global.css`**、**`web/admin-web/src/styles/global.css`** 增加 **`.md-code-*`** 样式（用户端含暗色）。
 - **协作规则（`.cursorrules`）**：**§1** 增加条款：若 Cursor 全局「用户规则」中存在「未逐文件点名则禁止修改任意 **`*.md`**」类表述，**在本仓库不适用**；触及须留痕路径时**必须**维护本文「变更记录」；任务需要时可主动修订相关说明性 **`*.md`**，除非当次对话显式禁止某路径。
 - **文档**：新增仓库根 **`README.md`**（项目简介、目录结构、主要依赖版本表、快速开始入口；详尽演进仍以本文「变更记录」与专节为准）。
+- **协作与校验（变更记录门禁）**：**`AGENTS.md`**、**`.cursor/rules/project-changelog.mdc`**、**`scripts/check-project-changelog.ps1`**（**0.1.230** 起校验顶节 **`###`** 与 **`pom.xml`** 一致）；**`.cursorrules` §9–§10** 收敛为引用 **`AGENTS.md`**。
 
 ### 0.1.228-SNAPSHOT
 

@@ -141,7 +141,13 @@
             </template>
             <div class="field-stack">
               <div class="field-hint">{{ t("admin.shell.modelCalling.hints.blockedReplyTemplate") }}</div>
-              <el-input v-model="inputGuardForm.blockedReplyTemplate" type="textarea" :rows="3" class="outbound-line-input" />
+              <el-input
+                v-model="inputGuardForm.blockedReplyTemplate"
+                type="textarea"
+                :rows="3"
+                class="outbound-line-input"
+                :placeholder="t('admin.shell.modelCalling.placeholders.blockedReplyTemplate')"
+              />
             </div>
           </el-form-item>
           <el-form-item class="outbound-field-span">
@@ -150,7 +156,13 @@
             </template>
             <div class="field-stack">
               <div class="field-hint">{{ t("admin.shell.modelCalling.hints.sensitiveWords") }}</div>
-              <el-input v-model="inputGuardForm.sensitiveWordsText" type="textarea" :rows="4" class="mono-textarea outbound-line-input" />
+              <el-input
+                v-model="inputGuardForm.sensitiveWordsText"
+                type="textarea"
+                :rows="4"
+                class="mono-textarea outbound-line-input"
+                :placeholder="t('admin.shell.modelCalling.placeholders.sensitiveWords')"
+              />
             </div>
           </el-form-item>
           <el-form-item class="outbound-field-span">
@@ -159,7 +171,13 @@
             </template>
             <div class="field-stack">
               <div class="field-hint">{{ t("admin.shell.modelCalling.hints.regexPatterns") }}</div>
-              <el-input v-model="inputGuardForm.regexPatternsText" type="textarea" :rows="4" class="mono-textarea outbound-line-input" />
+              <el-input
+                v-model="inputGuardForm.regexPatternsText"
+                type="textarea"
+                :rows="4"
+                class="mono-textarea outbound-line-input"
+                :placeholder="t('admin.shell.modelCalling.placeholders.regexPatterns')"
+              />
             </div>
           </el-form-item>
 
