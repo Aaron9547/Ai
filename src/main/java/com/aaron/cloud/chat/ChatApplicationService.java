@@ -313,7 +313,7 @@ public class ChatApplicationService {
                 chatInputGuardService.evaluate(snap.getTenantId(), payload.getContent());
         if (blocked.isPresent()) {
             log.warn(
-                    "chat input blocked tenantId={} conversationId={} reason={} guardRule={}",
+                    "[对话] 输入被安全策略拦截：租户 {}，会话 {}，原因={}，规则={}",
                     snap.getTenantId(),
                     conversationId,
                     blocked.get().reason(),
@@ -360,12 +360,12 @@ public class ChatApplicationService {
         String augmentedUserText = buildUserMessageWithAttachments(payload.getContent(), attachments);
 
         log.info(
-                "[对话阶段] phase=preflightDone tenantId={} conversationId={} elapsedMs={} mock={} webSearch={} attachCount={}",
+                "[对话] ① 前置检查完成：租户 {}，会话 {}，耗时 {}ms；{} 模型调用，联网搜索 {}，附件 {} 个",
                 snap.getTenantId(),
                 conversationId,
                 millisSince(pipelineT0),
-                isMock,
-                payload.isWebSearchEnabled(),
+                PipelineLogZh.mockCall(isMock),
+                PipelineLogZh.yesNo(payload.isWebSearchEnabled()),
                 attachments.size());
 
         var userMsg = new ChatMessage();
@@ -379,11 +379,11 @@ public class ChatApplicationService {
                 snap.getTenantId(), conversationId, payload.getContent());
 
         log.info(
-                "[对话阶段] phase=userMessageLinked tenantId={} conversationId={} elapsedMs={} userMsgId={}",
+                "[对话] ② 用户消息已入库：租户 {}，会话 {}，消息编号 {}，累计耗时 {}ms",
                 snap.getTenantId(),
                 conversationId,
-                millisSince(pipelineT0),
-                userMsg.getId());
+                userMsg.getId(),
+                millisSince(pipelineT0));
 
         // 画像/记忆写入含 Milvus 向量嵌入等 IO，同步会阻塞意图路由与主链首包；改为虚拟线程后台执行。
         var snapForIngest = snap;
@@ -397,7 +397,7 @@ public class ChatApplicationService {
                                 snapForIngest, utteranceForIngest, convIdForIngest, modelAliasForIngest);
                     } catch (Exception ex) {
                         log.warn(
-                                "async profile/memory ingest failed tenantId={} conversationId={}",
+                                "[对话] 后台写入用户画像/记忆失败：租户 {}，会话 {}",
                                 snapForIngest.getTenantId(),
                                 convIdForIngest,
                                 ex);
@@ -407,30 +407,30 @@ public class ChatApplicationService {
         Optional<IntentSseRoute> intentRoute =
                 chatIntentStreamRouter.maybeRouteIntentStream(conversationId, snap, payload, attachments);
         log.info(
-                "[对话阶段] phase=intentRouterDone tenantId={} conversationId={} elapsedMs={} intentSseHit={}",
+                "[对话] ③ 意图路由结束：租户 {}，会话 {}，耗时 {}ms；{}",
                 snap.getTenantId(),
                 conversationId,
                 millisSince(pipelineT0),
-                intentRoute.isPresent());
+                intentRoute.isPresent() ? "已命中意图快捷回复" : "未命中，将进入大模型主链");
         if (intentRoute.isPresent()) {
             IntentSseRoute r = intentRoute.get();
             mergeIntentHitIntoUserMessageMeta(userMsg.getId(), snap.getTenantId(), r.definition(), r.keywordHit());
             log.info(
-                    "[意图链路] 已返回意图 SSE，本请求不再进入大模型主链 conversationId={} tenantId={} intentCode={} matchSource={}",
-                    conversationId,
+                    "[意图] 本请求走意图专用回复，不再调用大模型：租户 {}，会话 {}，意图编码={}，匹配来源={}",
                     snap.getTenantId(),
+                    conversationId,
                     r.definition().getCode(),
                     r.keywordHit().matchSource());
             return r.emitter();
         }
 
         log.info(
-                "[意图链路] 未走意图 SSE，进入大模型主链 conversationId={} tenantId={} messagePreview={}",
-                conversationId,
+                "[意图] 未命中意图关键词，进入大模型主链：租户 {}，会话 {}，用户消息摘要={}",
                 snap.getTenantId(),
+                conversationId,
                 intentChainMessagePreview(payload.getContent()));
         log.info(
-                "[对话阶段] phase=enteringOpenAssistant tenantId={} conversationId={} elapsedMsSinceRequest={}",
+                "[对话] ④ 进入开放助手主流程：租户 {}，会话 {}，距请求开始 {}ms",
                 snap.getTenantId(),
                 conversationId,
                 millisSince(pipelineT0));
@@ -459,10 +459,10 @@ public class ChatApplicationService {
             ArrayNode priorAssistantVersions) {
         long openT0 = System.currentTimeMillis();
         log.info(
-                "[对话阶段] phase=openAssistantEnter tenantId={} conversationId={} elapsedMs=0 mock={}",
+                "[对话] ⑤ 开放助手开始编排：租户 {}，会话 {}；{} 模型调用",
                 snap.getTenantId(),
                 conversationId,
-                isMock);
+                PipelineLogZh.mockCall(isMock));
         // 未接 Milvus（local 占位）时：对话侧等同无 RAG，不调检索、不注入片段，用户端无报错。
         // 仅拉取 rag_knowledge_base.chat_retrieval_enabled=ON 的知识库；无开启库时不做 RAG 检索。
         final List<Long> chatRagKbIds =
@@ -470,12 +470,12 @@ public class ChatApplicationService {
                         ? ragKnowledgeBaseRepository.listIdsWithChatRetrievalEnabled(snap.getTenantId())
                         : List.of();
         log.info(
-                "[对话阶段] phase=ragKbListLoaded tenantId={} conversationId={} elapsedMs={} kbCount={} vectorStore={}",
+                "[对话] ⑥ 可参与检索的知识库：共 {} 个，向量库类型={}；租户 {}，会话 {}，耗时 {}ms",
+                chatRagKbIds.size(),
+                PipelineLogZh.vectorStore(aiProvidersProperties.resolvedVectorStore()),
                 snap.getTenantId(),
                 conversationId,
-                millisSince(openT0),
-                chatRagKbIds.size(),
-                aiProvidersProperties.resolvedVectorStore());
+                millisSince(openT0));
         IntentRoute baseIntent = chatRagKbIds.isEmpty() ? IntentRoute.CHAT_ONLY : IntentRoute.RAG;
         String ragLexicalQuery = buildRagLexicalSearchQuery(payload, augmentedUserText);
         IntentRoute routeIntent =
@@ -483,36 +483,36 @@ public class ChatApplicationService {
                         ? IntentRoute.CHAT_ONLY
                         : baseIntent;
         log.info(
-                "[对话阶段] phase=ragLexicalReady tenantId={} conversationId={} elapsedMs={} baseIntent={} routeIntent={} lexicalChars={}",
+                "[对话] ⑦ 检索路由判定：初始={}，当前={}，检索用词 {} 字；租户 {}，会话 {}，耗时 {}ms",
+                PipelineLogZh.intentRoute(baseIntent),
+                PipelineLogZh.intentRoute(routeIntent),
+                ragLexicalQuery.length(),
                 snap.getTenantId(),
                 conversationId,
-                millisSince(openT0),
-                baseIntent,
-                routeIntent,
-                ragLexicalQuery.length());
+                millisSince(openT0));
         List<RagCitationHit> ragCitationHits = List.of();
         List<String> ragSnippets = List.of();
         if (routeIntent == IntentRoute.RAG) {
             log.info(
-                    "[对话阶段] phase=ragCitationSearchStart tenantId={} conversationId={} elapsedMs={} topK={}",
+                    "[对话] ⑧ 开始检索「可引用分片」：最多 {} 条；租户 {}，会话 {}，耗时 {}ms",
+                    3,
                     snap.getTenantId(),
                     conversationId,
-                    millisSince(openT0),
-                    3);
+                    millisSince(openT0));
             long tCit = System.currentTimeMillis();
             ragCitationHits =
                     List.copyOf(
                             ragQueryPort.searchCitationHitsAcrossKnowledgeBases(
                                     snap.getTenantId(), chatRagKbIds, ragLexicalQuery, 3));
             log.info(
-                    "[对话阶段] phase=ragCitationSearchDone tenantId={} conversationId={} elapsedMs={} stepMs={} hitCount={}",
-                    snap.getTenantId(),
-                    conversationId,
-                    millisSince(openT0),
+                    "[对话] ⑨ 「可引用分片」检索结束：命中 {} 条，本步 {}ms，累计 {}ms；租户 {}，会话 {}",
+                    ragCitationHits.size(),
                     millisSince(tCit),
-                    ragCitationHits.size());
+                    millisSince(openT0),
+                    snap.getTenantId(),
+                    conversationId);
             log.info(
-                    "[对话阶段] phase=ragSnippetSearchStart tenantId={} conversationId={} elapsedMs={}",
+                    "[对话] ⑩ 开始检索「注入提示词的片段」：租户 {}，会话 {}，累计耗时 {}ms",
                     snap.getTenantId(),
                     conversationId,
                     millisSince(openT0));
@@ -523,12 +523,12 @@ public class ChatApplicationService {
                             ragQueryPort.searchSnippetsAcrossKnowledgeBases(
                                     snap.getTenantId(), chatRagKbIds, ragLexicalQuery, 3));
             log.info(
-                    "[对话阶段] phase=ragSnippetSearchDone tenantId={} conversationId={} elapsedMs={} stepMs={} snippetCount={}",
-                    snap.getTenantId(),
-                    conversationId,
-                    millisSince(openT0),
+                    "[对话] ⑪ 「注入提示词的片段」检索结束：命中 {} 条，本步 {}ms，累计 {}ms；租户 {}，会话 {}",
+                    ragSnippets.size(),
                     millisSince(tSnip),
-                    ragSnippets.size());
+                    millisSince(openT0),
+                    snap.getTenantId(),
+                    conversationId);
             // 向量阈值过滤或 ES 未命中后可能两侧皆空：本回合按纯对话编排，避免落库/展示无实质检索的「挂名引用」。
             if (ragCitationHits.isEmpty() && ragSnippets.isEmpty()) {
                 routeIntent = IntentRoute.CHAT_ONLY;
@@ -537,43 +537,57 @@ public class ChatApplicationService {
         final IntentRoute intent = routeIntent;
         final List<RagCitationHit> ragHitsForStream = ragCitationHits;
         log.info(
-                "[对话阶段] phase=ragRouteFinal tenantId={} conversationId={} elapsedMs={} intent={} citationHits={} snippets={}",
-                snap.getTenantId(),
-                conversationId,
-                millisSince(openT0),
-                intent,
+                "[对话] ⑫ 知识库检索汇总：最终路由={}，可引用分片 {} 条，提示词片段 {} 条；租户 {}，会话 {}，累计 {}ms",
+                PipelineLogZh.intentRoute(intent),
                 ragCitationHits.size(),
-                ragSnippets.size());
-        log.info(
-                "chatOpenStream start conversationId={} tenantId={} userId={} deviceIdPresent={} intent={} vectorStore={} retrievalMode={} chatRagKbCount={} userTextChars={} ragLexicalChars={} ragSnippetCount={} ragCitationCount={}",
-                conversationId,
+                ragSnippets.size(),
                 snap.getTenantId(),
-                snap.getUserId(),
-                snap.getDeviceId() != null && !snap.getDeviceId().isBlank(),
-                intent,
-                aiProvidersProperties.resolvedVectorStore(),
-                aiRagProperties.resolvedRetrievalMode(),
+                conversationId,
+                millisSince(openT0));
+        log.info(
+                "[对话] ⑬ 开始流式生成回答：租户 {}，会话 {}，路由={}，向量库={}，检索模式={}，参与检索知识库 {} 个，用户输入 {} 字，检索用词 {} 字，引用 {} 条/片段 {} 条，设备标识={}",
+                snap.getTenantId(),
+                conversationId,
+                PipelineLogZh.intentRoute(intent),
+                PipelineLogZh.vectorStore(aiProvidersProperties.resolvedVectorStore()),
+                PipelineLogZh.retrievalMode(aiRagProperties.resolvedRetrievalMode()),
                 chatRagKbIds.size(),
                 payload.getContent() != null ? payload.getContent().length() : 0,
                 ragLexicalQuery.length(),
+                ragCitationHits.size(),
                 ragSnippets.size(),
-                ragCitationHits.size());
+                PipelineLogZh.yesNo(snap.getDeviceId() != null && !snap.getDeviceId().isBlank()));
         List<ModelChatRequest.MessageTurn> turns = new ArrayList<>();
-        // 画像为 ten_profile_tag 跨会话累计与最近摘要，非本会话消息列表；具体措辞见 UserProfileApplicationService.buildPromptAddendum
+        ChatPromptLimitsRuntime promptLimits =
+                tenantRuntimeSettingApplicationService.chatPromptLimits(snap.getTenantId());
+        List<ModelChatRequest.MessageTurn> historyTurns =
+                buildPromptHistoryTurns(snap.getTenantId(), conversationId, pairedUserMessageId, promptLimits);
+        final boolean currentWindowHasNoPriorTurns = historyTurns.isEmpty();
+        // 画像为 ten_profile_tag / 长期记忆，跨会话；勿让模型在思考链中当成「本窗口内问过多次」
         long tProfile = System.currentTimeMillis();
-        String profileAddendum = userProfileApplicationService.buildPromptAddendum(snap, augmentedUserText);
+        String profileSubjectKey = ProfileSubjectKey.fromSnapshot(snap);
+        String profileAddendum =
+                userProfileApplicationService.buildPromptAddendum(
+                        snap, augmentedUserText, currentWindowHasNoPriorTurns);
         log.info(
-                "[对话阶段] phase=profileAddendumDone tenantId={} conversationId={} elapsedMs={} stepMs={} nonBlank={}",
+                "[对话] ⑭ 用户画像补充已拼接：{}；主体={}，userId={}，deviceId={}；本步 {}ms，累计 {}ms；租户 {}，会话 {}，当前窗口无历史={}",
+                profileAddendum.isBlank() ? "无画像内容" : "已写入画像摘要",
+                profileSubjectKey == null ? "无" : profileSubjectKey,
+                snap.getUserId(),
+                snap.getDeviceId() != null && !snap.getDeviceId().isBlank() ? "有" : "无",
+                millisSince(tProfile),
+                millisSince(openT0),
                 snap.getTenantId(),
                 conversationId,
-                millisSince(openT0),
-                millisSince(tProfile),
-                !profileAddendum.isBlank());
+                currentWindowHasNoPriorTurns);
+        String responseLocale = ChatResponseLocalePrompt.normalize(payload.getResponseLocale());
         StringBuilder sys = new StringBuilder();
         if (!profileAddendum.isBlank()) {
-            sys.append("【画像·跨会话】\n").append(profileAddendum).append("\n\n");
+            sys.append(ProfilePromptGuard.crossSessionBlockHeader(responseLocale));
+            sys.append(profileAddendum);
+            ProfilePromptGuard.appendUsageDirective(sys, responseLocale, currentWindowHasNoPriorTurns);
+            sys.append("\n");
         }
-        String responseLocale = ChatResponseLocalePrompt.normalize(payload.getResponseLocale());
         if (intent == IntentRoute.RAG) {
             sys.append("可参考知识片段：");
             for (String s : ragSnippets) {
@@ -592,19 +606,15 @@ public class ChatApplicationService {
             sysTurn.setContent(sys.toString());
             turns.add(sysTurn);
         }
-        ChatPromptLimitsRuntime promptLimits =
-                tenantRuntimeSettingApplicationService.chatPromptLimits(snap.getTenantId());
-        List<ModelChatRequest.MessageTurn> historyTurns =
-                buildPromptHistoryTurns(snap.getTenantId(), conversationId, pairedUserMessageId, promptLimits);
         if (!historyTurns.isEmpty()) {
             turns.addAll(historyTurns);
         }
         log.info(
-                "[对话阶段] phase=promptHistoryReady tenantId={} conversationId={} elapsedMs={} historyTurns={}",
+                "[对话] ⑮ 历史对话已装入提示词：共 {} 轮；租户 {}，会话 {}，累计 {}ms",
+                historyTurns.size(),
                 snap.getTenantId(),
                 conversationId,
-                millisSince(openT0),
-                historyTurns.size());
+                millisSince(openT0));
         final SysLlmModel webSearchModelForStream =
                 payload.isWebSearchEnabled()
                         ? llmModelRepository
@@ -652,7 +662,7 @@ public class ChatApplicationService {
                                             .data(sseChunk("reasoning", t))
                                             .id(String.valueOf(seq.incrementAndGet())));
                         } catch (Exception e) {
-                            log.warn("sse reasoning send failed", e);
+                            log.warn("[对话] SSE 推送思考过程失败", e);
                         }
                     });
         }
@@ -662,14 +672,14 @@ public class ChatApplicationService {
                 () -> {
                     try {
                         log.info(
-                                "[对话阶段] phase=llmStreamThreadStart tenantId={} conversationId={} elapsedMsSinceOpenAssistant={}",
+                                "[对话] ⑯ 大模型流式线程已启动：租户 {}，会话 {}，距开放助手开始 {}ms",
                                 snap.getTenantId(),
                                 conversationId,
                                 millisSince(openAssistantWallMs));
                         long streamStartedAt = System.currentTimeMillis();
                         if (payload.isWebSearchEnabled() && webSearchModelForStream != null) {
                             log.info(
-                                    "[对话阶段] phase=webSearchGroundingStart tenantId={} conversationId={} elapsedMsSinceOpenAssistant={}",
+                                    "[对话] ⑰ 开始联网搜索增强：租户 {}，会话 {}，距开放助手开始 {}ms",
                                     snap.getTenantId(),
                                     conversationId,
                                     millisSince(openAssistantWallMs));
@@ -688,13 +698,13 @@ public class ChatApplicationService {
                             }
                             String webCtx = formatWebGroundingContent(wb, snap.getTenantId());
                             log.info(
-                                    "[对话阶段] phase=webSearchGroundingDone tenantId={} conversationId={} elapsedMsSinceOpenAssistant={} stepMs={} refCount={} injected={}",
-                                    snap.getTenantId(),
-                                    conversationId,
-                                    millisSince(openAssistantWallMs),
-                                    millisSince(tWeb),
+                                    "[对话] ⑱ 联网搜索增强结束：引用 {} 条，{}注入模型提示词；本步 {}ms，距开放助手开始 {}ms；租户 {}，会话 {}",
                                     webSearchRefsForStream.size(),
-                                    webCtx != null && !webCtx.isBlank());
+                                    webCtx != null && !webCtx.isBlank() ? "已" : "未",
+                                    millisSince(tWeb),
+                                    millisSince(openAssistantWallMs),
+                                    snap.getTenantId(),
+                                    conversationId);
                             if (webCtx != null && !webCtx.isBlank()) {
                                 var webSys = new ModelChatRequest.MessageTurn();
                                 webSys.setRole("system");
@@ -716,7 +726,7 @@ public class ChatApplicationService {
                                                         .id(String.valueOf(seq.incrementAndGet())));
                                     } catch (Exception e) {
                                         log.error(
-                                                "SSE send token failed conversationId={} tenantId={} modelAlias={} llmModelId={} seq={}",
+                                                "[对话] SSE 推送回答片段失败：会话 {}，租户 {}，模型 {}，模型编号 {}，序号 {}",
                                                 conversationId,
                                                 snap.getTenantId(),
                                                 payload.getModelAlias(),
@@ -772,12 +782,12 @@ public class ChatApplicationService {
                         }
                         ragRetrievalHitCounter.recordHits(snap.getTenantId(), ragHitsForStream);
                         log.info(
-                                "chatOpenStream completed conversationId={} tenantId={} durationMs={} intent={} assistantChars={} usageTotalTokens={}",
-                                conversationId,
+                                "[对话] ⑲ 流式回答已完成：租户 {}，会话 {}，路由={}，生成 {} 字，总耗时 {}ms，消耗 token {}；",
                                 snap.getTenantId(),
-                                durationMs,
-                                intent,
+                                conversationId,
+                                PipelineLogZh.intentRoute(intent),
                                 assistantBuf.length(),
+                                durationMs,
                                 usageRef.get() != null ? usageRef.get().totalTokens() : 0);
                         emitter.complete();
                         final String assistantTextForMemory = assistantBuf.toString();
@@ -793,9 +803,9 @@ public class ChatApplicationService {
                                                 modelAliasForMemory);
                                     } catch (Exception memEx) {
                                         log.warn(
-                                                "afterAssistantUtterance failed conversationId={} tenantId={}",
-                                                conversationId,
+                                                "[对话] 助手回复后写入长期记忆失败：租户 {}，会话 {}",
                                                 snap.getTenantId(),
+                                                conversationId,
                                                 memEx);
                                     }
                                     chatTurnDigestApplicationService.scheduleTurnDigest(
@@ -809,15 +819,13 @@ public class ChatApplicationService {
                                 });
                     } catch (Exception e) {
                         log.error(
-                                "stream completion failed conversationId={} tenantId={} userId={} modelAlias={} mock={} llmModelId={} intent={} thinking={} msgTurns={} userTextChars={}",
+                                "[对话] 大模型流式调用失败：会话 {}，租户 {}，模型 {}，{}调用，路由={}，深度思考={}，提示词轮数 {}，用户输入 {} 字",
                                 conversationId,
                                 snap.getTenantId(),
-                                snap.getUserId(),
                                 payload.getModelAlias(),
-                                isMock,
-                                modelCfg != null ? modelCfg.getId() : null,
-                                intent,
-                                payload.isThinkingEnabled(),
+                                PipelineLogZh.mockCall(isMock),
+                                PipelineLogZh.intentRoute(intent),
+                                PipelineLogZh.yesNo(Boolean.TRUE.equals(payload.isThinkingEnabled())),
                                 modelReq.getMessages() != null ? modelReq.getMessages().size() : 0,
                                 payload.getContent() != null ? payload.getContent().length() : 0,
                                 e);
@@ -846,7 +854,7 @@ public class ChatApplicationService {
                                             .data(sseEndPayload(usageRef.get()))
                                             .id(String.valueOf(seq.incrementAndGet())));
                         } catch (Exception sendEx) {
-                            log.warn("sse error frame send failed", sendEx);
+                            log.warn("[对话] SSE 推送错误帧失败", sendEx);
                         }
                         emitter.complete();
                     }
@@ -981,7 +989,7 @@ public class ChatApplicationService {
                     }
                 }
             } catch (Exception e) {
-                log.warn("failed to read priorVersions from assistant meta messageId={}", asst.getId(), e);
+                log.warn("[对话] 读取助手历史版本元数据失败：消息 {}", asst.getId(), e);
             }
         }
         ObjectNode snap = objectMapper.createObjectNode();
@@ -1009,7 +1017,7 @@ public class ChatApplicationService {
                     snap.set("webSearchReferences", root.get("webSearchReferences").deepCopy());
                 }
             } catch (Exception e) {
-                log.warn("failed to parse assistant meta for prior snapshot messageId={}", asst.getId(), e);
+                log.warn("[对话] 解析助手历史版本快照失败：消息 {}", asst.getId(), e);
             }
         }
         chain.add(snap);
@@ -1091,9 +1099,9 @@ public class ChatApplicationService {
                                     snap, template, conversationId, payload.getModelAlias().trim());
                         } catch (Exception memEx) {
                             log.warn(
-                                    "afterAssistantUtterance (input guard) failed conversationId={} tenantId={}",
-                                    conversationId,
+                                    "[对话] 输入拦截回复后写入长期记忆失败：租户 {}，会话 {}",
                                     snap.getTenantId(),
+                                    conversationId,
                                     memEx);
                         }
                         chatTurnDigestApplicationService.scheduleTurnDigest(
@@ -1120,15 +1128,15 @@ public class ChatApplicationService {
                         emitter.complete();
                     } catch (Exception e) {
                         log.error(
-                                "input guard sse persist/send failed conversationId={} tenantId={} reason={}",
-                                conversationId,
+                                "[对话] 输入安全拦截 SSE 落库/推送失败：租户 {}，会话 {}，原因 {}",
                                 snap.getTenantId(),
+                                conversationId,
                                 outcome.reason(),
                                 e);
                         try {
                             emitter.completeWithError(e);
                         } catch (Exception completeEx) {
-                            log.warn("emitter completeWithError failed", completeEx);
+                            log.warn("[对话] SSE completeWithError 失败", completeEx);
                             emitter.complete();
                         }
                     }
@@ -1180,7 +1188,7 @@ public class ChatApplicationService {
                 return on;
             }
         } catch (Exception e) {
-            log.warn("malformed assistant metaJson, reset messageId={}", messageId, e);
+            log.warn("[对话] 助手元数据格式异常，已重置：消息 {}", messageId, e);
         }
         return objectMapper.createObjectNode();
     }
@@ -1238,7 +1246,7 @@ public class ChatApplicationService {
                                 .data(sseChunk("ragDoc", objectMapper.writeValueAsString(doc)))
                                 .id(String.valueOf(seq.incrementAndGet())));
             } catch (Exception ex) {
-                log.warn("sse ragDoc frame send failed seq={}", seq.get(), ex);
+                log.warn("[对话] SSE 推送知识库引用帧失败，序号 {}", seq.get(), ex);
                 break;
             }
             try {
@@ -1283,7 +1291,7 @@ public class ChatApplicationService {
                             .data(sseChunk("webSearchRefs", objectMapper.writeValueAsString(root)))
                             .id(String.valueOf(seq.incrementAndGet())));
         } catch (Exception ex) {
-            log.warn("sse webSearchRefs frame send failed seq={}", seq.get(), ex);
+            log.warn("[对话] SSE 推送联网引用帧失败，序号 {}", seq.get(), ex);
         }
     }
 
@@ -1399,7 +1407,7 @@ public class ChatApplicationService {
             }
             return out;
         } catch (Exception ex) {
-            log.warn("parse attachmentIds from user meta failed", ex);
+            log.warn("[对话] 解析用户消息附件编号失败", ex);
             return List.of();
         }
     }
@@ -1449,7 +1457,7 @@ public class ChatApplicationService {
                 webSearchReferences =
                         parseWebSearchReferencesFromRoot(objectMapper.readTree(m.getMetaJson()));
             } catch (Exception ex) {
-                log.warn("user message meta parse failed messageId={}", m.getId(), ex);
+                log.warn("[对话] 用户消息元数据解析失败：消息 {}", m.getId(), ex);
             }
         }
         if (m.getRole() == ChatMessageRole.ASSISTANT
@@ -1538,7 +1546,7 @@ public class ChatApplicationService {
                 }
                 webSearchReferences = parseWebSearchReferencesFromRoot(root);
             } catch (Exception ex) {
-                log.warn("chat message meta parse failed messageId={}", m.getId(), ex);
+                log.warn("[对话] 消息元数据解析失败：消息 {}", m.getId(), ex);
             }
         }
         List<ChatAttachmentMessageView> attachments =
@@ -1646,7 +1654,7 @@ public class ChatApplicationService {
             }
         } catch (Exception e) {
             log.warn(
-                    "merge web search user meta: reset meta tenantId={} messageId={}",
+                    "[对话] 合并联网引用到用户元数据：原 JSON 异常已重置，租户 {}，消息 {}",
                     tenantId,
                     userMessageId,
                     e);
@@ -1662,7 +1670,7 @@ public class ChatApplicationService {
             messageRepository.updateMetaJson(userMessageId, tenantId, objectMapper.writeValueAsString(root));
         } catch (Exception e) {
             log.error(
-                    "merge web search refs into user meta failed tenantId={} messageId={}",
+                    "[对话] 合并联网引用到用户元数据失败：租户 {}，消息 {}",
                     tenantId,
                     userMessageId,
                     e);
@@ -1720,7 +1728,7 @@ public class ChatApplicationService {
             }
             return new ChatIntentTurnHitView(intentId, code, kwId, phrase, kk, src, flowTicket, flowEp, flowRound, flowSeq);
         } catch (Exception ex) {
-            log.warn("intent turn meta parse failed messageId={}", messageId, ex);
+            log.warn("[意图] 解析用户消息意图命中元数据失败：消息 {}", messageId, ex);
             return null;
         }
     }
@@ -1741,7 +1749,7 @@ public class ChatApplicationService {
             }
         } catch (Exception e) {
             log.warn(
-                    "merge intent hit user meta: reset meta tenantId={} messageId={}",
+                    "[意图] 合并意图命中到用户元数据：原 JSON 异常已重置，租户 {}，消息 {}",
                     tenantId,
                     userMessageId,
                     e);
@@ -1775,7 +1783,7 @@ public class ChatApplicationService {
             messageRepository.updateMetaJson(userMessageId, tenantId, objectMapper.writeValueAsString(root));
         } catch (Exception e) {
             log.error(
-                    "merge intent hit user meta failed tenantId={} messageId={}",
+                    "[意图] 合并意图命中到用户元数据失败：租户 {}，消息 {}",
                     tenantId,
                     userMessageId,
                     e);
@@ -1905,11 +1913,11 @@ public class ChatApplicationService {
         }
         if (!Objects.equals(linkIds.get(linkIds.size() - 1), pairedUserMessageId)) {
             log.warn(
-                    "prompt history skipped: last linked message id {} != pairedUserMessageId {} conversationId={} tenantId={}",
+                    "[对话] 跳过装入历史对话：末条链接消息 {} 与本轮用户消息 {} 不一致，租户 {}，会话 {}",
                     linkIds.get(linkIds.size() - 1),
                     pairedUserMessageId,
-                    conversationId,
-                    tenantId);
+                    tenantId,
+                    conversationId);
             return List.of();
         }
         if (linkIds.size() <= 1) {

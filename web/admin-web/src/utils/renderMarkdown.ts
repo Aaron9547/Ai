@@ -1,10 +1,24 @@
 import MarkdownIt from "markdown-it";
+import multimdTable from "markdown-it-multimd-table";
+import taskLists from "markdown-it-task-lists";
 import DOMPurify from "dompurify";
 
 const md = new MarkdownIt({
   html: false,
   linkify: true,
   breaks: false,
+});
+
+md.use(multimdTable, {
+  multiline: true,
+  rowspan: true,
+  headerless: false,
+});
+
+md.use(taskLists, {
+  enabled: true,
+  label: true,
+  labelAfter: false,
 });
 
 const fenceDefault = md.renderer.rules.fence;
@@ -106,11 +120,13 @@ function ensureMarkdownCodeCopyListener(): void {
   document.addEventListener("click", onMarkdownCodeCopyClick);
 }
 
+const PURIFY_OPTS: Parameters<typeof DOMPurify.sanitize>[1] = {
+  ADD_ATTR: ["target", "rel", "type", "title", "aria-label", "disabled", "checked"],
+  ADD_TAGS: ["button", "input"],
+};
+
 export function renderMarkdownToSafeHtml(source: string): string {
   ensureMarkdownCodeCopyListener();
   const raw = md.render(normalizeAssistantMarkdownSource(source));
-  return DOMPurify.sanitize(raw, {
-    ADD_ATTR: ["target", "rel", "type", "title", "aria-label"],
-    ADD_TAGS: ["button"],
-  });
+  return DOMPurify.sanitize(raw, PURIFY_OPTS);
 }

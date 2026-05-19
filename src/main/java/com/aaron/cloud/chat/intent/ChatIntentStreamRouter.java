@@ -40,7 +40,7 @@ public class ChatIntentStreamRouter {
         List<ChatIntentDefinition> defs = intentDefinitionRepository.listEnabledForRuntime(snap.getTenantId());
         if (defs.isEmpty()) {
             log.info(
-                    "[意图链路] 当前租户无启用意图定义，跳过意图路由 tenantId={} conversationId={}",
+                    "[意图] 当前租户未配置启用的意图，跳过意图路由：租户 {}，会话 {}",
                     snap.getTenantId(),
                     conversationId);
             return Optional.empty();
@@ -55,7 +55,7 @@ public class ChatIntentStreamRouter {
                             .toList();
             if (defsToScan.isEmpty()) {
                 log.info(
-                        "[意图链路] 票据有效但意图未启用或不存在，忽略票据 tenantId={} conversationId={} intentId={}",
+                        "[意图] 意图流票据有效但对应意图未启用，已忽略：租户 {}，会话 {}，意图编号 {}",
                         snap.getTenantId(),
                         conversationId,
                         fs.getIntentDefinitionId());
@@ -68,7 +68,7 @@ public class ChatIntentStreamRouter {
             Optional<ChatIntentHandlerPlugin> plugin = intentHandlerPluginRegistry.get(def.getHandlerKind());
             if (plugin.isEmpty()) {
                 log.debug(
-                        "chat intent handler not registered tenantId={} code={} kind={}",
+                        "[意图] 未注册处理器，跳过：租户 {}，意图编码 {}，处理器类型 {}",
                         snap.getTenantId(),
                         def.getCode(),
                         def.getHandlerKind());
@@ -90,7 +90,7 @@ public class ChatIntentStreamRouter {
             }
             IntentKeywordMatchHit h = hit.get();
             log.info(
-                    "[意图链路] 命中意图 SSE 路由 tenantId={} conversationId={} intentId={} intentCode={} handler={} keywordId={} matchSource={} matchedPhrasePreview={} attachmentCount={} messagePreview={} flowTicket={}",
+                    "[意图] 命中意图快捷回复：租户 {}，会话 {}，意图编号 {}，编码 {}，处理器 {}，关键词编号 {}，匹配来源 {}，命中词「{}」，附件 {} 个，用户消息「{}」，流票据={}",
                     snap.getTenantId(),
                     conversationId,
                     def.getId(),
@@ -101,7 +101,7 @@ public class ChatIntentStreamRouter {
                     intentMessagePreview(h.matchedPhrase()),
                     attachments == null ? 0 : attachments.size(),
                     preview,
-                    h.intentFlowTicket() != null ? "yes" : "no");
+                    h.intentFlowTicket() != null ? "有" : "无");
             return Optional.of(
                     new IntentSseRoute(
                             plugin.get()
@@ -118,7 +118,7 @@ public class ChatIntentStreamRouter {
                             h));
         }
         log.info(
-                "[意图链路] 已检查 {} 条启用意图但未命中关键词匹配，继续大模型主链 tenantId={} conversationId={} messagePreview={}",
+                "[意图] 已检查 {} 条启用意图，均未命中关键词，继续大模型主链：租户 {}，会话 {}，用户消息「{}」",
                 defsToScan.size(),
                 snap.getTenantId(),
                 conversationId,
@@ -134,7 +134,7 @@ public class ChatIntentStreamRouter {
         Optional<IntentFlowSession> s = intentFlowSessionStore.findByTicket(tenantId, conversationId, ticket);
         if (s.isEmpty()) {
             log.info(
-                    "[意图链路] 意图流票据无效或已过期 tenantId={} conversationId={}",
+                    "[意图] 意图流票据无效或已过期：租户 {}，会话 {}",
                     tenantId,
                     conversationId);
             return IntentMatchContext.empty();

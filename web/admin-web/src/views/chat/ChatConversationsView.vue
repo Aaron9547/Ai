@@ -181,7 +181,26 @@
       class="rag-citation-dlg"
     >
       <div v-loading="ragCitationDlgLoading" class="rag-citation-body">
-        <pre class="rag-citation-pre">{{ ragCitationDlgBody }}</pre>
+        <el-alert
+          v-if="ragCitationDlgSnapshot"
+          type="warning"
+          :closable="false"
+          show-icon
+          class="rag-citation-snapshot-alert"
+          :title="t('views.chatConv.ragChunkDeletedSnapshotTitle')"
+          :description="t('views.chatConv.ragChunkDeletedSnapshotDesc')"
+        />
+        <pre
+          v-if="!ragCitationDlgRenderMd"
+          class="rag-citation-pre"
+          :class="{ 'rag-citation-pre--snapshot': ragCitationDlgSnapshot }"
+        >{{ ragCitationDlgBody }}</pre>
+        <div
+          v-else
+          class="rag-citation-pre rag-citation-md"
+          :class="{ 'rag-citation-pre--snapshot': ragCitationDlgSnapshot }"
+          v-html="ragCitationMarkdownHtml"
+        />
       </div>
     </el-dialog>
   </div>
@@ -193,7 +212,10 @@ import { useI18n } from "vue-i18n";
 import * as chatAdmin from "../../api/chatAdmin";
 import type { ChatConversationRow, ChatMessageAdminRow, RagCitationAdmin } from "../../api/chatAdmin";
 import * as ragApi from "../../api/ragAdmin";
+import { apiRequestErrorMessage } from "../../utils/apiRequestErrorMessage";
 import ChatDrawerAssistantAuditBlock from "./components/ChatDrawerAssistantAuditBlock.vue";
+import axios from "axios";
+import { renderMarkdownToSafeHtml } from "../../utils/renderMarkdown";
 import { useAdminFounderListTenantFilter } from "../../composables/useAdminFounderTenantOptions";
 import {
   formatChatConversationUser,
@@ -230,7 +252,11 @@ const msgLoading = ref(false);
 const ragCitationDlgOpen = ref(false);
 const ragCitationDlgTitle = ref("");
 const ragCitationDlgBody = ref("");
+const ragCitationDlgSnapshot = ref(false);
+const ragCitationDlgRenderMd = ref(false);
 const ragCitationDlgLoading = ref(false);
+
+const ragCitationMarkdownHtml = computed(() => renderMarkdownToSafeHtml(ragCitationDlgBody.value));
 
 const drawerTitle = computed(() => {
   if (!drawerConv.value) return t("views.chatConv.drawerTitle");
@@ -277,6 +303,22 @@ function formatTime(v: string | null | undefined): string {
   return v.replace("T", " ").slice(0, 19);
 }
 
+function ragCitationSnapshotPreview(c: RagCitationAdmin): string | null {
+  const preview = (c.contentPreview || "").trim();
+  return preview || null;
+}
+
+function showRagCitationSnapshot(preview: string) {
+  ragCitationDlgSnapshot.value = true;
+  ragCitationDlgRenderMd.value = true;
+  ragCitationDlgBody.value = preview;
+}
+
+function setRagCitationPlainMessage(msg: string) {
+  ragCitationDlgRenderMd.value = false;
+  ragCitationDlgBody.value = msg;
+}
+
 async function openRagCitation(c: RagCitationAdmin) {
   ragCitationDlgTitle.value = t("views.chatDrawerAudit.citationLabel", {
     title: (c.documentTitle || t("views.chatDrawerAudit.docFallback")).trim(),
@@ -285,16 +327,28 @@ async function openRagCitation(c: RagCitationAdmin) {
   ragCitationDlgOpen.value = true;
   ragCitationDlgLoading.value = true;
   ragCitationDlgBody.value = "";
+  ragCitationDlgSnapshot.value = false;
+  ragCitationDlgRenderMd.value = false;
+  const snapshotPreview = ragCitationSnapshotPreview(c);
   try {
-    const chunks = await ragApi.fetchRagKbChunks(c.kbId, c.documentId);
+    const { chunks } = await ragApi.fetchRagKbChunks(c.kbId, c.documentId);
     const row = chunks.find((x) => x.id === c.chunkId);
-    ragCitationDlgBody.value = row?.content ?? t("views.chatConv.ragChunkNotFound");
+    if (row?.content) {
+      ragCitationDlgRenderMd.value = true;
+      ragCitationDlgBody.value = row.content;
+    } else if (snapshotPreview) {
+      showRagCitationSnapshot(snapshotPreview);
+    } else {
+      setRagCitationPlainMessage(t("views.chatConv.ragChunkNotFound"));
+    }
   } catch (e: unknown) {
-    const msg =
-      e && typeof e === "object" && "message" in e
-        ? String((e as { message?: string }).message)
-        : t("views.chatConv.loadFailed");
-    ragCitationDlgBody.value = msg;
+    const notFound =
+      axios.isAxiosError(e) && (e.response?.status === 404 || e.response?.status === 410);
+    if (notFound && snapshotPreview) {
+      showRagCitationSnapshot(snapshotPreview);
+    } else {
+      setRagCitationPlainMessage(apiRequestErrorMessage(e, t("views.chatConv.loadFailed")));
+    }
   } finally {
     ragCitationDlgLoading.value = false;
   }
@@ -345,6 +399,11 @@ onMounted(() => {
 <style scoped>
 .page {
   padding: 0 0 24px;
+  /* 对话详情抽屉：随浅色/深色主题切换的表面色 */
+  --cc-user-bg: var(--el-color-primary-light-9);
+  --cc-user-border: var(--el-color-primary-light-5);
+  --cc-banner-bg: var(--el-color-primary-light-9);
+  --cc-banner-border: var(--el-color-primary-light-5);
 }
 
 .panel {
@@ -403,10 +462,15 @@ onMounted(() => {
   margin: 0 8px 12px;
   padding: 10px 12px;
   font-size: 13px;
-  color: var(--el-text-color-regular);
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
+  color: var(--el-text-color-primary);
+  background: var(--cc-banner-bg);
+  border: 1px solid var(--cc-banner-border);
   border-radius: 8px;
+}
+
+.drawer-token-banner strong {
+  color: var(--el-color-primary);
+  font-weight: 700;
 }
 
 .msg-loading {
@@ -422,8 +486,8 @@ onMounted(() => {
   margin-bottom: 20px;
   border-radius: 12px;
   border: 1px solid var(--el-border-color);
-  background: #fff;
-  box-shadow: 0 2px 8px rgb(15 23 42 / 6%);
+  background: var(--el-bg-color);
+  box-shadow: var(--el-box-shadow-light);
   overflow: hidden;
 }
 
@@ -441,9 +505,9 @@ onMounted(() => {
 .qa-pair-badge {
   font-size: 12px;
   font-weight: 700;
-  color: #166534;
-  background: #dcfce7;
-  border: 1px solid #86efac;
+  color: var(--el-color-success-dark-2);
+  background: var(--el-color-success-light-9);
+  border: 1px solid var(--el-color-success-light-5);
   padding: 3px 10px;
   border-radius: 999px;
 }
@@ -458,8 +522,8 @@ onMounted(() => {
 }
 
 .qa-section--q {
-  background: #eff6ff;
-  border-bottom: 1px dashed #bfdbfe;
+  background: var(--cc-user-bg);
+  border-bottom: 1px dashed var(--cc-user-border);
 }
 
 .qa-section--a {
@@ -484,6 +548,7 @@ onMounted(() => {
 
 .qa-user-pre {
   margin-top: 2px;
+  color: var(--el-text-color-primary);
 }
 
 .qa-user-attachments {
@@ -517,9 +582,9 @@ onMounted(() => {
   margin: 0 0 10px;
   font-size: 12px;
   line-height: 1.45;
-  color: #b45309;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
+  color: var(--el-color-warning-dark-2);
+  background: var(--el-color-warning-light-9);
+  border: 1px solid var(--el-color-warning-light-5);
   border-radius: 8px;
   padding: 8px 10px;
 }
@@ -533,8 +598,8 @@ onMounted(() => {
 }
 
 .msg-block.user {
-  background: #eff6ff;
-  border-color: #bfdbfe;
+  background: var(--cc-user-bg);
+  border-color: var(--cc-user-border);
 }
 
 .msg-head {
@@ -570,6 +635,15 @@ onMounted(() => {
   min-height: 120px;
 }
 
+.rag-citation-snapshot-alert {
+  margin-bottom: 14px;
+}
+
+.rag-citation-snapshot-alert :deep(.el-alert__title) {
+  font-size: 14px;
+  font-weight: 700;
+}
+
 .rag-citation-pre {
   margin: 0;
   white-space: pre-wrap;
@@ -579,6 +653,51 @@ onMounted(() => {
   color: var(--el-text-color-primary);
   max-height: min(60vh, 480px);
   overflow: auto;
+}
+
+.rag-citation-pre--snapshot {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-lighter);
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.rag-citation-md {
+  white-space: normal;
+}
+
+.rag-citation-md :deep(p) {
+  margin: 0 0 0.5em;
+}
+
+.rag-citation-md :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.rag-citation-md :deep(h1),
+.rag-citation-md :deep(h2),
+.rag-citation-md :deep(h3),
+.rag-citation-md :deep(h4) {
+  margin: 0 0 0.4em;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.rag-citation-md :deep(ul),
+.rag-citation-md :deep(ol) {
+  margin: 0 0 0.5em;
+  padding-left: 1.25em;
+}
+
+.rag-citation-md :deep(pre) {
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--el-fill-color);
+  overflow-x: auto;
 }
 
 /* 思考在正文之前，与「先推理后作答」的阅读顺序一致 */
@@ -610,6 +729,15 @@ onMounted(() => {
   word-break: break-word;
   font-size: 12px;
   line-height: 1.5;
-  color: var(--el-text-color-regular);
+  color: var(--el-text-color-primary);
+}
+
+/* 深色模式下 success/warning 徽章对比度 */
+:global(html.dark) .qa-pair-badge {
+  color: var(--el-color-success-light-3);
+}
+
+:global(html.dark) .qa-orphan-hint {
+  color: var(--el-color-warning-light-3);
 }
 </style>

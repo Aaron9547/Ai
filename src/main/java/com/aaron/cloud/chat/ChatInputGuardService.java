@@ -85,7 +85,7 @@ public class ChatInputGuardService {
                 }
             } catch (PatternSyntaxException e) {
                 log.warn(
-                        "skip invalid guardrail regex tenantId={} ruleId={} ruleName={} pattern={}",
+                        "[输入安全] 跳过无效正则规则：租户 {}，规则编号 {}，名称 {}，表达式 {}",
                         tenantId,
                         rule.getId(),
                         rule.getName(),

@@ -84,20 +84,20 @@
       </div>
     </el-card>
 
-    <el-dialog v-model="detailOpen" title="画像详情" width="860px" destroy-on-close class="profile-detail-dlg">
+    <el-dialog v-model="detailOpen" :title="t('views.profiles.dlgTitle')" width="860px" destroy-on-close class="profile-detail-dlg">
       <template v-if="detail">
         <el-scrollbar max-height="560px">
           <div class="detail-wrap">
-            <h3 class="detail-sec-title">基本信息</h3>
+            <h3 class="detail-sec-title">{{ t("views.profiles.secBasic") }}</h3>
             <el-descriptions :column="2" border size="small" class="detail-desc">
-              <el-descriptions-item label="用户 ID">{{ detail.userId }}</el-descriptions-item>
-              <el-descriptions-item label="记忆片段总数（库内）">{{ detail.memoryChunkTotal }}</el-descriptions-item>
-              <el-descriptions-item label="登录名">{{ detail.loginName || "—" }}</el-descriptions-item>
-              <el-descriptions-item label="昵称">{{ detail.displayName || "—" }}</el-descriptions-item>
+              <el-descriptions-item :label="t('views.profiles.descUserId')">{{ detail.userId }}</el-descriptions-item>
+              <el-descriptions-item :label="t('views.profiles.descMemoryTotal')">{{ detail.memoryChunkTotal }}</el-descriptions-item>
+              <el-descriptions-item :label="t('views.profiles.colLoginName')">{{ detail.loginName || t("common.dash") }}</el-descriptions-item>
+              <el-descriptions-item :label="t('views.profiles.colNickname')">{{ detail.displayName || t("common.dash") }}</el-descriptions-item>
             </el-descriptions>
 
-            <h3 class="detail-sec-title">画像标签</h3>
-            <p class="detail-hint">以下为系统按对话维护的计数与摘要类标签，供个性化与风控参考。</p>
+            <h3 class="detail-sec-title">{{ t("views.profiles.secTags") }}</h3>
+            <p class="detail-hint">{{ t("views.profiles.tagsHint") }}</p>
             <el-table
               v-if="detail.profileTags.length"
               :data="detail.profileTags"
@@ -105,38 +105,36 @@
               size="small"
               class="detail-table"
             >
-              <el-table-column label="含义" min-width="140">
+              <el-table-column :label="t('views.profiles.colMeaning')" min-width="140">
                 <template #default="{ row }">{{ profileTagTitle(row.code) }}</template>
               </el-table-column>
-              <el-table-column prop="code" label="标签编码" width="160" show-overflow-tooltip />
-              <el-table-column label="当前值" min-width="160" show-overflow-tooltip>
-                <template #default="{ row }">{{ row.value || "—" }}</template>
+              <el-table-column prop="code" :label="t('views.profiles.colTagCode')" width="160" show-overflow-tooltip />
+              <el-table-column :label="t('views.profiles.colCurrentValue')" min-width="160" show-overflow-tooltip>
+                <template #default="{ row }">{{ row.value || t("common.dash") }}</template>
               </el-table-column>
-              <el-table-column label="说明" min-width="220">
+              <el-table-column :label="t('views.profiles.colDesc')" min-width="220">
                 <template #default="{ row }">{{ profileTagDescription(row.code) }}</template>
               </el-table-column>
             </el-table>
-            <el-empty v-else description="暂无画像标签" :image-size="64" />
+            <el-empty v-else :description="t('views.profiles.emptyTags')" :image-size="64" />
 
-            <h3 class="detail-sec-title">长期记忆 · 抽象层</h3>
-            <p class="detail-hint">
-              由后台模型把多轮对话提炼成的结构化摘要（常见字段见下表）；与下方「近期记忆片段」配合，用于长期陪伴与检索。
-            </p>
+            <h3 class="detail-sec-title">{{ t("views.profiles.secAbstract") }}</h3>
+            <p class="detail-hint">{{ t("views.profiles.abstractHint") }}</p>
             <el-alert
               v-if="detail.memoryAbstractRaw"
               type="warning"
               :closable="false"
               show-icon
-              title="抽象层 JSON 解析失败"
-              :description="'以下为库中原始文本，可能为不完整 JSON 或历史格式。'"
+              :title="t('views.profiles.abstractParseErrTitle')"
+              :description="t('views.profiles.abstractParseErrDesc')"
               class="detail-alert"
             />
             <pre v-if="detail.memoryAbstractRaw" class="json-pre">{{ detail.memoryAbstractRaw }}</pre>
             <template v-else-if="detail.memoryAbstract == null">
-              <el-empty description="暂无抽象记忆" :image-size="64" />
+              <el-empty :description="t('views.profiles.emptyAbstract')" :image-size="64" />
             </template>
             <template v-else-if="!isPlainObject(detail.memoryAbstract)">
-              <el-alert type="info" :closable="false" show-icon title="抽象层不是 JSON 对象" class="detail-alert" />
+              <el-alert type="info" :closable="false" show-icon :title="t('views.profiles.abstractNotObjectTitle')" class="detail-alert" />
               <pre class="json-pre">{{ formatUnknownJson(detail.memoryAbstract) }}</pre>
             </template>
             <div v-else class="abs-blocks">
@@ -144,7 +142,7 @@
                 <div class="abs-label">{{ block.label }}</div>
                 <div class="abs-body">
                   <template v-if="block.value === null || block.value === undefined">
-                    <span class="muted">（空）</span>
+                    <span class="muted">{{ t("views.profiles.emptyParen") }}</span>
                   </template>
                   <template
                     v-else-if="
@@ -160,7 +158,7 @@
                       <li v-for="(item, idx) in block.value" :key="idx">{{ formatPrimitive(item) }}</li>
                     </ul>
                     <pre v-else-if="block.value.length" class="json-snippet">{{ formatUnknownJson(block.value) }}</pre>
-                    <span v-else class="muted">（空列表）</span>
+                    <span v-else class="muted">{{ t("views.profiles.emptyList") }}</span>
                   </template>
                   <template v-else-if="isPlainObject(block.value)">
                     <el-descriptions :column="1" border size="small" class="nested-desc">
@@ -178,8 +176,8 @@
               </div>
             </div>
 
-            <h3 class="detail-sec-title">长期记忆 · 近期片段（最多 30 条）</h3>
-            <p class="detail-hint">具体层摘录，按时间从新到旧排列；用于向量检索与再次提炼抽象层。</p>
+            <h3 class="detail-sec-title">{{ t("views.profiles.secRecent") }}</h3>
+            <p class="detail-hint">{{ t("views.profiles.recentHint") }}</p>
             <el-table
               v-if="detail.recentMemoryChunks.length"
               :data="detail.recentMemoryChunks"
@@ -187,29 +185,29 @@
               size="small"
               class="detail-table"
             >
-              <el-table-column label="时间" width="168" show-overflow-tooltip>
-                <template #default="{ row }">{{ row.createdAt || "—" }}</template>
+              <el-table-column :label="t('views.profiles.colTime')" width="168" show-overflow-tooltip>
+                <template #default="{ row }">{{ row.createdAt || t("common.dash") }}</template>
               </el-table-column>
-              <el-table-column label="角色" width="88" align="center">
+              <el-table-column :label="t('views.profiles.colRole')" width="88" align="center">
                 <template #default="{ row }">
                   <el-tag size="small" :type="row.chunkRole === 'ASSISTANT' ? 'info' : undefined">
                     {{ chunkRoleLabel(row.chunkRole) }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="内容摘录" min-width="220" show-overflow-tooltip>
-                <template #default="{ row }">{{ row.snippet || "—" }}</template>
+              <el-table-column :label="t('views.profiles.colSnippet')" min-width="220" show-overflow-tooltip>
+                <template #default="{ row }">{{ row.snippet || t("common.dash") }}</template>
               </el-table-column>
-              <el-table-column label="会话 ID" width="100" align="center">
-                <template #default="{ row }">{{ row.conversationId ?? "—" }}</template>
+              <el-table-column :label="t('views.profiles.colConvId')" width="100" align="center">
+                <template #default="{ row }">{{ row.conversationId ?? t("common.dash") }}</template>
               </el-table-column>
-              <el-table-column prop="id" label="片段 ID" width="90" align="center" />
+              <el-table-column prop="id" :label="t('views.profiles.colChunkId')" width="90" align="center" />
             </el-table>
-            <el-empty v-else description="暂无近期片段" :image-size="64" />
+            <el-empty v-else :description="t('views.profiles.emptyRecent')" :image-size="64" />
 
             <div class="raw-json-toggle">
               <el-button text type="primary" @click="showRawJson = !showRawJson">
-                {{ showRawJson ? "隐藏" : "查看" }}原始 JSON（排障）
+                {{ showRawJson ? t("views.profiles.rawJsonHide") : t("views.profiles.rawJsonShow") }}{{ t("views.profiles.rawJsonSuffix") }}
               </el-button>
             </div>
             <pre v-show="showRawJson" class="json-pre">{{ detailRawJson }}</pre>
@@ -238,7 +236,7 @@ import {
   sortedObjectEntries,
 } from "@/utils/userProfileDetailSemantics";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 const loading = ref(false);
 const savingEmbed = ref(false);
@@ -259,6 +257,7 @@ const detailRawPayload = ref<unknown>(null);
 const showRawJson = ref(false);
 
 const abstractBlocks = computed(() => {
+  void locale.value;
   const d = detail.value;
   if (!d || d.memoryAbstractRaw || d.memoryAbstract == null) return [];
   if (!isPlainObject(d.memoryAbstract)) return [];

@@ -74,7 +74,7 @@ public class ChatTurnDigestApplicationService {
                                 isMock);
                     } catch (Exception ex) {
                         log.warn(
-                                "turn digest failed tenantId={} conversationId={} assistantMessageId={}",
+                                "[对话摘要] 回合摘要生成失败：租户 {}，会话 {}，助手消息 {}",
                                 snap.getTenantId(),
                                 conversationId,
                                 assistantMessageId,
@@ -134,7 +134,7 @@ public class ChatTurnDigestApplicationService {
                     try {
                         LlmModelKindPolicy.assertLanguageModelForChatStream(model);
                     } catch (Exception ex) {
-                        log.debug("digest skip model not language-chat alias={} tenantId={}", alias, tenantId);
+                        log.debug("[对话摘要] 跳过非对话语言模型：{}，租户 {}", alias, tenantId);
                         summary = TextClamp.ellipsis(assistant, SUMMARY_OUT_MAX);
                         if (needTitle) {
                             titleCandidate = fallbackTitleFromAssistant(assistant);
@@ -170,7 +170,7 @@ public class ChatTurnDigestApplicationService {
                     try {
                         modelInvokePort.streamCompletion(req, acc::append);
                     } catch (Exception e) {
-                        log.warn("digest llm call failed tenantId={} conversationId={}", tenantId, conversationId, e);
+                        log.warn("[对话摘要] 调用大模型生成摘要失败：租户 {}，会话 {}", tenantId, conversationId, e);
                         summary = TextClamp.ellipsis(assistant, SUMMARY_OUT_MAX);
                         if (needTitle) {
                             titleCandidate = fallbackTitleFromAssistant(assistant);
@@ -216,7 +216,7 @@ public class ChatTurnDigestApplicationService {
         try {
             messageRepository.updateMetaJson(assistantMessageId, tenantId, objectMapper.writeValueAsString(root));
         } catch (Exception e) {
-            log.warn("digest persist meta failed messageId={}", assistantMessageId, e);
+            log.warn("[对话摘要] 写入消息摘要元数据失败：消息 {}", assistantMessageId, e);
             return;
         }
         if (needTitle && titleCandidate != null && !titleCandidate.isBlank()) {

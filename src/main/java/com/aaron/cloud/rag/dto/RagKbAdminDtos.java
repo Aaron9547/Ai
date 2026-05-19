@@ -7,6 +7,8 @@ import jakarta.validation.constraints.Size;
 import lombok.Data;
 import org.hibernate.validator.constraints.URL;
 
+import java.util.List;
+
 public final class RagKbAdminDtos {
 
     private RagKbAdminDtos() {}
@@ -126,8 +128,19 @@ public final class RagKbAdminDtos {
             String retrievalEnabled,
             int contentLength,
             long hitCount,
+            Long parentChunkId,
+            /** FLAT=普通分片；PARENT=子母分片之母块（不参与检索）；CHILD=子母分片之子块。 */
+            String chunkRole,
             String createdAt,
             String updatedAt) {}
+
+    /** 文档分片列表（含子母结构统计，供管理端分片页切换视图）。 */
+    public record RagDocumentChunksListResponse(
+            List<RagChunkAdminView> chunks,
+            boolean parentChild,
+            int parentCount,
+            int childCount,
+            int flatCount) {}
 
     @Data
     public static class RagChunkUpdateRequest {
@@ -154,6 +167,19 @@ public final class RagKbAdminDtos {
 
     public record RagDocumentUploadResponse(long documentId, int chunkCount) {}
 
+    public record IngestAnalyzeView(
+            boolean suggestParentChild,
+            int charCount,
+            int majorHeadingCount,
+            int minorHeadingCount,
+            java.util.List<String> reasons) {}
+
+    @Data
+    public static class IngestAnalyzeRequest {
+        @Size(max = 1_000_000)
+        private String markdownContent;
+    }
+
     public record IndexJobResponse(long jobTaskId) {}
 
     @Data
@@ -165,6 +191,9 @@ public final class RagKbAdminDtos {
 
         /** 鍙€夛細鏈浠诲姟瑕嗙洊鍒嗙墖绛栫暐锛坽@link com.aaron.cloud.common.api.enums.RagChunkStrategy} 鐨?code锛夈€?*/
         private Integer chunkStrategy;
+
+        /** 可选：入库后归属的文档分类 ID。 */
+        private Long categoryId;
     }
 
     @Data
@@ -182,5 +211,131 @@ public final class RagKbAdminDtos {
 
         /** 鍙€夛細鏈浠诲姟瑕嗙洊鍒嗙墖绛栫暐锛坽@link com.aaron.cloud.common.api.enums.RagChunkStrategy} 鐨?code锛夈€?*/
         private Integer chunkStrategy;
+
+        /** 可选：入库后归属的文档分类 ID。 */
+        private Long categoryId;
     }
+
+    @Data
+    public static class LocalSiteCrawlRequest {
+        @NotBlank
+        @Size(max = 2048)
+        @URL
+        private String baseUrl;
+
+        /** {@link com.aaron.cloud.common.api.enums.RagWebCrawlSyncMode} code */
+        private String syncMode;
+
+        private Integer maxDepth;
+
+        /** 默认 true：过滤租户内已爬 URL */
+        private Boolean filterCrawled;
+
+        private Integer chunkStrategy;
+        private Long categoryId;
+
+        /** 默认 true：入队 RAG_SITE_CRAWL 异步任务 */
+        private Boolean asyncJob;
+    }
+
+    @Data
+    public static class RagRetrievalTestRequest {
+        @NotBlank
+        @Size(max = 2000)
+        private String query;
+
+        /** 返回条数，默认 8，最大 20。 */
+        private Integer topK;
+    }
+
+    public record RagRetrievalTestHitView(
+            long documentId, String documentTitle, long chunkId, int chunkSeq, String contentPreview) {}
+
+    public record RagRetrievalTestView(
+            String retrievalMode,
+            String query,
+            int topK,
+            int hitCount,
+            java.util.List<RagRetrievalTestHitView> hits,
+            java.util.List<String> snippets) {}
+
+    @Data
+    public static class RagWebCrawlSiteUpsertRequest {
+        @NotBlank
+        @Size(max = 128)
+        private String name;
+
+        @NotBlank
+        @Size(max = 2048)
+        @URL
+        private String baseUrl;
+
+        @NotBlank
+        private String schedulePreset;
+
+        @Size(max = 8)
+        private String runAtTime;
+
+        private Boolean enabled;
+        private Long categoryId;
+        private Integer chunkStrategy;
+        private String syncMode;
+        private Integer maxDepth;
+        private Boolean filterCrawled;
+
+        private com.aaron.cloud.rag.RagWebCrawlExtractConfig extractConfig;
+    }
+
+    public record RagWebCrawlSiteAdminView(
+            long id,
+            long kbId,
+            String name,
+            String baseUrl,
+            String schedulePreset,
+            String schedulePresetLabel,
+            String runAtTime,
+            boolean enabled,
+            boolean firstRunDone,
+            String lastCrawlAt,
+            Long categoryId,
+            Integer chunkStrategy,
+            String syncMode,
+            String syncModeLabel,
+            Integer maxDepth,
+            boolean filterCrawled,
+            com.aaron.cloud.rag.RagWebCrawlExtractConfig extractConfig,
+            String createdAt,
+            String updatedAt) {}
+
+    @Data
+    public static class ChunkPreviewRequest {
+        @Size(max = 2048)
+        private String url;
+
+        @Size(max = 2048)
+        private String baseUrl;
+
+        private Integer maxDepth;
+        private Integer chunkStrategy;
+        private Long siteId;
+        private com.aaron.cloud.rag.RagWebCrawlExtractConfig extractConfig;
+    }
+
+    public record ChunkPreviewChunkView(int seq, int chars, String preview) {}
+
+    public record ChunkPreviewPageView(
+            String url,
+            String title,
+            int markdownChars,
+            int chunkCount,
+            boolean chunksTruncated,
+            java.util.List<ChunkPreviewChunkView> chunks) {}
+
+    public record ChunkPreviewView(
+            int strategyCode,
+            int fixedChars,
+            int slideOverlap,
+            java.util.List<ChunkPreviewPageView> pages,
+            int pageCount,
+            int totalChunkCount) {}
 }

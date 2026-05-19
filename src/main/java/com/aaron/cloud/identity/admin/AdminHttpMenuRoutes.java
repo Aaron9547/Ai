@@ -56,6 +56,9 @@ public final class AdminHttpMenuRoutes {
         if (uri.startsWith("/api/v1/admin/job-tasks")) {
             return AdminMenuCode.RAG_KBS;
         }
+        if (uri.startsWith("/api/v1/admin/scheduled-tasks")) {
+            return AdminMenuCode.SCHEDULED_TASKS;
+        }
         if (uri.startsWith("/api/v1/admin/chat/intents")) {
             return AdminMenuCode.CHAT_INTENTS;
         }

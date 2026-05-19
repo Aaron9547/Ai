@@ -73,7 +73,7 @@ public class IntentFlowSessionStore {
                 || s.getConversationId() != conversationId
                 || s.getIntentDefinitionId() != intentDefinitionId) {
             log.info(
-                    "[意图流] 票据与会话/意图不匹配 tenantId={} conversationId={} intentId={} ticketTenant={} ticketConv={} ticketIntent={}",
+                    "[意图流] 流票据与当前会话/意图不一致，已拒绝：当前租户 {} 会话 {} 意图 {}；票据内租户 {} 会话 {} 意图 {}",
                     tenantId,
                     conversationId,
                     intentDefinitionId,
@@ -125,7 +125,7 @@ public class IntentFlowSessionStore {
                     new CacheEntry(json, session.getExpiresAtEpochMs()));
         } catch (Exception e) {
             log.warn(
-                    "[意图流] save failed tenantId={} flowId={}",
+                    "[意图流] 保存会话状态失败：租户 {}，流编号 {}",
                     session.getTenantId(),
                     flowId,
                     e);
@@ -143,7 +143,7 @@ public class IntentFlowSessionStore {
                 redis.delete(redisKey(tenantId, trimmed));
             }
         } catch (Exception e) {
-            log.warn("[意图流] redis remove failed tenantId={} flowId={}", tenantId, trimmed, e);
+            log.warn("[意图流] Redis 删除会话失败：租户 {}，流编号 {}", tenantId, trimmed, e);
         }
         local.remove(localKey(tenantId, trimmed));
     }
@@ -158,7 +158,7 @@ public class IntentFlowSessionStore {
                 }
             }
         } catch (Exception e) {
-            log.warn("[意图流] redis load failed tenantId={} flowId={}", tenantId, flowId, e);
+            log.warn("[意图流] Redis 加载会话失败：租户 {}，流编号 {}", tenantId, flowId, e);
         }
         CacheEntry le = local.get(localKey(tenantId, flowId));
         if (le == null) {
@@ -171,7 +171,7 @@ public class IntentFlowSessionStore {
         try {
             return Optional.of(objectMapper.readValue(le.json, IntentFlowSession.class));
         } catch (Exception e) {
-            log.warn("[意图流] local parse failed tenantId={} flowId={}", tenantId, flowId, e);
+            log.warn("[意图流] 本地缓存解析会话失败：租户 {}，流编号 {}", tenantId, flowId, e);
             return Optional.empty();
         }
     }

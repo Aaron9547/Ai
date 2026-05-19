@@ -412,6 +412,35 @@ html.dark .admin-shell .user-trigger:hover {
   text-transform: lowercase;
 }
 
+/* GFM task lists（markdown-it-task-lists） */
+.chunk-md :deep(ul.contains-task-list),
+.chunk-md :deep(ol.contains-task-list) {
+  list-style: none;
+  padding-left: 0;
+}
+.chunk-md :deep(li.task-list-item) {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0.2em 0;
+}
+.chunk-md :deep(li.task-list-item input[type="checkbox"]) {
+  margin-top: 0.25em;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+.chunk-md :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 0.4em 0;
+}
+.chunk-md :deep(th),
+.chunk-md :deep(td) {
+  border: 1px solid var(--el-border-color-lighter);
+  padding: 4px 8px;
+}
+
 .md-code-copy-btn {
   font-size: 12px;
   padding: 4px 10px;

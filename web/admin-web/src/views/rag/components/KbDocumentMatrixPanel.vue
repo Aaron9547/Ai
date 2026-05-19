@@ -71,7 +71,11 @@
                   >
                     {{ t("views.kbMatrix.triggerIndex") }}
                   </el-button>
+                  <el-button plain @click="openWebCrawlSitesDlg">{{ t("views.kbMatrix.webCrawlSitesBtn") }}</el-button>
                   <el-button plain @click="openJobsDialog">{{ t("views.kbMatrix.jobsBtn") }}</el-button>
+                  <el-button plain :disabled="!vectorMilvusEnabled" @click="openRetrievalTestDlg">
+                    {{ t("views.kbMatrix.retrievalTestBtn") }}
+                  </el-button>
                   <el-button :loading="loadingDocPage || loadingCategories" @click="refreshDocs">{{ t("views.kbMatrix.refresh") }}</el-button>
                   <el-button type="primary" :disabled="!vectorMilvusEnabled" @click="openIngest">{{ t("views.kbMatrix.uploadIngest") }}</el-button>
                 </div>
@@ -120,7 +124,7 @@
                     <el-tag v-else-if="row.displayStatus === 'PARSE_FAILED'" type="danger" size="small">{{
                       t("views.kbMatrix.statusFailed")
                     }}</el-tag>
-                    <el-tag v-else size="small">{{ ragDocumentDisplayStatusLabel(row.displayStatus) }}</el-tag>
+                    <el-tag v-else size="small">{{ ragDocumentDisplayStatusLabel(row.displayStatus, t) }}</el-tag>
                   </template>
                 </el-table-column>
                 <el-table-column :label="t('views.kbMatrix.colActions')" width="300" align="right" fixed="right">
@@ -167,7 +171,8 @@
     <el-dialog
       v-model="jobsDlgOpen"
       :title="t('views.kbMatrix.jobsDlgTitle')"
-      width="min(920px, 96vw)"
+      width="920px"
+      append-to-body
       class="jobs-dlg"
       destroy-on-close
       @open="onJobsDialogOpen"
@@ -212,18 +217,18 @@
             <div class="expand-inner job-expand">
               <el-descriptions :column="1" border size="small">
                 <el-descriptions-item :label="t('views.kbMatrix.expandJobId')">{{ row.job?.id }}</el-descriptions-item>
-                <el-descriptions-item :label="t('views.kbMatrix.expandTaskType')">{{ jobTaskTypeLabel(row.job?.taskType) }}</el-descriptions-item>
+                <el-descriptions-item :label="t('views.kbMatrix.expandTaskType')">{{ jobTaskTypeLabel(row.job?.taskType, t) }}</el-descriptions-item>
                 <el-descriptions-item :label="t('views.kbMatrix.expandStatus')">
-                  <el-tag v-if="row.job" :type="jobStatusMeta(row.job.status).tag" size="small">
-                    {{ jobStatusMeta(row.job.status).label }}
+                  <el-tag v-if="row.job" :type="jobStatusMeta(row.job.status, t).tag" size="small">
+                    {{ jobStatusMeta(row.job.status, t).label }}
                   </el-tag>
                 </el-descriptions-item>
               </el-descriptions>
-              <div v-if="parseJobResultMetaRows(row.job?.resultJson).length" class="job-kv-block">
+              <div v-if="parseJobResultMetaRows(row.job?.resultJson, t).length" class="job-kv-block">
                 <div class="job-section-title">{{ t("views.kbMatrix.resultSummary") }}</div>
                 <el-descriptions :column="1" border size="small">
                   <el-descriptions-item
-                    v-for="(r, ri) in parseJobResultMetaRows(row.job?.resultJson)"
+                    v-for="(r, ri) in parseJobResultMetaRows(row.job?.resultJson, t)"
                     :key="'rm-' + ri"
                     :label="r.label"
                   >
@@ -240,17 +245,17 @@
                     :timestamp="formatTime(s.at)"
                     placement="top"
                   >
-                    <strong>{{ jobStepPhaseLabel(s.phase) }}</strong>
-                    <span class="st"> · {{ jobStepStatusLabel(s.status) }}</span>
-                    <div v-if="humanizeJobStepDetail(s.detail)" class="td">{{ humanizeJobStepDetail(s.detail) }}</div>
+                    <strong>{{ jobStepPhaseLabel(s.phase, t) }}</strong>
+                    <span class="st"> · {{ jobStepStatusLabel(s.status, t) }}</span>
+                    <div v-if="humanizeJobStepDetail(s.detail, t)" class="td">{{ humanizeJobStepDetail(s.detail, t) }}</div>
                   </el-timeline-item>
                 </el-timeline>
               </div>
-              <div v-if="parseJobPayloadRows(row.job?.payloadJson).length" class="job-kv-block">
+              <div v-if="parseJobPayloadRows(row.job?.payloadJson, t).length" class="job-kv-block">
                 <div class="job-section-title">{{ t("views.kbMatrix.payloadSection") }}</div>
                 <el-descriptions :column="1" border size="small">
                   <el-descriptions-item
-                    v-for="(r, pi) in parseJobPayloadRows(row.job?.payloadJson)"
+                    v-for="(r, pi) in parseJobPayloadRows(row.job?.payloadJson, t)"
                     :key="'pl-' + pi"
                     :label="r.label"
                   >
@@ -276,7 +281,7 @@
       </el-table>
     </el-dialog>
 
-    <el-drawer v-model="ingestOpen" :title="t('views.kbMatrix.ingestDrawerTitle')" size="480px" destroy-on-close @closed="resetIngestForm">
+    <el-drawer v-model="ingestOpen" :title="t('views.kbMatrix.ingestDrawerTitle')" size="520px" destroy-on-close @closed="resetIngestForm">
       <el-radio-group v-model="ingestType" class="ingest-type">
         <el-radio-button label="crawl">{{ t("views.kbMatrix.ingestTabCrawl") }}</el-radio-button>
         <el-radio-button label="upload">{{ t("views.kbMatrix.ingestTabUpload") }}</el-radio-button>
@@ -286,20 +291,59 @@
 
       <el-form label-width="108px" class="ingest-form">
         <template v-if="ingestType === 'crawl'">
-          <el-form-item :label="t('views.kbMatrix.labelWebUrl')" required>
-            <el-input v-model="crawlForm.url" :placeholder="t('views.ingest.urlPh')" type="url" />
+          <el-form-item :label="t('views.kbMatrix.crawlModeLabel')">
+            <el-radio-group v-model="crawlForm.mode">
+              <el-radio-button label="single">{{ t("views.kbMatrix.crawlModeSingle") }}</el-radio-button>
+              <el-radio-button label="site">{{ t("views.kbMatrix.crawlModeSite") }}</el-radio-button>
+            </el-radio-group>
           </el-form-item>
+          <template v-if="crawlForm.mode === 'single'">
+            <el-form-item :label="t('views.kbMatrix.labelWebUrl')" required>
+              <el-input v-model="crawlForm.url" :placeholder="t('views.ingest.urlPh')" type="url" />
+            </el-form-item>
+          </template>
+          <template v-else>
+            <el-alert type="warning" show-icon :closable="false" class="crawl-warn">
+              {{ t("views.kbMatrix.crawlSiteWarn") }}
+            </el-alert>
+            <el-form-item :label="t('views.kbMatrix.labelSiteBaseUrl')" required>
+              <el-input v-model="crawlForm.baseUrl" :placeholder="t('views.kbMatrix.siteBaseUrlPh')" type="url" />
+            </el-form-item>
+            <el-form-item :label="t('views.kbMatrix.labelMaxDepth')">
+              <el-input-number v-model="crawlForm.maxDepth" :min="1" :max="8" />
+            </el-form-item>
+            <el-form-item :label="t('views.kbMatrix.labelSyncMode')">
+              <el-select v-model="crawlForm.syncMode" style="width: 100%">
+                <el-option
+                  v-for="o in crawlSyncModes"
+                  :key="o.code"
+                  :label="o.label"
+                  :value="o.code"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item :label="t('views.kbMatrix.labelFilterCrawled')">
+              <el-switch v-model="crawlForm.filterCrawled" />
+            </el-form-item>
+          </template>
         </template>
         <template v-else-if="ingestType === 'upload'">
           <el-form-item :label="t('views.kbMatrix.labelPickFile')" required>
             <el-upload
+              class="ingest-upload-drop"
+              drag
+              multiple
               :auto-upload="false"
-              :limit="1"
-              :on-change="onPickUploadFile"
-              :on-remove="() => (uploadFile = null)"
+              :file-list="uploadFileList"
+              :on-change="onUploadFileChange"
+              :on-remove="onUploadFileRemove"
               accept=".txt,.md,.pdf,.doc,.docx,.html,.htm"
             >
-              <el-button type="primary" plain>{{ t("views.kbMatrix.pickFileBtn") }}</el-button>
+              <el-icon class="ingest-upload-ico"><UploadFilled /></el-icon>
+              <div class="el-upload__text">{{ t("views.kbMatrix.uploadDragHint") }}</div>
+              <template #tip>
+                <div class="el-upload__tip">{{ t("views.kbMatrix.uploadDragTip") }}</div>
+              </template>
             </el-upload>
           </el-form-item>
         </template>
@@ -315,17 +359,36 @@
           </el-form-item>
         </template>
 
+        <el-form-item :label="t('views.kbMatrix.ingestLabelCategory')">
+          <el-select
+            v-model="ingestCategoryId"
+            clearable
+            filterable
+            :placeholder="t('views.chunks.categoryPh')"
+            style="width: 100%"
+          >
+            <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
+          </el-select>
+        </el-form-item>
+
         <el-form-item :label="t('views.ingest.labelChunkOverride')">
           <el-select v-model="ingestChunkStrategy" clearable :placeholder="t('views.ingest.chunkDefaultPh')" style="width: 100%">
             <el-option :label="t('views.ingest.chunk0')" :value="0" />
             <el-option :label="t('views.ingest.chunk1')" :value="1" />
             <el-option :label="t('views.ingest.chunk2')" :value="2" />
             <el-option :label="t('views.ingest.chunk3')" :value="3" />
-            <el-option :label="t('views.ingest.chunk99')" :value="99" />
+            <el-option :label="t('views.ingest.chunk4')" :value="4" />
           </el-select>
+          <p v-if="ingestType === 'crawl'" class="field-hint">{{ t("views.kbMatrix.chunkStrategyWebHint") }}</p>
+          <p v-else-if="ingestType === 'upload' || ingestType === 'paste'" class="field-hint">
+            {{ t("views.kbMatrix.chunkStrategyUploadHint") }}
+          </p>
         </el-form-item>
 
         <el-form-item>
+          <el-button v-if="ingestType === 'crawl'" :loading="chunkPreviewLoading" @click="runChunkPreview">{{
+            t("views.kbMatrix.chunkPreviewBtn")
+          }}</el-button>
           <el-button type="primary" class="accent-btn" :loading="ingestSubmitting" @click="submitIngest">{{
             t("views.kbMatrix.submitIngest")
           }}</el-button>
@@ -333,8 +396,15 @@
       </el-form>
     </el-drawer>
 
-    <el-dialog v-model="chunkDlg" :title="t('views.chunks.dlgEditChunk')" width="720px" destroy-on-close @closed="editingChunk = null">
-      <el-input v-model="chunkEditText" type="textarea" :rows="14" />
+    <el-dialog v-model="chunkDlg" :title="t('views.chunks.dlgEditChunk')" width="800px" destroy-on-close @closed="onChunkDlgClosed">
+      <el-tabs v-model="chunkEditTab" class="chunk-edit-tabs">
+        <el-tab-pane :label="t('views.chunks.tabChunkPreview')" name="preview">
+          <div class="chunk-edit-preview chunk-md" v-html="chunkEditMarkdownHtml" />
+        </el-tab-pane>
+        <el-tab-pane :label="t('views.chunks.tabChunkSource')" name="source">
+          <el-input v-model="chunkEditText" type="textarea" :rows="16" class="chunk-edit-source" />
+        </el-tab-pane>
+      </el-tabs>
       <template #footer>
         <el-button @click="chunkDlg = false">{{ t("views.kbMatrix.formCancel") }}</el-button>
         <el-button type="primary" :loading="chunkSaving" @click="saveChunk">{{ t("views.kbMatrix.formSave") }}</el-button>
@@ -398,6 +468,70 @@
       </template>
     </el-dialog>
 
+
+    <el-dialog
+      v-model="retrievalTestDlgOpen"
+      :title="t('views.kbMatrix.retrievalTestDlgTitle')"
+      width="760px"
+      append-to-body
+      class="retrieval-test-dlg"
+      destroy-on-close
+      @closed="onRetrievalTestDlgClosed"
+    >
+      <p class="jobs-dlg-hint">{{ t("views.kbMatrix.retrievalTestDlgHint") }}</p>
+      <el-form label-width="88px" @submit.prevent="runRetrievalTest">
+        <el-form-item :label="t('views.kbMatrix.retrievalQueryLabel')" required>
+          <el-input
+            v-model="retrievalQuery"
+            type="textarea"
+            :rows="3"
+            maxlength="2000"
+            show-word-limit
+            :placeholder="t('views.kbMatrix.retrievalQueryPh')"
+          />
+        </el-form-item>
+        <el-form-item :label="t('views.kbMatrix.retrievalTopKLabel')">
+          <el-input-number v-model="retrievalTopK" :min="1" :max="20" />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" :loading="retrievalTestLoading" @click="runRetrievalTest">
+            {{ t("views.kbMatrix.retrievalRunBtn") }}
+          </el-button>
+        </el-form-item>
+      </el-form>
+      <div v-if="retrievalTestResult" class="retrieval-result-wrap">
+        <el-descriptions :column="2" border size="small" class="retrieval-meta">
+          <el-descriptions-item :label="t('views.kbMatrix.retrievalModeLabel')">
+            {{ retrievalModeLabel(retrievalTestResult.retrievalMode) }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('views.kbMatrix.retrievalHitCountLabel')">
+            {{ retrievalTestResult.hitCount }}
+          </el-descriptions-item>
+        </el-descriptions>
+        <div v-if="retrievalTestResult.hits.length" class="retrieval-section">
+          <div class="job-section-title">{{ t("views.kbMatrix.retrievalHitsTitle") }}</div>
+          <el-table :data="retrievalTestResult.hits" size="small" stripe border max-height="280">
+            <el-table-column :label="t('views.kbMatrix.retrievalColDoc')" min-width="140" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.documentTitle || emDash }}</template>
+            </el-table-column>
+            <el-table-column :label="t('views.kbMatrix.retrievalColChunk')" width="88" align="center">
+              <template #default="{ row }">#{{ row.chunkSeq + 1 }}</template>
+            </el-table-column>
+            <el-table-column :label="t('views.kbMatrix.colPreview')" min-width="240" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.contentPreview || emDash }}</template>
+            </el-table-column>
+          </el-table>
+        </div>
+        <div v-if="retrievalTestResult.snippets.length" class="retrieval-section">
+          <div class="job-section-title">{{ t("views.kbMatrix.retrievalSnippetsTitle") }}</div>
+          <ul class="retrieval-snippet-list">
+            <li v-for="(s, si) in retrievalTestResult.snippets" :key="'sn-' + si">{{ s }}</li>
+          </ul>
+        </div>
+        <el-empty v-else-if="!retrievalTestResult.hits.length" :description="t('views.kbMatrix.retrievalEmpty')" />
+      </div>
+    </el-dialog>
+
     <el-dialog
       v-model="categoryDlg"
       :title="categoryDlgMode === 'create' ? t('views.kbMatrix.categoryDlgNew') : t('views.kbMatrix.categoryDlgEdit')"
@@ -418,10 +552,16 @@
         <el-button type="primary" :loading="categorySaving" @click="saveCategoryDlg">{{ t("views.kbMatrix.formSave") }}</el-button>
       </template>
     </el-dialog>
+
+    <KbWebCrawlSitesDialog v-model="webCrawlSitesDlgOpen" :kb-id="kid" />
+    <KbChunkPreviewDialog ref="chunkPreviewRef" v-model="chunkPreviewDlgOpen" :kb-id="kid" />
   </div>
 </template>
 
 <script setup lang="ts">
+import { UploadFilled } from "@element-plus/icons-vue";
+import KbChunkPreviewDialog from "./KbChunkPreviewDialog.vue";
+import KbWebCrawlSitesDialog from "./KbWebCrawlSitesDialog.vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import type { UploadFile } from "element-plus";
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
@@ -434,6 +574,8 @@ import type {
   RagDocumentAdminRow,
   RagDocumentCategoryAdminRow,
 } from "../../../types/admin";
+import type { RagRetrievalTestResult } from "../../../api/ragAdmin";
+import { renderMarkdownToSafeHtml } from "../../../utils/renderMarkdown";
 import {
   humanizeJobStepDetail,
   jobStatusMeta,
@@ -451,7 +593,46 @@ import {
 const { t } = useI18n();
 const emDash = "\u2014";
 
-/** 知识库文档导出 Markdown 的本地文件名：去掉常见源文件后缀，避免出现「报告.doc.md」。 */
+/** 上传/粘贴入库前：长文档等特征命中时询问是否改用子母分片。 */
+async function resolveUploadChunkStrategy(
+  kbId: number,
+  baseStrategy: number | undefined,
+  source: { file?: File; markdown?: string },
+): Promise<number | undefined> {
+  if (baseStrategy === ragApi.RAG_CHUNK_STRATEGY_PARENT_CHILD) {
+    return baseStrategy;
+  }
+  try {
+    const analysis =
+      source.file != null
+        ? await ragApi.analyzeIngestUpload(kbId, source.file)
+        : source.markdown != null && source.markdown.trim()
+          ? await ragApi.analyzeIngestMarkdown(kbId, source.markdown)
+          : null;
+    if (analysis == null || !analysis.suggestParentChild) {
+      return baseStrategy;
+    }
+    const reasonLines =
+      analysis.reasons.length > 0
+        ? `\n\n${analysis.reasons.map((r) => `· ${r}`).join("\n")}`
+        : "";
+    const label = source.file?.name ?? t("views.kbMatrix.parentChildPasteLabel");
+    await ElMessageBox.confirm(
+      `${t("views.kbMatrix.parentChildSuggestMsg", { name: label })}${reasonLines}`,
+      t("views.kbMatrix.parentChildSuggestTitle"),
+      {
+        confirmButtonText: t("views.kbMatrix.parentChildYes"),
+        cancelButtonText: t("views.kbMatrix.parentChildNo"),
+        type: "info",
+      },
+    );
+    return ragApi.RAG_CHUNK_STRATEGY_PARENT_CHILD;
+  } catch {
+    return baseStrategy;
+  }
+}
+
+/** 鐭ヨ瘑搴撴枃妗ｅ鍑?Markdown 鐨勬湰鍦版枃浠跺悕锛氬幓鎺夊父瑙佹簮鏂囦欢鍚庣紑锛岄伩鍏嶅嚭鐜般€屾姤鍛?doc.md銆嶃€?*/
 function filenameForMarkdownExport(title: string | null | undefined): string {
   let base = (title || t("views.kbMatrix.docFallback")).trim().replace(/[/\\?%*:|"<>]/g, "_").slice(0, 120);
   if (!base) base = t("views.kbMatrix.docFallback");
@@ -469,7 +650,7 @@ function filenameForMarkdownExport(title: string | null | undefined): string {
 
 const props = defineProps<{ kbId: number; vectorMilvusEnabled?: boolean }>();
 const kid = computed(() => props.kbId);
-/** 未传时默认可用，避免其它入口误伤；知识库首页会显式传入。 */
+/** 鏈紶鏃堕粯璁ゅ彲鐢紝閬垮厤鍏跺畠鍏ュ彛璇激锛涚煡璇嗗簱棣栭〉浼氭樉寮忎紶鍏ャ€?*/
 const vectorMilvusEnabled = computed(() => props.vectorMilvusEnabled !== false);
 
 const loadingDocPage = ref(false);
@@ -488,7 +669,7 @@ const queryDisplayStatus = ref<string | undefined>(undefined);
 const selectedDocs = ref<RagDocumentAdminRow[]>([]);
 const docTableRef = ref<{ clearSelection: () => void } | null>(null);
 const docsTableWrapRef = ref<HTMLElement | null>(null);
-/** 供 el-table 固定高度，使无数据时表体区域仍占满剩余空间 */
+/** 渚?el-table 鍥哄畾楂樺害锛屼娇鏃犳暟鎹椂琛ㄤ綋鍖哄煙浠嶅崰婊″墿浣欑┖闂?*/
 const docTableBodyHeight = ref(360);
 let docTableResizeObserver: ResizeObserver | null = null;
 
@@ -513,18 +694,40 @@ const categoryForm = reactive({ name: "", sortOrder: 0 });
 const categorySaving = ref(false);
 
 const chunkDlg = ref(false);
+const chunkEditTab = ref<"preview" | "source">("preview");
 const chunkEditText = ref("");
 const chunkSaving = ref(false);
 const editingChunk = ref<{ doc: RagDocumentAdminRow; chunk: RagChunkAdminRow } | null>(null);
 
+const chunkEditMarkdownHtml = computed(() => renderMarkdownToSafeHtml(chunkEditText.value || ""));
+
 const jobsDlgOpen = ref(false);
+const webCrawlSitesDlgOpen = ref(false);
+
+const retrievalTestDlgOpen = ref(false);
+const retrievalQuery = ref("");
+const retrievalTopK = ref(8);
+const retrievalTestLoading = ref(false);
+const retrievalTestResult = ref<RagRetrievalTestResult | null>(null);
 
 const ingestOpen = ref(false);
 const ingestType = ref<"crawl" | "upload" | "paste">("crawl");
-const ingestChunkStrategy = ref<number | undefined>(undefined);
-const crawlForm = reactive({ url: "" });
+const ingestChunkStrategy = ref<number | undefined>(2);
+const chunkPreviewDlgOpen = ref(false);
+const chunkPreviewRef = ref<InstanceType<typeof KbChunkPreviewDialog> | null>(null);
+const chunkPreviewLoading = ref(false);
+const crawlForm = reactive({
+  mode: "site" as "single" | "site",
+  url: "",
+  baseUrl: "",
+  maxDepth: 3,
+  syncMode: "FULL",
+  filterCrawled: true,
+});
+const crawlSyncModes = ref<{ code: string; label: string }[]>([]);
 const pasteForm = reactive({ originalFilename: "", contentType: "", markdownContent: "" });
-const uploadFile = ref<File | null>(null);
+const uploadFileList = ref<UploadFile[]>([]);
+const ingestCategoryId = ref<number | undefined>(undefined);
 const ingestSubmitting = ref(false);
 
 type JobPipelineRow = {
@@ -560,18 +763,20 @@ const chunksDrawerRows = computed(() => {
 });
 
 const ingestTip = computed(() => {
-  if (ingestType.value === "crawl") return t("views.kbMatrix.ingestTipCrawl");
+  if (ingestType.value === "crawl") {
+    return crawlForm.mode === "site" ? t("views.kbMatrix.ingestTipCrawlSite") : t("views.kbMatrix.ingestTipCrawl");
+  }
   if (ingestType.value === "upload") return t("views.kbMatrix.ingestTipUpload");
   return t("views.kbMatrix.ingestTipPaste");
 });
 
 const jobPipelineRows = computed<JobPipelineRow[]>(() =>
   kbJobs.value.map((j) => {
-    const st = jobStatusMeta(j.status);
+    const st = jobStatusMeta(j.status, t);
     const { title, subtitle } = jobTitleSubtitle(j);
     return {
       key: `job-${j.id}`,
-      typeLabel: jobTaskTypeShort(j.taskType),
+      typeLabel: jobTaskTypeShort(j.taskType, t),
       title,
       subtitle,
       statusLabel: st.label,
@@ -596,21 +801,25 @@ function formatTime(v: string | null | undefined): string {
 
 function preview(s: string): string {
   const t = (s || "").replace(/\s+/g, " ");
-  return t.length > 160 ? `${t.slice(0, 160)}…` : t;
+  return t.length > 160 ? `${t.slice(0, 160)}...` : t;
 }
 
 function jobTitleSubtitle(j: JobTaskAdminRow): { title: string; subtitle?: string } {
   try {
     const p = JSON.parse(j.payloadJson || "{}") as {
       url?: string;
+      baseUrl?: string;
       originalFilename?: string;
     };
-    if (j.taskType === "RAG_URL_IMPORT" && p.url) return { title: p.url, subtitle: jobTaskTypeLabel(j.taskType) };
-    if (p.originalFilename) return { title: p.originalFilename, subtitle: jobTaskTypeLabel(j.taskType) };
+    if (j.taskType === "RAG_SITE_CRAWL" && p.baseUrl) {
+      return { title: p.baseUrl, subtitle: jobTaskTypeLabel(j.taskType, t) };
+    }
+    if (j.taskType === "RAG_URL_IMPORT" && p.url) return { title: p.url, subtitle: jobTaskTypeLabel(j.taskType, t) };
+    if (p.originalFilename) return { title: p.originalFilename, subtitle: jobTaskTypeLabel(j.taskType, t) };
   } catch {
     /* ignore */
   }
-  return { title: jobTaskTypeLabel(j.taskType), subtitle: formatTime(j.createdAt) };
+  return { title: jobTaskTypeLabel(j.taskType, t), subtitle: formatTime(j.createdAt) };
 }
 
 async function triggerIndex() {
@@ -680,6 +889,10 @@ async function loadKbJobs() {
   }
 }
 
+function openWebCrawlSitesDlg() {
+  webCrawlSitesDlgOpen.value = true;
+}
+
 function openJobsDialog() {
   jobsDlgOpen.value = true;
 }
@@ -688,12 +901,49 @@ function onJobsDialogOpen() {
   void loadKbJobs();
 }
 
-/** 仅文档与分类（主区域「刷新」）。 */
+function retrievalModeLabel(mode: string): string {
+  if (mode === "milvus_es_hybrid") return t("views.kbMatrix.retrievalModeHybrid");
+  if (mode === "milvus") return t("views.kbMatrix.retrievalModeMilvus");
+  return mode;
+}
+
+function openRetrievalTestDlg() {
+  retrievalTestDlgOpen.value = true;
+}
+
+function onRetrievalTestDlgClosed() {
+  retrievalTestResult.value = null;
+}
+
+async function runRetrievalTest() {
+  const q = retrievalQuery.value.trim();
+  if (!q) {
+    ElMessage.warning(t("views.kbMatrix.retrievalQueryRequired"));
+    return;
+  }
+  if (!vectorMilvusEnabled.value) {
+    ElMessage.warning(t("views.kbMatrix.milvusWarnIdx"));
+    return;
+  }
+  retrievalTestLoading.value = true;
+  try {
+    retrievalTestResult.value = await ragApi.testRagKbRetrieval(kid.value, {
+      query: q,
+      topK: retrievalTopK.value,
+    });
+  } catch {
+    ElMessage.error(t("views.kbMatrix.retrievalTestFailed"));
+  } finally {
+    retrievalTestLoading.value = false;
+  }
+}
+
+/** 浠呮枃妗ｄ笌鍒嗙被锛堜富鍖哄煙銆屽埛鏂般€嶏級銆?*/
 async function refreshDocs() {
   await Promise.all([loadCategories(), loadDocPage()]);
 }
 
-/** 文档 + 任务缓存（切换知识库、入库提交后、轮询依赖）。 */
+/** 鏂囨。 + 浠诲姟缂撳瓨锛堝垏鎹㈢煡璇嗗簱銆佸叆搴撴彁浜ゅ悗銆佽疆璇緷璧栵級銆?*/
 async function refreshDocsAndKbJobs() {
   await Promise.all([loadCategories(), loadDocPage(), loadKbJobs()]);
 }
@@ -837,7 +1087,7 @@ async function loadChunksInDrawer() {
   if (!d) return;
   chunksDrawerLoading.value = true;
   try {
-    chunksByDoc.value[d.id] = await ragApi.fetchRagKbChunks(kid.value, d.id);
+    chunksByDoc.value[d.id] = (await ragApi.fetchRagKbChunks(kid.value, d.id)).chunks;
   } catch (e: unknown) {
     const msg =
       e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : t("views.kbMatrix.loadFailed");
@@ -851,11 +1101,17 @@ function onChunksDrawerClosed() {
   chunksDrawerDoc.value = null;
 }
 
+function onChunkDlgClosed() {
+  editingChunk.value = null;
+  chunkEditTab.value = "preview";
+}
+
 function openChunkEditFromDrawer(chunk: RagChunkAdminRow) {
   const doc = chunksDrawerDoc.value;
   if (!doc) return;
   editingChunk.value = { doc, chunk };
   chunkEditText.value = chunk.content;
+  chunkEditTab.value = "preview";
   chunkDlg.value = true;
 }
 
@@ -894,27 +1150,79 @@ async function batchRemoveDocs() {
   }
 }
 
-function openIngest() {
+async function openIngest() {
   if (!vectorMilvusEnabled.value) {
     ElMessage.warning(t("views.kbMatrix.milvusUploadDisabled"));
     return;
   }
   resetIngestForm();
+  await loadCrawlSyncModes();
   ingestOpen.value = true;
 }
 
+async function loadCrawlSyncModes() {
+  if (crawlSyncModes.value.length > 0) return;
+  try {
+    crawlSyncModes.value = await ragApi.fetchWebCrawlSyncModes();
+    if (!crawlForm.syncMode && crawlSyncModes.value[0]) {
+      crawlForm.syncMode = crawlSyncModes.value[0].code;
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+
 function resetIngestForm() {
   ingestType.value = "crawl";
-  ingestChunkStrategy.value = undefined;
+  ingestChunkStrategy.value = 2;
+  ingestCategoryId.value = selectedCategoryId.value ?? undefined;
+  crawlForm.mode = "site";
   crawlForm.url = "";
+  crawlForm.baseUrl = "";
+  crawlForm.maxDepth = 3;
+  crawlForm.filterCrawled = true;
   pasteForm.originalFilename = "";
   pasteForm.contentType = "";
   pasteForm.markdownContent = "";
-  uploadFile.value = null;
+  uploadFileList.value = [];
 }
 
-function onPickUploadFile(file: UploadFile) {
-  uploadFile.value = (file.raw as File) || null;
+function onUploadFileChange(_file: UploadFile, fileList: UploadFile[]) {
+  uploadFileList.value = fileList;
+}
+
+function onUploadFileRemove(_file: UploadFile, fileList: UploadFile[]) {
+  uploadFileList.value = fileList;
+}
+
+async function runChunkPreview() {
+  if (ingestType.value !== "crawl") return;
+  const cs = ingestChunkStrategy.value;
+  chunkPreviewLoading.value = true;
+  try {
+    if (crawlForm.mode === "single") {
+      const u = crawlForm.url.trim();
+      if (!u) {
+        ElMessage.warning(t("views.ingest.fillUrl"));
+        return;
+      }
+      await chunkPreviewRef.value?.run({ url: u, chunkStrategy: cs });
+    } else {
+      const base = crawlForm.baseUrl.trim();
+      if (!base) {
+        ElMessage.warning(t("views.kbMatrix.fillSiteBaseUrl"));
+        return;
+      }
+      await chunkPreviewRef.value?.run({
+        baseUrl: base,
+        maxDepth: crawlForm.maxDepth,
+        chunkStrategy: cs,
+      });
+    }
+  } finally {
+    chunkPreviewLoading.value = false;
+  }
 }
 
 async function submitIngest() {
@@ -923,35 +1231,77 @@ async function submitIngest() {
     return;
   }
   const cs = ingestChunkStrategy.value;
+  const catId = ingestCategoryId.value;
   ingestSubmitting.value = true;
   try {
     if (ingestType.value === "crawl") {
-      const u = crawlForm.url.trim();
-      if (!u) {
-        ElMessage.warning(t("views.ingest.fillUrl"));
-        return;
+      if (crawlForm.mode === "single") {
+        const u = crawlForm.url.trim();
+        if (!u) {
+          ElMessage.warning(t("views.ingest.fillUrl"));
+          return;
+        }
+        await ragApi.enqueueUrlImportJob(kid.value, u, cs, catId);
+        ElMessage.success(t("views.kbMatrix.crawlJobCreated"));
+      } else {
+        const base = crawlForm.baseUrl.trim();
+        if (!base) {
+          ElMessage.warning(t("views.kbMatrix.fillSiteBaseUrl"));
+          return;
+        }
+        await ragApi.submitLocalSiteCrawl(kid.value, {
+          baseUrl: base,
+          syncMode: crawlForm.syncMode,
+          maxDepth: crawlForm.maxDepth,
+          filterCrawled: crawlForm.filterCrawled,
+          chunkStrategy: cs,
+          categoryId: catId,
+          asyncJob: true,
+        });
+        ElMessage.success(t("views.kbMatrix.crawlSiteJobCreated"));
       }
-      await ragApi.enqueueUrlImportJob(kid.value, u, cs);
-      ElMessage.success(t("views.kbMatrix.crawlJobCreated"));
     } else if (ingestType.value === "upload") {
-      const f = uploadFile.value;
-      if (!f) {
+      const files = uploadFileList.value.map((item) => item.raw as File).filter((f): f is File => !!f);
+      if (!files.length) {
         ElMessage.warning(t("views.kbMatrix.pickFileWarning"));
         return;
       }
-      await ragApi.uploadRagKbDocument(kid.value, f, cs);
-      ElMessage.success(t("views.kbMatrix.uploadIngestDone"));
+      let ok = 0;
+      let fail = 0;
+      for (const f of files) {
+        try {
+          const strategy = await resolveUploadChunkStrategy(kid.value, cs, { file: f });
+          await ragApi.uploadRagKbDocument(kid.value, f, strategy, catId);
+          ok++;
+        } catch {
+          fail++;
+        }
+      }
+      if (ok > 0 && fail === 0) {
+        ElMessage.success(
+          ok === 1 ? t("views.kbMatrix.uploadIngestDone") : t("views.kbMatrix.uploadIngestDoneMulti", { n: ok }),
+        );
+      } else if (ok > 0) {
+        ElMessage.warning(t("views.kbMatrix.uploadPartialFailed", { ok, fail }));
+      } else {
+        ElMessage.error(t("views.kbMatrix.submitFailed"));
+        return;
+      }
     } else {
       const name = pasteForm.originalFilename.trim();
       if (!name) {
         ElMessage.warning(t("views.ingest.fillName"));
         return;
       }
+      const md = pasteForm.markdownContent.trim();
+      const strategy =
+        md.length > 0 ? await resolveUploadChunkStrategy(kid.value, cs, { markdown: md }) : cs;
       await ragApi.enqueueFileIngestJob(kid.value, {
         originalFilename: name,
         contentType: pasteForm.contentType.trim() || undefined,
-        markdownContent: pasteForm.markdownContent.trim() || undefined,
-        chunkStrategy: cs,
+        markdownContent: md || undefined,
+        chunkStrategy: strategy,
+        categoryId: catId,
       });
       ElMessage.success(t("views.kbMatrix.fileJobCreated"));
     }
@@ -1031,10 +1381,8 @@ function unbindDocTableResize() {
 }
 
 /**
- * 表高取自「文档表格外层槽」{@code .docs-table-wrap} 的 {@code clientHeight}（flex:1 + min-height:0 下的可用高度），
- * 勿用 {@code docs-main} 的 {@code getBoundingClientRect().height} 参与回算：表体略超出时会把 main 撑高，
- * ResizeObserver 反复读到更大高度 → 无限增高，分页器被顶出视口（直连带 ?kbId= 进入时更易触发）。
- */
+ * 琛ㄩ珮鍙栬嚜銆屾枃妗ｈ〃鏍煎灞傛Ы銆峽@code .docs-table-wrap} 鐨?{@code clientHeight}锛坒lex:1 + min-height:0 涓嬬殑鍙敤楂樺害锛夛紝
+ * 鍕跨敤 {@code docs-main} 鐨?{@code getBoundingClientRect().height} 鍙備笌鍥炵畻锛氳〃浣撶暐瓒呭嚭鏃朵細鎶?main 鎾戦珮锛? * ResizeObserver 鍙嶅璇诲埌鏇村ぇ楂樺害 鈫?鏃犻檺澧為珮锛屽垎椤靛櫒琚《鍑鸿鍙ｏ紙鐩磋繛甯??kbId= 杩涘叆鏃舵洿鏄撹Е鍙戯級銆? */
 function bindDocTableResize() {
   unbindDocTableResize();
   const wrap = docsTableWrapRef.value;
@@ -1095,6 +1443,10 @@ onBeforeUnmount(() => {
 .rag-cap-inline-alert {
   margin-bottom: 12px;
   flex-shrink: 0;
+}
+
+.crawl-warn {
+  margin-bottom: 12px;
 }
 
 .kb-dmx-root {
@@ -1253,11 +1605,37 @@ onBeforeUnmount(() => {
   line-height: 1.5;
 }
 
+.field-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.4;
+}
+
 .ingest-form {
   padding-top: 4px;
 }
 
-/* —— 文档矩阵（左右分栏）—— */
+.ingest-upload-drop {
+  width: 100%;
+}
+
+.ingest-upload-drop :deep(.el-upload) {
+  width: 100%;
+}
+
+.ingest-upload-drop :deep(.el-upload-dragger) {
+  width: 100%;
+  padding: 20px 12px;
+}
+
+.ingest-upload-ico {
+  font-size: 40px;
+  color: var(--el-color-primary);
+  margin-bottom: 8px;
+}
+
+/* 文档矩阵（左右分栏） */
 .docs-matrix {
   display: flex;
   gap: 16px;
@@ -1419,6 +1797,26 @@ onBeforeUnmount(() => {
   margin-bottom: 10px;
 }
 
+.retrieval-result-wrap {
+  margin-top: 8px;
+}
+.retrieval-meta {
+  margin-bottom: 12px;
+}
+.retrieval-section {
+  margin-top: 12px;
+}
+.retrieval-snippet-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--el-text-color-regular);
+}
+.retrieval-snippet-list li + li {
+  margin-top: 8px;
+}
+
 .jobs-dlg-table {
   border-radius: 10px;
 }
@@ -1439,5 +1837,53 @@ onBeforeUnmount(() => {
 
 .doc-title-link:hover {
   text-decoration: underline;
+}
+
+.chunk-edit-tabs {
+  margin-top: -4px;
+}
+
+.chunk-edit-preview {
+  min-height: 280px;
+  max-height: min(62vh, 520px);
+  overflow: auto;
+  padding: 4px 2px;
+}
+
+.chunk-edit-preview.chunk-md :deep(p) {
+  margin: 0 0 0.45em;
+}
+
+.chunk-edit-preview.chunk-md :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.chunk-edit-preview.chunk-md :deep(h1),
+.chunk-edit-preview.chunk-md :deep(h2),
+.chunk-edit-preview.chunk-md :deep(h3),
+.chunk-edit-preview.chunk-md :deep(h4) {
+  margin: 0 0 0.35em;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.chunk-edit-preview.chunk-md :deep(ul),
+.chunk-edit-preview.chunk-md :deep(ol) {
+  margin: 0 0 0.45em;
+  padding-left: 1.25em;
+}
+
+.chunk-edit-preview.chunk-md :deep(pre) {
+  margin: 0 0 0.45em;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--el-fill-color);
+  font-size: 12px;
+  overflow-x: auto;
+}
+
+.chunk-edit-source :deep(textarea) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
 }
 </style>

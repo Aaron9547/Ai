@@ -36,10 +36,10 @@
             <el-option label="固定字数" :value="1" />
             <el-option label="语义段落" :value="2" />
             <el-option label="滑动窗口" :value="3" />
-            <el-option label="自定义（预留）" :value="99" />
           </el-select>
         </el-form-item>
         <el-form-item>
+          <el-button :loading="urlPreviewing" :disabled="!kbId" @click="previewUrl">预览分片</el-button>
           <el-button type="primary" :loading="urlSubmitting" :disabled="!kbId" @click="submitUrl">提交网页入库任务</el-button>
         </el-form-item>
       </el-form>
@@ -68,13 +68,16 @@
         </el-form-item>
       </el-form>
     </el-card>
+    <KbChunkPreviewDialog v-if="kbId" ref="chunkPreviewRef" v-model="chunkPreviewOpen" :kb-id="kbId" />
   </div>
 </template>
 
 <script setup lang="ts">
+import KbChunkPreviewDialog from "./components/KbChunkPreviewDialog.vue";
 import { ElMessage } from "element-plus";
 import { onMounted, reactive, ref } from "vue";
 import { useRoute } from "vue-router";
+import { ElMessageBox } from "element-plus";
 import * as ragApi from "../../api/ragAdmin";
 import type { RagKnowledgeBaseRow } from "../../types/admin";
 
@@ -83,10 +86,13 @@ const loadingKbs = ref(false);
 const kbs = ref<RagKnowledgeBaseRow[]>([]);
 const kbId = ref<number | undefined>(undefined);
 
-const urlForm = reactive({ url: "", chunkStrategy: undefined as number | undefined });
+const urlForm = reactive({ url: "", chunkStrategy: 2 as number | undefined });
 const fileForm = reactive({ originalFilename: "", contentType: "", markdownContent: "" });
 const urlSubmitting = ref(false);
+const urlPreviewing = ref(false);
 const fileSubmitting = ref(false);
+const chunkPreviewOpen = ref(false);
+const chunkPreviewRef = ref<InstanceType<typeof KbChunkPreviewDialog> | null>(null);
 
 async function loadKbs() {
   loadingKbs.value = true;
@@ -102,6 +108,24 @@ async function loadKbs() {
     }
   } finally {
     loadingKbs.value = false;
+  }
+}
+
+async function previewUrl() {
+  if (!kbId.value) {
+    ElMessage.warning("请先选择知识库");
+    return;
+  }
+  const u = urlForm.url.trim();
+  if (!u) {
+    ElMessage.warning("请填写网页地址");
+    return;
+  }
+  urlPreviewing.value = true;
+  try {
+    await chunkPreviewRef.value?.run({ url: u, chunkStrategy: urlForm.chunkStrategy });
+  } finally {
+    urlPreviewing.value = false;
   }
 }
 
@@ -128,6 +152,30 @@ async function submitUrl() {
   }
 }
 
+async function resolvePasteChunkStrategy(md: string): Promise<number | undefined> {
+  if (!kbId.value || !md.trim()) {
+    return undefined;
+  }
+  try {
+    const analysis = await ragApi.analyzeIngestMarkdown(kbId.value, md);
+    if (!analysis.suggestParentChild) {
+      return undefined;
+    }
+    const reasonLines =
+      analysis.reasons.length > 0
+        ? `\n\n${analysis.reasons.map((r) => `· ${r}`).join("\n")}`
+        : "";
+    await ElMessageBox.confirm(
+      `粘贴正文较长且结构复杂，子母分片可提升检索精度并在对话中注入更完整上下文。是否改用子母分片入库？${reasonLines}`,
+      "推荐使用子母分片",
+      { confirmButtonText: "使用子母分片", cancelButtonText: "保持语义段落", type: "info" },
+    );
+    return ragApi.RAG_CHUNK_STRATEGY_PARENT_CHILD;
+  } catch {
+    return undefined;
+  }
+}
+
 async function submitFile() {
   if (!kbId.value) {
     ElMessage.warning("请先选择知识库");
@@ -140,10 +188,13 @@ async function submitFile() {
   }
   fileSubmitting.value = true;
   try {
+    const md = fileForm.markdownContent.trim();
+    const chunkStrategy = md ? await resolvePasteChunkStrategy(md) : undefined;
     const r = await ragApi.enqueueFileIngestJob(kbId.value, {
       originalFilename: name,
       contentType: fileForm.contentType.trim() || undefined,
-      markdownContent: fileForm.markdownContent.trim() || undefined,
+      markdownContent: md || undefined,
+      chunkStrategy,
     });
     ElMessage.success(`已创建任务（编号 ${r.jobTaskId}），可在知识库页标题栏「异步任务」中查看进度`);
     fileForm.originalFilename = "";

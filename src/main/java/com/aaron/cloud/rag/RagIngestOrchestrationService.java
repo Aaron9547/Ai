@@ -10,7 +10,9 @@ import com.aaron.cloud.common.rag.LnkRagKbDocumentRepository;
 import com.aaron.cloud.common.api.ports.RagEmbeddingPort;
 import com.aaron.cloud.common.rag.RagChunkRepository;
 import com.aaron.cloud.common.rag.RagDocumentRepository;
+import com.aaron.cloud.common.rag.RagKbDocumentCategoryRepository;
 import com.aaron.cloud.common.rag.RagKnowledgeBaseRepository;
+import com.aaron.cloud.common.rag.entity.RagKbDocumentCategory;
 import com.aaron.cloud.common.rag.entity.LnkRagDocumentChunk;
 import com.aaron.cloud.common.rag.entity.LnkRagKbDocument;
 import com.aaron.cloud.common.rag.entity.RagChunk;
@@ -21,9 +23,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -36,6 +38,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class RagIngestOrchestrationService {
 
     private final RagKnowledgeBaseRepository ragKnowledgeBaseRepository;
+    private final RagKbDocumentCategoryRepository ragKbDocumentCategoryRepository;
     private final RagDocumentRepository ragDocumentRepository;
     private final RagChunkRepository ragChunkRepository;
     private final LnkRagKbDocumentRepository lnkRagKbDocumentRepository;
@@ -46,6 +49,9 @@ public class RagIngestOrchestrationService {
     private final RagEmbeddingPort ragEmbeddingPort;
     private final ObjectMapper objectMapper;
     private final PlatformTransactionManager transactionManager;
+    private final RagWebPageParseService webPageParseService;
+    private final RagWebCrawlExtractConfigSupport extractConfigSupport;
+    private final RagDocumentChunkPurgeService ragDocumentChunkPurgeService;
 
     /** @param root 浠诲姟 payload锛岄』鍚?{@code kbId}銆亄@code url}锛屽彲閫?{@code chunkStrategy} 鏁存暟鐮佽鐩栫煡璇嗗簱榛樿绛栫暐銆?*/
     public String runUrlImport(long tenantId, JsonNode root) throws Exception {
@@ -59,7 +65,9 @@ public class RagIngestOrchestrationService {
         RagHttpFetch.Fetched fetched = RagHttpFetch.get(url);
         String html = new String(fetched.body(), fetched.charset());
         addStep(steps, "fetch_url", "ok", "bytes=" + fetched.body().length);
-        String md = RagHtmlToMarkdown.toMarkdownish(html);
+        RagWebCrawlExtractConfig extractConfig = extractConfigFrom(root);
+        RagHtmlToMarkdown.ParsedPage page = webPageParseService.parse(html, url, extractConfig);
+        String md = page.markdown();
         if (md.isBlank()) {
             throw new IllegalStateException("empty markdown after crawl");
         }
@@ -67,7 +75,7 @@ public class RagIngestOrchestrationService {
         RagChunkStrategy strategy = effectiveStrategy(kb, root);
         int fixed = effectiveFixed(kb);
         int slide = effectiveSlide(kb);
-        String title = safeTitle(URI.create(url).getHost(), url);
+        String title = RagHtmlToMarkdown.resolveDocumentTitle(page, url);
         final long txTenantId = tenantId;
         final long txKbId = kbId;
         final String txMd = md;
@@ -76,6 +84,7 @@ public class RagIngestOrchestrationService {
         final RagChunkStrategy txStrategy = strategy;
         final int txFixed = fixed;
         final int txSlide = slide;
+        final Long txCategoryId = categoryIdFrom(root);
         PersistResult pr =
                 new TransactionTemplate(transactionManager)
                         .execute(
@@ -90,7 +99,8 @@ public class RagIngestOrchestrationService {
                                                 RagDocumentSourceType.URL_CRAWL,
                                                 txStrategy,
                                                 txFixed,
-                                                txSlide));
+                                                txSlide,
+                                                txCategoryId));
         addStep(steps, "persist", "ok", "documentId=" + pr.documentId + ",chunks=" + pr.chunkCount);
         addStep(steps, "vector", "ok", "collection=kb_" + kbId);
         ObjectNode out = objectMapper.createObjectNode();
@@ -129,6 +139,7 @@ public class RagIngestOrchestrationService {
         final RagChunkStrategy txStrategy = strategy;
         final int txFixed = fixed;
         final int txSlide = slide;
+        final Long txCategoryId = categoryIdFrom(root);
         PersistResult pr =
                 new TransactionTemplate(transactionManager)
                         .execute(
@@ -143,7 +154,8 @@ public class RagIngestOrchestrationService {
                                                 txSt,
                                                 txStrategy,
                                                 txFixed,
-                                                txSlide));
+                                                txSlide,
+                                                txCategoryId));
         addStep(steps, "persist", "ok", "documentId=" + pr.documentId + ",chunks=" + pr.chunkCount);
         ObjectNode out = objectMapper.createObjectNode();
         out.set("steps", steps);
@@ -153,9 +165,54 @@ public class RagIngestOrchestrationService {
         return objectMapper.writeValueAsString(out);
     }
 
+    /** 管理端同步：指定来源 URL 的网页正文入库。 */
+    public PersistResult ingestWebMarkdownSync(
+            long tenantId,
+            long kbId,
+            String sourceUrl,
+            String markdown,
+            String title,
+            Integer chunkStrategyCode,
+            Long categoryId) {
+        ragVectorInfrastructure.assertMilvusOrThrow();
+        RagKnowledgeBase kb = requireKb(tenantId, kbId);
+        ragKbVectorModelGuard.assertKbHasVectorEmbeddingModel(tenantId, kbId);
+        RagChunkStrategy strategy =
+                chunkStrategyCode != null
+                        ? RagChunkStrategy.fromCode(chunkStrategyCode)
+                        : effectiveStrategy(kb, null);
+        int fixed = effectiveFixed(kb);
+        int slide = effectiveSlide(kb);
+        final String txUrl = sourceUrl != null ? sourceUrl.trim() : "";
+        final String txTitle =
+                title != null && !title.isBlank()
+                        ? clampDocTitle(title.trim())
+                        : clampDocTitle(RagHtmlToMarkdown.resolveDocumentTitle(markdown, txUrl));
+        return new TransactionTemplate(transactionManager)
+                .execute(
+                        status ->
+                                persistMarkdown(
+                                        tenantId,
+                                        kbId,
+                                        markdown,
+                                        txTitle,
+                                        txUrl.isEmpty() ? null : txUrl,
+                                        null,
+                                        RagDocumentSourceType.URL_CRAWL,
+                                        strategy,
+                                        fixed,
+                                        slide,
+                                        categoryId));
+    }
+
     /** 绠＄悊绔悓姝ヤ笂浼狅細涓庡紓姝ヤ换鍔′竴鑷寸殑鍒嗙墖涓庡悜閲忓崰浣嶅啓鍏ャ€?*/
     public PersistResult ingestUploadedMarkdownSync(
-            long tenantId, long kbId, String markdown, String originalFilename, Integer chunkStrategyCode) {
+            long tenantId,
+            long kbId,
+            String markdown,
+            String originalFilename,
+            Integer chunkStrategyCode,
+            Long categoryId) {
         ragVectorInfrastructure.assertMilvusOrThrow();
         RagKnowledgeBase kb = requireKb(tenantId, kbId);
         ragKbVectorModelGuard.assertKbHasVectorEmbeddingModel(tenantId, kbId);
@@ -173,6 +230,7 @@ public class RagIngestOrchestrationService {
         final RagChunkStrategy txStrategy = strategy;
         final int txFixed = fixed;
         final int txSlide = slide;
+        final Long txCategoryId = categoryId;
         return new TransactionTemplate(transactionManager)
                 .execute(
                         status ->
@@ -186,7 +244,8 @@ public class RagIngestOrchestrationService {
                                         RagDocumentSourceType.FILE_UPLOAD,
                                         txStrategy,
                                         txFixed,
-                                        txSlide));
+                                        txSlide,
+                                        txCategoryId));
     }
 
     public record PersistResult(long documentId, int chunkCount) {}
@@ -206,19 +265,31 @@ public class RagIngestOrchestrationService {
         return kb.getDefaultChunkStrategy() != null ? kb.getDefaultChunkStrategy() : RagChunkStrategy.FIXED_CHAR;
     }
 
+    private RagWebCrawlExtractConfig extractConfigFrom(JsonNode root) {
+        if (root == null || !root.has("extractConfig") || root.get("extractConfig").isNull()) {
+            return RagWebCrawlExtractConfig.empty();
+        }
+        try {
+            return extractConfigSupport.fromJson(objectMapper.writeValueAsString(root.get("extractConfig")));
+        } catch (Exception e) {
+            return RagWebCrawlExtractConfig.empty();
+        }
+    }
+
     private static int effectiveFixed(RagKnowledgeBase kb) {
-        return kb.getChunkFixedChars() != null && kb.getChunkFixedChars() > 0 ? kb.getChunkFixedChars() : 800;
+        return kb.getChunkFixedChars() != null && kb.getChunkFixedChars() > 0 ? kb.getChunkFixedChars() : 1000;
     }
 
     private static int effectiveSlide(RagKnowledgeBase kb) {
         return kb.getChunkSlideOverlap() != null && kb.getChunkSlideOverlap() >= 0 ? kb.getChunkSlideOverlap() : 120;
     }
 
-    private static String safeTitle(String host, String fallback) {
-        if (host != null && !host.isBlank()) {
-            return host;
+    private static String clampDocTitle(String title) {
+        if (title == null) {
+            return "";
         }
-        return fallback.length() > 200 ? fallback.substring(0, 200) : fallback;
+        String t = title.trim();
+        return t.length() > 512 ? t.substring(0, 512) : t;
     }
 
     private static void addStep(ArrayNode steps, String phase, String status, String detail) {
@@ -228,6 +299,27 @@ public class RagIngestOrchestrationService {
         n.put("detail", detail == null ? "" : detail);
         n.put("at", BeijingTime.nowLocal().toString());
         steps.add(n);
+    }
+
+    private static Long categoryIdFrom(JsonNode root) {
+        if (root == null || !root.has("categoryId") || root.get("categoryId").isNull()) {
+            return null;
+        }
+        return root.get("categoryId").asLong();
+    }
+
+    private void applyCategoryIfPresent(RagDocument doc, long tenantId, long kbId, Long categoryId) {
+        if (categoryId == null) {
+            return;
+        }
+        RagKbDocumentCategory cat =
+                ragKbDocumentCategoryRepository
+                        .findById(tenantId, categoryId)
+                        .orElseThrow(() -> new IllegalArgumentException("invalid category"));
+        if (!Objects.equals(cat.getKbId(), kbId)) {
+            throw new IllegalArgumentException("invalid category");
+        }
+        doc.setCategoryId(categoryId);
     }
 
     private PersistResult persistMarkdown(
@@ -240,10 +332,32 @@ public class RagIngestOrchestrationService {
             RagDocumentSourceType sourceType,
             RagChunkStrategy strategy,
             int fixedChars,
-            int slideOverlap) {
-        RagDocument doc = new RagDocument();
+            int slideOverlap,
+            Long categoryId) {
+        RagDocument doc;
+        if (sourceType == RagDocumentSourceType.URL_CRAWL
+                && sourceUri != null
+                && !sourceUri.isBlank()) {
+            var existing =
+                    ragDocumentRepository.findLatestActiveByKbAndSourceUri(
+                            tenantId, kbId, sourceUri.trim());
+            if (existing.isPresent()) {
+                doc = existing.get();
+                ragDocumentChunkPurgeService.purgeAllChunksForDocument(tenantId, kbId, doc.getId());
+                doc.setTitle(title != null ? title : doc.getTitle());
+                doc.setSourceUri(sourceUri.trim());
+                doc.setMdContent(md);
+                doc.setContentLength((long) md.length());
+                doc.setDisplayStatus(RagDocumentDisplayStatus.PUBLISHED);
+                ragDocumentRepository.updateById(doc);
+                return writeChunksForDocument(
+                        tenantId, kbId, doc.getId(), md, strategy, fixedChars, slideOverlap);
+            }
+        }
+        doc = new RagDocument();
         doc.setTenantId(tenantId);
         doc.setDeleted(0);
+        applyCategoryIfPresent(doc, tenantId, kbId, categoryId);
         doc.setSourceType(sourceType);
         doc.setTitle(title != null ? title : "");
         doc.setSourceUri(sourceUri);
@@ -260,6 +374,21 @@ public class RagIngestOrchestrationService {
         lnk.setKbId(kbId);
         lnk.setDocumentId(doc.getId());
         lnkRagKbDocumentRepository.insert(lnk);
+        return writeChunksForDocument(
+                tenantId, kbId, doc.getId(), md, strategy, fixedChars, slideOverlap);
+    }
+
+    private PersistResult writeChunksForDocument(
+            long tenantId,
+            long kbId,
+            long documentId,
+            String md,
+            RagChunkStrategy strategy,
+            int fixedChars,
+            int slideOverlap) {
+        if (strategy == RagChunkStrategy.PARENT_CHILD) {
+            return persistParentChildMarkdown(tenantId, kbId, documentId, md, fixedChars);
+        }
         List<String> parts = RagChunkSplitter.split(md, strategy, fixedChars, slideOverlap);
         List<String> chunkIds = new ArrayList<>();
         List<float[]> vectors = new ArrayList<>();
@@ -270,9 +399,10 @@ public class RagIngestOrchestrationService {
             ch.setDeleted(0);
             ch.setContent(part);
             ch.setRetrievalEnabled(RagChunkRetrievalEnabled.ENABLED);
+            ch.setParentChunkId(null);
             ragChunkRepository.insert(ch);
             LnkRagDocumentChunk lnkDc = new LnkRagDocumentChunk();
-            lnkDc.setDocumentId(doc.getId());
+            lnkDc.setDocumentId(documentId);
             lnkDc.setChunkId(ch.getId());
             lnkDc.setSeq(seq++);
             lnkRagDocumentChunkRepository.insert(lnkDc);
@@ -285,6 +415,57 @@ public class RagIngestOrchestrationService {
         if (!chunkIds.isEmpty()) {
             vectorStorePort.upsertChunks(tenantId, "kb_" + kbId, chunkIds, vectors);
         }
-        return new PersistResult(doc.getId(), parts.size());
+        return new PersistResult(documentId, parts.size());
+    }
+
+    private PersistResult persistParentChildMarkdown(
+            long tenantId, long kbId, long documentId, String md, int parentMaxChars) {
+        List<RagParentChildChunkSupport.ParentChildBlock> blocks =
+                RagParentChildChunkSupport.split(md, parentMaxChars, RagParentChildChunkSupport.DEFAULT_CHILD_CHARS);
+        List<String> chunkIds = new ArrayList<>();
+        List<float[]> vectors = new ArrayList<>();
+        int seq = 0;
+        int retrievableCount = 0;
+        for (RagParentChildChunkSupport.ParentChildBlock block : blocks) {
+            RagChunk parent = new RagChunk();
+            parent.setTenantId(tenantId);
+            parent.setDeleted(0);
+            parent.setContent(block.parentText());
+            parent.setRetrievalEnabled(RagChunkRetrievalEnabled.DISABLED);
+            parent.setParentChunkId(null);
+            ragChunkRepository.insert(parent);
+            LnkRagDocumentChunk lnkParent = new LnkRagDocumentChunk();
+            lnkParent.setDocumentId(documentId);
+            lnkParent.setChunkId(parent.getId());
+            lnkParent.setSeq(seq++);
+            lnkRagDocumentChunkRepository.insert(lnkParent);
+            parent.setEmbeddingRef(null);
+            ragChunkRepository.updateById(parent);
+
+            for (String childText : block.childTexts()) {
+                RagChunk child = new RagChunk();
+                child.setTenantId(tenantId);
+                child.setDeleted(0);
+                child.setContent(childText);
+                child.setRetrievalEnabled(RagChunkRetrievalEnabled.ENABLED);
+                child.setParentChunkId(parent.getId());
+                ragChunkRepository.insert(child);
+                LnkRagDocumentChunk lnkChild = new LnkRagDocumentChunk();
+                lnkChild.setDocumentId(documentId);
+                lnkChild.setChunkId(child.getId());
+                lnkChild.setSeq(seq++);
+                lnkRagDocumentChunkRepository.insert(lnkChild);
+                String ref = String.valueOf(child.getId());
+                child.setEmbeddingRef(ref);
+                ragChunkRepository.updateById(child);
+                chunkIds.add(ref);
+                vectors.add(ragEmbeddingPort.embed(tenantId, kbId, childText));
+                retrievableCount++;
+            }
+        }
+        if (!chunkIds.isEmpty()) {
+            vectorStorePort.upsertChunks(tenantId, "kb_" + kbId, chunkIds, vectors);
+        }
+        return new PersistResult(documentId, retrievableCount);
     }
 }

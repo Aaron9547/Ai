@@ -193,8 +193,62 @@ public class RagChunkRepository {
         RagDocument doc = ragDocumentRepository.findByIdAndTenant(lnk.getDocumentId(), tenantId);
         String title = doc != null && doc.getTitle() != null ? doc.getTitle() : "";
         int seq = lnk.getSeq() == null ? 0 : lnk.getSeq();
-        String preview = previewText(ch.getContent());
+        String preview = previewText(resolveContextContent(ch, tenantId));
         return Optional.of(new RagCitationHit(kbId, lnk.getDocumentId(), title, ch.getId(), seq, preview));
+    }
+
+    /**
+     * 对话注入用正文：子块命中时返回母块全文（否则返回分片自身 content）。
+     */
+    public Optional<String> resolvePromptSnippetForKb(long tenantId, long kbId, long chunkId) {
+        RagChunk ch =
+                mapper.selectOne(
+                        Wrappers.<RagChunk>lambdaQuery()
+                                .eq(RagChunk::getId, chunkId)
+                                .eq(RagChunk::getTenantId, tenantId)
+                                .eq(RagChunk::getDeleted, 0)
+                                .eq(RagChunk::getRetrievalEnabled, RagChunkRetrievalEnabled.ENABLED)
+                                .apply(
+                                        "EXISTS (SELECT 1 FROM lnk_rag_document_chunk dc INNER JOIN lnk_rag_kb_document lk ON lk.document_id = dc.document_id INNER JOIN rag_document d ON d.id = dc.document_id WHERE dc.chunk_id = rag_chunk.id AND lk.kb_id = {0} AND d.deleted = 0 AND d.tenant_id = {1})",
+                                        kbId,
+                                        tenantId));
+        if (ch == null) {
+            return Optional.empty();
+        }
+        String raw = resolveContextContent(ch, tenantId);
+        if (raw == null || raw.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.of(raw.trim());
+    }
+
+    public List<Long> listChildChunkIds(long tenantId, long parentChunkId) {
+        return mapper.selectList(
+                        Wrappers.<RagChunk>lambdaQuery()
+                                .select(RagChunk::getId)
+                                .eq(RagChunk::getTenantId, tenantId)
+                                .eq(RagChunk::getDeleted, 0)
+                                .eq(RagChunk::getParentChunkId, parentChunkId))
+                .stream()
+                .map(RagChunk::getId)
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
+    private String resolveContextContent(RagChunk ch, long tenantId) {
+        if (ch == null) {
+            return "";
+        }
+        if (ch.getParentChunkId() != null) {
+            RagChunk parent = findByIdAndTenant(ch.getParentChunkId(), tenantId);
+            if (parent != null && !Objects.equals(parent.getDeleted(), 1)) {
+                String p = parent.getContent();
+                if (p != null && !p.isBlank()) {
+                    return p;
+                }
+            }
+        }
+        return ch.getContent() != null ? ch.getContent() : "";
     }
 
     /**

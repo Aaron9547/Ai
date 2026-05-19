@@ -135,6 +135,20 @@
 
 ## 变更记录
 
+### 0.1.237-SNAPSHOT
+
+- **全量库表（`schema_v1.sql`）**：补登 **`ten_scheduled_task`**（通用 cron 调度注册）、**`rag_web_crawl_site`**（含 **`extract_config`**）、**`rag_web_crawl_url_item`**；**`rag_chunk.parent_chunk_id`**（子母分片）；**`rag_knowledge_base`** 默认 **`default_chunk_strategy=2`（SEMANTIC）**、**`chunk_fixed_chars=1000`**；管理端菜单 **`SCHEDULED_TASKS`** 及租户/用户菜单链接种子。**`gw_api_endpoint_catalog_inserts.sql`** 补登爬站、检索试跑、定时任务、分片预览、入库分析等 API（与 **`migrate_0_1_231`～`239`** 一致）。**已建库**仍按迁移档顺序执行，勿整文件重跑 **`schema_v1.sql`**。
+- **RAG 分片与入库体验（0.1.231～237 合批）**：新建知识库默认**语义段落**分片；**`RagChunkSplitter`** 固定长度优先在段落/句号断开、语义按 Markdown 标题分节；**`RagHtmlToMarkdown` / `RagWebPageParseService`**（**readability4j**）改进标题与正文抽取；爬站 **`extract_config`**（LONGTEXT JSON）；**`POST …/ingest/preview-chunks`** 单 URL 入库前预览；管理端默认策略、**`KbChunkPreviewDialog`**、站点表单抽取配置。
+- **网页爬取与定时任务架构**：**`rag_web_crawl_url_item`** + 一次性 **`web-crawl/local`**；**`ten_scheduled_task`** 演进为执行器 + cron（**`TenantScheduledTaskPoller`**）；爬站业务迁至 **`rag_web_crawl_site`** + **`RAG_WEB_CRAWL_DISPATCH`** 调度；废弃知识库内 **`web-crawl/schedules`** API（**`migrate_0_1_235`**）；管理端 **「定时任务」** 菜单与 **`/admin/scheduled-tasks`** CRUD。
+- **检索试跑**：**`POST …/retrieval-test`**（**`migrate_0_1_232`**）。
+- **文档/SQL 协作**：**`db/mysql/README.md`** 登记 **`migrate_0_1_231`～`239`**；**`migrate_0_1_237`** 网关 INSERT 列名修正为 **`display_name` / `remark`**。
+- **子母分片（`RagChunkStrategy.PARENT_CHILD`，`migrate_0_1_238`）**：**`rag_chunk.parent_chunk_id`**（**`schema_v1.sql`** 已含列与 **`idx_rag_chunk_parent`**）；母块仅上下文、**`retrieval_enabled=DISABLED`**，子块参与向量检索。**`RagParentChildChunkSupport`**：母块按语义段落、子块在母块内固定字数切分。**`RagChunkSplitter`** 增加 **`PARENT_CHILD`** 分支；**`RagIngestOrchestrationService`** 入库时写入母子 **`id`** 关联。**`RagMarkdownFenceSupport`**：Markdown 围栏（含 mermaid 等）内文本在固定长/语义切分时不被拦腰截断（**`RagMarkdownFenceSupportTest`**）。**`GET /api/v1/admin/rag-kbs/{id}/documents/{docId}/chunks`** 响应扩展 **`parentChild` / `parentCount` / `childCount` / `flatCount`**（**`normalizeChunksListResponse`**，兼容旧版纯数组）。**`RagDocumentChunkPurgeService`**：文档重分片前清理向量与分片行。
+- **上传入库前分片策略分析（`migrate_0_1_239`）**：**`POST …/ingest/analyze`**（Markdown 正文）、**`POST …/ingest/analyze-upload`**（multipart 文件）；**`RagDocumentChunkProfileAnalyzer`** / **`RagIngestPreviewApplicationService`** 返回是否推荐 **子母分片** 及理由；网关目录已登记。**管理端**：**`KbDocumentMatrixPanel`** 上传/粘贴时在非 **PARENT_CHILD** 策略下可弹窗确认是否改用子母分片（**`views.kbMatrix.parentChild*`**）。
+- **管理端分片管理页（`DocumentChunksManageView`）**：子母文档显示 **「分片视图」**（**仅检索子块** / **含母块上下文**）、卡片 **母块/子块** 标签与「仅上下文」提示；编辑弹窗 **预览 / 源码** Tab + 卡片内 **Markdown 安全渲染**。**`web/admin-web/src/utils/renderMarkdown.ts`** 接入 **`markdown-it-multimd-table`**、**`markdown-it-task-lists`**（GFM 表格与任务列表）；**`DOMPurify`** 放行任务列表 **`input`**；**`global.css`** **`.chunk-md`** 表格/任务列表样式。**`document-chunks-page`** 卡片与侧栏去硬编码白底，**`html.dark`** 下阴影/高亮/Markdown 代码块随主题。**`views.chunks.*`**（**`viewMessages.zh/en`**）覆盖页头、工具栏、卡片与对话框；侧栏「文档信息」等待补全键位时可继续沿用中文硬编码。
+- **管理端用户画像详情 i18n**：**`UserProfilesView.vue`** 画像详情弹窗全量改 **`views.profiles.*`**；**`userProfileDetailSemantics.ts`** 标签名/抽象层字段/角色标签经 **`i18n.global.t`**（**`abstractBlocks`** 依赖 **`locale`** 以随语言切换刷新）。
+- **管理端对话抽检 Markdown**：**`ChatConversationsView`** 知识引用弹窗、**`ChatDrawerAssistantAuditBlock`** 助手正文复用 **`renderMarkdownToSafeHtml`**（与分片预览同源工具链）。
+- **依赖**：**`admin-web/package.json`** 增加 **`markdown-it-multimd-table`**、**`markdown-it-task-lists`**；后端 **`pom.xml`** 等见同批 RAG/定时任务依赖（**readability4j** 等已在 **`RagWebPageParseService`** 使用）。
+
 ### 0.1.231-SNAPSHOT
 
 - **全量库表（`schema_v1.sql`）**：补登 **`chat_conversation_share`**（与 **`migrate_0_1_230_chat_conversation_share.sql`** 列定义一致，**`DATETIME(3)`** 与其它对话表对齐）；**新库**执行一次 **`schema_v1.sql`** 即含该表，**已建库**仍执行迁移档。

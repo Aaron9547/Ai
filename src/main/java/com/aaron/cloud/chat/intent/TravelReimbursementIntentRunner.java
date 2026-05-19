@@ -110,7 +110,10 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
             }
             return objectMapper.readValue(s.getHandlerStateJson(), TravelIntentHandlerState.class);
         } catch (Exception e) {
-            log.warn("travel intent handlerState parse failed intentId={}", s.getIntentDefinitionId(), e);
+            log.warn(
+                    "[意图·出差报销] 会话状态 JSON 解析失败，已使用空状态：意图编号 {}",
+                    s.getIntentDefinitionId(),
+                    e);
             return new TravelIntentHandlerState(null, false, false);
         }
     }
@@ -277,7 +280,7 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
         if (round == TravelReimbursementRound.DOC && attachments != null && !attachments.isEmpty()) {
             if (!routing.allowDocAdvanceWithAttachmentOnly()) {
                 log.info(
-                        "[意图链路] DOC 阶段已配置须含触发短语，本轮仅有附件未命中意图 tenantId={} conversationId={} intentId={}",
+                        "[意图·出差报销] 材料阶段须同时含触发短语，本轮仅上传附件未命中：租户 {}，会话 {}，意图编号 {}",
                         tenantId,
                         conversationId,
                         def.getId());
@@ -360,7 +363,10 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
             try {
                 persistTravelSession(s, freshHs, flowId, ttlMs);
             } catch (Exception e) {
-                log.warn("travel intent reset on trigger failed tenantId={}", snap.getTenantId(), e);
+                log.warn(
+                        "[意图·出差报销] 触发词命中后重置会话失败：租户 {}",
+                        snap.getTenantId(),
+                        e);
             }
             loaded = intentFlowSessionStore.findValid(snap.getTenantId(), conversationId, def.getId(), flowId);
         }
@@ -368,12 +374,12 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
         if (loaded.isEmpty()) {
             String expiredHint = routing.resolvedSessionExpiredHint();
             log.warn(
-                    "travel intent stream missing session tenantId={} conversationId={} intentId={}",
+                    "[意图·出差报销] 未找到有效会话（可能已过期）：租户 {}，会话 {}，意图编号 {}",
                     snap.getTenantId(),
                     conversationId,
                     def.getId());
             log.info(
-                    "[意图链路] 出差报销会话状态缺失或已过期，返回提示 SSE tenantId={} conversationId={} messagePreview={}",
+                    "[意图·出差报销] 会话无效，向用户返回过期提示：租户 {}，会话 {}，用户消息「{}」",
                     snap.getTenantId(),
                     conversationId,
                     intentChainPreview(msg));
@@ -414,14 +420,14 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
                         && !handlerState.isPlanDirectConsumed();
 
         log.info(
-                "[意图链路] 出差报销 openStream tenantId={} conversationId={} intentId={} code={} round={} planDirect={} triggerHit={} attachmentCount={} messagePreview={}",
+                "[意图·出差报销] 开始流式处理：租户 {}，会话 {}，意图编号 {}，编码 {}，阶段={}，行程直达={}，触发词命中={}，附件 {} 个，用户消息「{}」",
                 snap.getTenantId(),
                 conversationId,
                 def.getId(),
                 def.getCode(),
-                session.getCurrentRound(),
-                planDirect,
-                triggerHit,
+                IntentLogZh.travelRound(session.getCurrentRound()),
+                IntentLogZh.yesNo(planDirect),
+                IntentLogZh.yesNo(triggerHit),
                 attachments == null ? 0 : attachments.size(),
                 intentChainPreview(msg));
 
@@ -439,7 +445,7 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
                     try {
                         if (planDirect) {
                             log.info(
-                                    "[意图链路] 命中出差报销 PLAN 阶段直达（关键词+会话状态），开始行程编排 tenantId={} conversationId={}",
+                                    "[意图·出差报销] 命中行程阶段直达，开始编排：租户 {}，会话 {}",
                                     snap.getTenantId(),
                                     conversationId);
                             handlerStateFinal.setPlanDirectConsumed(true);
@@ -479,7 +485,7 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
                         if (TravelReimbursementRound.DOC.name().equals(sessionFinal.getCurrentRound())) {
                             if (attachments == null || attachments.isEmpty()) {
                                 log.info(
-                                        "[意图链路] DOC 阶段缺少附件，返回整段引导 tenantId={} conversationId={}",
+                                        "[意图·出差报销] 材料阶段缺少附件，返回上传引导：租户 {}，会话 {}",
                                         snap.getTenantId(),
                                         conversationId);
                                 blockWithSpinner(
@@ -523,7 +529,7 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
                                                             msg));
                                     if (docBody == null || docBody.isBlank()) {
                                         log.warn(
-                                                "[意图链路][Coze] 文档工作流返回空 tenantId={} conversationId={}",
+                                                "[意图·Coze] 文档工作流无有效输出：租户 {}，会话 {}",
                                                 snap.getTenantId(),
                                                 conversationId);
                                         blockWithSpinner(
@@ -554,7 +560,7 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
                                     }
                                 } catch (Exception e) {
                                     log.error(
-                                            "[意图链路][Coze] 文档工作流失败 tenantId={} conversationId={}",
+                                            "[意图·Coze] 文档工作流调用失败：租户 {}，会话 {}",
                                             snap.getTenantId(),
                                             conversationId,
                                             e);
@@ -608,7 +614,7 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
                             sessionFinal.setCurrentRound(TravelReimbursementRound.PLAN.name());
                             persistTravelSession(sessionFinal, handlerStateFinal, flowIdFinal, ttlMs);
                             log.info(
-                                    "[意图链路] DOC 阶段已完成，本会话已切至 PLAN；请用户再发一条消息以执行行程工作流 tenantId={} conversationId={}",
+                                    "[意图·出差报销] 材料阶段完成，已切换至行程阶段；请用户再发一条消息继续：租户 {}，会话 {}",
                                     snap.getTenantId(),
                                     conversationId);
                             finishPersistWithFlow(
@@ -676,7 +682,7 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
                         }
                     } catch (Exception e) {
                         log.error(
-                                "travel intent stream failed tenantId={} conversationId={} intentId={}",
+                                "[意图·出差报销] 流式处理异常：租户 {}，会话 {}，意图编号 {}",
                                 snap.getTenantId(),
                                 conversationId,
                                 def.getId(),
@@ -685,7 +691,7 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
                             emitter.completeWithError(e);
                         } catch (Exception secondary) {
                             log.warn(
-                                    "travel intent emitter completeWithError failed tenantId={} conversationId={}",
+                                    "[意图·出差报销] SSE 结束流失败：租户 {}，会话 {}",
                                     snap.getTenantId(),
                                     conversationId,
                                     secondary);
@@ -737,7 +743,7 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
                     "您还未发起出差申请单");
             persistTravelSession(session, handlerState, flowId, ttlMs);
             log.info(
-                    "[意图链路] PLAN 未命中申请单模拟分支，保留会话 round=PLAN tenantId={} conversationId={}",
+                    "[意图·出差报销] 行程阶段：未命中申请单（模拟），会话保持行程阶段：租户 {}，会话 {}",
                     snap.getTenantId(),
                     conversationId);
             return;
@@ -764,7 +770,7 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
                                 buildPlanWorkflowParameters(handlerState.getDocSummary(), finalQuery));
                 if (planResult == null || planResult.isBlank()) {
                     log.warn(
-                            "[意图链路][Coze] 行程工作流返回空 tenantId={} conversationId={}",
+                            "[意图·Coze] 行程工作流无有效输出：租户 {}，会话 {}",
                             snap.getTenantId(),
                             conversationId);
                     streamTyping(
@@ -782,7 +788,7 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
                         emitter, seq, segments, plainBuf, "plan-final", PLAN_WORKFLOW_STEP_TITLE, planResult);
             } catch (Exception e) {
                 log.error(
-                        "[意图链路][Coze] 行程工作流失败 tenantId={} conversationId={}",
+                        "[意图·Coze] 行程工作流调用失败：租户 {}，会话 {}",
                         snap.getTenantId(),
                         conversationId,
                         e);
@@ -972,9 +978,9 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
                         snap, content, conversationId, payload.getModelAlias().trim());
             } catch (Exception memEx) {
                 log.warn(
-                        "afterAssistantUtterance (intent) failed conversationId={} tenantId={}",
-                        conversationId,
+                        "[意图·出差报销] 助手回复后写入长期记忆失败：租户 {}，会话 {}",
                         snap.getTenantId(),
+                        conversationId,
                         memEx);
             }
             chatTurnDigestApplicationService.scheduleTurnDigest(
@@ -989,14 +995,14 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
                 int n = intentKeywordRepository.incrementHitCount(snap.getTenantId(), matchHit.keywordId());
                 if (n == 0) {
                     log.warn(
-                            "[意图链路] 关键词 hit_count 未更新（行不存在或租户不一致） tenantId={} keywordId={}",
+                            "[意图·出差报销] 关键词命中次数未更新（记录不存在或租户不一致）：租户 {}，关键词编号 {}",
                             snap.getTenantId(),
                             matchHit.keywordId());
                 }
             }
         } catch (Exception e) {
             log.error(
-                    "persist travel intent assistant message failed tenantId={} conversationId={}",
+                    "[意图·出差报销] 持久化助手消息失败：租户 {}，会话 {}",
                     snap.getTenantId(),
                     conversationId,
                     e);

@@ -63,10 +63,10 @@ public class RagQueryBridgeService implements RagQueryPort {
                     case MILVUS_ES_HYBRID -> searchHybridSnippets(tid, kb, query, topK);
                 };
         log.info(
-                "ragQueryPort.searchSnippets tenantId={} kbId={} mode={} topK={} queryChars={} resultCount={}",
+                "[知识库检索] 单库片段检索完成：租户 {}，知识库 {}，模式={}，最多 {} 条，查询 {} 字，命中 {} 条",
                 tid,
                 kb,
-                mode,
+                RagQueryLogZh.mode(mode),
                 topK,
                 query == null ? 0 : query.length(),
                 out.size());
@@ -87,10 +87,10 @@ public class RagQueryBridgeService implements RagQueryPort {
                     case MILVUS_ES_HYBRID -> searchHybridCitations(tid, kb, query, topK);
                 };
         log.info(
-                "ragQueryPort.searchCitationHits tenantId={} kbId={} retrievalMode={} topK={} queryChars={} resultCount={}",
+                "[知识库检索] 单库可引用分片检索完成：租户 {}，知识库 {}，模式={}，最多 {} 条，查询 {} 字，命中 {} 条",
                 tid,
                 kb,
-                mode,
+                RagQueryLogZh.mode(mode),
                 topK,
                 query == null ? 0 : query.length(),
                 out.size());
@@ -101,7 +101,7 @@ public class RagQueryBridgeService implements RagQueryPort {
     public List<String> searchSnippetsAcrossKnowledgeBases(Long tenantId, List<Long> kbIds, String query, int topK) {
         long tid = tenantId == null ? 0L : tenantId;
         if (kbIds == null || kbIds.isEmpty()) {
-            log.info("ragQueryPort.searchSnippetsAcrossKnowledgeBases skipped emptyKbList tenantId={}", tid);
+            log.info("[知识库检索] 跳过多库片段检索：未指定知识库，租户 {}", tid);
             return List.of();
         }
         if (aiProvidersProperties.resolvedVectorStore() != VectorStoreProviderMode.milvus) {
@@ -116,10 +116,10 @@ public class RagQueryBridgeService implements RagQueryPort {
                             tid, kbIds, query, topK, this::searchHybridSnippetsWithMilvusVec);
                 };
         log.info(
-                "ragQueryPort.searchSnippetsAcrossKnowledgeBases tenantId={} kbCount={} mode={} topK={} queryChars={} resultCount={}",
+                "[知识库检索] 多库片段检索完成：租户 {}，知识库 {} 个，模式={}，最多 {} 条，查询 {} 字，合并后 {} 条",
                 tid,
                 kbIds.size(),
-                mode,
+                RagQueryLogZh.mode(mode),
                 topK,
                 query == null ? 0 : query.length(),
                 out.size());
@@ -131,7 +131,7 @@ public class RagQueryBridgeService implements RagQueryPort {
             Long tenantId, List<Long> kbIds, String query, int topK) {
         long tid = tenantId == null ? 0L : tenantId;
         if (kbIds == null || kbIds.isEmpty()) {
-            log.info("ragQueryPort.searchCitationHitsAcrossKnowledgeBases skipped emptyKbList tenantId={}", tid);
+            log.info("[知识库检索] 跳过多库可引用分片检索：未指定知识库，租户 {}", tid);
             return List.of();
         }
         if (aiProvidersProperties.resolvedVectorStore() != VectorStoreProviderMode.milvus) {
@@ -146,10 +146,10 @@ public class RagQueryBridgeService implements RagQueryPort {
                             tid, kbIds, query, topK, this::searchHybridCitationsWithMilvusVec);
                 };
         log.info(
-                "ragQueryPort.searchCitationHitsAcrossKnowledgeBases tenantId={} kbCount={} retrievalMode={} topK={} queryChars={} resultCount={}",
+                "[知识库检索] 多库可引用分片检索完成：租户 {}，知识库 {} 个，模式={}，最多 {} 条，查询 {} 字，合并后 {} 条",
                 tid,
                 kbIds.size(),
-                mode,
+                RagQueryLogZh.mode(mode),
                 topK,
                 query == null ? 0 : query.length(),
                 out.size());
@@ -185,7 +185,7 @@ public class RagQueryBridgeService implements RagQueryPort {
         Map<Long, float[]> vecByMid = buildQueryVectorByEmbeddingModelId(tenantId, orderedKbs, kbToMid, q);
         if (orderedKbs.size() > 1) {
             log.debug(
-                    "rag multi-kb snippets parallel tenantId={} kbCount={} distinctEmbedModels={}",
+                    "[知识库检索] 多库片段并行检索：租户 {}，知识库 {} 个，嵌入模型 {} 种",
                     tenantId,
                     orderedKbs.size(),
                     vecByMid.size());
@@ -217,7 +217,7 @@ public class RagQueryBridgeService implements RagQueryPort {
         Map<Long, float[]> vecByMid = buildQueryVectorByEmbeddingModelId(tenantId, orderedKbs, kbToMid, q);
         if (orderedKbs.size() > 1) {
             log.debug(
-                    "rag multi-kb citations parallel tenantId={} kbCount={} distinctEmbedModels={}",
+                    "[知识库检索] 多库引用分片并行检索：租户 {}，知识库 {} 个，嵌入模型 {} 种",
                     tenantId,
                     orderedKbs.size(),
                     vecByMid.size());
@@ -360,7 +360,7 @@ public class RagQueryBridgeService implements RagQueryPort {
         if (esClient != null) {
             es = esClient.searchContents(tenantId, kbId, query, topK);
         } else {
-            log.debug("MILVUS_ES_HYBRID锛氭湭瑁呴厤 ElasticsearchRagSearchClient锛屼粎浣跨敤 Milvus 缁撴灉");
+            log.debug("[知识库检索] 混合模式未配置 Elasticsearch 客户端，本库仅使用 Milvus 结果");
         }
         return mergeTwoListsDedupe(topK, mil, es);
     }
@@ -418,9 +418,8 @@ public class RagQueryBridgeService implements RagQueryPort {
                 continue;
             }
             ragChunkRepository
-                    .findCitationHitForKb(tenantId, kbId, chunkId)
-                    .map(RagCitationHit::contentPreview)
-                    .filter(p -> p != null && !p.isBlank())
+                    .resolvePromptSnippetForKb(tenantId, kbId, chunkId)
+                    .filter(p -> !p.isBlank())
                     .ifPresent(out::add);
         }
         return out;

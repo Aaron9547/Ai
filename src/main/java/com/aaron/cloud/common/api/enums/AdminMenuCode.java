@@ -22,6 +22,8 @@ public enum AdminMenuCode {
     LLM_MODELS("LLM_MODELS"),
     MCP_SERVERS("MCP_SERVERS"),
     RAG_KBS("RAG_KBS"),
+    /** 租户通用定时任务（网页爬取等；执行记录在入库任务） */
+    SCHEDULED_TASKS("SCHEDULED_TASKS"),
     FILE_OBJECTS("FILE_OBJECTS"),
     NOTIFICATIONS("NOTIFICATIONS"),
     EVAL_RUNS("EVAL_RUNS"),

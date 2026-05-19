@@ -51,6 +51,10 @@ public final class ApiV1ControllerBases {
     @RequestMapping(AbstractApiV1Controller.PREFIX + "/admin/job-tasks")
     public static abstract class AdminJobTasks extends AbstractApiV1Controller {}
 
+    /** 租户隔离通用定时任务（类型枚举扩展；执行结果见入库任务 job_task）。 */
+    @RequestMapping(AbstractApiV1Controller.PREFIX + "/admin/scheduled-tasks")
+    public static abstract class AdminScheduledTasks extends AbstractApiV1Controller {}
+
     @RequestMapping(AbstractApiV1Controller.PREFIX + "/admin/mcp-servers")
     public static abstract class McpServers extends AbstractApiV1Controller {}
 

@@ -22,6 +22,12 @@ public class AiRagProperties {
      */
     private final LocalEmbedFeign localEmbedFeign = new LocalEmbedFeign();
 
+    /** 站点爬取执行阶段 Redis 锁 TTL（一次性与 job 执行共用）。 */
+    private final SiteCrawl siteCrawl = new SiteCrawl();
+
+    /** 租户通用定时任务调度（扫描 ten_scheduled_task）。 */
+    private final ScheduledTasks scheduledTasks = new ScheduledTasks();
+
     public com.aaron.cloud.common.api.enums.RagRetrievalMode resolvedRetrievalMode() {
         return com.aaron.cloud.common.api.enums.RagRetrievalMode.fromYaml(retrievalMode);
     }
@@ -61,5 +67,41 @@ public class AiRagProperties {
 
         /** Eureka 注册名；与 {@link com.aaron.cloud.rag.remote.RagLocalEmbeddingFeignClient} 占位一致。 */
         private String serviceId = "rag-embedding-svc";
+    }
+
+    @Data
+    public static class SiteCrawl {
+        /**
+         * 单次站点爬取 Redis 分布式锁 TTL（秒），key {@code ai:lock:scheduled-task:run:*} /
+         * {@code ai:lock:scheduled-task:site:*}；默认 6 小时。
+         */
+        private long crawlLockTtlSeconds = 21_600L;
+
+        /** 正文抽取：jsoup（默认）或 readability。 */
+        private String contentExtractor = "jsoup";
+
+        /** 预览接口单页最多返回分片条数。 */
+        private int previewMaxChunks = 20;
+
+        /** 预览拉取 HTML 最大字节。 */
+        private int previewMaxBodyBytes = 512_000;
+
+        /** 站点预览抽样 URL 数。 */
+        private int previewSiteSampleUrls = 3;
+    }
+
+    @Data
+    public static class ScheduledTasks {
+        /** 是否启用统一调度 tick。 */
+        private boolean enabled = true;
+
+        /** Spring {@code @Scheduled} cron（6 段）：扫描 ten_scheduled_task 是否到期。 */
+        private String pollCron = "0 * * * * *";
+
+        /** 调度 tick 全局锁 TTL（秒），key {@code ai:lock:scheduled-task:poller:tick}。 */
+        private long pollerLockTtlSeconds = 55L;
+
+        /** 单条注册项/站点入队锁 TTL（秒）。 */
+        private long taskLockTtlSeconds = 300L;
     }
 }

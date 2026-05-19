@@ -104,21 +104,96 @@ export async function enqueueRagKbIndexJob(id: number): Promise<{ jobTaskId: num
   return data;
 }
 
+export type RagRetrievalTestHit = {
+  documentId: number;
+  documentTitle: string;
+  chunkId: number;
+  chunkSeq: number;
+  contentPreview: string;
+};
+
+export type RagRetrievalTestResult = {
+  retrievalMode: string;
+  query: string;
+  topK: number;
+  hitCount: number;
+  hits: RagRetrievalTestHit[];
+  snippets: string[];
+};
+
+/** 与后端 {@code POST .../rag-kbs/{tenantCode}/{id}/retrieval-test} 对齐。 */
+export async function testRagKbRetrieval(
+  kbId: number,
+  body: { query: string; topK?: number },
+): Promise<RagRetrievalTestResult> {
+  const { data } = await http.post<RagRetrievalTestResult>(`${ragKbWithKbId(kbId)}/retrieval-test`, body);
+  return data;
+}
+
+export type RagWebCrawlExtractConfig = {
+  extractor?: string;
+  contentSelector?: string;
+  excludeSelectors?: string[];
+  titleSelector?: string;
+};
+
+export type ChunkPreviewRequestBody = {
+  url?: string;
+  baseUrl?: string;
+  maxDepth?: number;
+  chunkStrategy?: number;
+  siteId?: number;
+  extractConfig?: RagWebCrawlExtractConfig;
+};
+
+export type ChunkPreviewChunkRow = { seq: number; chars: number; preview: string };
+
+export type ChunkPreviewPageRow = {
+  url: string;
+  title: string;
+  markdownChars: number;
+  chunkCount: number;
+  chunksTruncated: boolean;
+  chunks: ChunkPreviewChunkRow[];
+};
+
+export type ChunkPreviewResult = {
+  strategyCode: number;
+  fixedChars: number;
+  slideOverlap: number;
+  pages: ChunkPreviewPageRow[];
+  pageCount: number;
+  totalChunkCount: number;
+};
+
+export async function previewIngestChunks(kbId: number, body: ChunkPreviewRequestBody): Promise<ChunkPreviewResult> {
+  const { data } = await http.post<ChunkPreviewResult>(`${ragKbWithKbId(kbId)}/ingest/preview-chunks`, body);
+  return data;
+}
+
 export async function enqueueUrlImportJob(
   id: number,
   url: string,
   chunkStrategy?: number,
+  categoryId?: number,
 ): Promise<{ jobTaskId: number }> {
   const { data } = await http.post<{ jobTaskId: number }>(`${ragKbWithKbId(id)}/url-import-jobs`, {
     url,
     ...(chunkStrategy != null ? { chunkStrategy } : {}),
+    ...(categoryId != null ? { categoryId } : {}),
   });
   return data;
 }
 
 export async function enqueueFileIngestJob(
   id: number,
-  body: { originalFilename: string; contentType?: string; markdownContent?: string; chunkStrategy?: number },
+  body: {
+    originalFilename: string;
+    contentType?: string;
+    markdownContent?: string;
+    chunkStrategy?: number;
+    categoryId?: number;
+  },
 ): Promise<{ jobTaskId: number }> {
   const { data } = await http.post<{ jobTaskId: number }>(`${ragKbWithKbId(id)}/file-ingest-jobs`, body);
   return data;
@@ -216,9 +291,76 @@ export async function fetchRagKbDocument(kbId: number, docId: number): Promise<R
   return data;
 }
 
-export async function fetchRagKbChunks(kbId: number, docId: number): Promise<RagChunkAdminRow[]> {
-  const { data } = await http.get<RagChunkAdminRow[]>(`${ragKbWithKbId(kbId)}/documents/${docId}/chunks`);
-  return data;
+/** 文档分片列表（含子母结构统计）。兼容旧版直接返回数组的接口。 */
+export interface RagDocumentChunksListResponse {
+  chunks: RagChunkAdminRow[];
+  parentChild: boolean;
+  parentCount: number;
+  childCount: number;
+  flatCount: number;
+}
+
+function normalizeChunkRow(raw: Record<string, unknown>): RagChunkAdminRow {
+  const parentChunkId = raw.parentChunkId ?? raw.parent_chunk_id;
+  const chunkRole = raw.chunkRole ?? raw.chunk_role;
+  const retrievalEnabled = raw.retrievalEnabled ?? raw.retrieval_enabled;
+  return {
+    id: Number(raw.id),
+    seq: Number(raw.seq ?? 0),
+    content: String(raw.content ?? ""),
+    embeddingRef: (raw.embeddingRef ?? raw.embedding_ref) as string | null | undefined,
+    retrievalEnabled: retrievalEnabled as string | null | undefined,
+    contentLength: raw.contentLength != null ? Number(raw.contentLength) : raw.content_length != null ? Number(raw.content_length) : undefined,
+    hitCount: raw.hitCount != null ? Number(raw.hitCount) : raw.hit_count != null ? Number(raw.hit_count) : undefined,
+    parentChunkId: parentChunkId != null ? Number(parentChunkId) : null,
+    chunkRole: chunkRole != null ? String(chunkRole) : null,
+    createdAt: (raw.createdAt ?? raw.created_at) as string | null | undefined,
+    updatedAt: (raw.updatedAt ?? raw.updated_at) as string | null | undefined,
+  };
+}
+
+function inferParentChildFromChunks(chunks: RagChunkAdminRow[]): Pick<RagDocumentChunksListResponse, "parentChild" | "parentCount" | "childCount" | "flatCount"> {
+  let parents = 0;
+  let children = 0;
+  let flat = 0;
+  const parentIdSet = new Set<number>();
+  for (const c of chunks) {
+    if (c.parentChunkId != null) parentIdSet.add(c.parentChunkId);
+  }
+  for (const c of chunks) {
+    const role = c.chunkRole;
+    if (role === "PARENT") parents += 1;
+    else if (role === "CHILD") children += 1;
+    else if (c.parentChunkId != null) children += 1;
+    else if (parentIdSet.has(c.id)) parents += 1;
+    else if (c.retrievalEnabled === "DISABLED" && parentIdSet.size > 0) parents += 1;
+    else flat += 1;
+  }
+  const parentChild = children > 0 || parents > 0 || parentIdSet.size > 0;
+  return { parentChild, parentCount: parents, childCount: children, flatCount: flat };
+}
+
+function normalizeChunksListResponse(data: unknown): RagDocumentChunksListResponse {
+  if (Array.isArray(data)) {
+    const chunks = data.map((row) => normalizeChunkRow(row as Record<string, unknown>));
+    return { chunks, ...inferParentChildFromChunks(chunks) };
+  }
+  const o = (data ?? {}) as Record<string, unknown>;
+  const rawChunks = Array.isArray(o.chunks) ? o.chunks : [];
+  const chunks = rawChunks.map((row) => normalizeChunkRow(row as Record<string, unknown>));
+  const inferred = inferParentChildFromChunks(chunks);
+  return {
+    chunks,
+    parentChild: o.parentChild === true || o.parent_child === true || inferred.parentChild,
+    parentCount: o.parentCount != null ? Number(o.parentCount) : o.parent_count != null ? Number(o.parent_count) : inferred.parentCount,
+    childCount: o.childCount != null ? Number(o.childCount) : o.child_count != null ? Number(o.child_count) : inferred.childCount,
+    flatCount: o.flatCount != null ? Number(o.flatCount) : o.flat_count != null ? Number(o.flat_count) : inferred.flatCount,
+  };
+}
+
+export async function fetchRagKbChunks(kbId: number, docId: number): Promise<RagDocumentChunksListResponse> {
+  const { data } = await http.get<unknown>(`${ragKbWithKbId(kbId)}/documents/${docId}/chunks`);
+  return normalizeChunksListResponse(data);
 }
 
 export async function patchRagKbChunk(
@@ -256,15 +398,162 @@ export async function mergeRagKbChunkWithNext(
   return data;
 }
 
+export interface RagWebCrawlSyncModeOption {
+  code: string;
+  label: string;
+}
+
+export interface RagWebCrawlSiteRow {
+  id: number;
+  kbId: number;
+  name: string;
+  baseUrl: string;
+  schedulePreset: string;
+  schedulePresetLabel: string;
+  runAtTime?: string | null;
+  enabled: boolean;
+  firstRunDone: boolean;
+  lastCrawlAt?: string | null;
+  categoryId?: number | null;
+  chunkStrategy?: number | null;
+  syncMode?: string | null;
+  syncModeLabel?: string | null;
+  maxDepth?: number | null;
+  filterCrawled: boolean;
+  extractConfig?: RagWebCrawlExtractConfig | null;
+}
+
+export interface RagWebCrawlSiteMeta {
+  syncModes: RagWebCrawlSyncModeOption[];
+  schedulePresets: { code: string; label: string; intervalDays?: number }[];
+  contentExtractors?: { code: string; label: string }[];
+}
+
+export async function fetchWebCrawlSiteMeta(): Promise<RagWebCrawlSiteMeta> {
+  const { data } = await http.get<RagWebCrawlSiteMeta>(`${ragKbBase()}/web-crawl/site-meta`);
+  return data;
+}
+
+/** @deprecated use fetchWebCrawlSiteMeta */
+export async function fetchWebCrawlSyncModes(): Promise<RagWebCrawlSyncModeOption[]> {
+  const meta = await fetchWebCrawlSiteMeta();
+  return meta.syncModes ?? [];
+}
+
+export async function fetchWebCrawlSites(kbId: number): Promise<RagWebCrawlSiteRow[]> {
+  const { data } = await http.get<RagWebCrawlSiteRow[]>(`${ragKbWithKbId(kbId)}/web-crawl/sites`);
+  return data;
+}
+
+export async function createWebCrawlSite(
+  kbId: number,
+  body: {
+    name: string;
+    baseUrl: string;
+    schedulePreset: string;
+    runAtTime?: string;
+    enabled?: boolean;
+    syncMode?: string;
+    maxDepth?: number;
+    filterCrawled?: boolean;
+    categoryId?: number;
+    chunkStrategy?: number;
+    extractConfig?: RagWebCrawlExtractConfig;
+  },
+): Promise<RagWebCrawlSiteRow> {
+  const { data } = await http.post<RagWebCrawlSiteRow>(`${ragKbWithKbId(kbId)}/web-crawl/sites`, body);
+  return data;
+}
+
+export async function updateWebCrawlSite(
+  kbId: number,
+  siteId: number,
+  body: Partial<{
+    name: string;
+    baseUrl: string;
+    schedulePreset: string;
+    runAtTime: string;
+    enabled: boolean;
+    syncMode: string;
+    maxDepth: number;
+    filterCrawled: boolean;
+    categoryId: number;
+    chunkStrategy: number;
+    extractConfig: RagWebCrawlExtractConfig;
+  }>,
+): Promise<RagWebCrawlSiteRow> {
+  const { data } = await http.put<RagWebCrawlSiteRow>(`${ragKbWithKbId(kbId)}/web-crawl/sites/${siteId}`, body);
+  return data;
+}
+
+export async function deleteWebCrawlSite(kbId: number, siteId: number): Promise<void> {
+  await http.delete(`${ragKbWithKbId(kbId)}/web-crawl/sites/${siteId}`);
+}
+
+export async function runWebCrawlSiteNow(kbId: number, siteId: number): Promise<void> {
+  await http.post(`${ragKbWithKbId(kbId)}/web-crawl/sites/${siteId}/run`);
+}
+
+export async function submitLocalSiteCrawl(
+  kbId: number,
+  body: {
+    baseUrl: string;
+    syncMode?: string;
+    maxDepth?: number;
+    filterCrawled?: boolean;
+    chunkStrategy?: number;
+    categoryId?: number;
+    asyncJob?: boolean;
+  },
+): Promise<{ accepted: boolean }> {
+  const { data } = await http.post<{ accepted: boolean }>(`${ragKbWithKbId(kbId)}/web-crawl/local`, body);
+  return data;
+}
+
+export type RagIngestAnalyzeResult = {
+  suggestParentChild: boolean;
+  charCount: number;
+  majorHeadingCount: number;
+  minorHeadingCount: number;
+  reasons: string[];
+};
+
+/** 子母分片策略 code，与后端 {@link RagChunkStrategy#PARENT_CHILD} 一致。 */
+export const RAG_CHUNK_STRATEGY_PARENT_CHILD = 4;
+
+export async function analyzeIngestUpload(kbId: number, file: File): Promise<RagIngestAnalyzeResult> {
+  const form = new FormData();
+  form.append("file", file);
+  const { data } = await http.post<RagIngestAnalyzeResult>(
+    `${ragKbWithKbId(kbId)}/ingest/analyze-upload`,
+    form,
+  );
+  return data;
+}
+
+export async function analyzeIngestMarkdown(
+  kbId: number,
+  markdownContent: string,
+): Promise<RagIngestAnalyzeResult> {
+  const { data } = await http.post<RagIngestAnalyzeResult>(`${ragKbWithKbId(kbId)}/ingest/analyze`, {
+    markdownContent,
+  });
+  return data;
+}
+
 export async function uploadRagKbDocument(
   kbId: number,
   file: File,
   chunkStrategy?: number,
+  categoryId?: number,
 ): Promise<{ documentId: number; chunkCount: number }> {
   const form = new FormData();
   form.append("file", file);
   if (chunkStrategy != null) {
     form.append("chunkStrategy", String(chunkStrategy));
+  }
+  if (categoryId != null) {
+    form.append("categoryId", String(categoryId));
   }
   const { data } = await http.post<{ documentId: number; chunkCount: number }>(
     `${ragKbWithKbId(kbId)}/documents/upload`,

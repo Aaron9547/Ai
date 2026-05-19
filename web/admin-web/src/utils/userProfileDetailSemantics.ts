@@ -1,4 +1,6 @@
 /** 管理端 `GET /api/v1/admin/user-profiles/{userId}` 详情 JSON 的归一化形态（对齐后端 UserProfileAdminApplicationService）。 */
+import { i18n } from "@/i18n";
+
 export interface AdminUserProfileDetail {
   userId: number;
   loginName: string;
@@ -20,23 +22,24 @@ export interface AdminRecentMemoryChunk {
   createdAt: string | null;
 }
 
-/** 画像标签（库表 tag_code）→ 中文标题 */
+function pt(key: string, fallback?: string): string {
+  const msg = i18n.global.t(key);
+  return msg === key && fallback != null ? fallback : String(msg);
+}
+
+/** 画像标签（库表 tag_code）→ 展示标题 */
 export function profileTagTitle(code: string): string {
   const c = (code ?? "").trim();
-  if (c === "TURN_COUNT") return "累计发言轮次";
-  if (c === "LAST_USER_EXCERPT") return "最近用户输入摘要";
-  return c || "（未命名标签）";
+  if (c === "TURN_COUNT") return pt("views.profiles.tags.TURN_COUNT.title");
+  if (c === "LAST_USER_EXCERPT") return pt("views.profiles.tags.LAST_USER_EXCERPT.title");
+  return c || pt("views.profiles.tags._unknownTitle");
 }
 
 export function profileTagDescription(code: string): string {
   const c = (code ?? "").trim();
-  if (c === "TURN_COUNT") {
-    return "该用户在当前租户下、跨会话累计的用户侧发言次数（非单条消息条数）。";
-  }
-  if (c === "LAST_USER_EXCERPT") {
-    return "最近一次用户输入的短摘要，用于跨会话上下文。";
-  }
-  return "系统画像标签，原始编码见「标签编码」列。";
+  if (c === "TURN_COUNT") return pt("views.profiles.tags.TURN_COUNT.desc");
+  if (c === "LAST_USER_EXCERPT") return pt("views.profiles.tags.LAST_USER_EXCERPT.desc");
+  return pt("views.profiles.tags._genericDesc");
 }
 
 /** 长期记忆抽象 JSON 常见顶层字段（与 memory_abstract_v2 提示词 schema 对齐） */
@@ -52,23 +55,17 @@ const MEMORY_ABSTRACT_KEY_ORDER = [
 
 export function memoryAbstractKeyLabel(key: string): string {
   const k = (key ?? "").trim();
-  const map: Record<string, string> = {
-    schema_version: "数据结构版本",
-    working_summary: "近期情景摘要",
-    episodic_hooks: "短期话题钩子",
-    stable_facts: "长期稳定事实",
-    profile_delta: "画像结构化增量",
-    forget_candidates: "建议遗忘条目",
-    merge_notes: "合并说明（给模型/运营）",
-  };
-  return map[k] ?? k;
+  const i18nKey = `views.profiles.abstractKeys.${k}`;
+  const translated = i18n.global.t(i18nKey);
+  if (translated !== i18nKey) return String(translated);
+  return k;
 }
 
 export function chunkRoleLabel(role: string): string {
   const r = (role ?? "").trim().toUpperCase();
-  if (r === "USER") return "用户";
-  if (r === "ASSISTANT") return "助手";
-  return role || "—";
+  if (r === "USER") return pt("views.profiles.chunkRoles.USER");
+  if (r === "ASSISTANT") return pt("views.profiles.chunkRoles.ASSISTANT");
+  return role || pt("common.dash", "—");
 }
 
 export function normalizeAdminUserProfileDetail(data: unknown): AdminUserProfileDetail {
@@ -172,7 +169,7 @@ export function sortedObjectEntries(obj: Record<string, unknown>): [string, unkn
 
 /** 对象嵌套值在表格/描述列表中的展示：基本类型直接转字符串，对象/数组转 JSON。 */
 export function formatLeafForAdmin(v: unknown): string {
-  if (v === null || v === undefined) return "—";
+  if (v === null || v === undefined) return pt("common.dash", "—");
   if (typeof v === "object") return JSON.stringify(v);
   return String(v);
 }

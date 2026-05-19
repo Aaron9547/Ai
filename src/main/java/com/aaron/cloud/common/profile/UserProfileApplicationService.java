@@ -21,6 +21,8 @@ import org.springframework.stereotype.Service;
 public class UserProfileApplicationService {
 
     private final TenProfileTagRepository tenProfileTagRepository;
+    private final TenUserMemoryChunkRepository tenUserMemoryChunkRepository;
+    private final TenUserMemoryAbstractRepository tenUserMemoryAbstractRepository;
     private final UserMemoryApplicationService userMemoryApplicationService;
 
     /** 用户发言落库后调用：跨会话累加主体发言计数、记录最近一条输入摘要；并写入具体层记忆片段。 */
@@ -52,30 +54,46 @@ public class UserProfileApplicationService {
     }
 
     /**
-     * 拼入首条 system 前的短摘要；无数据时返回空串。字段含义须与模型可读性一致：计数为<strong>跨会话历史累计</strong>，勿与会话内轮次混淆。
+     * 拼入首条 system 前的短摘要；无数据时返回空串。
+     *
+     * <p>{@link ProfileTagCode#TURN_COUNT} 仅用于管理端展示，<strong>不注入模型</strong>，避免思考链误读为「用户问过多次」。
      *
      * @param recallQuery 当前用户输入，用于具体层记忆的关键词召回（无命中时附最近片段）。
+     * @param currentWindowHasNoPriorTurns 当前聊天窗口在提示词中是否尚无历史轮次；为 true 时不注入易引发「您之前问过」误解的摘录类字段。
      */
-    public String buildPromptAddendum(TenantSnapshot snap, String recallQuery) {
+    public String buildPromptAddendum(
+            TenantSnapshot snap, String recallQuery, boolean currentWindowHasNoPriorTurns) {
         String subjectKey = ProfileSubjectKey.fromSnapshot(snap);
         if (subjectKey == null) {
             return "";
         }
         long tenantId = snap.getTenantId();
+        // 访客 + 新会话首轮 + 库中无任何该设备主体数据 → 不应注入跨会话块（新浏览器新 deviceId 场景）
+        if (snap.getUserId() == null
+                && currentWindowHasNoPriorTurns
+                && !subjectHasStoredProfile(tenantId, subjectKey)) {
+            log.debug(
+                    "profile addendum skipped: guest fresh window with no stored profile tenantId={} subject={}",
+                    tenantId,
+                    subjectKey);
+            return "";
+        }
         List<TenProfileTag> rows =
                 tenProfileTagRepository.listByTenantAndSubjectKey(tenantId, subjectKey);
         var tagJoiner = new StringJoiner("；");
-        for (TenProfileTag t : rows) {
-            if (t.getTagCode() == ProfileTagCode.TURN_COUNT) {
-                tagJoiner.add("累计发言约 " + t.getTagValue() + " 次（跨会话，非本会话轮数）");
-            } else if (t.getTagCode() == ProfileTagCode.LAST_USER_EXCERPT && !t.getTagValue().isBlank()) {
-                tagJoiner.add("最近输入摘要：" + t.getTagValue());
+        if (!currentWindowHasNoPriorTurns) {
+            for (TenProfileTag t : rows) {
+                if (t.getTagCode() == ProfileTagCode.LAST_USER_EXCERPT && !t.getTagValue().isBlank()) {
+                    tagJoiner.add("跨会话最近输入摘录（其它窗口）：" + t.getTagValue());
+                }
             }
         }
         String tagPart = tagJoiner.toString();
         String memoryPart =
                 userMemoryApplicationService.buildMemoryPromptSection(
-                        snap, recallQuery == null ? "" : recallQuery);
+                        snap,
+                        recallQuery == null ? "" : recallQuery,
+                        !currentWindowHasNoPriorTurns);
         if (tagPart.isBlank() && memoryPart.isBlank()) {
             return "";
         }
@@ -114,6 +132,19 @@ public class UserProfileApplicationService {
         } catch (NumberFormatException ex) {
             return defaultVal;
         }
+    }
+
+    private boolean subjectHasStoredProfile(long tenantId, String subjectKey) {
+        if (tenProfileTagRepository.countByTenantAndSubject(tenantId, subjectKey) > 0) {
+            return true;
+        }
+        if (tenUserMemoryChunkRepository.countByTenantAndSubject(tenantId, subjectKey) > 0) {
+            return true;
+        }
+        return tenUserMemoryAbstractRepository
+                .findByTenantAndSubject(tenantId, subjectKey)
+                .map(a -> a.getBodyJson() != null && !a.getBodyJson().isBlank())
+                .orElse(false);
     }
 
     private static String normalizeExcerpt(String utterance) {

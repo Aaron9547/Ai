@@ -139,6 +139,9 @@ export interface RagChunkAdminRow {
   contentLength?: number;
   /** 对话 RAG 召回累计命中该分片的次数 */
   hitCount?: number;
+  parentChunkId?: number | null;
+  /** FLAT | PARENT | CHILD */
+  chunkRole?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
 }

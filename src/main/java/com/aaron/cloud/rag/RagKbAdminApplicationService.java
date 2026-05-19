@@ -1,6 +1,9 @@
 package com.aaron.cloud.rag;
 
+import com.aaron.cloud.common.api.dto.RagCitationHit;
 import com.aaron.cloud.common.api.ports.RagEmbeddingPort;
+import com.aaron.cloud.common.api.ports.RagQueryPort;
+import com.aaron.cloud.common.config.properties.AiRagProperties;
 import com.aaron.cloud.common.api.enums.LlmModelKind;
 import com.aaron.cloud.common.api.enums.LlmModelStatus;
 import com.aaron.cloud.common.api.enums.ToggleState;
@@ -16,6 +19,7 @@ import com.aaron.cloud.common.rag.RagChunkRepository;
 import com.aaron.cloud.common.rag.RagDocumentRepository;
 import com.aaron.cloud.common.rag.RagKbDocumentCategoryRepository;
 import com.aaron.cloud.common.rag.RagKnowledgeBaseRepository;
+import com.aaron.cloud.common.rag.RagWebCrawlUrlItemRepository;
 import com.aaron.cloud.common.rag.entity.LnkRagDocumentChunk;
 import com.aaron.cloud.common.rag.entity.RagChunk;
 import com.aaron.cloud.common.rag.entity.RagDocument;
@@ -31,17 +35,21 @@ import com.aaron.cloud.rag.dto.RagKbAdminDtos.FileIngestJobRequest;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.PatchRagDocumentRequest;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.CreateRagChunkRequest;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.RagChunkAdminView;
+import com.aaron.cloud.rag.dto.RagKbAdminDtos.RagDocumentChunksListResponse;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.RagChunkPatchRequest;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.RagChunkUpdateRequest;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.RagDocumentAdminView;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.RagDocumentCategoryAdminView;
+import com.aaron.cloud.rag.dto.RagKbAdminDtos.IngestAnalyzeView;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.RagDocumentUploadResponse;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.RagKbAdminView;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.RagKbSettingsPatchRequest;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.UpdateRagDocumentCategoryRequest;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.UpdateRagKbRequest;
+import com.aaron.cloud.rag.dto.RagKbAdminDtos.RagRetrievalTestHitView;
+import com.aaron.cloud.rag.dto.RagKbAdminDtos.RagRetrievalTestRequest;
+import com.aaron.cloud.rag.dto.RagKbAdminDtos.RagRetrievalTestView;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.UrlImportJobRequest;
-import java.io.InputStream;
 import java.net.URI;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -55,10 +63,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
-import org.apache.tika.metadata.Metadata;
-import org.apache.tika.parser.AutoDetectParser;
-import org.apache.tika.parser.ParseContext;
-import org.apache.tika.sax.BodyContentHandler;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -70,7 +74,6 @@ public class RagKbAdminApplicationService {
 
     private static final DateTimeFormatter ISO = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
     private static final int UPLOAD_MAX_BYTES = 8_000_000;
-    private static final int TIKA_MAX_CHARS = 5_000_000;
 
     private final RagKnowledgeBaseRepository ragKnowledgeBaseRepository;
     private final LnkRagKbDocumentRepository lnkRagKbDocumentRepository;
@@ -86,7 +89,12 @@ public class RagKbAdminApplicationService {
     private final SecUserAccountRepository secUserAccountRepository;
     private final RagVectorInfrastructure ragVectorInfrastructure;
     private final RagKbVectorModelGuard ragKbVectorModelGuard;
+    private final RagQueryPort ragQueryPort;
+    private final AiRagProperties aiRagProperties;
     private final SysTenantRepository sysTenantRepository;
+    private final RagIngestPreviewApplicationService ragIngestPreviewApplicationService;
+    private final RagDocumentChunkPurgeService ragDocumentChunkPurgeService;
+    private final RagWebCrawlUrlItemRepository ragWebCrawlUrlItemRepository;
 
     /**
      * 与 {@code /admin/rag-kbs/{tenantCode}/...} 对齐：路径中的租户编码须与当前 {@link TenantContextHolder} 对应行的
@@ -117,6 +125,47 @@ public class RagKbAdminApplicationService {
     /** 绠＄悊绔睍绀猴細鏄惁宸叉帴鍏?Milvus锛堜笌 {@code ai.providers.vector-store} 涓€鑷达級銆?*/
     public boolean ragCapabilitiesVectorMilvus() {
         return ragVectorInfrastructure.isMilvusVectorStore();
+    }
+
+    /**
+     * 管理端：按当前 {@code ai.rag.retrieval-mode} 对指定知识库做检索试跑（与对话 RAG 同路径）。
+     */
+    public RagRetrievalTestView testRetrieval(long kbId, RagRetrievalTestRequest req) {
+        ragVectorInfrastructure.assertMilvusOrThrow();
+        long tenantId = TenantContextHolder.require().getTenantId();
+        requireKb(kbId, tenantId);
+        ragKbVectorModelGuard.assertKbHasVectorEmbeddingModel(tenantId, kbId);
+        String query = req.getQuery() == null ? "" : req.getQuery().trim();
+        if (query.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "query required");
+        }
+        int topK = req.getTopK() == null ? 8 : req.getTopK();
+        if (topK < 1) {
+            topK = 1;
+        }
+        if (topK > 20) {
+            topK = 20;
+        }
+        List<RagCitationHit> hits = ragQueryPort.searchCitationHits(tenantId, kbId, query, topK);
+        List<String> snippets = ragQueryPort.searchSnippets(tenantId, kbId, query, topK);
+        List<RagRetrievalTestHitView> hitViews =
+                hits.stream()
+                        .map(
+                                h ->
+                                        new RagRetrievalTestHitView(
+                                                h.documentId(),
+                                                h.documentTitle(),
+                                                h.chunkId(),
+                                                h.chunkSeq(),
+                                                h.contentPreview()))
+                        .toList();
+        return new RagRetrievalTestView(
+                aiRagProperties.resolvedRetrievalMode().getStorageValue(),
+                query,
+                topK,
+                hitViews.size(),
+                hitViews,
+                snippets);
     }
 
     public RagKbAdminView create(CreateRagKbRequest req) {
@@ -355,27 +404,32 @@ public class RagKbAdminApplicationService {
         if (doc == null || Objects.equals(doc.getDeleted(), 1)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "document not found");
         }
-        List<LnkRagDocumentChunk> links = lnkRagDocumentChunkRepository.listByDocumentId(documentId);
-        List<Long> chunkIds = links.stream().map(LnkRagDocumentChunk::getChunkId).toList();
-        List<String> refs = new ArrayList<>();
-        for (Long cid : chunkIds) {
-            RagChunk ch = ragChunkRepository.findByIdAndTenant(cid, tenantId);
-            if (ch != null && ch.getEmbeddingRef() != null && !ch.getEmbeddingRef().isBlank()) {
-                refs.add(ch.getEmbeddingRef());
-            }
-        }
-        vectorStorePort.deleteChunkVectors(tenantId, "kb_" + kbId, refs);
-        if (!chunkIds.isEmpty()) {
-            ragChunkRepository.markDeleted(tenantId, chunkIds);
-        }
-        lnkRagDocumentChunkRepository.deleteByDocumentId(documentId);
+        ragDocumentChunkPurgeService.purgeAllChunksForDocument(tenantId, kbId, documentId);
+        ragWebCrawlUrlItemRepository.markDeletedByDocumentIds(tenantId, List.of(documentId));
         lnkRagKbDocumentRepository.deleteLink(kbId, documentId);
         doc.setDeleted(1);
         doc.setDeletedAt(BeijingTime.nowLocal());
         ragDocumentRepository.updateById(doc);
     }
 
-    public List<RagChunkAdminView> listChunks(long kbId, long documentId) {
+    public RagDocumentChunksListResponse listChunks(long kbId, long documentId) {
+        List<RagChunkAdminView> views = listChunkViews(kbId, documentId);
+        int parents = 0;
+        int children = 0;
+        int flat = 0;
+        for (RagChunkAdminView v : views) {
+            String role = v.chunkRole() != null ? v.chunkRole() : "FLAT";
+            switch (role) {
+                case "PARENT" -> parents++;
+                case "CHILD" -> children++;
+                default -> flat++;
+            }
+        }
+        boolean parentChild = children > 0 || parents > 0;
+        return new RagDocumentChunksListResponse(views, parentChild, parents, children, flat);
+    }
+
+    private List<RagChunkAdminView> listChunkViews(long kbId, long documentId) {
         long tenantId = TenantContextHolder.require().getTenantId();
         requireKb(kbId, tenantId);
         if (!lnkRagKbDocumentRepository.existsKbDocument(kbId, documentId)) {
@@ -455,13 +509,31 @@ public class RagKbAdminApplicationService {
         if (!linked) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "chunk not linked to document");
         }
-        String ref =
-                ch.getEmbeddingRef() != null && !ch.getEmbeddingRef().isBlank()
-                        ? ch.getEmbeddingRef()
-                        : String.valueOf(ch.getId());
-        vectorStorePort.deleteChunkVectors(tenantId, "kb_" + kbId, List.of(ref));
-        lnkRagDocumentChunkRepository.deleteByDocumentIdAndChunkId(documentId, chunkId);
-        ragChunkRepository.markDeleted(tenantId, List.of(chunkId));
+        List<Long> toDelete = new ArrayList<>();
+        toDelete.add(chunkId);
+        if (ch.getParentChunkId() == null
+                && ch.getRetrievalEnabled() == RagChunkRetrievalEnabled.DISABLED) {
+            toDelete.addAll(ragChunkRepository.listChildChunkIds(tenantId, chunkId));
+        }
+        List<String> refs = new ArrayList<>();
+        for (Long id : toDelete) {
+            RagChunk row = ragChunkRepository.findByIdAndTenant(id, tenantId);
+            if (row == null || Objects.equals(row.getDeleted(), 1)) {
+                continue;
+            }
+            String ref =
+                    row.getEmbeddingRef() != null && !row.getEmbeddingRef().isBlank()
+                            ? row.getEmbeddingRef()
+                            : String.valueOf(row.getId());
+            if (row.getRetrievalEnabled() == RagChunkRetrievalEnabled.ENABLED) {
+                refs.add(ref);
+            }
+            lnkRagDocumentChunkRepository.deleteByDocumentIdAndChunkId(documentId, id);
+        }
+        if (!refs.isEmpty()) {
+            vectorStorePort.deleteChunkVectors(tenantId, "kb_" + kbId, refs);
+        }
+        ragChunkRepository.markDeleted(tenantId, toDelete);
         resequenceDocumentChunks(documentId);
     }
 
@@ -505,7 +577,7 @@ public class RagKbAdminApplicationService {
         long tenantId = TenantContextHolder.require().getTenantId();
         requireKb(kbId, tenantId);
         ragKbVectorModelGuard.assertKbHasVectorEmbeddingModel(tenantId, kbId);
-        List<RagChunkAdminView> ordered = listChunks(kbId, documentId);
+        List<RagChunkAdminView> ordered = listChunkViews(kbId, documentId);
         int idx = -1;
         for (int i = 0; i < ordered.size(); i++) {
             if (ordered.get(i).id() == chunkId) {
@@ -601,6 +673,7 @@ public class RagKbAdminApplicationService {
                 c.getRetrievalEnabled() != null ? c.getRetrievalEnabled() : RagChunkRetrievalEnabled.ENABLED;
         String content = c.getContent() != null ? c.getContent() : "";
         long hits = c.getHitCount() == null ? 0L : c.getHitCount();
+        String role = resolveChunkRole(c);
         return new RagChunkAdminView(
                 c.getId(),
                 seq,
@@ -609,11 +682,24 @@ public class RagKbAdminApplicationService {
                 en.getApiCode(),
                 content.length(),
                 hits,
+                c.getParentChunkId(),
+                role,
                 c.getCreatedAt() != null ? ISO.format(c.getCreatedAt()) : null,
                 c.getUpdatedAt() != null ? ISO.format(c.getUpdatedAt()) : null);
     }
 
-    public RagDocumentUploadResponse uploadDocument(long kbId, MultipartFile file, Integer chunkStrategy)
+    private static String resolveChunkRole(RagChunk c) {
+        if (c.getParentChunkId() != null) {
+            return "CHILD";
+        }
+        if (c.getRetrievalEnabled() == RagChunkRetrievalEnabled.DISABLED) {
+            return "PARENT";
+        }
+        return "FLAT";
+    }
+
+    public RagDocumentUploadResponse uploadDocument(
+            long kbId, MultipartFile file, Integer chunkStrategy, Long categoryId)
             throws Exception {
         ragVectorInfrastructure.assertMilvusOrThrow();
         long tenantId = TenantContextHolder.require().getTenantId();
@@ -626,12 +712,8 @@ public class RagKbAdminApplicationService {
             throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "file too large");
         }
         String extracted;
-        try (InputStream in = file.getInputStream()) {
-            AutoDetectParser parser = new AutoDetectParser();
-            BodyContentHandler handler = new BodyContentHandler(TIKA_MAX_CHARS);
-            Metadata meta = new Metadata();
-            parser.parse(in, handler, meta, new ParseContext());
-            extracted = handler.toString();
+        try {
+            extracted = RagUploadTextExtractor.extractFromMultipart(file);
         } catch (Exception e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "failed to parse file: " + e.getMessage());
         }
@@ -641,7 +723,7 @@ public class RagKbAdminApplicationService {
         String name = file.getOriginalFilename() != null ? file.getOriginalFilename() : "upload";
         RagIngestOrchestrationService.PersistResult pr =
                 ragIngestOrchestrationService.ingestUploadedMarkdownSync(
-                        tenantId, kbId, extracted.trim(), name, chunkStrategy);
+                        tenantId, kbId, extracted, name, chunkStrategy, categoryId);
         return new RagDocumentUploadResponse(pr.documentId(), pr.chunkCount());
     }
 
@@ -658,7 +740,37 @@ public class RagKbAdminApplicationService {
         requireKb(kbId, tenantId);
         String url = body.getUrl().trim();
         assertHttpUrl(url);
-        return ragApplicationService.enqueueUrlImportJob(kbId, url, body.getChunkStrategy());
+        return ragApplicationService.enqueueUrlImportJob(
+                kbId, url, body.getChunkStrategy(), body.getCategoryId());
+    }
+
+    public com.aaron.cloud.rag.dto.RagKbAdminDtos.ChunkPreviewView previewIngestChunks(
+            long kbId, com.aaron.cloud.rag.dto.RagKbAdminDtos.ChunkPreviewRequest body) {
+        long tenantId = TenantContextHolder.require().getTenantId();
+        requireKb(kbId, tenantId);
+        return ragIngestPreviewApplicationService.preview(tenantId, kbId, body);
+    }
+
+    public IngestAnalyzeView analyzeIngestContent(String markdown) {
+        var r = RagDocumentChunkProfileAnalyzer.analyze(markdown);
+        return new IngestAnalyzeView(
+                r.suggestParentChild(),
+                r.charCount(),
+                r.majorHeadingCount(),
+                r.minorHeadingCount(),
+                r.reasons());
+    }
+
+    public IngestAnalyzeView analyzeIngestUpload(long kbId, MultipartFile file) throws Exception {
+        requireKb(kbId, TenantContextHolder.require().getTenantId());
+        if (file == null || file.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "empty file");
+        }
+        String extracted = RagUploadTextExtractor.extractFromMultipart(file);
+        if (extracted.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "no extractable text");
+        }
+        return analyzeIngestContent(extracted);
     }
 
     public long enqueueFileImportJob(long kbId, FileIngestJobRequest body) throws Exception {
@@ -670,7 +782,8 @@ public class RagKbAdminApplicationService {
                 body.getOriginalFilename(),
                 body.getContentType(),
                 body.getMarkdownContent(),
-                body.getChunkStrategy());
+                body.getChunkStrategy(),
+                body.getCategoryId());
     }
 
     private static void assertHttpUrl(String url) {

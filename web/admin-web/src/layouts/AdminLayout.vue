@@ -131,7 +131,10 @@
         </el-sub-menu>
 
         <!-- 6. 本租户业务开关类参数（与平台级菜单/租户 CRUD 区分） -->
-        <el-sub-menu v-if="menuAllowed('SYSTEM_SETTINGS')" index="grp-tenant-settings">
+        <el-sub-menu
+          v-if="menuAllowed('SYSTEM_SETTINGS') || menuAllowed('SCHEDULED_TASKS')"
+          index="grp-tenant-settings"
+        >
           <template #title>
             <el-icon><Tools /></el-icon>
             <span>{{ t("admin.menu.tenantSettings") }}</span>
@@ -143,6 +146,10 @@
           <el-menu-item index="/system/tenant-shell-config">
             <el-icon><Picture /></el-icon>
             <span>{{ t("admin.menu.tenantShell") }}</span>
+          </el-menu-item>
+          <el-menu-item v-if="menuAllowed('SCHEDULED_TASKS')" index="/system/scheduled-tasks">
+            <el-icon><Timer /></el-icon>
+            <span>{{ t("admin.menu.scheduledTasks") }}</span>
           </el-menu-item>
         </el-sub-menu>
 
@@ -240,6 +247,7 @@ import {
   Promotion,
   Reading,
   Setting,
+  Timer,
   Tools,
   TrendCharts,
   User,

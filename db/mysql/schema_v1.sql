@@ -131,8 +131,8 @@ CREATE TABLE IF NOT EXISTS rag_knowledge_base (
   id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
   tenant_id BIGINT NOT NULL COMMENT '租户隔离键',
   name VARCHAR(255) NOT NULL COMMENT '知识库名称',
-  default_chunk_strategy SMALLINT NOT NULL DEFAULT 1 COMMENT 'RagChunkStrategy：0=NONE 1=FIXED_CHAR 2=SEMANTIC 3=SLIDING_WINDOW 99=CUSTOM',
-  chunk_fixed_chars INT NOT NULL DEFAULT 800 COMMENT '固定字数分片目标长度',
+  default_chunk_strategy SMALLINT NOT NULL DEFAULT 2 COMMENT 'RagChunkStrategy：0=NONE 1=FIXED_CHAR 2=SEMANTIC 3=SLIDING_WINDOW 4=PARENT_CHILD',
+  chunk_fixed_chars INT NOT NULL DEFAULT 1000 COMMENT '固定/语义分片目标长度（字符）',
   chunk_slide_overlap INT NOT NULL DEFAULT 120 COMMENT '滑动窗口重叠字符数',
   assigned_llm_model_id BIGINT NULL COMMENT '绑定的租户可配模型 llm_model.id（对话侧 LANGUAGE）',
   assigned_embedding_model_id BIGINT NULL COMMENT '绑定的嵌入模型 llm_model.id（须 VECTOR；路径由 llm_model.integration_backend 决定）',
@@ -189,12 +189,14 @@ CREATE TABLE IF NOT EXISTS rag_chunk (
   content TEXT NOT NULL COMMENT '分块纯文本（用于检索/展示）',
   embedding_ref VARCHAR(128) NULL COMMENT '向量库侧引用 ID 或 collection+id',
   retrieval_enabled TINYINT NOT NULL DEFAULT 1 COMMENT 'RagChunkRetrievalEnabled：1=ENABLED 参与检索，0=DISABLED',
+  parent_chunk_id BIGINT NULL COMMENT '母分片 rag_chunk.id；NULL=顶层（母块或扁平分片）',
   hit_count BIGINT NOT NULL DEFAULT 0 COMMENT '对话 RAG 召回命中该分片的累计次数',
   created_at DATETIME(3) NOT NULL COMMENT '创建时间 UTC',
   updated_at DATETIME(3) NULL COMMENT '更新时间 UTC',
   PRIMARY KEY (id),
   KEY idx_rag_chunk_tenant (tenant_id),
-  KEY idx_rag_chunk_tenant_deleted (tenant_id, deleted)
+  KEY idx_rag_chunk_tenant_deleted (tenant_id, deleted),
+  KEY idx_rag_chunk_parent (tenant_id, parent_chunk_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='RAG 文本分块';
 
 CREATE TABLE IF NOT EXISTS lnk_rag_kb_document (
@@ -217,6 +219,62 @@ CREATE TABLE IF NOT EXISTS lnk_rag_document_chunk (
   UNIQUE KEY uk_lnk_rag_doc_chunk (document_id, chunk_id),
   KEY idx_lnk_rag_doc (document_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文档与分块多对多';
+
+-- ---------------------------------------------------------------------------
+-- RAG：网页爬取站点配置 / URL 追踪 / 租户定时调度注册
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS rag_web_crawl_site (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  tenant_id BIGINT NOT NULL COMMENT '租户隔离键',
+  kb_id BIGINT NOT NULL COMMENT 'rag_knowledge_base.id',
+  name VARCHAR(128) NOT NULL COMMENT '站点显示名',
+  base_url VARCHAR(2048) NOT NULL COMMENT '站点入口 URL',
+  enabled TINYINT NOT NULL DEFAULT 1 COMMENT 'ToggleState：0=OFF 1=ON',
+  schedule_preset VARCHAR(64) NOT NULL COMMENT 'ScheduledTaskIntervalPreset；0=仅手动',
+  run_at_time TIME NULL COMMENT '计划执行时刻（应用层按 Asia/Shanghai 解释）',
+  last_crawl_at DATETIME(3) NULL COMMENT '上次爬取完成时间 UTC',
+  first_run_done TINYINT NOT NULL DEFAULT 0 COMMENT '是否已完成首次计划执行',
+  category_id BIGINT NULL COMMENT 'rag_kb_document_category.id',
+  chunk_strategy SMALLINT NULL COMMENT 'RagChunkStrategy 覆盖；NULL=知识库默认',
+  sync_mode VARCHAR(64) NULL COMMENT 'RagWebCrawlSyncMode',
+  max_depth INT NULL DEFAULT 3 COMMENT '链接发现最大深度',
+  filter_crawled TINYINT NULL DEFAULT 1 COMMENT '是否跳过已爬 URL',
+  extract_config LONGTEXT NULL COMMENT '正文抽取 JSON（RagWebCrawlExtractConfig）',
+  created_at DATETIME(3) NOT NULL COMMENT '创建时间 UTC',
+  updated_at DATETIME(3) NOT NULL COMMENT '更新时间 UTC',
+  PRIMARY KEY (id),
+  KEY idx_rwcs_tenant_kb (tenant_id, kb_id, enabled),
+  KEY idx_rwcs_tenant_enabled (tenant_id, enabled)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='知识库站点定时爬取配置';
+
+CREATE TABLE IF NOT EXISTS rag_web_crawl_url_item (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  tenant_id BIGINT NOT NULL COMMENT '租户隔离键',
+  schedule_id BIGINT NOT NULL COMMENT 'rag_web_crawl_site.id（历史列名 schedule_id）',
+  url VARCHAR(768) NOT NULL COMMENT '已入库页面 URL',
+  document_id BIGINT NULL COMMENT 'rag_document.id',
+  deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除标记',
+  created_at DATETIME(3) NOT NULL COMMENT '创建时间 UTC',
+  PRIMARY KEY (id),
+  KEY idx_rag_wcui_schedule (tenant_id, schedule_id, deleted),
+  KEY idx_rag_wcui_url (tenant_id, url(191))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='网页爬取已入库 URL 子项';
+
+CREATE TABLE IF NOT EXISTS ten_scheduled_task (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  tenant_id BIGINT NOT NULL COMMENT '租户隔离键',
+  task_type VARCHAR(64) NOT NULL COMMENT '展示用任务类型（与 executor_code 对齐）',
+  name VARCHAR(128) NOT NULL COMMENT '任务显示名',
+  enabled TINYINT NOT NULL DEFAULT 1 COMMENT 'ToggleState：0=OFF 1=ON',
+  executor_code VARCHAR(64) NULL COMMENT 'TenantScheduledExecutorCode',
+  cron_expression VARCHAR(128) NULL COMMENT 'Spring 6 段 cron',
+  last_run_at DATETIME(3) NULL COMMENT '上次执行时间 UTC',
+  next_exec_at DATETIME(3) NULL COMMENT '下次计划执行 UTC',
+  created_at DATETIME(3) NOT NULL COMMENT '创建时间 UTC',
+  updated_at DATETIME(3) NOT NULL COMMENT '更新时间 UTC',
+  PRIMARY KEY (id),
+  KEY idx_tst_tenant_type (tenant_id, task_type, enabled)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='租户定时任务调度注册';
 
 -- ---------------------------------------------------------------------------
 -- 异步任务
@@ -708,6 +766,7 @@ CROSS JOIN (
     UNION ALL SELECT 'LLM_MODELS'
     UNION ALL SELECT 'MCP_SERVERS'
     UNION ALL SELECT 'RAG_KBS'
+    UNION ALL SELECT 'SCHEDULED_TASKS'
     UNION ALL SELECT 'FILE_OBJECTS'
     UNION ALL SELECT 'NOTIFICATIONS'
     UNION ALL SELECT 'EVAL_RUNS'
@@ -734,6 +793,7 @@ CROSS JOIN (
     UNION ALL SELECT 'LLM_MODELS'
     UNION ALL SELECT 'MCP_SERVERS'
     UNION ALL SELECT 'RAG_KBS'
+    UNION ALL SELECT 'SCHEDULED_TASKS'
     UNION ALL SELECT 'FILE_OBJECTS'
     UNION ALL SELECT 'NOTIFICATIONS'
     UNION ALL SELECT 'EVAL_RUNS'
@@ -758,6 +818,7 @@ INSERT IGNORE INTO sys_admin_menu_item (menu_code, title_zh, route_path, sort_or
 ('LLM_MODELS', '模型管理', '/model/llm-models', 60, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('MCP_SERVERS', 'MCP 服务', '/mcp/servers', 70, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('RAG_KBS', 'RAG 知识库', '/rag/knowledge-bases', 80, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('SCHEDULED_TASKS', '定时任务', '/system/scheduled-tasks', 42, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('FILE_OBJECTS', '文件对象', NULL, 90, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('NOTIFICATIONS', '通知订阅', NULL, 100, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('EVAL_RUNS', '评测运行', NULL, 110, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),

@@ -1,16 +1,14 @@
 <template>
   <el-dialog
     :model-value="modelValue"
-    :title="`本知识库异步任务 · ${kbName}`"
+    :title="t('views.kbAsync.title', { name: kbName })"
     width="920px"
     destroy-on-close
     class="kb-tasks-dlg"
     @update:model-value="emit('update:modelValue', $event)"
     @closed="onClosed"
   >
-    <p class="sub">
-      仅展示与当前知识库相关的网页抓取、文件入库、索引等后台任务。点「详情」可查看阶段时间线与入参摘要。
-    </p>
+    <p class="sub">{{ t("views.kbAsync.sub") }}</p>
 
     <div class="filters">
       <el-select
@@ -20,9 +18,10 @@
         style="width: 200px"
         @change="onFilterChange"
       >
-        <el-option label="知识库索引" value="RAG_INDEX" />
-        <el-option label="网页抓取入库" value="RAG_URL_IMPORT" />
-        <el-option label="文件 / Markdown 入库" value="RAG_FILE_IMPORT" />
+        <el-option :label="t('views.kbAsync.typeRagIndex')" value="RAG_INDEX" />
+        <el-option :label="t('views.kbAsync.typeUrlImport')" value="RAG_URL_IMPORT" />
+        <el-option :label="t('views.kbAsync.typeFileImport')" value="RAG_FILE_IMPORT" />
+        <el-option :label="t('views.kbAsync.typeSiteCrawl')" value="RAG_SITE_CRAWL" />
       </el-select>
       <el-button type="primary" plain :loading="loading" @click="load">刷新</el-button>
     </div>
@@ -30,12 +29,12 @@
     <el-table v-loading="loading" :data="rows" stripe border empty-text="暂无任务" highlight-current-row class="task-table">
       <el-table-column label="任务类型" width="140" show-overflow-tooltip>
         <template #default="{ row }">
-          {{ jobTaskTypeLabel(row.taskType) }}
+          {{ jobTaskTypeLabel(row.taskType, t) }}
         </template>
       </el-table-column>
       <el-table-column label="状态" width="100" align="center">
         <template #default="{ row }">
-          <el-tag :type="jobStatusMeta(row.status).tag" size="small">{{ jobStatusMeta(row.status).label }}</el-tag>
+          <el-tag :type="jobStatusMeta(row.status, t).tag" size="small">{{ jobStatusMeta(row.status, t).label }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="createdAt" label="创建时间" width="168">
@@ -50,7 +49,7 @@
       </el-table-column>
       <el-table-column label="结果摘要" min-width="180" show-overflow-tooltip>
         <template #default="{ row }">
-          {{ summarizeJobResult(row.resultJson) }}
+          {{ summarizeJobResult(row.resultJson, t) }}
         </template>
       </el-table-column>
       <el-table-column label="操作" width="88" fixed="right" align="center">
@@ -77,9 +76,9 @@
       <template v-if="detail">
         <el-descriptions :column="1" border size="small">
           <el-descriptions-item label="任务内部编号（排障）">{{ detail.id }}</el-descriptions-item>
-          <el-descriptions-item label="任务类型">{{ jobTaskTypeLabel(detail.taskType) }}</el-descriptions-item>
+          <el-descriptions-item label="任务类型">{{ jobTaskTypeLabel(detail.taskType, t) }}</el-descriptions-item>
           <el-descriptions-item label="状态">
-            <el-tag :type="jobStatusMeta(detail.status).tag" size="small">{{ jobStatusMeta(detail.status).label }}</el-tag>
+            <el-tag :type="jobStatusMeta(detail.status, t).tag" size="small">{{ jobStatusMeta(detail.status, t).label }}</el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="创建时间">{{ formatTime(detail.createdAt) }}</el-descriptions-item>
           <el-descriptions-item label="更新时间">{{ formatTime(detail.updatedAt) }}</el-descriptions-item>
@@ -103,9 +102,9 @@
               :timestamp="formatTime(s.at)"
               placement="top"
             >
-              <strong>{{ jobStepPhaseLabel(s.phase) }}</strong>
-              <span class="st"> · {{ jobStepStatusLabel(s.status) }}</span>
-              <div v-if="humanizeJobStepDetail(s.detail)" class="td">{{ humanizeJobStepDetail(s.detail) }}</div>
+              <strong>{{ jobStepPhaseLabel(s.phase, t) }}</strong>
+              <span class="st"> · {{ jobStepStatusLabel(s.status, t) }}</span>
+              <div v-if="humanizeJobStepDetail(s.detail, t)" class="td">{{ humanizeJobStepDetail(s.detail, t) }}</div>
             </el-timeline-item>
           </el-timeline>
         </div>
@@ -142,6 +141,7 @@
 <script setup lang="ts">
 import { ElMessage } from "element-plus";
 import { computed, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import * as jobApi from "../../../api/jobAdmin";
 import type { JobTaskAdminRow } from "../../../types/admin";
 import {
@@ -156,6 +156,8 @@ import {
   prettyJson,
   summarizeJobResult,
 } from "../../../utils/ragJobDisplay";
+
+const { t } = useI18n();
 
 const props = defineProps<{
   modelValue: boolean;
@@ -178,8 +180,8 @@ const detailOpen = ref(false);
 const detail = ref<JobTaskAdminRow | null>(null);
 const resultSteps = ref(parseResultSteps(undefined));
 
-const detailPayloadRows = computed(() => parseJobPayloadRows(detail.value?.payloadJson));
-const detailResultMeta = computed(() => parseJobResultMetaRows(detail.value?.resultJson));
+const detailPayloadRows = computed(() => parseJobPayloadRows(detail.value?.payloadJson, t));
+const detailResultMeta = computed(() => parseJobResultMetaRows(detail.value?.resultJson, t));
 
 watch(
   () => detail.value?.resultJson,

@@ -59,17 +59,17 @@ public class TravelCozeWorkflowClient {
                         .POST(HttpRequest.BodyPublishers.ofByteArray(multipartBody))
                         .build();
 
-        log.info("[意图链路][Coze] files/upload 请求 url={} fileName={} bytes={}", url, safeName, content.length);
+        log.info("[意图·Coze] 上传文件：{}，文件名 {}，大小 {} 字节", url, safeName, content.length);
         HttpResponse<String> resp = HTTP.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         int code = resp.statusCode();
         String raw = resp.body() == null ? "" : resp.body();
         if (code < 200 || code >= 300) {
             String preview = raw.length() > 512 ? raw.substring(0, 512) : raw;
-            log.warn("[意图链路][Coze] files/upload HTTP {} bodyPreview={}", code, preview);
+            log.warn("[意图·Coze] 上传文件 HTTP {}，响应摘要：{}", code, preview);
             throw new IllegalStateException("Coze files/upload HTTP " + code);
         }
         String fileId = parseCozeUploadFileId(raw);
-        log.info("[意图链路][Coze] files/upload 完成 cozeFileId={}", fileId);
+        log.info("[意图·Coze] 上传文件完成，Coze 文件编号 {}", fileId);
         return fileId;
     }
 
@@ -91,12 +91,12 @@ public class TravelCozeWorkflowClient {
                         .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body), StandardCharsets.UTF_8))
                         .build();
 
-        log.info("[意图链路][Coze] stream_run 请求 workflowId={} url={}", workflowId, url);
+        log.info("[意图·Coze] 执行工作流：编号 {}，地址 {}", workflowId, url);
         HttpResponse<InputStream> resp = HTTP.send(req, HttpResponse.BodyHandlers.ofInputStream());
         int code = resp.statusCode();
         if (code < 200 || code >= 300) {
             String errBody = readAllLimited(resp.body(), 4096);
-            log.warn("[意图链路][Coze] stream_run HTTP {} bodyPreview={}", code, errBody);
+            log.warn("[意图·Coze] 工作流 HTTP {}，响应摘要：{}", code, errBody);
             throw new IllegalStateException("Coze stream_run HTTP " + code);
         }
 
@@ -116,7 +116,7 @@ public class TravelCozeWorkflowClient {
             }
         }
         String out = TravelCozeResponseParser.extractWorkflowOutput(objectMapper, raw.toString());
-        log.info("[意图链路][Coze] stream_run 完成 workflowId={} outputLen={}", workflowId, out == null ? 0 : out.length());
+        log.info("[意图·Coze] 工作流完成：编号 {}，输出 {} 字", workflowId, out == null ? 0 : out.length());
         return out == null ? "" : out;
     }
 

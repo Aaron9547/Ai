@@ -27,6 +27,9 @@ public class RagChunk {
     /** 是否参与检索召回；禁用时不写入/可删除向量侧条目。 */
     private RagChunkRetrievalEnabled retrievalEnabled;
 
+    /** 子母分片时指向母块；母块与扁平分片为 null。 */
+    private Long parentChunkId;
+
     /** 对话 RAG 召回写入助手 meta 时对该分片的命中累计。 */
     private Long hitCount;
 

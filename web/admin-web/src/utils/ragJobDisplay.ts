@@ -10,6 +10,8 @@ export function jobTaskTypeLabel(taskType: string | null | undefined, t: Compose
       return String(t("views.kbAsync.jobTypes.RAG_URL_IMPORT"));
     case "RAG_FILE_IMPORT":
       return String(t("views.kbAsync.jobTypes.RAG_FILE_IMPORT"));
+    case "RAG_SITE_CRAWL":
+      return String(t("views.kbAsync.jobTypes.RAG_SITE_CRAWL"));
     default:
       return taskType?.trim() || String(t("common.dash"));
   }
@@ -23,6 +25,8 @@ export function jobTaskTypeShort(taskType: string | null | undefined, t: Compose
       return String(t("views.kbAsync.jobTypesShort.RAG_FILE_IMPORT"));
     case "RAG_INDEX":
       return String(t("views.kbAsync.jobTypesShort.RAG_INDEX"));
+    case "RAG_SITE_CRAWL":
+      return String(t("views.kbAsync.jobTypesShort.RAG_SITE_CRAWL"));
     default:
       return jobTaskTypeLabel(taskType, t);
   }
@@ -87,7 +91,7 @@ export function ragChunkStrategyLabel(code: number | string | null | undefined, 
     1: "views.kbAsync.chunkStrategy.1",
     2: "views.kbAsync.chunkStrategy.2",
     3: "views.kbAsync.chunkStrategy.3",
-    99: "views.kbAsync.chunkStrategy.99",
+    4: "views.kbAsync.chunkStrategy.4",
   };
   const path = map[n];
   if (path) return String(t(path));

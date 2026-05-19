@@ -70,3 +70,6 @@ http.interceptors.response.use(
     return Promise.reject(err);
   },
 );
+
+/** 兼容历史 `import http from '@/plugins/http'`（新代码请用命名导出 `{ http }`） */
+export default http;

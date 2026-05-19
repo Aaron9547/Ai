@@ -1,11 +1,14 @@
 <template>
-  <div class="page" v-loading="pageLoading">
+  <div class="page document-chunks-page" v-loading="pageLoading">
     <el-card shadow="never" class="panel">
       <template #header>
         <div class="hdr">
           <div>
-            <span class="title">分片管理</span>
-            <p class="sub">「{{ docTitle }}」— 按段落维护知识块；禁用后该分片不参与词法检索召回。</p>
+            <span class="title">{{ t("views.chunks.title") }}</span>
+            <p class="sub">
+              {{ t("views.chunks.sub", { doc: docTitle }) }}
+              <template v-if="hasParentChildChunks"> {{ t("views.chunks.subParentChild") }}</template>
+            </p>
           </div>
         </div>
       </template>
@@ -13,32 +16,52 @@
       <div class="dc-split">
       <section class="dc-main">
         <div class="dc-toolbar">
-          <el-input
-            v-model="chunkSearch"
-            class="dc-search"
-            clearable
-            placeholder="在分片内容中搜索…"
-            prefix-icon="Search"
-          />
-          <el-button type="primary" @click="openNewChunk">新增分段</el-button>
+          <div class="dc-toolbar-left">
+            <el-input
+              v-model="chunkSearch"
+              class="dc-search"
+              clearable
+              :placeholder="t('views.chunks.searchPh')"
+              prefix-icon="Search"
+            />
+            <div v-if="hasParentChildChunks" class="dc-view-mode">
+              <span class="dc-view-mode-label">{{ t("views.chunks.viewModeLabel") }}</span>
+              <el-radio-group v-model="chunkViewMode" size="small">
+                <el-radio-button value="retrieval">{{ t("views.chunks.viewRetrieval") }}</el-radio-button>
+                <el-radio-button value="all">{{ t("views.chunks.viewAll") }}</el-radio-button>
+              </el-radio-group>
+            </div>
+          </div>
+          <el-button type="primary" class="dc-toolbar-add" @click="openNewChunk">{{ t("views.chunks.newChunk") }}</el-button>
         </div>
 
         <el-empty
           v-if="!pageLoading && !filteredChunks.length"
-          description="暂无分片，或没有匹配当前关键词的分片"
+          :description="t('views.chunks.empty')"
           :image-size="72"
         />
 
         <div v-else class="dc-grid">
-          <article v-for="row in pagedChunks" :key="row.id" class="chunk-card">
+          <article
+            v-for="row in pagedChunks"
+            :key="row.id"
+            class="chunk-card"
+            :class="{ 'chunk-card--parent': isParentChunk(row) }"
+          >
             <header class="chunk-card-hdr">
-              <span class="chunk-seq">片段 {{ row.seq + 1 }} / {{ chunks.length }}</span>
-              <span class="chunk-hit" title="对话 RAG 召回命中该分片的累计次数">命中 {{ row.hitCount ?? 0 }}</span>
+              <span class="chunk-seq">
+                <el-tag v-if="effectiveChunkRole(row) === 'PARENT'" type="info" size="small" class="chunk-role-tag">{{ t("views.chunks.roleParent") }}</el-tag>
+                <el-tag v-else-if="effectiveChunkRole(row) === 'CHILD'" type="success" size="small" class="chunk-role-tag">{{ t("views.chunks.roleChild") }}</el-tag>
+                {{ t("views.chunks.seq", { n: displaySeq(row), total: displayTotal(row) }) }}
+              </span>
+              <span class="chunk-hit" :title="t('views.chunks.hitTitle')">{{ t("views.chunks.hitLabel", { n: row.hitCount ?? 0 }) }}</span>
+              <span v-if="isParentChunk(row)" class="chunk-parent-hint">{{ t("views.chunks.parentContextOnly") }}</span>
               <el-switch
+                v-else
                 :model-value="isChunkEnabled(row)"
                 inline-prompt
-                active-text="启用"
-                inactive-text="禁用"
+                :active-text="t('views.chunks.enable')"
+                :inactive-text="t('views.chunks.disable')"
                 style="--el-switch-on-color: #16a34a; --el-switch-off-color: var(--el-text-color-placeholder)"
                 :loading="toggleLoadingId === row.id"
                 @change="(v: string | number | boolean) => onToggleRetrieval(row, Boolean(v))"
@@ -57,7 +80,12 @@
               </el-dropdown>
             </header>
             <button type="button" class="chunk-body" @click="openEditChunk(row)">
-              <p class="chunk-text">
+              <div
+                v-if="shouldRenderChunkMarkdown(row)"
+                class="chunk-text chunk-md"
+                v-html="chunkMarkdownHtml(row.content)"
+              />
+              <p v-else class="chunk-text">
                 <template v-for="(seg, i) in highlightSegments(row.content)" :key="i">
                   <mark v-if="seg.hl" class="chunk-hl">{{ seg.t }}</mark>
                   <template v-else>{{ seg.t }}</template>
@@ -65,7 +93,7 @@
               </p>
             </button>
             <footer class="chunk-ft">
-              <span>{{ charCount(row) }} 字</span>
+              <span>{{ t("views.chunks.chars", { n: charCount(row) }) }}</span>
             </footer>
           </article>
         </div>
@@ -117,11 +145,18 @@
     </div>
     </el-card>
 
-    <el-dialog v-model="editDlg" title="编辑分片" width="720px" destroy-on-close @closed="editingRow = null">
-      <el-input v-model="editText" type="textarea" :rows="16" />
+    <el-dialog v-model="editDlg" :title="t('views.chunks.dlgEditChunk')" width="800px" destroy-on-close @closed="onEditDlgClosed">
+      <el-tabs v-model="editTab" class="chunk-edit-tabs">
+        <el-tab-pane :label="t('views.chunks.tabChunkPreview')" name="preview">
+          <div class="chunk-edit-preview chunk-md" v-html="editMarkdownHtml" />
+        </el-tab-pane>
+        <el-tab-pane :label="t('views.chunks.tabSource')" name="source">
+          <el-input v-model="editText" type="textarea" :rows="16" class="chunk-edit-source" />
+        </el-tab-pane>
+      </el-tabs>
       <template #footer>
-        <el-button @click="editDlg = false">取消</el-button>
-        <el-button type="primary" :loading="editSaving" @click="saveEdit">保存</el-button>
+        <el-button @click="editDlg = false">{{ t("common.cancel") }}</el-button>
+        <el-button type="primary" :loading="editSaving" @click="saveEdit">{{ t("common.save") }}</el-button>
       </template>
     </el-dialog>
 
@@ -156,8 +191,10 @@
 import { UploadFilled } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, onMounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import * as ragApi from "../../api/ragAdmin";
+import { renderMarkdownToSafeHtml } from "../../utils/renderMarkdown";
 import type {
   RagChunkAdminRow,
   RagDocumentAdminRow,
@@ -165,6 +202,7 @@ import type {
   RagKnowledgeBaseRow,
 } from "../../types/admin";
 
+const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 
@@ -175,22 +213,56 @@ const pageLoading = ref(true);
 const kbRow = ref<RagKnowledgeBaseRow | null>(null);
 const doc = ref<RagDocumentAdminRow | null>(null);
 const chunks = ref<RagChunkAdminRow[]>([]);
+/** 后端根据 parentChunkId / chunkRole 判定的子母结构 */
+const chunksParentChildFromApi = ref(false);
 const categories = ref<RagDocumentCategoryAdminRow[]>([]);
 
 const chunkSearch = ref("");
+/** retrieval=默认隐藏母块；all=展示母块上下文 */
+const chunkViewMode = ref<"retrieval" | "all">("retrieval");
 const chunkPage = ref(1);
 const chunkPageSize = 12;
 const PAGER_MIN_TOTAL = 20;
 
+type ChunkRoleKind = "PARENT" | "CHILD" | "FLAT";
+
+function effectiveChunkRole(row: RagChunkAdminRow): ChunkRoleKind {
+  const role = row.chunkRole;
+  if (role === "PARENT" || role === "CHILD" || role === "FLAT") return role;
+  if (row.parentChunkId != null) return "CHILD";
+  if (chunks.value.some((c) => c.parentChunkId === row.id)) return "PARENT";
+  return "FLAT";
+}
+
+const hasParentChildChunks = computed(() => {
+  if (chunksParentChildFromApi.value) return true;
+  if (chunks.value.some((c) => c.parentChunkId != null)) return true;
+  return chunks.value.some((c) => {
+    const r = effectiveChunkRole(c);
+    return r === "PARENT" || r === "CHILD";
+  });
+});
+
+const visibleChunks = computed(() => {
+  const list = [...chunks.value].sort((a, b) => a.seq - b.seq);
+  if (!hasParentChildChunks.value || chunkViewMode.value === "all") return list;
+  return list.filter((c) => effectiveChunkRole(c) !== "PARENT");
+});
+
+function applyChunksListResponse(res: import("../../api/ragAdmin").RagDocumentChunksListResponse) {
+  chunks.value = res.chunks;
+  chunksParentChildFromApi.value = res.parentChild;
+}
+
 const docTitle = computed(() => {
   const q = route.query.docTitle;
   if (typeof q === "string" && q.trim()) return q.trim();
-  return doc.value?.title || "文档";
+  return doc.value?.title || t("views.chunks.docFallback");
 });
 
 const filteredChunks = computed(() => {
   const kw = chunkSearch.value.trim().toLowerCase();
-  const list = [...chunks.value].sort((a, b) => a.seq - b.seq);
+  const list = visibleChunks.value;
   if (!kw) return list;
   return list.filter((c) => (c.content || "").toLowerCase().includes(kw));
 });
@@ -203,14 +275,17 @@ const pagedChunks = computed(() => {
   return filteredChunks.value.slice(start, start + chunkPageSize);
 });
 
-watch([chunkSearch, filteredChunks], () => {
+watch([chunkSearch, filteredChunks, chunkViewMode], () => {
   chunkPage.value = 1;
 });
 
 const editDlg = ref(false);
+const editTab = ref<"preview" | "source">("preview");
 const editText = ref("");
 const editSaving = ref(false);
 const editingRow = ref<RagChunkAdminRow | null>(null);
+
+const editMarkdownHtml = computed(() => renderMarkdownToSafeHtml(editText.value || ""));
 
 const newDlg = ref(false);
 const newText = ref("");
@@ -243,6 +318,62 @@ function isChunkEnabled(row: RagChunkAdminRow): boolean {
   return (row.retrievalEnabled || "ENABLED") !== "DISABLED";
 }
 
+function isParentChunk(row: RagChunkAdminRow): boolean {
+  return effectiveChunkRole(row) === "PARENT";
+}
+
+function displaySeq(row: RagChunkAdminRow): number {
+  const list = visibleChunks.value;
+  const i = list.findIndex((x) => x.id === row.id);
+  return i >= 0 ? i + 1 : row.seq + 1;
+}
+
+function displayTotal(row: RagChunkAdminRow): number {
+  const role = effectiveChunkRole(row);
+  if (role === "PARENT" || role === "CHILD") {
+    return visibleChunks.value.length;
+  }
+  return chunks.value.length;
+}
+
+function looksLikeMarkdown(text: string): boolean {
+  const s = (text || "").trim();
+  if (!s) return false;
+  return (
+    /^#{1,6}\s/m.test(s) ||
+    /\*\*[^*]+\*\*/.test(s) ||
+    /```[\s\S]*?```/m.test(s) ||
+    /^\s*[-*+]\s/m.test(s) ||
+    /^\s*\d+\.\s/m.test(s) ||
+    /\[.+\]\([^)]+\)/.test(s) ||
+    /^>\s/m.test(s) ||
+    /^\s*\|/.test(s) ||
+    /^\s*[-*+]\s+\[[ xX]\]\s/m.test(s)
+  );
+}
+
+function shouldRenderChunkMarkdown(row: RagChunkAdminRow): boolean {
+  if (chunkSearch.value.trim()) return false;
+  const s = (row.content || "").trim();
+  if (!s) return false;
+  const fn = doc.value?.originalFilename?.toLowerCase() ?? "";
+  return (
+    looksLikeMarkdown(s) ||
+    doc.value?.sourceType === "URL_CRAWL" ||
+    fn.endsWith(".md") ||
+    fn.endsWith(".markdown")
+  );
+}
+
+function chunkMarkdownHtml(content: string): string {
+  return renderMarkdownToSafeHtml(content || "");
+}
+
+function onEditDlgClosed() {
+  editingRow.value = null;
+  editTab.value = "preview";
+}
+
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -272,14 +403,14 @@ function highlightSegments(text: string): { t: string; hl: boolean }[] {
 async function loadAll() {
   pageLoading.value = true;
   try {
-    const [kbs, d, ch] = await Promise.all([
+    const [kbs, d, chRes] = await Promise.all([
       ragApi.fetchRagKbs(),
       ragApi.fetchRagKbDocument(kbId.value, docId.value),
       ragApi.fetchRagKbChunks(kbId.value, docId.value),
     ]);
     kbRow.value = kbs.find((x) => x.id === kbId.value) ?? null;
     doc.value = d;
-    chunks.value = ch;
+    applyChunksListResponse(chRes);
     if (!kbRow.value) {
       ElMessage.error("未找到该知识库");
       void router.push("/knowledge-center/knowledge-bases");
@@ -301,7 +432,7 @@ async function loadAll() {
 
 async function reloadChunks() {
   try {
-    chunks.value = await ragApi.fetchRagKbChunks(kbId.value, docId.value);
+    applyChunksListResponse(await ragApi.fetchRagKbChunks(kbId.value, docId.value));
   } catch (e: unknown) {
     const msg = e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : "加载分片失败";
     ElMessage.error(msg);
@@ -328,6 +459,7 @@ async function onToggleRetrieval(row: RagChunkAdminRow, enabled: boolean) {
 function openEditChunk(row: RagChunkAdminRow) {
   editingRow.value = row;
   editText.value = row.content;
+  editTab.value = looksLikeMarkdown(row.content || "") ? "preview" : "source";
   editDlg.value = true;
 }
 
@@ -356,14 +488,14 @@ function openNewChunk() {
 }
 
 async function saveNewChunk() {
-  const t = newText.value.trim();
-  if (!t) {
+  const body = newText.value.trim();
+  if (!body) {
     ElMessage.warning("请输入分段内容");
     return;
   }
   newSaving.value = true;
   try {
-    const u = await ragApi.createRagKbChunk(kbId.value, docId.value, t);
+    const u = await ragApi.createRagKbChunk(kbId.value, docId.value, body);
     chunks.value = [...chunks.value, u].sort((a, b) => a.seq - b.seq);
     ElMessage.success("已新增分片");
     newDlg.value = false;
@@ -467,6 +599,14 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.document-chunks-page {
+  --dc-card-bg: var(--el-bg-color);
+  --dc-card-parent-bg: var(--el-fill-color-lighter);
+  --dc-card-shadow: 0 2px 10px rgba(15, 23, 42, 0.06);
+  --dc-chunk-hl-bg: var(--el-color-warning-light-8);
+  --dc-chunk-hl-fg: var(--el-text-color-primary);
+}
+
 .panel {
   border-radius: 12px;
   border: 1px solid var(--el-border-color);
@@ -515,9 +655,35 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
   margin-bottom: 16px;
+}
+
+.dc-toolbar-left {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dc-toolbar-add {
+  flex-shrink: 0;
+}
+
+.dc-view-mode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.dc-view-mode-label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
 }
 
 .dc-search {
@@ -536,10 +702,26 @@ onMounted(() => {
   flex-direction: column;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.06);
+  background: var(--dc-card-bg);
+  box-shadow: var(--dc-card-shadow);
   overflow: hidden;
   min-height: 200px;
+}
+
+.chunk-card--parent {
+  background: var(--dc-card-parent-bg);
+  border-style: dashed;
+}
+
+.chunk-role-tag {
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.chunk-parent-hint {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
 }
 
 .chunk-card-hdr {
@@ -592,9 +774,80 @@ onMounted(() => {
   word-break: break-word;
 }
 
+.chunk-text.chunk-md {
+  white-space: normal;
+  max-height: 220px;
+  overflow: hidden;
+  text-align: left;
+}
+
+.chunk-text.chunk-md :deep(a) {
+  color: var(--el-color-primary);
+}
+
+.chunk-text.chunk-md :deep(code) {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--el-fill-color);
+  color: var(--el-text-color-primary);
+}
+
+.chunk-text.chunk-md :deep(pre) {
+  margin: 0 0 0.4em;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--el-fill-color);
+  font-size: 12px;
+  overflow-x: auto;
+}
+
+.chunk-text.chunk-md :deep(.md-code-block) {
+  border-color: var(--el-border-color);
+  background: var(--el-fill-color-lighter);
+}
+
+.chunk-text.chunk-md :deep(.md-code-toolbar) {
+  background: var(--el-fill-color-light);
+  border-bottom-color: var(--el-border-color-lighter);
+}
+
+.chunk-text.chunk-md :deep(blockquote) {
+  margin: 0 0 0.4em;
+  padding-left: 0.75em;
+  border-left: 3px solid var(--el-border-color);
+  color: var(--el-text-color-secondary);
+}
+
+.chunk-edit-tabs {
+  margin-top: -4px;
+}
+
+.chunk-edit-preview {
+  min-height: 280px;
+  max-height: min(62vh, 520px);
+  overflow: auto;
+  padding: 4px 2px;
+}
+
+.chunk-edit-preview.chunk-md :deep(code),
+.chunk-edit-preview.chunk-md :deep(pre),
+.chunk-edit-preview.chunk-md :deep(.md-code-block) {
+  background: var(--el-fill-color);
+  color: var(--el-text-color-primary);
+}
+
+.chunk-edit-preview.chunk-md :deep(.md-code-block) {
+  border-color: var(--el-border-color);
+}
+
+.chunk-edit-preview.chunk-md :deep(.md-code-toolbar) {
+  background: var(--el-fill-color-light);
+}
+
 .chunk-hl {
   padding: 0 2px;
-  background: #fef08a;
+  background: var(--dc-chunk-hl-bg);
+  color: var(--dc-chunk-hl-fg);
   border-radius: 2px;
 }
 
@@ -616,7 +869,8 @@ onMounted(() => {
   border-radius: 12px;
   padding: 14px 16px;
   margin-bottom: 14px;
-  background: #fff;
+  background: var(--dc-card-bg);
+  box-shadow: var(--dc-card-shadow);
 }
 
 .aside-h {
@@ -678,5 +932,28 @@ onMounted(() => {
     width: 100%;
     position: static;
   }
+}
+</style>
+
+<style>
+/* 深色：卡片勿用硬编码白底；投影与 Markdown 内嵌块跟随主题 */
+html.dark .document-chunks-page {
+  --dc-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 18px rgba(0, 0, 0, 0.22);
+  --dc-chunk-hl-bg: var(--el-color-warning-dark-2);
+  --dc-chunk-hl-fg: var(--el-color-warning-light-9);
+}
+
+html.dark .document-chunks-page .chunk-card--parent {
+  border-color: var(--el-border-color);
+}
+
+html.dark .document-chunks-page .chunk-text.chunk-md :deep(th),
+html.dark .document-chunks-page .chunk-text.chunk-md :deep(td) {
+  border-color: var(--el-border-color);
+}
+
+html.dark .document-chunks-page .chunk-edit-preview.chunk-md :deep(.md-code-block),
+html.dark .document-chunks-page .chunk-text.chunk-md :deep(.md-code-block) {
+  background: var(--el-fill-color-dark);
 }
 </style>

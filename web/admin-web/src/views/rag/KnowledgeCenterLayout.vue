@@ -61,7 +61,7 @@ const crumbs = computed((): Crumb[] => {
 }
 
 .kc-crumb-link {
-  color: #2563eb;
+  color: var(--el-color-primary);
   text-decoration: none;
   font-weight: 500;
 }

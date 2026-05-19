@@ -39,7 +39,7 @@ public class ChatAttachmentBinStore {
             return Optional.of(Files.readAllBytes(file));
         } catch (IOException e) {
             log.warn(
-                    "chat attachment bin read failed tenantId={} conversationId={} attachmentId={} path={}",
+                    "[对话附件] 读取本地文件失败：租户 {}，会话 {}，附件 {}，路径 {}",
                     tenantId,
                     conversationId,
                     attachmentId,

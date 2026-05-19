@@ -132,7 +132,7 @@ ai:
       region: ${MINIO_REGION:}
   rag:
     # retrieval-mode：milvus / milvus_es_hybrid；ES 见 elasticsearch 段
-    retrieval-mode: ${AI_RAG_RETRIEVAL_MODE:milvus}
+    retrieval-mode: ${AI_RAG_RETRIEVAL_MODE:milvus_es_hybrid}
     # 向量化：模型在库表 llm_model（VECTOR）。local_deploy=true 时走本地嵌入 Feign：关 Eureka 时必须配直连 base-url（见下行）。
     local-embed-feign:
       # 与对端网关根路径一致（含尾斜杠示例）；优先 AI_RAG_LOCAL_EMBED_FEIGN_BASE_URL，否则 AI_RAG_ENGINE_BASE_URL
@@ -149,6 +149,18 @@ ai:
         password: ${AI_RAG_ES_PASSWORD:admin123}
       # 与对端 elasticsearch.index-name 默认一致；独立测试索引可设 AI_RAG_ES_INDEX
       index-name: ${AI_RAG_ES_INDEX:rag_agent_documents}
+    # 租户通用定时任务（Spring @Scheduled + 表 ten_scheduled_task；网页爬取等为 task_type 枚举扩展）。
+    scheduled-tasks:
+      poll-cron: ${AI_RAG_SCHEDULED_TASKS_POLL_CRON:0 * * * * *}
+      poller-lock-ttl-seconds: ${AI_RAG_SCHEDULED_TASKS_POLLER_LOCK_TTL_SECONDS:55}
+      task-lock-ttl-seconds: ${AI_RAG_SCHEDULED_TASKS_TASK_LOCK_TTL_SECONDS:300}
+    # 站点爬取执行锁 TTL（秒）；定时任务扫描见 scheduled-tasks。
+    site-crawl:
+      crawl-lock-ttl-seconds: ${AI_RAG_SITE_CRAWL_LOCK_TTL_SECONDS:21600}
+      content-extractor: ${AI_RAG_SITE_CRAWL_CONTENT_EXTRACTOR:jsoup}
+      preview-max-chunks: ${AI_RAG_SITE_CRAWL_PREVIEW_MAX_CHUNKS:20}
+      preview-max-body-bytes: ${AI_RAG_SITE_CRAWL_PREVIEW_MAX_BODY_BYTES:512000}
+      preview-site-sample-urls: ${AI_RAG_SITE_CRAWL_PREVIEW_SITE_SAMPLE_URLS:3}
   # jwt-local 签名密钥；须足够长，勿提交生产明文。
   auth:
     jwt-local:
@@ -188,3 +200,6 @@ logging:
   level:
     root: INFO
     com.aaron.cloud: ${LOGGING_LEVEL_COM_AARON_CLOUD:INFO}
+    # 第三方周期性 INFO 对排障价值低：Eureka 每 5 分钟刷新注册表；ES 未开安全时每请求一条 WARN
+    com.netflix.discovery: WARN
+    org.elasticsearch.client: ERROR

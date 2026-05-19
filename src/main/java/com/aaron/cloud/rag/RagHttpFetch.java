@@ -23,6 +23,11 @@ public final class RagHttpFetch {
     public record Fetched(String contentType, Charset charset, byte[] body) {}
 
     public static Fetched get(String url) throws Exception {
+        return get(url, MAX_BYTES);
+    }
+
+    public static Fetched get(String url, int maxBytes) throws Exception {
+        int limit = maxBytes > 0 ? Math.min(maxBytes, MAX_BYTES) : MAX_BYTES;
         HttpClient client =
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).followRedirects(HttpClient.Redirect.NORMAL).build();
         HttpRequest req =
@@ -54,7 +59,7 @@ public final class RagHttpFetch {
             int total = 0;
             while ((n = in.read(buf)) >= 0) {
                 total += n;
-                if (total > MAX_BYTES) {
+                if (total > limit) {
                     throw new IllegalStateException("response too large");
                 }
                 bos.write(buf, 0, n);

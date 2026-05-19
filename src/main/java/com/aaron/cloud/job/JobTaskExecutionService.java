@@ -5,6 +5,7 @@ import com.aaron.cloud.common.api.enums.JobTaskType;
 import com.aaron.cloud.common.jobmeta.JobTaskRepository;
 import com.aaron.cloud.common.jobmeta.entity.JobTask;
 import com.aaron.cloud.rag.RagIngestOrchestrationService;
+import com.aaron.cloud.rag.RagLocalSiteCrawlOrchestrationService;
 import com.aaron.cloud.rag.RagVectorInfrastructure;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -20,6 +21,7 @@ public class JobTaskExecutionService {
     private final JobTaskRepository jobTaskRepository;
     private final ObjectMapper objectMapper;
     private final RagIngestOrchestrationService ragIngestOrchestrationService;
+    private final RagLocalSiteCrawlOrchestrationService ragLocalSiteCrawlOrchestrationService;
     private final RagVectorInfrastructure ragVectorInfrastructure;
 
     public void processTask(long jobTaskId, long tenantId) {
@@ -30,7 +32,8 @@ public class JobTaskExecutionService {
         JobTask task = taskOpt.get();
         if (task.getTaskType() == JobTaskType.RAG_INDEX
                 || task.getTaskType() == JobTaskType.RAG_URL_IMPORT
-                || task.getTaskType() == JobTaskType.RAG_FILE_IMPORT) {
+                || task.getTaskType() == JobTaskType.RAG_FILE_IMPORT
+                || task.getTaskType() == JobTaskType.RAG_SITE_CRAWL) {
             if (!ragVectorInfrastructure.isMilvusVectorStore()) {
                 jobTaskRepository.updateStatus(
                         jobTaskId,
@@ -50,6 +53,7 @@ public class JobTaskExecutionService {
                         }
                         case RAG_URL_IMPORT -> handleRagUrlImport(task);
                         case RAG_FILE_IMPORT -> handleRagFileImport(task);
+                        case RAG_SITE_CRAWL -> handleRagSiteCrawl(task);
                     };
             jobTaskRepository.updateStatus(jobTaskId, tenantId, JobTaskStatus.SUCCEEDED, resultJson);
         } catch (Exception e) {
@@ -85,6 +89,11 @@ public class JobTaskExecutionService {
             throw new IllegalArgumentException("url required");
         }
         return ragIngestOrchestrationService.runUrlImport(task.getTenantId(), root);
+    }
+
+    private String handleRagSiteCrawl(JobTask task) throws Exception {
+        return ragLocalSiteCrawlOrchestrationService.runFromJobPayload(
+                task.getTenantId(), task.getPayloadJson());
     }
 
     private String handleRagFileImport(JobTask task) throws Exception {

@@ -129,8 +129,11 @@ public class UserMemoryApplicationService {
 
     /**
      * 供对话 system 追加：抽象层 JSON + 与当前输入相关的具体层片段（Milvus 向量优先，无命中则 LIKE / 最近片段）。
+     *
+     * @param includeConcreteRecall false 时仅注入抽象层（新会话首轮避免旧问句摘录触发「您问过多次」类表述）
      */
-    public String buildMemoryPromptSection(TenantSnapshot snap, String currentUserTextForRecall) {
+    public String buildMemoryPromptSection(
+            TenantSnapshot snap, String currentUserTextForRecall, boolean includeConcreteRecall) {
         String subjectKey = ProfileSubjectKey.fromSnapshot(snap);
         if (subjectKey == null) {
             return "";
@@ -147,7 +150,10 @@ public class UserMemoryApplicationService {
                                         "【长期记忆·抽象】\n"
                                                 + TextClamp.ellipsis(
                                                         a.getBodyJson(), memPol.resolvedPromptAbstractBodyMaxChars())));
-        List<TenUserMemoryChunk> hits = recallConcreteChunks(tenantId, subjectKey, currentUserTextForRecall);
+        List<TenUserMemoryChunk> hits =
+                includeConcreteRecall
+                        ? recallConcreteChunks(tenantId, subjectKey, currentUserTextForRecall)
+                        : List.of();
         if (!hits.isEmpty()) {
             j.add("【长期记忆·摘录】");
             int lineCap = memPol.resolvedPromptConcreteChunkMaxChars();

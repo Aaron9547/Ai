@@ -19,6 +19,7 @@ export const ALL_ADMIN_MENU_CODES = [
   "CHAT",
   "CHAT_INTENTS",
   "SYSTEM_SETTINGS",
+  "SCHEDULED_TASKS",
   "MENU_CATALOG",
   "GATEWAY_API",
 ] as const;
@@ -43,7 +44,7 @@ export const ADMIN_MENU_TENANT_GROUPS: readonly AdminMenuTenantGroupSpec[] = [
   { titleI18nKey: "views.tenants.menuGroups.auditMetering", codes: ["AUDIT_EVENTS", "METERING"] },
   {
     titleI18nKey: "views.tenants.menuGroups.tenantCapabilities",
-    codes: ["SYSTEM_SETTINGS", "FILE_OBJECTS", "NOTIFICATIONS", "EVAL_RUNS"],
+    codes: ["SYSTEM_SETTINGS", "SCHEDULED_TASKS", "FILE_OBJECTS", "NOTIFICATIONS", "EVAL_RUNS"],
   },
   { titleI18nKey: "views.tenants.menuGroups.platform", codes: ["TENANTS", "MENU_CATALOG"] },
 ] as const;
@@ -65,6 +66,7 @@ export const ADMIN_MENU_LABELS: Record<string, string> = {
   CHAT: "对话日志",
   CHAT_INTENTS: "意图识别",
   SYSTEM_SETTINGS: "系统参数",
+  SCHEDULED_TASKS: "定时任务",
   MENU_CATALOG: "菜单管理",
   GATEWAY_API: "接口与限流",
 };

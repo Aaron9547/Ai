@@ -112,6 +112,10 @@ const router = createRouter({
           component: () => import("../views/system/TenantRuntimeSettingsView.vue"),
         },
         {
+          path: "system/scheduled-tasks",
+          component: () => import("../views/system/ScheduledTasksView.vue"),
+        },
+        {
           path: "system/tenant-shell-config",
           component: () => import("../views/system/TenantShellConfigView.vue"),
         },

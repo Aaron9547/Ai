@@ -19,8 +19,8 @@ public enum RagChunkStrategy {
     SEMANTIC(2),
     /** 固定窗口 + 重叠。 */
     SLIDING_WINDOW(3),
-    /** 预留：自定义插件/配置解析。 */
-    CUSTOM(99);
+    /** 子母分片：母块存上下文（不参与检索），子块 embed 检索。 */
+    PARENT_CHILD(4);
 
     @EnumValue private final int code;
 
@@ -29,6 +29,9 @@ public enum RagChunkStrategy {
             if (s.code == code) {
                 return s;
             }
+        }
+        if (code == 99) {
+            return FIXED_CHAR;
         }
         return FIXED_CHAR;
     }

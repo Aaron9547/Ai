@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
@@ -21,6 +22,26 @@ public class RagDocumentRepository {
                 Wrappers.<RagDocument>lambdaQuery()
                         .eq(RagDocument::getId, id)
                         .eq(RagDocument::getTenantId, tenantId));
+    }
+
+    /** 同知识库下按来源 URL 找最新一篇未删除文档（用于同 URL 重爬覆盖）。 */
+    public Optional<RagDocument> findLatestActiveByKbAndSourceUri(long tenantId, long kbId, String sourceUri) {
+        if (sourceUri == null || sourceUri.isBlank()) {
+            return Optional.empty();
+        }
+        String uri = sourceUri.trim();
+        RagDocument doc =
+                mapper.selectOne(
+                        Wrappers.<RagDocument>lambdaQuery()
+                                .eq(RagDocument::getTenantId, tenantId)
+                                .eq(RagDocument::getDeleted, 0)
+                                .eq(RagDocument::getSourceUri, uri)
+                                .apply(
+                                        "id IN (SELECT document_id FROM lnk_rag_kb_document WHERE kb_id = {0})",
+                                        kbId)
+                                .orderByDesc(RagDocument::getUpdatedAt)
+                                .last("LIMIT 1"));
+        return Optional.ofNullable(doc);
     }
 
     public int insert(RagDocument row) {

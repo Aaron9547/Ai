@@ -134,7 +134,7 @@ public class ChatWebSearchGroundingService {
         } catch (RestClientResponseException e) {
             String snippet = responseBodySnippet(e);
             log.warn(
-                    "web search HTTP {} provider={} tenantId={} conversationId={} snippet={}",
+                    "[联网搜索] HTTP {}，提供商 {}，租户 {}，会话 {}，响应摘要：{}",
                     e.getStatusCode().value(),
                     webProv,
                     snap.getTenantId(),
@@ -144,7 +144,7 @@ public class ChatWebSearchGroundingService {
             return degradedEmptyResult();
         } catch (RestClientException e) {
             log.warn(
-                    "web search client error provider={} tenantId={} conversationId={}",
+                    "[联网搜索] 客户端异常，提供商 {}，租户 {}，会话 {}",
                     webProv,
                     snap.getTenantId(),
                     conversationId,
@@ -197,7 +197,7 @@ public class ChatWebSearchGroundingService {
                     usage,
                     durationMs);
         } catch (Exception ex) {
-            log.debug("skip web search usage record: {}", ex.toString());
+            log.debug("[联网搜索] 跳过用量记录：{}", ex.toString());
         }
     }
 

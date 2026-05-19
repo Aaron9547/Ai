@@ -260,7 +260,7 @@ function webRefLabel(w: WebSearchRefAdmin): string {
 .msg-usage {
   margin-top: 8px;
   font-size: 12px;
-  color: #0369a1;
+  color: var(--el-color-primary);
 }
 
 .msg-rag-wrap {
@@ -359,11 +359,11 @@ function webRefLabel(w: WebSearchRefAdmin): string {
 
 .msg-assistant-current {
   border-radius: 10px;
-  border: 1px solid #bfdbfe;
-  border-left: 5px solid #2563eb;
+  border: 1px solid var(--el-color-primary-light-5);
+  border-left: 5px solid var(--el-color-primary);
   background: linear-gradient(180deg, var(--el-fill-color-light) 0%, var(--el-bg-color) 48%);
   padding: 12px 14px 14px;
-  box-shadow: 0 1px 2px rgb(15 23 42 / 6%);
+  box-shadow: var(--el-box-shadow-lighter);
 }
 
 .msg-version-strip {
@@ -377,7 +377,7 @@ function webRefLabel(w: WebSearchRefAdmin): string {
 }
 
 .msg-version-strip--current {
-  border-bottom-color: #bfdbfe;
+  border-bottom-color: var(--el-color-primary-light-5);
 }
 
 .msg-version-label {
@@ -388,9 +388,9 @@ function webRefLabel(w: WebSearchRefAdmin): string {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.04em;
-  color: #1e40af;
-  background: #dbeafe;
-  border: 1px solid #93c5fd;
+  color: var(--el-color-primary-dark-2);
+  background: var(--el-color-primary-light-9);
+  border: 1px solid var(--el-color-primary-light-5);
 }
 
 .msg-version-meta {
@@ -400,7 +400,7 @@ function webRefLabel(w: WebSearchRefAdmin): string {
 }
 
 .msg-reasoning--in-current {
-  border-left-color: #3b82f6;
+  border-left-color: var(--el-color-primary);
   background: linear-gradient(135deg, var(--el-color-primary-light-9) 0%, var(--el-fill-color-light) 100%);
 }
 
@@ -409,7 +409,7 @@ function webRefLabel(w: WebSearchRefAdmin): string {
 }
 
 .msg-usage--current {
-  color: #1d4ed8;
+  color: var(--el-color-primary);
   font-weight: 500;
 }
 
@@ -419,7 +419,7 @@ function webRefLabel(w: WebSearchRefAdmin): string {
   border-radius: 10px;
   border: 1px dashed var(--el-border-color);
   background: var(--el-fill-color);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 70%);
+  box-shadow: inset 0 1px 0 var(--el-border-color-lighter);
 }
 
 .msg-archive-collapse-head {
@@ -490,9 +490,9 @@ function webRefLabel(w: WebSearchRefAdmin): string {
   margin-bottom: 16px;
   padding: 12px;
   border-radius: 8px;
-  background: #fff;
+  background: var(--el-bg-color);
   border: 1px solid var(--el-border-color);
-  box-shadow: 0 1px 1px rgb(15 23 42 / 4%);
+  box-shadow: var(--el-box-shadow-lighter);
 }
 
 .msg-prior-block:last-child {
@@ -512,9 +512,9 @@ function webRefLabel(w: WebSearchRefAdmin): string {
 .msg-prior-badge {
   font-size: 11px;
   font-weight: 700;
-  color: #9a3412;
-  background: #ffedd5;
-  border: 1px solid #fdba74;
+  color: var(--el-color-warning-dark-2);
+  background: var(--el-color-warning-light-9);
+  border: 1px solid var(--el-color-warning-light-5);
   padding: 2px 8px;
   border-radius: 6px;
 }
@@ -527,7 +527,7 @@ function webRefLabel(w: WebSearchRefAdmin): string {
 .msg-reasoning--archive {
   margin-bottom: 8px;
   background: var(--el-fill-color-light);
-  border-left-color: #cbd5e1;
+  border-left-color: var(--el-border-color);
 }
 
 .bubble-md--archive {
@@ -545,5 +545,13 @@ function webRefLabel(w: WebSearchRefAdmin): string {
   margin-top: 6px;
   font-size: 11px;
   color: var(--el-text-color-secondary);
+}
+
+:global(html.dark) .msg-version-label {
+  color: var(--el-color-primary-light-3);
+}
+
+:global(html.dark) .msg-prior-badge {
+  color: var(--el-color-warning-light-3);
 }
 </style>

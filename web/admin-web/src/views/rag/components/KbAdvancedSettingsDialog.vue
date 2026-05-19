@@ -32,7 +32,7 @@
             <el-option label="固定字数" :value="1" />
             <el-option label="语义段落" :value="2" />
             <el-option label="滑动窗口" :value="3" />
-            <el-option label="自定义（预留）" :value="99" />
+            <el-option label="子母分片" :value="4" />
           </el-select>
         </el-form-item>
         <el-form-item label="固定分片目标字数">
@@ -162,9 +162,12 @@ function strategyNameToCode(name?: string): number {
     FIXED_CHAR: 1,
     SEMANTIC: 2,
     SLIDING_WINDOW: 3,
-    CUSTOM: 99,
+    PARENT_CHILD: 4,
   };
-  return name && map[name] != null ? map[name] : 1;
+  if (name === "CUSTOM") {
+    return 1;
+  }
+  return name && map[name] != null ? map[name] : 2;
 }
 
 async function loadKb() {
