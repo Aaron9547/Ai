@@ -147,4 +147,17 @@ public class SysLlmModelRepository {
                                 .orderByAsc(SysLlmModel::getId)
                                 .last("LIMIT 1")));
     }
+
+    /** 默认对话语言模型：{@code sort_order} 升序后 {@code id} 升序第一条。 */
+    public Optional<SysLlmModel> pickDefaultLanguageModel(long tenantId) {
+        return Optional.ofNullable(
+                mapper.selectOne(
+                        Wrappers.<SysLlmModel>lambdaQuery()
+                                .eq(SysLlmModel::getTenantId, tenantId)
+                                .eq(SysLlmModel::getStatus, LlmModelStatus.ACTIVE)
+                                .eq(SysLlmModel::getModelKind, LlmModelKind.LANGUAGE)
+                                .orderByAsc(SysLlmModel::getSortOrder)
+                                .orderByAsc(SysLlmModel::getId)
+                                .last("LIMIT 1")));
+    }
 }

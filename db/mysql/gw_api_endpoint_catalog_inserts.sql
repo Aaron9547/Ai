@@ -32,6 +32,9 @@ INSERT IGNORE INTO gw_api_endpoint (path_pattern, http_method, display_name, rem
 ('/open/v1/chat/conversations/*/messages/*/feedback', 'POST', '助手消息赞踩', NULL, 1, 1080, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/conversations/*/messages/*/retry', 'POST', '重新生成助手 SSE', NULL, 1, 1090, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/conversations/*/attachments', 'POST', '会话附件上传', 'multipart', 1, 1100, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/open/v1/chat/starter-prompts', 'GET', 'C端推荐问题抽样', NULL, 1, 2105, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/open/v1/chat/starter-prompts/events', 'POST', 'C端推荐问题埋点', NULL, 1, 2106, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/open/v1/chat/conversations/*/messages/*/follow-up-prompts', 'GET', 'C端助手消息后追问推荐', NULL, 1, 2107, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 -- ---------- API：/api/v1/auth（须 JWT）----------
 ('/api/v1/auth/admin-context', 'POST', '管理端切换工作区 JWT', 'jwt-local', 1, 2000, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 -- ---------- API：/api/v1/admin/me ----------
@@ -100,6 +103,7 @@ INSERT IGNORE INTO gw_api_endpoint (path_pattern, http_method, display_name, rem
 ('/api/v1/admin/mcp-servers/*', 'PUT', '更新 MCP', NULL, 1, 2820, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/mcp-servers/*', 'DELETE', '删除 MCP', NULL, 1, 2830, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/job-tasks', 'GET', '异步任务分页', NULL, 1, 2900, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/job-tasks/*', 'GET', '异步任务详情（含进度）', NULL, 1, 2901, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 -- ---------- API：管理端对话与敏感词 ----------
 ('/api/v1/admin/chat/conversations', 'GET', '管理端会话列表', NULL, 1, 3000, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/chat/conversations/*/messages', 'GET', '管理端会话消息', NULL, 1, 3010, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
@@ -162,6 +166,15 @@ INSERT IGNORE INTO gw_api_endpoint (path_pattern, http_method, display_name, rem
 ('/api/v1/admin/scheduled-tasks/*', 'PUT', '更新租户定时任务', NULL, 1, 4340, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/scheduled-tasks/*', 'DELETE', '删除租户定时任务', NULL, 1, 4350, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/scheduled-tasks/*/run', 'POST', '立即执行租户定时任务', NULL, 1, 4360, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/scheduled-tasks/*/run/active', 'GET', '定时任务当前执行进度', NULL, 1, 4361, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/scheduled-tasks/runs/*', 'GET', '定时任务执行 run 详情', NULL, 1, 4362, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+-- ---------- API：对话推荐问题 ----------
+('/api/v1/admin/chat/starter-prompts', 'GET', '管理端推荐问题列表', NULL, 1, 4370, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/chat/starter-prompts', 'POST', '管理端新建推荐问题', NULL, 1, 4371, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/chat/starter-prompts/*', 'PUT', '管理端更新推荐问题', NULL, 1, 4372, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/chat/starter-prompts/*', 'DELETE', '管理端删除推荐问题', NULL, 1, 4373, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/chat/starter-prompts/refresh-daily-hot', 'POST', '管理端手动刷新每日热点', NULL, 1, 4374, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/chat/starter-prompts/daily-batches', 'GET', '管理端每日热点批次', NULL, 1, 4375, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 -- ---------- API：RAG 租户 API ----------
 ('/api/v1/rag/kbs', 'GET', '租户 RAG 知识库列表', NULL, 1, 4300, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/rag/kbs', 'POST', '租户创建知识库', NULL, 1, 4310, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),

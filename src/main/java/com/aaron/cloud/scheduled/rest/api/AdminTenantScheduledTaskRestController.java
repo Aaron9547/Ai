@@ -3,12 +3,13 @@ package com.aaron.cloud.scheduled.rest.api;
 import com.aaron.cloud.common.web.rest.ApiV1ControllerBases;
 import com.aaron.cloud.scheduled.TenantScheduledTaskAdminApplicationService;
 import com.aaron.cloud.scheduled.dto.TenantScheduledTaskAdminDtos.CreateScheduledTaskRequest;
+import com.aaron.cloud.scheduled.dto.TenantScheduledTaskAdminDtos.ScheduledRunTriggerResult;
+import com.aaron.cloud.scheduled.dto.TenantScheduledTaskAdminDtos.ScheduledRunView;
 import com.aaron.cloud.scheduled.dto.TenantScheduledTaskAdminDtos.ScheduledTaskAdminView;
 import com.aaron.cloud.scheduled.dto.TenantScheduledTaskAdminDtos.ScheduledTaskMetaView;
 import com.aaron.cloud.scheduled.dto.TenantScheduledTaskAdminDtos.UpdateScheduledTaskRequest;
 import jakarta.validation.Valid;
 import java.util.List;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -55,8 +56,17 @@ public class AdminTenantScheduledTaskRestController extends ApiV1ControllerBases
     }
 
     @PostMapping("/{id}/run")
-    public Map<String, Boolean> runNow(@PathVariable long id) throws Exception {
-        scheduledTaskAdminApplicationService.runNow(id);
-        return Map.of("started", true);
+    public ScheduledRunTriggerResult runNow(@PathVariable long id) {
+        return scheduledTaskAdminApplicationService.runNow(id);
+    }
+
+    @GetMapping("/{id}/run/active")
+    public ScheduledRunView activeRun(@PathVariable long id) {
+        return scheduledTaskAdminApplicationService.getActiveRun(id);
+    }
+
+    @GetMapping("/runs/{runId}")
+    public ScheduledRunView getRun(@PathVariable long runId) {
+        return scheduledTaskAdminApplicationService.getRun(runId);
     }
 }

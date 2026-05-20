@@ -7,6 +7,7 @@ import com.aaron.cloud.job.dto.JobTaskAdminDtos.JobTaskAdminView;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -16,6 +17,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminJobTaskRestController extends ApiV1ControllerBases.AdminJobTasks {
 
     private final JobTaskAdminApplicationService jobTaskAdminApplicationService;
+
+    @GetMapping("/{id}")
+    public JobTaskAdminView get(@PathVariable long id) {
+        return jobTaskAdminApplicationService.get(id);
+    }
 
     @GetMapping
     public Page<JobTaskAdminView> page(

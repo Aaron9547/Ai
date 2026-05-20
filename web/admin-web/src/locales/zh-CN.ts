@@ -103,6 +103,7 @@ export default {
       chatConversations: "对话日志",
       sensitiveTerms: "敏感词",
       intents: "意图识别",
+      starterPrompts: "推荐问题",
       gateway: "网关与接入",
       apiRateLimits: "接口与限流",
       corsOrigins: "跨域来源",
@@ -132,6 +133,7 @@ export default {
       "/chat/conversations": "对话日志",
       "/chat/sensitive-terms": "敏感词管理",
       "/chat/intents": "意图识别",
+      "/chat/starter-prompts": "推荐问题与猜你想问",
       "/model/llm-models": "模型管理",
       "/mcp/servers": "MCP 服务注册",
       "/knowledge-center/knowledge-bases": "知识中心",
@@ -261,6 +263,9 @@ export default {
         sectionMemoryPolicy: "用户长期记忆",
         sectionInputGuard: "输入安全护栏",
         sectionWebSearch: "联网多轮检索",
+        sectionStarterPrompts: "推荐问题（每日热点）",
+        starterDailyHotEnabled: "启用每日热点兜底池",
+        starterDailyHotCron: "每日热点生成 Cron",
         memoryEmbedding: "记忆嵌入模型（VECTOR）",
         memoryEmbeddingPlaceholder: "不选择则按服务端默认",
         memoryEmbeddingPh: "不选择则按服务端默认",
@@ -300,8 +305,11 @@ export default {
           regexPatterns:
             "留空则使用服务端内置越狱正则。若填写任意一行，将整表替换内置列表（请谨慎）。错误正则会在服务端被跳过。",
           blockedReplyTemplate: "留空则使用服务端内置中文拦截话术。",
+          starterDailyHotCron:
+            "Spring 6 字段 Cron（秒 分 时 日 月 周）。进程每分钟 tick 一次，仅在与本表达式同一分钟触发该租户的联网热点生成。",
         },
         placeholders: {
+          starterDailyHotCron: "0 0 6 * * *",
           blockedReplyTemplate: "示例：抱歉，该内容无法继续处理，请调整表述后重试。",
           sensitiveWords: "每行一条，示例：\n赌博网站\n代写论文",
           regexPatterns: "每行一条 Java 正则，示例：\n(?i)ignore\\\\s+previous\\\\s+instructions",
@@ -348,6 +356,10 @@ export default {
           webSearchRounds: "WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT：前置联网 Bot 检索轮数，1～10。\n与下方各轮后缀数组下标一一对应。",
           roundSuffix:
             "WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON：第 i 轮检索问句后拼接的后缀字符串。\n可从第二轮起使用换行开头，便于与主问题分段。",
+          starterDailyHotEnabled:
+            "CHAT_STARTER_DAILY_HOT_ENABLED：关闭后不再定时拉取联网热点写入推荐池；运营手动条目与追问推荐不受影响。",
+          starterDailyHotCron:
+            "CHAT_STARTER_DAILY_HOT_CRON：该租户每日热点任务的触发时刻（6 段 Cron）。须与进程 ai.chat.starter-prompts.poller-cron 的 tick 对齐才会执行。",
         },
       },
       circuitBreakerReadonly: {

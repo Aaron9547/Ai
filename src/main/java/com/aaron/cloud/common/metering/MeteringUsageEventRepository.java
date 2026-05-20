@@ -102,6 +102,65 @@ public class MeteringUsageEventRepository {
         return mapper.selectMaps(qw);
     }
 
+    /** 数据概览：近时段内 token 计量行（仅必要列，供应用层解析 {@code ref_json}）。 */
+    public List<MeteringUsageEvent> listTokenEventsInRange(
+            long tenantId, LocalDateTime sinceInclusive, LocalDateTime untilExclusive) {
+        return mapper.selectList(
+                Wrappers.<MeteringUsageEvent>lambdaQuery()
+                        .select(
+                                MeteringUsageEvent::getCreatedAt,
+                                MeteringUsageEvent::getQuantity,
+                                MeteringUsageEvent::getRefJson)
+                        .eq(MeteringUsageEvent::getTenantId, tenantId)
+                        .eq(MeteringUsageEvent::getUnit, "token")
+                        .ge(MeteringUsageEvent::getCreatedAt, sinceInclusive)
+                        .lt(MeteringUsageEvent::getCreatedAt, untilExclusive));
+    }
+
+    /** 近时段租户级输入/输出 Token（来自 {@code ref_json}，无拆分时将 {@code quantity} 计入输出）。 */
+    public Map<String, Object> sumTokenSplitByTenantSince(long tenantId, LocalDateTime sinceUtcInclusive) {
+        QueryWrapper<MeteringUsageEvent> qw = new QueryWrapper<>();
+        qw.select(MeteringTokenAggregationSql.SUM_PROMPT, MeteringTokenAggregationSql.SUM_COMPLETION)
+                .eq("tenant_id", tenantId)
+                .eq("unit", "token")
+                .ge("created_at", sinceUtcInclusive);
+        return mapper.selectMaps(qw).stream().findFirst().orElse(Map.of());
+    }
+
+    public List<Map<String, Object>> sumTokenSplitByTenantGroupedByBeijingDate(
+            long tenantId, LocalDateTime sinceInclusive, LocalDateTime untilExclusive) {
+        QueryWrapper<MeteringUsageEvent> qw = new QueryWrapper<>();
+        qw.select(
+                        "DATE(created_at) AS bucket",
+                        MeteringTokenAggregationSql.SUM_PROMPT,
+                        MeteringTokenAggregationSql.SUM_COMPLETION)
+                .eq("tenant_id", tenantId)
+                .eq("unit", "token")
+                .ge("created_at", sinceInclusive)
+                .lt("created_at", untilExclusive)
+                .groupBy("DATE(created_at)");
+        return mapper.selectMaps(qw);
+    }
+
+    /** 按模型别名聚合 Token，按总量降序，取前 {@code limit} 条。 */
+    public List<Map<String, Object>> topModelsTokenSplitByTenantSince(
+            long tenantId, LocalDateTime sinceUtcInclusive, int limit) {
+        if (limit <= 0) {
+            return List.of();
+        }
+        QueryWrapper<MeteringUsageEvent> qw = new QueryWrapper<>();
+        qw.select(
+                        MeteringTokenAggregationSql.MODEL_ALIAS_EXPR + " AS model_alias",
+                        MeteringTokenAggregationSql.SUM_PROMPT,
+                        MeteringTokenAggregationSql.SUM_COMPLETION)
+                .eq("tenant_id", tenantId)
+                .eq("unit", "token")
+                .ge("created_at", sinceUtcInclusive)
+                .groupBy("model_alias")
+                .last("ORDER BY (prompt_sum + completion_sum) DESC LIMIT " + limit);
+        return mapper.selectMaps(qw);
+    }
+
     private void attachAdminDisplayFields(List<MeteringUsageEvent> records) {
         if (records == null || records.isEmpty()) {
             return;

@@ -6,6 +6,9 @@ import com.aaron.cloud.common.jobmeta.JobTaskRepository;
 import com.aaron.cloud.common.jobmeta.entity.JobTask;
 import com.aaron.cloud.rag.RagIngestOrchestrationService;
 import com.aaron.cloud.rag.RagLocalSiteCrawlOrchestrationService;
+import com.aaron.cloud.common.task.LongRunningTaskProgress;
+import com.aaron.cloud.common.task.LongRunningTaskProgressReporter;
+import com.aaron.cloud.common.task.LongRunningTaskProgressSupport;
 import com.aaron.cloud.rag.RagVectorInfrastructure;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -44,16 +47,18 @@ public class JobTaskExecutionService {
             }
         }
         jobTaskRepository.updateStatus(jobTaskId, tenantId, JobTaskStatus.RUNNING, null);
+        LongRunningTaskProgressReporter progress = progressReporter(jobTaskId, tenantId);
         try {
             String resultJson =
                     switch (task.getTaskType()) {
                         case RAG_INDEX -> {
+                            progress.report("INDEX", "索引任务执行中", null, null, null);
                             handleRagIndex(task);
                             yield "{\"indexed\":true}";
                         }
                         case RAG_URL_IMPORT -> handleRagUrlImport(task);
                         case RAG_FILE_IMPORT -> handleRagFileImport(task);
-                        case RAG_SITE_CRAWL -> handleRagSiteCrawl(task);
+                        case RAG_SITE_CRAWL -> handleRagSiteCrawl(task, progress);
                     };
             jobTaskRepository.updateStatus(jobTaskId, tenantId, JobTaskStatus.SUCCEEDED, resultJson);
         } catch (Exception e) {
@@ -91,9 +96,20 @@ public class JobTaskExecutionService {
         return ragIngestOrchestrationService.runUrlImport(task.getTenantId(), root);
     }
 
-    private String handleRagSiteCrawl(JobTask task) throws Exception {
+    private String handleRagSiteCrawl(JobTask task, LongRunningTaskProgressReporter progress)
+            throws Exception {
         return ragLocalSiteCrawlOrchestrationService.runFromJobPayload(
-                task.getTenantId(), task.getPayloadJson());
+                task.getTenantId(), task.getPayloadJson(), progress);
+    }
+
+    private LongRunningTaskProgressReporter progressReporter(long jobTaskId, long tenantId) {
+        return (stage, message, percent, current, total) ->
+                jobTaskRepository.updateProgress(
+                        jobTaskId,
+                        tenantId,
+                        LongRunningTaskProgressSupport.toJson(
+                                objectMapper,
+                                new LongRunningTaskProgress(stage, message, percent, current, total)));
     }
 
     private String handleRagFileImport(JobTask task) throws Exception {

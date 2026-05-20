@@ -1,5 +1,6 @@
 package com.aaron.cloud.scheduled;
 
+import com.aaron.cloud.common.api.enums.ScheduledRunTrigger;
 import com.aaron.cloud.common.config.properties.AiRagProperties;
 import com.aaron.cloud.common.redis.RedisDistributedLockService;
 import com.aaron.cloud.common.scheduled.TenantScheduledTaskRepository;
@@ -21,7 +22,7 @@ import org.springframework.stereotype.Component;
 public class TenantScheduledTaskPoller {
 
     private final TenantScheduledTaskRepository taskRepository;
-    private final TenantScheduledTaskExecutor taskExecutor;
+    private final TenantScheduledRunOrchestrator runOrchestrator;
     private final RedisDistributedLockService distributedLockService;
     private final AiRagProperties aiRagProperties;
 
@@ -58,20 +59,35 @@ public class TenantScheduledTaskPoller {
         }
     }
 
-    private void triggerRegistration(TenantScheduledTask task, LocalDateTime now) throws Exception {
-        String lockKey = TenantScheduledTaskLockKeys.registrationRun(task.getTenantId(), task.getId());
-        long ttlSec = aiRagProperties.getScheduledTasks().getTaskLockTtlSeconds();
-        Optional<RedisDistributedLockService.DistributedLockHandle> lock =
-                distributedLockService.tryAcquire(lockKey, Duration.ofSeconds(ttlSec));
-        if (lock.isEmpty()) {
-            log.debug("定时任务注册项跳过（持锁中） taskId={}", task.getId());
-            return;
-        }
-        try (var ignored = lock.get()) {
-            taskExecutor.dispatch(task);
-            task.setLastExecAt(now);
-            task.setNextExecAt(TenantScheduledCronSupport.computeNextExecAt(task, now));
-            taskRepository.updateById(task);
+    private void triggerRegistration(TenantScheduledTask task, LocalDateTime now) {
+        try {
+            var prev = com.aaron.cloud.common.context.TenantContextHolder.getOrNull();
+            try {
+                com.aaron.cloud.common.context.TenantContextHolder.set(
+                        com.aaron.cloud.common.context.TenantContextHolder.TenantSnapshot.builder()
+                                .tenantId(task.getTenantId())
+                                .build());
+                var result = runOrchestrator.trigger(task.getId(), ScheduledRunTrigger.CRON);
+                if (result.duplicate()) {
+                    log.debug(
+                            "定时任务 cron 跳过（已有执行中） taskId={} tenantId={} runId={}",
+                            task.getId(),
+                            task.getTenantId(),
+                            result.runId());
+                }
+            } finally {
+                if (prev != null) {
+                    com.aaron.cloud.common.context.TenantContextHolder.set(prev);
+                } else {
+                    com.aaron.cloud.common.context.TenantContextHolder.clear();
+                }
+            }
+        } catch (Exception e) {
+            log.error(
+                    "定时任务 cron 触发失败 taskId={} tenantId={}",
+                    task.getId(),
+                    task.getTenantId(),
+                    e);
         }
     }
 }

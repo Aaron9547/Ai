@@ -12,7 +12,7 @@ const md = new MarkdownIt({
 md.use(multimdTable, {
   multiline: true,
   rowspan: true,
-  headerless: false,
+  headerless: true,
 });
 
 md.use(taskLists, {
@@ -46,6 +46,45 @@ function normalizeAssistantMarkdownSource(source: string): string {
   s = s.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   s = s.replace(/\n{5,}/g, "\n\n\n");
   return s;
+}
+
+/** 为 GFM 表格、任务列表等块级语法补空行（markdown-it 需要）。 */
+function normalizeGfmBlockMarkdown(source: string): string {
+  const lines = source.split("\n");
+  const out: string[] = [];
+  let inFence = false;
+  let fenceChar = "";
+  let fenceLen = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    const trimmed = line.trim();
+    const open = trimmed.match(/^(`{3,}|~{3,})([^`~]*)$/);
+    if (!inFence && open) {
+      inFence = true;
+      fenceChar = open[1]![0]!;
+      fenceLen = open[1]!.length;
+    } else if (inFence) {
+      let count = 0;
+      while (count < trimmed.length && trimmed[count] === fenceChar) {
+        count++;
+      }
+      if (count >= fenceLen && trimmed.slice(count).trim() === "") {
+        inFence = false;
+        fenceChar = "";
+        fenceLen = 0;
+      }
+    }
+
+    const needsBlankBefore =
+        !inFence
+        && (trimmed.startsWith("|") || /^[-*+]\s+\[[ xX]\]\s/.test(trimmed));
+    if (needsBlankBefore && out.length > 0 && out[out.length - 1]!.trim() !== "") {
+      out.push("");
+    }
+    out.push(line);
+  }
+  return out.join("\n");
 }
 
 let mdCopyListenerAttached = false;
@@ -127,6 +166,7 @@ const PURIFY_OPTS: Parameters<typeof DOMPurify.sanitize>[1] = {
 
 export function renderMarkdownToSafeHtml(source: string): string {
   ensureMarkdownCodeCopyListener();
-  const raw = md.render(normalizeAssistantMarkdownSource(source));
+  const normalized = normalizeGfmBlockMarkdown(normalizeAssistantMarkdownSource(source));
+  const raw = md.render(normalized);
   return DOMPurify.sanitize(raw, PURIFY_OPTS);
 }

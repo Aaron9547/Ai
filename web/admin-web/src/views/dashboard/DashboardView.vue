@@ -40,9 +40,15 @@
             <el-col :xs="24" :lg="8">
               <el-card shadow="never" class="chart-card">
                 <template #header>
-                  <span class="chart-card-title">{{ t("views.dashboard.chartMeterQtyDaily") }}</span>
+                  <div class="chart-card-header">
+                    <span class="chart-card-title">{{ t("views.dashboard.chartMeterTokensDaily") }}</span>
+                    <el-checkbox-group v-model="tokenSeriesVisible" size="small" class="token-series-toggle">
+                      <el-checkbox label="prompt">{{ t("views.dashboard.tokenSeriesTogglePrompt") }}</el-checkbox>
+                      <el-checkbox label="completion">{{ t("views.dashboard.tokenSeriesToggleCompletion") }}</el-checkbox>
+                    </el-checkbox-group>
+                  </div>
                 </template>
-                <div ref="chartMeterQtyRef" class="chart-host" />
+                <div ref="chartMeterTokensRef" class="chart-host" />
               </el-card>
             </el-col>
             <el-col :xs="24" :lg="8">
@@ -51,6 +57,30 @@
                   <span class="chart-card-title">{{ t("views.dashboard.chartMeterCntDaily") }}</span>
                 </template>
                 <div ref="chartMeterCntRef" class="chart-host" />
+              </el-card>
+            </el-col>
+          </el-row>
+          <el-row :gutter="18" class="dash-row dash-row--charts">
+            <el-col :span="24">
+              <el-card shadow="never" class="chart-card">
+                <template #header>
+                  <div class="chart-card-header">
+                    <span class="chart-card-title">{{ t("views.dashboard.chartMeterModelTrend") }}</span>
+                    <div class="chart-card-header-actions">
+                      <el-radio-group v-model="modelTokenTrendDays" size="small" class="model-trend-range">
+                        <el-radio-button :label="7">{{ t("views.dashboard.modelTrendRange7d") }}</el-radio-button>
+                        <el-radio-button :label="14">{{ t("views.dashboard.modelTrendRange14d") }}</el-radio-button>
+                        <el-radio-button :label="30">{{ t("views.dashboard.modelTrendRange30d") }}</el-radio-button>
+                      </el-radio-group>
+                      <el-checkbox-group v-model="tokenSeriesVisible" size="small" class="token-series-toggle">
+                        <el-checkbox label="prompt">{{ t("views.dashboard.tokenSeriesTogglePrompt") }}</el-checkbox>
+                        <el-checkbox label="completion">{{ t("views.dashboard.tokenSeriesToggleCompletion") }}</el-checkbox>
+                      </el-checkbox-group>
+                    </div>
+                  </div>
+                </template>
+                <p class="chart-card-hint">{{ t("views.dashboard.chartMeterModelTrendHint") }}</p>
+                <div ref="chartMeterModelRef" class="chart-host chart-host--tall" />
               </el-card>
             </el-col>
           </el-row>
@@ -125,13 +155,17 @@ const chinaMapLoadFailed = ref(false);
 const chinaMapAggMeta = ref({ cnOnly: 0, cnUnmatched: 0 });
 
 const chartAccessRef = ref<HTMLDivElement | null>(null);
-const chartMeterQtyRef = ref<HTMLDivElement | null>(null);
+const chartMeterTokensRef = ref<HTMLDivElement | null>(null);
+const chartMeterModelRef = ref<HTMLDivElement | null>(null);
 const chartMeterCntRef = ref<HTMLDivElement | null>(null);
+const tokenSeriesVisible = ref<Array<"prompt" | "completion">>(["prompt", "completion"]);
+const modelTokenTrendDays = ref<7 | 14 | 30>(7);
 const chartWorldRef = ref<HTMLDivElement | null>(null);
 const chartIpBarRef = ref<HTMLDivElement | null>(null);
 
 let chartAccess: ECharts | null = null;
-let chartMeterQty: ECharts | null = null;
+let chartMeterTokens: ECharts | null = null;
+let chartMeterModel: ECharts | null = null;
 let chartMeterCnt: ECharts | null = null;
 let chartWorld: ECharts | null = null;
 let chartIpBar: ECharts | null = null;
@@ -390,11 +424,12 @@ const chinaMapFootnote = computed(() => {
 
 function disposeCharts() {
   chartAccess?.dispose();
-  chartMeterQty?.dispose();
+  chartMeterTokens?.dispose();
+  chartMeterModel?.dispose();
   chartMeterCnt?.dispose();
   chartWorld?.dispose();
   chartIpBar?.dispose();
-  chartAccess = chartMeterQty = chartMeterCnt = chartWorld = chartIpBar = null;
+  chartAccess = chartMeterTokens = chartMeterModel = chartMeterCnt = chartWorld = chartIpBar = null;
 }
 
 function cssVar(name: string, fallback: string): string {
@@ -600,6 +635,179 @@ function formatChartDayLabel(day: string): string {
   return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+function tokenSeriesFlags() {
+  const v = tokenSeriesVisible.value;
+  return {
+    prompt: v.includes("prompt"),
+    completion: v.includes("completion"),
+  };
+}
+
+function buildDualTokenLineOption(
+  days: string[],
+  promptVals: number[],
+  completionVals: number[],
+  showPrompt: boolean,
+  showCompletion: boolean,
+): EChartsOption {
+  const th = chartPalette();
+  const series: NonNullable<EChartsOption["series"]> = [];
+  if (showPrompt) {
+    series.push({
+      name: t("views.dashboard.seriesPromptTokens"),
+      type: "line",
+      smooth: 0.45,
+      symbol: "circle",
+      symbolSize: 7,
+      data: promptVals,
+      lineStyle: { width: 3, color: th.primary },
+      itemStyle: { color: th.primary, borderWidth: 2, borderColor: th.symbolBorder },
+      areaStyle: { color: th.primary, opacity: 0.12 },
+    });
+  }
+  if (showCompletion) {
+    series.push({
+      name: t("views.dashboard.seriesCompletionTokens"),
+      type: "line",
+      smooth: 0.45,
+      symbol: "circle",
+      symbolSize: 7,
+      data: completionVals,
+      lineStyle: { width: 3, color: th.series2 },
+      itemStyle: { color: th.series2, borderWidth: 2, borderColor: th.symbolBorder },
+      areaStyle: { color: th.series2, opacity: 0.12 },
+    });
+  }
+  return {
+    backgroundColor: "transparent",
+    tooltip: {
+      trigger: "axis",
+      backgroundColor: th.tooltipBg,
+      borderColor: th.tooltipBorder,
+      textStyle: { color: th.tooltipText, fontSize: 12 },
+    },
+    legend: series.length > 1 ? { top: 0, textStyle: { color: th.axis, fontSize: 11 } } : undefined,
+    grid: { left: 44, right: 12, top: series.length > 1 ? 36 : 28, bottom: 36 },
+    xAxis: {
+      type: "category",
+      data: days,
+      axisLabel: {
+        color: th.axis,
+        fontSize: 11,
+        rotate: days.length > 6 ? 30 : 0,
+        formatter: (v: string) => formatChartDayLabel(v),
+      },
+      axisLine: { lineStyle: { color: th.axisLine } },
+      axisTick: { show: false },
+    },
+    yAxis: {
+      type: "value",
+      axisLabel: { color: th.axis, fontSize: 11 },
+      splitLine: { lineStyle: { color: th.split, type: "dashed" } },
+    },
+    series,
+  };
+}
+
+type ModelTrendSlice = {
+  modelAlias: string;
+  daily: { day: string; promptTokens: number; completionTokens: number }[];
+};
+
+function sliceModelTrendByDays(models: ModelTrendSlice[], dayCount: number): ModelTrendSlice[] {
+  if (dayCount <= 0) return models;
+  return models.map((m) => ({
+    modelAlias: m.modelAlias,
+    daily: m.daily.slice(-dayCount),
+  }));
+}
+
+function buildModelTokenTrendLineOption(
+  models: ModelTrendSlice[],
+  showPrompt: boolean,
+  showCompletion: boolean,
+): EChartsOption {
+  const th = chartPalette();
+  const modelColors = [th.primary, th.series2, th.series3];
+  const days = models[0]?.daily.map((d) => d.day) ?? [];
+  const series: NonNullable<EChartsOption["series"]> = [];
+
+  models.forEach((m, idx) => {
+    const color = modelColors[idx % modelColors.length];
+    const promptVals = m.daily.map((d) => d.promptTokens);
+    const completionVals = m.daily.map((d) => d.completionTokens);
+    if (showPrompt) {
+      series.push({
+        name: `${m.modelAlias} ${t("views.dashboard.modelSeriesPromptSuffix")}`,
+        type: "line",
+        smooth: 0.45,
+        symbol: "circle",
+        symbolSize: 6,
+        data: promptVals,
+        lineStyle: { width: 2.5, color },
+        itemStyle: { color, borderWidth: 2, borderColor: th.symbolBorder },
+      });
+    }
+    if (showCompletion) {
+      series.push({
+        name: `${m.modelAlias} ${t("views.dashboard.modelSeriesCompletionSuffix")}`,
+        type: "line",
+        smooth: 0.45,
+        symbol: "circle",
+        symbolSize: 6,
+        data: completionVals,
+        lineStyle: { width: 2.5, color, type: "dashed" },
+        itemStyle: { color, borderWidth: 2, borderColor: th.symbolBorder },
+      });
+    }
+  });
+
+  return {
+    backgroundColor: "transparent",
+    tooltip: {
+      trigger: "axis",
+      backgroundColor: th.tooltipBg,
+      borderColor: th.tooltipBorder,
+      textStyle: { color: th.tooltipText, fontSize: 12 },
+      formatter: (params: unknown) => {
+        const arr = Array.isArray(params) ? params : [params];
+        const first = arr[0] as { axisValue?: string; name?: string } | undefined;
+        const day = first?.axisValue ?? first?.name ?? "";
+        const lines = [day];
+        for (const p of arr) {
+          const item = p as { seriesName?: string; value?: number; data?: number };
+          const v = item.value ?? item.data ?? 0;
+          lines.push(`${item.seriesName ?? ""}: ${v}`);
+        }
+        return lines.join("<br/>");
+      },
+    },
+    legend:
+      series.length > 1
+        ? { top: 0, type: "scroll", textStyle: { color: th.axis, fontSize: 11 } }
+        : undefined,
+    grid: { left: 44, right: 12, top: series.length > 1 ? 48 : 28, bottom: days.length > 10 ? 48 : 36 },
+    xAxis: {
+      type: "category",
+      data: days,
+      axisLabel: {
+        color: th.axis,
+        fontSize: 11,
+        rotate: days.length > 10 ? 30 : days.length > 6 ? 22 : 0,
+        formatter: (v: string) => formatChartDayLabel(v),
+      },
+      axisLine: { lineStyle: { color: th.axisLine } },
+      axisTick: { show: false },
+    },
+    yAxis: {
+      type: "value",
+      axisLabel: { color: th.axis, fontSize: 11 },
+      splitLine: { lineStyle: { color: th.split, type: "dashed" } },
+    },
+    series,
+  };
+}
+
 function buildLineOption(seriesName: string, days: string[], values: number[], color: string): EChartsOption {
   const th = chartPalette();
   return {
@@ -647,26 +855,45 @@ function buildLineOption(seriesName: string, days: string[], values: number[], c
 function renderCharts() {
   const s = summary.value;
   if (!s) return;
-  const days = s.httpAccessByDay.map((d) => d.day);
-  const accessVals = s.httpAccessByDay.map((d) => d.count);
-  const qtyVals = s.meteringQuantityByDay.map((d) => d.total);
-  const cntVals = s.meteringEventsByDay.map((d) => d.count);
+  const httpByDay = s.httpAccessByDay ?? [];
+  const tokensByDay = s.meteringTokensByDay ?? [];
+  const eventsByDay = s.meteringEventsByDay ?? [];
+  const days = httpByDay.map((d) => d.day);
+  const accessVals = httpByDay.map((d) => d.count);
+  const tokenDays = tokensByDay.map((d) => d.day);
+  const promptByDay = tokensByDay.map((d) => d.promptTokens);
+  const completionByDay = tokensByDay.map((d) => d.completionTokens);
+  const cntVals = eventsByDay.map((d) => d.count);
+  const { prompt: showPrompt, completion: showCompletion } = tokenSeriesFlags();
 
   const pal = chartPalette();
   if (chartAccessRef.value) {
     if (!chartAccess) chartAccess = echarts.init(chartAccessRef.value);
     chartAccess.setOption(buildLineOption(t("views.dashboard.seriesAccessCount"), days, accessVals, pal.primary));
   }
-  if (chartMeterQtyRef.value) {
-    if (!chartMeterQty) chartMeterQty = echarts.init(chartMeterQtyRef.value);
-    chartMeterQty.setOption(buildLineOption(t("views.dashboard.seriesQuantity"), days, qtyVals, pal.series2));
+  if (chartMeterTokensRef.value) {
+    if (!chartMeterTokens) chartMeterTokens = echarts.init(chartMeterTokensRef.value);
+    chartMeterTokens.setOption(
+      buildDualTokenLineOption(tokenDays, promptByDay, completionByDay, showPrompt, showCompletion),
+      true,
+    );
   }
   if (chartMeterCntRef.value) {
     if (!chartMeterCnt) chartMeterCnt = echarts.init(chartMeterCntRef.value);
     chartMeterCnt.setOption(buildLineOption(t("views.dashboard.seriesEventCount"), days, cntVals, pal.series3));
   }
+  const trendModels = sliceModelTrendByDays(s.topModelTokenTrend30d ?? [], modelTokenTrendDays.value);
+  if (chartMeterModelRef.value) {
+    if (!chartMeterModel) chartMeterModel = echarts.init(chartMeterModelRef.value);
+    if ((!showPrompt && !showCompletion) || trendModels.length === 0) {
+      chartMeterModel.clear();
+    } else {
+      chartMeterModel.setOption(buildModelTokenTrendLineOption(trendModels, showPrompt, showCompletion), true);
+    }
+  }
   chartAccess?.resize();
-  chartMeterQty?.resize();
+  chartMeterTokens?.resize();
+  chartMeterModel?.resize();
   chartMeterCnt?.resize();
 }
 
@@ -698,7 +925,11 @@ async function reload() {
     summary.value = await adminDashboardApi.fetchDashboardSummary();
     kpiAnimKey.value += 1;
     await nextTick();
-    renderCharts();
+    try {
+      renderCharts();
+    } catch (chartErr: unknown) {
+      console.error("dashboard charts render failed", chartErr);
+    }
     await renderGeoCharts();
   } catch (e: unknown) {
     err.value = apiRequestErrorMessage(e, t("views.dashboard.loadFailed"));
@@ -711,11 +942,18 @@ async function reload() {
 
 function onResize() {
   chartAccess?.resize();
-  chartMeterQty?.resize();
+  chartMeterTokens?.resize();
+  chartMeterModel?.resize();
   chartMeterCnt?.resize();
   chartWorld?.resize();
   chartIpBar?.resize();
 }
+
+watch([tokenSeriesVisible, modelTokenTrendDays], () => {
+  if (summary.value) {
+    renderCharts();
+  }
+});
 
 watch(isDark, async () => {
   disposeCharts();
@@ -896,12 +1134,46 @@ onBeforeUnmount(() => {
   letter-spacing: 0.02em;
 }
 
+.chart-card-header,
 .chart-card-header--map {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.chart-card-header-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.chart-card-header-actions .token-series-toggle {
+  margin-left: 0;
+}
+
+.model-trend-range {
+  flex-shrink: 0;
+}
+
+.token-series-toggle {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.chart-card-hint {
+  margin: 0 0 8px;
+  padding: 0 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
+}
+
+.chart-host--tall {
+  height: 300px;
 }
 
 .chart-card-header--map .chart-card-title {

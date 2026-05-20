@@ -1,0 +1,2 @@
+-- 已迁至 migrate_0_1_240_chat_starter_prompt.sql（本文件名与 0.1.237 RAG 补丁位冲突，请勿再执行本文件）。
+-- 请执行：migrate_0_1_240_chat_starter_prompt.sql

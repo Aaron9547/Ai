@@ -11,6 +11,7 @@ import com.aaron.cloud.rag.RagApplicationService;
 import com.aaron.cloud.rag.RagWebCrawlSiteDueSupport;
 import com.aaron.cloud.rag.RagWebCrawlSiteSupport;
 import com.aaron.cloud.scheduled.TenantScheduledJobHandler;
+import com.aaron.cloud.scheduled.run.TenantScheduledRunContext;
 import com.aaron.cloud.scheduled.TenantScheduledTaskLockKeys;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -39,25 +40,48 @@ public class RagWebCrawlDispatchJobHandler implements TenantScheduledJobHandler 
     }
 
     @Override
-    public void execute(TenantScheduledTask registration) throws Exception {
+    public void execute(TenantScheduledTask registration, TenantScheduledRunContext runContext)
+            throws Exception {
         long tenantId = registration.getTenantId();
+        runContext.report("SCAN", "扫描启用中的爬站配置", 5, null, null);
         List<RagWebCrawlSite> sites = siteRepository.listAllEnabledForTenant(tenantId);
         if (sites.isEmpty()) {
             log.debug("网页爬取调度无启用站点 tenantId={}", tenantId);
+            runContext.report("DONE", "无启用站点", 100, 0, 0);
             return;
         }
         LocalDateTime now = BeijingTime.nowLocal();
         int triggered = 0;
         int skipped = 0;
+        int dueTotal = 0;
+        for (RagWebCrawlSite site : sites) {
+            if (RagWebCrawlSiteDueSupport.isDue(site, now)) {
+                dueTotal++;
+            }
+        }
+        int processed = 0;
         for (RagWebCrawlSite site : sites) {
             if (!RagWebCrawlSiteDueSupport.isDue(site, now)) {
                 skipped++;
                 continue;
             }
-            if (triggerSite(site)) {
+            processed++;
+            runContext.report(
+                    "DISPATCH",
+                    "正在为站点入队爬取任务：" + site.getBaseUrl(),
+                    dueTotal > 0 ? (processed * 90 / dueTotal) : null,
+                    processed,
+                    dueTotal);
+            if (triggerSite(site, runContext)) {
                 triggered++;
             }
         }
+        runContext.report(
+                "DONE",
+                "调度完成，已入队 " + triggered + " 个站点（跳过 " + skipped + "）",
+                100,
+                triggered,
+                sites.size());
         log.info(
                 "网页爬取调度完成 tenantId={} registrationId={} total={} triggered={} skipped={}",
                 tenantId,
@@ -67,7 +91,8 @@ public class RagWebCrawlDispatchJobHandler implements TenantScheduledJobHandler 
                 skipped);
     }
 
-    private boolean triggerSite(RagWebCrawlSite site) throws Exception {
+    private boolean triggerSite(RagWebCrawlSite site, TenantScheduledRunContext runContext)
+            throws Exception {
         String lockKey = TenantScheduledTaskLockKeys.siteRun(site.getTenantId(), site.getId());
         long ttlSec = aiRagProperties.getScheduledTasks().getTaskLockTtlSeconds();
         Optional<RedisDistributedLockService.DistributedLockHandle> lock =
@@ -78,16 +103,18 @@ public class RagWebCrawlDispatchJobHandler implements TenantScheduledJobHandler 
         }
         try (var ignored = lock.get()) {
             var mode = RagWebCrawlSiteSupport.resolveEffectiveSyncMode(site);
-            ragApplicationService.enqueueSiteCrawlJobForSite(
-                    site.getTenantId(),
-                    site.getKbId(),
-                    site.getBaseUrl(),
-                    mode,
-                    site.getMaxDepth(),
-                    site.getFilterCrawled() != null && site.getFilterCrawled() == 1,
-                    site.getChunkStrategy(),
-                    site.getCategoryId(),
-                    site.getId());
+            long jobTaskId =
+                    ragApplicationService.enqueueSiteCrawlJobForSite(
+                            site.getTenantId(),
+                            site.getKbId(),
+                            site.getBaseUrl(),
+                            mode,
+                            site.getMaxDepth(),
+                            site.getFilterCrawled() != null && site.getFilterCrawled() == 1,
+                            site.getChunkStrategy(),
+                            site.getCategoryId(),
+                            site.getId());
+            runContext.recordSpawnedJobTask(jobTaskId);
             site.setLastCrawlAt(BeijingTime.nowLocal());
             siteRepository.updateById(site);
             return true;

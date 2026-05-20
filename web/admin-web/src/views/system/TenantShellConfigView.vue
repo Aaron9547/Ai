@@ -531,7 +531,6 @@ const memoryPolicyForm = reactive({ ...MEMORY_POLICY_DEFAULT });
 const inputGuardForm = reactive({ ...INPUT_GUARD_DEFAULT });
 const webSearchRounds = ref(3);
 const suffixSlots = ref<string[]>([""]);
-
 watch(webSearchRounds, (n) => {
   suffixSlots.value = resizeSuffixSlots([...suffixSlots.value], n);
 });

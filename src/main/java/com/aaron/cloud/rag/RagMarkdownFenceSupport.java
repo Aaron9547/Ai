@@ -9,7 +9,9 @@ import java.util.regex.Pattern;
  */
 public final class RagMarkdownFenceSupport {
 
-    private static final Pattern OPENING_FENCE = Pattern.compile("^(`{3,}|~{3,})([^`~]*)\\s*$");
+    /** GFM：行首最多 3 空格 + 围栏；行内不得含其它正文。 */
+    private static final Pattern OPENING_FENCE =
+            Pattern.compile("^( {0,3})(`{3,}|~{3,})([^`~]*)\\s*$");
 
     public enum Kind {
         PROSE,
@@ -35,12 +37,12 @@ public final class RagMarkdownFenceSupport {
 
         for (String line : lines) {
             if (!inFence) {
-                var open = OPENING_FENCE.matcher(line.trim());
+                var open = OPENING_FENCE.matcher(line);
                 if (open.matches()) {
                     flushProse(prose, out);
                     inFence = true;
-                    fenceChar = open.group(1).charAt(0);
-                    fenceLen = open.group(1).length();
+                    fenceChar = open.group(2).charAt(0);
+                    fenceLen = open.group(2).length();
                     fence.setLength(0);
                     fence.append(line).append('\n');
                 } else {
@@ -112,15 +114,14 @@ public final class RagMarkdownFenceSupport {
     }
 
     private static boolean isClosingFenceLine(String line, char markerChar, int markerLen) {
-        String t = line.trim();
-        if (t.isEmpty()) {
+        var m = OPENING_FENCE.matcher(line);
+        if (!m.matches()) {
             return false;
         }
-        int i = 0;
-        while (i < t.length() && t.charAt(i) == markerChar) {
-            i++;
-        }
-        return i >= markerLen && t.substring(i).isBlank();
+        String fence = m.group(2);
+        return fence.charAt(0) == markerChar
+                && fence.length() >= markerLen
+                && m.group(3).isBlank();
     }
 
     private static List<String> splitProseParagraphs(String prose) {
@@ -174,9 +175,12 @@ public final class RagMarkdownFenceSupport {
         while (pos < prose.length()) {
             int hardEnd = Math.min(prose.length(), pos + size);
             int end = preferProseBreakEnd(prose, pos, hardEnd);
-            String p = prose.substring(pos, end).trim();
-            if (!p.isEmpty()) {
-                out.add(p);
+            if (end <= pos) {
+                end = hardEnd;
+            }
+            String raw = prose.substring(pos, end);
+            if (!raw.isBlank()) {
+                out.add(raw.strip());
             }
             if (end >= prose.length()) {
                 break;

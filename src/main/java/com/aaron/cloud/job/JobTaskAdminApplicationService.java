@@ -18,6 +18,17 @@ public class JobTaskAdminApplicationService {
 
     private final JobTaskRepository jobTaskRepository;
 
+    public JobTaskAdminView get(long id) {
+        long tenantId = com.aaron.cloud.common.context.TenantContextHolder.require().getTenantId();
+        return jobTaskRepository
+                .findById(id, tenantId)
+                .map(this::toView)
+                .orElseThrow(
+                        () ->
+                                new org.springframework.web.server.ResponseStatusException(
+                                        org.springframework.http.HttpStatus.NOT_FOUND, "job not found"));
+    }
+
     public Page<JobTaskAdminView> page(long page, long size, JobTaskType taskType, Long ragKbId) {
         long tenantId = TenantContextHolder.require().getTenantId();
         Page<JobTask> src = jobTaskRepository.pageByTenant(tenantId, page, size, taskType, ragKbId);

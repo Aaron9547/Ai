@@ -48,6 +48,21 @@
 
 ---
 
+## 对话推荐问题（功能模块索引）
+
+**稳定边界（不写迭代清单）**
+
+- **产品语义**：空会话展示可点击推荐问句；运营可维护池子；可选 **每日联网热点** 作兜底；助手回复后可展示 **猜你想问**（追问 chips）。
+- **持久化**：**`chat_starter_prompt`**、**`chat_starter_daily_batch`**、**`chat_starter_follow_up_cache`**、**`chat_starter_event`**（**`chat_*`** 前缀，见 **`.cursorrules` §4.1.3**）。
+- **配置入口**：每日热点 Cron 与启停为 **`ten_scheduled_task`** 执行器 **`CHAT_STARTER_DAILY_HOT`**（管理端 **「定时任务」**）；运营池与热点批次、手动重抓在 **「推荐问题与猜你想问」**（**`/chat/starter-prompts`**）。统一调度 tick 与 RAG 共用 **`ai.rag.scheduled-tasks`**（**`TenantScheduledTaskPoller`**）。
+- **编排位置**：**`ChatStarterPromptApplicationService`**（抽样）、**`ChatStarterDailyHotTopicService`** + **`ChatStarterDailyHotJobHandler`**（热点）、**`ChatStarterFollowUpService`**（追问）；包 **`com.aaron.cloud.chat.starter`** / **`com.aaron.cloud.scheduled.handler`**。
+- **Open API**：**`GET /open/v1/chat/starter-prompts`**、**`POST …/starter-prompts/events`**、**`GET …/conversations/{id}/messages/{msgId}/follow-up-prompts`**。
+- **已建库运维**：**必须**手工执行 **`db/mysql/migrate_0_1_240_chat_starter_prompt.sql`**（应用**不会**自动建表）；迭代明细见 **「变更记录」** **`### 0.1.240-SNAPSHOT`**。
+
+**迭代写在哪里**：同 **「联网搜索」** 专节约定。
+
+---
+
 ## ★ 用户端（`web/user-web`）路由与租户（**必读**）
 
 > **C 端对话入口不是 `/chat`。** 正式路径为 **`/{租户编码}/chat`**（`租户编码` = 库表 **`sys_tenant.code`**，与种子 **`default`** 等一致），例如 **`/default/chat`**。地址栏**第一段**即当前工作区；出站请求优先带 **`X-Tenant-Code`**（该段为合法编码时）；若本地仍缓存旧版纯数字「租户段」则发 **`X-Tenant-Id`** 兼容（见 **`web/user-web/src/utils/outboundTenant.ts`** 与路由 **`beforeEach`**）。网关 **`TenantContextFilter`** 在 **`X-Tenant-Id` 缺省**时会将 **`X-Tenant-Code`** 解析为内部 **`tenantId`**（已登录 JWT 路径同样生效）。
@@ -135,16 +150,37 @@
 
 ## 变更记录
 
+### 0.1.242-SNAPSHOT
+
+- **版本**：**`pom.xml`** bump **0.1.241 → 0.1.242-SNAPSHOT**。
+- **定时任务异步 Run + 幂等 + 进度**：表 **`ten_scheduled_run`**（**`migrate_0_1_242_scheduled_run.sql`**）；**`TenantScheduledRunOrchestrator`** 虚拟线程后台执行，同 **`registration_id`** 仅允许一条 **PENDING/RUNNING**（连点返回 **`duplicate`**）；通用 **`LongRunningTaskProgress`** / **`LongRunningTaskProgressReporter`**。**`POST …/scheduled-tasks/{id}/run`** 秒回 **`ScheduledRunTriggerResult`**；**`GET …/run/active`**、**`GET …/runs/{runId}`** 查进度。**`ChatStarterDailyHotJobHandler`**、**`RagWebCrawlDispatchJobHandler`** 已接入 **`report()`**；爬站子任务写入 **`child_job_task_ids_json`**。**`web/admin-web`** **`ScheduledTasksView`**：执行中禁用「立即执行」、进度弹窗 2s 轮询。**已建库须手工执行** **`migrate_0_1_242_scheduled_run.sql`**。
+- **网页爬取 job_task 进度**：**`JobTaskRepository.updateProgress`**；**`RagLocalSiteCrawlOrchestrationService`** 上报阶段；**`GET /api/v1/admin/job-tasks/{id}`** 含 **`result_json`** 进度。**`gw_api_endpoint_catalog_inserts.sql`** 补登 run/active、runs、job-tasks 详情。
+- **用户端推荐问题**：**`ChatView`** 点击空会话推荐或「猜你想问」时，若租户允许联网则自动打开输入区 **联网** 开关（**`enableWebSearchForStarterPrompt`**）。
+
+### 0.1.241-SNAPSHOT
+
+- **版本**：**`pom.xml`** bump **0.1.240 → 0.1.241-SNAPSHOT**。
+- **对话推荐问题·管理端**：新增 **`ChatStarterPromptsView`**（**`/chat/starter-prompts`**，菜单 **「推荐问题」**）：空会话运营池、**猜你想问**手工池、每日热点批次与 **立即重新抓取**；热点 Cron/启停迁至 **「定时任务」** 执行器 **`CHAT_STARTER_DAILY_HOT`**（**`ChatStarterDailyHotJobHandler`**），移除 **`ChatStarterDailyHotTopicPoller`** 与 **「外观与模型调用」** 内热点配置。**已建库**须执行 **`migrate_0_1_241_chat_starter_scheduled_task.sql`**（从旧 **`CHAT_STARTER_DAILY_HOT_*`** 运行时参数种子默认定时任务）。
+
+### 0.1.240-SNAPSHOT
+
+- **版本**：**`pom.xml`** bump **0.1.237 → 0.1.240-SNAPSHOT**；本批为独立能力迭代（推荐问题 + 数据概览 Token 聚合），与 **0.1.237** RAG/定时任务线分离。
+- **全量库表（`schema_v1.sql`）**：补登 **`chat_starter_prompt`**、**`chat_starter_daily_batch`**、**`chat_starter_follow_up_cache`**、**`chat_starter_event`**；**`gw_api_endpoint_catalog_inserts.sql`** 补登推荐问题 Open/Admin API（与 **`migrate_0_1_240_chat_starter_prompt.sql`** 一致）。**已建库**须执行 **`migrate_0_1_240_chat_starter_prompt.sql`**，勿整文件重跑 **`schema_v1.sql`**。
+- **对话推荐问题（`migrate_0_1_240_chat_starter_prompt.sql`）**：运营池 **`MANUAL`** / 每日热点 **`HOT_TOPIC_DAILY`**；**`ChatStarterPromptApplicationService`** 加权抽样；**`ChatStarterDailyHotTopicService`** + **`ChatStarterDailyHotTopicPoller`**（租户 **`CHAT_STARTER_DAILY_HOT_*`** + 进程 **`ai.chat.starter-prompts.poller-cron`**）；**`ChatStarterFollowUpService`** 追问。**`web/user-web`** **`ChatView`** 空会话推荐、换一批、追问 chips。**`web/admin-web`** **「外观与模型调用」** 配置每日热点；**`chatStarterPrompt.ts`** Admin CRUD API。**`TenantRuntimeSettingKey`** 增加 **`CHAT_STARTER_DAILY_HOT_ENABLED` / `CHAT_STARTER_DAILY_HOT_CRON`**。功能索引见 **「对话推荐问题（功能模块索引）」**。
+- **管理端数据概览 Token**：**`MeteringTokenDashboardAggregator`** 应用层解析 **`metering_usage_event.ref_json`**，替代 SQL **`JSON_EXTRACT`** 聚合；**`AdminDashboardApplicationService`** 接入；**`normalizeAdminDashboardSummary.ts`** 兼容字段。已建库无 DDL；须 **重新编译重启** 后旧 WARN **`JSON functions unavailable`** 才消失。
+- **协作规则**：**`AGENTS.md`**、**`.cursor/rules/project-changelog.mdc`** 补登交付门禁与 **`migrate_*` 与 `pom` 补丁位对齐**说明；**`.cursorrules` §1.5** 增加推荐问题能力行。
+
 ### 0.1.237-SNAPSHOT
 
 - **全量库表（`schema_v1.sql`）**：补登 **`ten_scheduled_task`**（通用 cron 调度注册）、**`rag_web_crawl_site`**（含 **`extract_config`**）、**`rag_web_crawl_url_item`**；**`rag_chunk.parent_chunk_id`**（子母分片）；**`rag_knowledge_base`** 默认 **`default_chunk_strategy=2`（SEMANTIC）**、**`chunk_fixed_chars=1000`**；管理端菜单 **`SCHEDULED_TASKS`** 及租户/用户菜单链接种子。**`gw_api_endpoint_catalog_inserts.sql`** 补登爬站、检索试跑、定时任务、分片预览、入库分析等 API（与 **`migrate_0_1_231`～`239`** 一致）。**已建库**仍按迁移档顺序执行，勿整文件重跑 **`schema_v1.sql`**。
 - **RAG 分片与入库体验（0.1.231～237 合批）**：新建知识库默认**语义段落**分片；**`RagChunkSplitter`** 固定长度优先在段落/句号断开、语义按 Markdown 标题分节；**`RagHtmlToMarkdown` / `RagWebPageParseService`**（**readability4j**）改进标题与正文抽取；爬站 **`extract_config`**（LONGTEXT JSON）；**`POST …/ingest/preview-chunks`** 单 URL 入库前预览；管理端默认策略、**`KbChunkPreviewDialog`**、站点表单抽取配置。
 - **网页爬取与定时任务架构**：**`rag_web_crawl_url_item`** + 一次性 **`web-crawl/local`**；**`ten_scheduled_task`** 演进为执行器 + cron（**`TenantScheduledTaskPoller`**）；爬站业务迁至 **`rag_web_crawl_site`** + **`RAG_WEB_CRAWL_DISPATCH`** 调度；废弃知识库内 **`web-crawl/schedules`** API（**`migrate_0_1_235`**）；管理端 **「定时任务」** 菜单与 **`/admin/scheduled-tasks`** CRUD。
 - **检索试跑**：**`POST …/retrieval-test`**（**`migrate_0_1_232`**）。
-- **文档/SQL 协作**：**`db/mysql/README.md`** 登记 **`migrate_0_1_231`～`239`**；**`migrate_0_1_237`** 网关 INSERT 列名修正为 **`display_name` / `remark`**。
+- **文档/SQL 协作**：**`db/mysql/README.md`** 登记 **`migrate_0_1_231`～`239`**；**`migrate_0_1_237_rag_semantic_default_and_crawl_extract.sql`** 网关 INSERT 列名修正为 **`display_name` / `remark`**。
 - **子母分片（`RagChunkStrategy.PARENT_CHILD`，`migrate_0_1_238`）**：**`rag_chunk.parent_chunk_id`**（**`schema_v1.sql`** 已含列与 **`idx_rag_chunk_parent`**）；母块仅上下文、**`retrieval_enabled=DISABLED`**，子块参与向量检索。**`RagParentChildChunkSupport`**：母块按语义段落、子块在母块内固定字数切分。**`RagChunkSplitter`** 增加 **`PARENT_CHILD`** 分支；**`RagIngestOrchestrationService`** 入库时写入母子 **`id`** 关联。**`RagMarkdownFenceSupport`**：Markdown 围栏（含 mermaid 等）内文本在固定长/语义切分时不被拦腰截断（**`RagMarkdownFenceSupportTest`**）。**`GET /api/v1/admin/rag-kbs/{id}/documents/{docId}/chunks`** 响应扩展 **`parentChild` / `parentCount` / `childCount` / `flatCount`**（**`normalizeChunksListResponse`**，兼容旧版纯数组）。**`RagDocumentChunkPurgeService`**：文档重分片前清理向量与分片行。
 - **上传入库前分片策略分析（`migrate_0_1_239`）**：**`POST …/ingest/analyze`**（Markdown 正文）、**`POST …/ingest/analyze-upload`**（multipart 文件）；**`RagDocumentChunkProfileAnalyzer`** / **`RagIngestPreviewApplicationService`** 返回是否推荐 **子母分片** 及理由；网关目录已登记。**管理端**：**`KbDocumentMatrixPanel`** 上传/粘贴时在非 **PARENT_CHILD** 策略下可弹窗确认是否改用子母分片（**`views.kbMatrix.parentChild*`**）。
-- **管理端分片管理页（`DocumentChunksManageView`）**：子母文档显示 **「分片视图」**（**仅检索子块** / **含母块上下文**）、卡片 **母块/子块** 标签与「仅上下文」提示；编辑弹窗 **预览 / 源码** Tab + 卡片内 **Markdown 安全渲染**。**`web/admin-web/src/utils/renderMarkdown.ts`** 接入 **`markdown-it-multimd-table`**、**`markdown-it-task-lists`**（GFM 表格与任务列表）；**`DOMPurify`** 放行任务列表 **`input`**；**`global.css`** **`.chunk-md`** 表格/任务列表样式。**`document-chunks-page`** 卡片与侧栏去硬编码白底，**`html.dark`** 下阴影/高亮/Markdown 代码块随主题。**`views.chunks.*`**（**`viewMessages.zh/en`**）覆盖页头、工具栏、卡片与对话框；侧栏「文档信息」等待补全键位时可继续沿用中文硬编码。
+- **管理端分片管理页（`DocumentChunksManageView`）**：子母文档显示 **「分片视图」**（**仅检索子块** / **含母块上下文**）、卡片 **母块/子块** 标签与「仅上下文」提示；编辑弹窗 **预览 / 源码** Tab + 卡片内 **Markdown 安全渲染**。**`web/admin-web/src/utils/renderMarkdown.ts`** 接入 **`markdown-it-multimd-table`**、**`markdown-it-task-lists`**（GFM 表格与任务列表）；**`normalizeGfmBlockMarkdown`** 为表格/任务列表补空行；**`DOMPurify`** 放行任务列表 **`input`**；**`global.css`** **`.chunk-md`** 表格/任务列表样式；卡片预览区可滚动（去 **`max-height:220px` + `overflow:hidden`**）。**`views.chunks.hintParentHidden` / `hintCoverageLow`** 提示母块隐藏与字数覆盖率。**分片页对已加载文档默认 Markdown 渲染**。
+- **分片丢字修复（`RagChunkSplitter` / `RagMarkdownFenceSupport`）**：**滑动窗口**下一窗从 **`end - overlap`** 起算，避免断点早于步长时中间段落被跳过；围栏行按 GFM **0～3 空格**识别；语义分片/子母子块在覆盖率不足时回退 **`chunkByMaxChars`**；**`RagMarkdownFenceSupportTest`** 增加表格+任务列表与滑动窗口覆盖用例。
 - **管理端用户画像详情 i18n**：**`UserProfilesView.vue`** 画像详情弹窗全量改 **`views.profiles.*`**；**`userProfileDetailSemantics.ts`** 标签名/抽象层字段/角色标签经 **`i18n.global.t`**（**`abstractBlocks`** 依赖 **`locale`** 以随语言切换刷新）。
 - **管理端对话抽检 Markdown**：**`ChatConversationsView`** 知识引用弹窗、**`ChatDrawerAssistantAuditBlock`** 助手正文复用 **`renderMarkdownToSafeHtml`**（与分片预览同源工具链）。
 - **依赖**：**`admin-web/package.json`** 增加 **`markdown-it-multimd-table`**、**`markdown-it-task-lists`**；后端 **`pom.xml`** 等见同批 RAG/定时任务依赖（**readability4j** 等已在 **`RagWebPageParseService`** 使用）。

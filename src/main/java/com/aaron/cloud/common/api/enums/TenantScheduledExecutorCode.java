@@ -12,7 +12,8 @@ import lombok.RequiredArgsConstructor;
 @Getter
 @RequiredArgsConstructor
 public enum TenantScheduledExecutorCode {
-    RAG_WEB_CRAWL_DISPATCH("RAG_WEB_CRAWL_DISPATCH", "知识库网页爬取调度");
+    RAG_WEB_CRAWL_DISPATCH("RAG_WEB_CRAWL_DISPATCH", "知识库网页爬取调度"),
+    CHAT_STARTER_DAILY_HOT("CHAT_STARTER_DAILY_HOT", "对话推荐问题·每日热点");
 
     @EnumValue
     private final String code;
@@ -30,6 +31,18 @@ public enum TenantScheduledExecutorCode {
             }
         }
         throw new IllegalArgumentException("unknown scheduled executor: " + raw);
+    }
+
+    /** 未知 code 时回退为 code 本身，避免管理端展示空白。 */
+    public static String labelOfCode(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return fromCode(raw).getLabel();
+        } catch (IllegalArgumentException e) {
+            return raw.trim();
+        }
     }
 
     public static List<Map<String, Object>> metaList() {

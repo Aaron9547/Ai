@@ -31,6 +31,12 @@ public final class RagParentChildChunkSupport {
                     RagChunkSplitter.split(parent, RagChunkStrategy.FIXED_CHAR, childSize, 0);
             if (children.isEmpty()) {
                 children = List.of(parent);
+            } else if (!RagChunkSplitter.chunksCoverSourceInOrder(parent, children)
+                    || RagChunkSplitter.totalChunkChars(children) < parent.trim().length() * 85 / 100) {
+                children = RagMarkdownFenceSupport.chunkByMaxChars(parent, childSize);
+                if (children.isEmpty()) {
+                    children = List.of(parent);
+                }
             }
             out.add(new ParentChildBlock(parent, children));
         }

@@ -30,6 +30,8 @@ export default {
     quick1: "Write a poem about spring",
     quick2: "Explain quantum mechanics",
     quick3: "Generate a weekly report template",
+    starterRefresh: "More ideas",
+    followUpLabel: "You might ask",
     roleMe: "Me",
     roleAssistant: "Assistant",
     selectModel: "Select model",

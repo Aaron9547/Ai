@@ -423,6 +423,49 @@ export async function streamRegenerateAssistantReply(
   await readSseStream(res, onPart, options?.signal);
 }
 
+export interface StarterPromptItem {
+  id: number | null;
+  text: string;
+  source: string;
+}
+
+export interface StarterPromptList {
+  items: StarterPromptItem[];
+  fallback: boolean;
+}
+
+export async function fetchStarterPrompts(params: {
+  scene?: "EMPTY" | "FOLLOW_UP";
+  limit?: number;
+  refresh?: boolean;
+  excludeIds?: number[];
+  thinkingEnabled?: boolean;
+  webSearchEnabled?: boolean;
+}): Promise<StarterPromptList> {
+  const { data } = await http.get("/open/v1/chat/starter-prompts", { params });
+  return data as StarterPromptList;
+}
+
+export async function recordStarterPromptEvent(body: {
+  promptId?: number | null;
+  scene: string;
+  eventType: "IMPRESSION" | "CLICK" | "SEND";
+}): Promise<void> {
+  await http.post("/open/v1/chat/starter-prompts/events", body);
+}
+
+export async function fetchFollowUpPrompts(
+  conversationId: number,
+  messageId: number,
+  limit = 3,
+): Promise<StarterPromptList> {
+  const { data } = await http.get(
+    `/open/v1/chat/conversations/${conversationId}/messages/${messageId}/follow-up-prompts`,
+    { params: { limit } },
+  );
+  return data as StarterPromptList;
+}
+
 /** 使用 fetch 读取 SSE（携带 {@code X-Tenant-Id} 或 {@code X-Tenant-Code} 与 {@code X-Device-Id}）。data 行为 JSON 分帧：content / reasoning / ragDoc / webSearchRefs / end */
 export async function streamAssistantReply(
   conversationId: number,

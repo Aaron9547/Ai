@@ -1,0 +1,22 @@
+---
+description: Ai 交付门禁 — 动代码须完成 .cursorrules §0.3 清单并同步 PROJECT.md
+alwaysApply: true
+---
+
+# 变更记录门禁（Ai）
+
+**全文**：**`.cursorrules` §0** · 速查：**`AGENTS.md`**
+
+## §0.3 编码迭代交付（勾选）
+
+- [ ] 改动触及 §0.2 路径？（java / web / db/mysql / pom / application*.yml）
+- [ ] **大改**已 `pom` bump + **新开** `PROJECT.md` 顶节 `###`？（禁止只堆旧版如 0.1.237）
+- [ ] 顶节 `###` **=** `pom.xml` `<version>`？
+- [ ] `PROJECT.md`「变更记录」至少一条 `- **模块**：…`（含 migrate / 已建库手工执行说明）？
+- [ ] `schema_v1.sql` / `migrate_0_1_{patch}_*` / `gw_api_endpoint_catalog_inserts.sql` / `README.md` 已同集更新？
+- [ ] 新能力：`PROJECT.md` 功能索引 + §1.5（若适用）？
+- [ ] `.\scripts\check-project-changelog.ps1 -IncludeUntracked` → **0**
+
+## 禁止（§0.5）
+
+只改代码不写变更记录 · 用 `##` 专节代替变更记录 · pom/顶节不一致 · 以为重启即迁库 · 新 API 不写 gw 目录

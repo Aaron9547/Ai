@@ -35,6 +35,30 @@
           <el-button type="primary" class="dc-toolbar-add" @click="openNewChunk">{{ t("views.chunks.newChunk") }}</el-button>
         </div>
 
+        <el-alert
+          v-if="hasParentChildChunks && chunkViewMode === 'retrieval'"
+          type="info"
+          :closable="false"
+          show-icon
+          class="dc-hint-alert"
+        >
+          {{ t("views.chunks.hintParentHidden") }}
+        </el-alert>
+        <el-alert
+          v-if="chunkCoverageLow"
+          type="warning"
+          :closable="false"
+          show-icon
+          class="dc-hint-alert"
+        >
+          {{
+            t("views.chunks.hintCoverageLow", {
+              chunkChars: totalChunkChars,
+              docChars: docMdChars,
+            })
+          }}
+        </el-alert>
+
         <el-empty
           v-if="!pageLoading && !filteredChunks.length"
           :description="t('views.chunks.empty')"
@@ -356,14 +380,34 @@ function shouldRenderChunkMarkdown(row: RagChunkAdminRow): boolean {
   if (chunkSearch.value.trim()) return false;
   const s = (row.content || "").trim();
   if (!s) return false;
-  const fn = doc.value?.originalFilename?.toLowerCase() ?? "";
-  return (
-    looksLikeMarkdown(s) ||
-    doc.value?.sourceType === "URL_CRAWL" ||
-    fn.endsWith(".md") ||
-    fn.endsWith(".markdown")
-  );
+  if (doc.value) return true;
+  return looksLikeMarkdown(s);
 }
+
+const totalChunkChars = computed(() =>
+  chunks.value.reduce((sum, c) => sum + (c.content || "").trim().length, 0),
+);
+
+const docMdChars = computed(() => {
+  const n = doc.value?.contentLength;
+  if (n != null && n > 0) return n;
+  return totalChunkChars.value;
+});
+
+const chunkCoverageLow = computed(() => {
+  const docLen = docMdChars.value;
+  if (docLen < 200) return false;
+  let covered = totalChunkChars.value;
+  if (hasParentChildChunks.value) {
+    covered = chunks.value
+      .filter((c) => {
+        const r = effectiveChunkRole(c);
+        return r === "CHILD" || r === "FLAT";
+      })
+      .reduce((sum, c) => sum + (c.content || "").trim().length, 0);
+  }
+  return covered < docLen * 0.85;
+});
 
 function chunkMarkdownHtml(content: string): string {
   return renderMarkdownToSafeHtml(content || "");
@@ -776,9 +820,14 @@ onMounted(() => {
 
 .chunk-text.chunk-md {
   white-space: normal;
-  max-height: 220px;
-  overflow: hidden;
+  max-height: min(42vh, 360px);
+  overflow-x: auto;
+  overflow-y: auto;
   text-align: left;
+}
+
+.dc-hint-alert {
+  margin: 0 0 12px;
 }
 
 .chunk-text.chunk-md :deep(a) {

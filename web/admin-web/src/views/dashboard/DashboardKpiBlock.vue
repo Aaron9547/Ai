@@ -88,7 +88,7 @@
     <section class="dash-sec">
       <h2 class="dash-sec-title">{{ t("views.dashboard.section24h") }}</h2>
       <el-row :gutter="18" class="dash-row">
-        <el-col :xs="12" :sm="12" :md="12" :lg="12">
+        <el-col :xs="12" :sm="12" :md="8" :lg="8">
           <div class="kpi kpi--compact" data-tone="indigo">
             <div class="kpi-body kpi-body--solo">
               <div class="kpi-label">{{ t("views.dashboard.kpiHttp24h") }}</div>
@@ -98,7 +98,7 @@
             </div>
           </div>
         </el-col>
-        <el-col :xs="12" :sm="12" :md="12" :lg="12">
+        <el-col :xs="12" :sm="12" :md="8" :lg="8">
           <div class="kpi kpi--compact" data-tone="violet">
             <div class="kpi-body kpi-body--solo">
               <div class="kpi-label">{{ t("views.dashboard.kpiMetering24h") }}</div>
@@ -108,17 +108,27 @@
             </div>
           </div>
         </el-col>
-        <el-col :xs="12" :sm="12" :md="12" :lg="12">
+        <el-col :xs="12" :sm="12" :md="8" :lg="8">
           <div class="kpi kpi--compact" data-tone="sky">
             <div class="kpi-body kpi-body--solo">
-              <div class="kpi-label">{{ t("views.dashboard.kpiMeteringQty24h") }}</div>
+              <div class="kpi-label">{{ t("views.dashboard.kpiPromptTokens24h") }}</div>
               <div class="kpi-value kpi-value--sm">
-                {{ formatQty(vMeterQty) }}
+                {{ formatQty(vPrompt24) }}
               </div>
             </div>
           </div>
         </el-col>
-        <el-col :xs="12" :sm="12" :md="12" :lg="12">
+        <el-col :xs="12" :sm="12" :md="8" :lg="8">
+          <div class="kpi kpi--compact" data-tone="cyan">
+            <div class="kpi-body kpi-body--solo">
+              <div class="kpi-label">{{ t("views.dashboard.kpiCompletionTokens24h") }}</div>
+              <div class="kpi-value kpi-value--sm">
+                {{ formatQty(vCompletion24) }}
+              </div>
+            </div>
+          </div>
+        </el-col>
+        <el-col :xs="12" :sm="12" :md="8" :lg="8">
           <div class="kpi kpi--compact" data-tone="amber">
             <div class="kpi-body kpi-body--solo">
               <div class="kpi-label">{{ t("views.dashboard.kpiAudit24h") }}</div>
@@ -167,7 +177,8 @@ const vJobsQueue = useMetricTransition(() => props.kpi.jobTaskPendingOrRunning);
 const vJobs7d = useMetricTransition(() => props.kpi.jobTasksCreatedLast7d);
 const vHttp24 = useMetricTransition(() => props.recent24h.httpAccessCount);
 const vMeterEvents = useMetricTransition(() => props.recent24h.meteringEventCount);
-const vMeterQty = useMetricTransition(() => props.recent24h.meteringQuantitySum);
+const vPrompt24 = useMetricTransition(() => props.recent24h.promptTokens24h);
+const vCompletion24 = useMetricTransition(() => props.recent24h.completionTokens24h);
 const vAudit24 = useMetricTransition(() => props.recent24h.auditEventCount);
 
 function formatInt(n: number): string {
@@ -236,6 +247,9 @@ function formatQty(n: number): string {
 }
 .kpi[data-tone="slate"] {
   --kpi-accent: #475569;
+}
+.kpi[data-tone="cyan"] {
+  --kpi-accent: #0891b2;
 }
 
 .kpi-icon {

@@ -172,6 +172,9 @@ ai:
     attachment:
       # 会话附件原始文件落盘根目录（不入库）；路径段为 tenantId/conversationId/attachmentId
       bin-dir: ${AI_CHAT_ATTACHMENT_BIN_DIR:${user.dir}/data/chat-attachment-bin}
+    starter-prompts:
+      # 已废弃：每日热点改由 ten_scheduled_task（CHAT_STARTER_DAILY_HOT）+ ai.rag.scheduled-tasks 统一 poller
+      poller-cron: ${AI_CHAT_STARTER_POLLER_CRON:0 * * * * *}
   # 管理端 llm_model API Key 等 AES-GCM 加密；须配置随机密钥。可选 ai.cors.fallback-when-no-enabled-rows：库表无启用 CORS 行时的兜底 Origin 列表。
   llm-model:
     api-key-encryption-secret: ${AI_LLM_MODEL_KEY_SECRET:}

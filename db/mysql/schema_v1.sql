@@ -124,6 +124,65 @@ CREATE TABLE IF NOT EXISTS chat_intent_keyword (
   KEY idx_chat_intent_kw_tenant_phrase (tenant_id, phrase(64))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='意图触发关键词';
 
+CREATE TABLE IF NOT EXISTS chat_starter_prompt (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  tenant_id BIGINT NOT NULL COMMENT '租户隔离键',
+  scene VARCHAR(32) NOT NULL COMMENT 'ChatStarterPromptScene：EMPTY|FOLLOW_UP',
+  source VARCHAR(32) NOT NULL COMMENT 'ChatStarterPromptSource',
+  prompt_text VARCHAR(256) NOT NULL COMMENT '推荐问句',
+  weight INT NOT NULL DEFAULT 100 COMMENT '抽样权重',
+  enabled TINYINT NOT NULL DEFAULT 1 COMMENT '0=OFF 1=ON',
+  require_thinking TINYINT NULL,
+  require_web_search TINYINT NULL,
+  valid_from DATE NULL,
+  valid_until DATE NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  batch_key VARCHAR(32) NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  KEY idx_csp_tenant_scene_en (tenant_id, scene, enabled),
+  KEY idx_csp_tenant_batch (tenant_id, batch_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='对话推荐问题池';
+
+CREATE TABLE IF NOT EXISTS chat_starter_daily_batch (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  tenant_id BIGINT NOT NULL,
+  topic_date DATE NOT NULL,
+  status VARCHAR(32) NOT NULL,
+  questions_json MEDIUMTEXT NULL,
+  error_message VARCHAR(512) NULL,
+  fetched_at DATETIME(3) NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_csdb_tenant_date (tenant_id, topic_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='每日联网热点批次';
+
+CREATE TABLE IF NOT EXISTS chat_starter_follow_up_cache (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  tenant_id BIGINT NOT NULL,
+  assistant_message_id BIGINT NOT NULL,
+  questions_json MEDIUMTEXT NOT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_csfuc_tenant_msg (tenant_id, assistant_message_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='猜你想问缓存';
+
+CREATE TABLE IF NOT EXISTS chat_starter_event (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  tenant_id BIGINT NOT NULL,
+  user_id BIGINT NULL,
+  device_id VARCHAR(64) NULL,
+  prompt_id BIGINT NULL,
+  scene VARCHAR(32) NOT NULL,
+  event_type VARCHAR(32) NOT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  KEY idx_cse_tenant_created (tenant_id, created_at),
+  KEY idx_cse_prompt (prompt_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='推荐问题埋点';
+
 -- ---------------------------------------------------------------------------
 -- RAG：知识库 / 文档 / 分块及关联
 -- ---------------------------------------------------------------------------
@@ -275,6 +334,25 @@ CREATE TABLE IF NOT EXISTS ten_scheduled_task (
   PRIMARY KEY (id),
   KEY idx_tst_tenant_type (tenant_id, task_type, enabled)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='租户定时任务调度注册';
+
+CREATE TABLE IF NOT EXISTS ten_scheduled_run (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  tenant_id BIGINT NOT NULL COMMENT '租户隔离键',
+  registration_id BIGINT NOT NULL COMMENT 'ten_scheduled_task.id',
+  executor_code VARCHAR(64) NOT NULL COMMENT 'TenantScheduledExecutorCode',
+  status TINYINT NOT NULL COMMENT 'ScheduledRunStatus',
+  trigger_type VARCHAR(16) NOT NULL COMMENT 'ScheduledRunTrigger',
+  progress_json MEDIUMTEXT NULL COMMENT 'LongRunningTaskProgress JSON',
+  child_job_task_ids_json MEDIUMTEXT NULL COMMENT '子 job_task.id JSON 数组',
+  error_message VARCHAR(2048) NULL COMMENT '失败摘要',
+  started_at DATETIME(3) NULL COMMENT '开始执行 UTC',
+  finished_at DATETIME(3) NULL COMMENT '结束 UTC',
+  created_at DATETIME(3) NOT NULL COMMENT '创建时间 UTC',
+  updated_at DATETIME(3) NOT NULL COMMENT '更新时间 UTC',
+  PRIMARY KEY (id),
+  KEY idx_tsr_tenant_reg_status (tenant_id, registration_id, status),
+  KEY idx_tsr_tenant_created (tenant_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='租户定时任务单次执行（异步+进度）';
 
 -- ---------------------------------------------------------------------------
 -- 异步任务

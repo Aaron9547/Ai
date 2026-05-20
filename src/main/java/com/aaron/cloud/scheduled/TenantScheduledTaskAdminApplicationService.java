@@ -1,14 +1,21 @@
 package com.aaron.cloud.scheduled;
 
+import com.aaron.cloud.common.api.enums.ScheduledRunTrigger;
 import com.aaron.cloud.common.api.enums.TenantScheduledExecutorCode;
 import com.aaron.cloud.common.context.TenantContextHolder;
+import com.aaron.cloud.common.scheduled.TenantScheduledRunRepository;
 import com.aaron.cloud.common.scheduled.TenantScheduledTaskRepository;
+import com.aaron.cloud.common.scheduled.entity.TenantScheduledRun;
 import com.aaron.cloud.common.scheduled.entity.TenantScheduledTask;
 import com.aaron.cloud.common.time.BeijingTime;
 import com.aaron.cloud.scheduled.dto.TenantScheduledTaskAdminDtos.CreateScheduledTaskRequest;
+import com.aaron.cloud.scheduled.dto.TenantScheduledTaskAdminDtos.ScheduledRunSummaryView;
+import com.aaron.cloud.scheduled.dto.TenantScheduledTaskAdminDtos.ScheduledRunTriggerResult;
+import com.aaron.cloud.scheduled.dto.TenantScheduledTaskAdminDtos.ScheduledRunView;
 import com.aaron.cloud.scheduled.dto.TenantScheduledTaskAdminDtos.ScheduledTaskAdminView;
 import com.aaron.cloud.scheduled.dto.TenantScheduledTaskAdminDtos.ScheduledTaskMetaView;
 import com.aaron.cloud.scheduled.dto.TenantScheduledTaskAdminDtos.UpdateScheduledTaskRequest;
+import com.aaron.cloud.scheduled.run.TenantScheduledRunOrchestrator;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -24,7 +31,8 @@ public class TenantScheduledTaskAdminApplicationService {
     private static final DateTimeFormatter ISO = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
     private final TenantScheduledTaskRepository taskRepository;
-    private final TenantScheduledTaskExecutor taskExecutor;
+    private final TenantScheduledRunRepository runRepository;
+    private final TenantScheduledRunOrchestrator runOrchestrator;
 
     public ScheduledTaskMetaView meta() {
         return new ScheduledTaskMetaView(TenantScheduledExecutorCode.metaList());
@@ -84,17 +92,16 @@ public class TenantScheduledTaskAdminApplicationService {
         taskRepository.delete(tenantId, id);
     }
 
-    public void runNow(long id) throws Exception {
-        long tenantId = TenantContextHolder.require().getTenantId();
-        TenantScheduledTask row =
-                taskRepository
-                        .findById(tenantId, id)
-                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "task not found"));
-        LocalDateTime now = BeijingTime.nowLocal();
-        taskExecutor.dispatch(row);
-        row.setLastExecAt(now);
-        row.setNextExecAt(TenantScheduledCronSupport.computeNextExecAt(row, now));
-        taskRepository.updateById(row);
+    public ScheduledRunTriggerResult runNow(long id) {
+        return runOrchestrator.trigger(id, ScheduledRunTrigger.MANUAL);
+    }
+
+    public ScheduledRunView getActiveRun(long registrationId) {
+        return runOrchestrator.getActiveRunForRegistration(registrationId);
+    }
+
+    public ScheduledRunView getRun(long runId) {
+        return runOrchestrator.getRun(runId);
     }
 
     private static void validateCron(String cron) {
@@ -106,17 +113,53 @@ public class TenantScheduledTaskAdminApplicationService {
     }
 
     private ScheduledTaskAdminView toView(TenantScheduledTask s) {
+        long tenantId = s.getTenantId();
+        String executorCode = resolveExecutorCode(s);
+        String executorLabel = resolveExecutorLabel(s, executorCode);
+        ScheduledRunSummaryView activeRun = null;
+        if (tenantId != null && s.getId() != null) {
+            activeRun =
+                    runRepository
+                            .findActiveByRegistration(tenantId, s.getId())
+                            .map(this::toRunSummary)
+                            .orElse(null);
+        }
         return new ScheduledTaskAdminView(
                 s.getId(),
-                s.getExecutorCode() != null ? s.getExecutorCode().getCode() : null,
-                s.getExecutorCode() != null ? s.getExecutorCode().getLabel() : null,
+                executorCode,
+                executorLabel,
                 s.getName(),
                 s.getCronExpression(),
                 s.getEnabled() != null && s.getEnabled() == 1,
                 formatTime(s.getLastExecAt()),
                 formatTime(s.getNextExecAt()),
                 formatTime(s.getCreatedAt()),
-                formatTime(s.getUpdatedAt()));
+                formatTime(s.getUpdatedAt()),
+                activeRun);
+    }
+
+    private ScheduledRunSummaryView toRunSummary(TenantScheduledRun r) {
+        return new ScheduledRunSummaryView(
+                r.getId(),
+                r.getStatus() == null ? null : r.getStatus().getStorage(),
+                r.getProgressJson());
+    }
+
+    private static String resolveExecutorCode(TenantScheduledTask s) {
+        if (s.getExecutorCode() != null) {
+            return s.getExecutorCode().getCode();
+        }
+        if (s.getTaskType() != null && !s.getTaskType().isBlank()) {
+            return s.getTaskType().trim();
+        }
+        return null;
+    }
+
+    private static String resolveExecutorLabel(TenantScheduledTask s, String executorCode) {
+        if (s.getExecutorCode() != null) {
+            return s.getExecutorCode().getLabel();
+        }
+        return TenantScheduledExecutorCode.labelOfCode(executorCode);
     }
 
     private static String formatTime(LocalDateTime t) {

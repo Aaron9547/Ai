@@ -30,6 +30,8 @@ export default {
     quick1: "写一首关于春天的诗",
     quick2: "解释量子力学",
     quick3: "生成周报模板",
+    starterRefresh: "换一批",
+    followUpLabel: "猜你想问",
     roleMe: "我",
     roleAssistant: "助手",
     selectModel: "选择模型",

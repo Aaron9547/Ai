@@ -103,6 +103,7 @@ export default {
       chatConversations: "Chat logs",
       sensitiveTerms: "Sensitive words",
       intents: "Intents",
+      starterPrompts: "Starter prompts",
       gateway: "Gateway",
       apiRateLimits: "APIs & limits",
       corsOrigins: "CORS",
@@ -132,6 +133,7 @@ export default {
       "/chat/conversations": "Chat logs",
       "/chat/sensitive-terms": "Sensitive words",
       "/chat/intents": "Intents",
+      "/chat/starter-prompts": "Starter prompts & follow-ups",
       "/model/llm-models": "Models",
       "/mcp/servers": "MCP",
       "/knowledge-center/knowledge-bases": "Knowledge",
@@ -261,6 +263,9 @@ export default {
         sectionMemoryPolicy: "Long-term user memory",
         sectionInputGuard: "Input safety",
         sectionWebSearch: "Multi-round web search",
+        sectionStarterPrompts: "Starter prompts (daily hot topics)",
+        starterDailyHotEnabled: "Enable daily hot-topic pool",
+        starterDailyHotCron: "Daily hot-topic cron",
         memoryEmbedding: "Memory embedding model (VECTOR)",
         memoryEmbeddingPlaceholder: "Unset uses server defaults",
         memoryEmbeddingPh: "Unset uses server defaults",
@@ -300,8 +305,11 @@ export default {
           regexPatterns:
             "Leave empty to keep built-in jailbreak regexes. Any non-empty line replaces the entire built-in list. Invalid regex lines are skipped server-side.",
           blockedReplyTemplate: "Leave empty to use the server default blocked-reply text.",
+          starterDailyHotCron:
+            "Spring 6-field cron (sec min hour day month dow). The process ticks every minute; this tenant runs only when the expression matches that minute.",
         },
         placeholders: {
+          starterDailyHotCron: "0 0 6 * * *",
           blockedReplyTemplate: "e.g. Sorry, I can't continue with that—please rephrase your request.",
           sensitiveWords: "One phrase per line, e.g.:\ncredential harvesting\nbypass paywall",
           regexPatterns: "One Java regex per line, e.g.:\n(?i)ignore\\\\s+previous\\\\s+instructions",
@@ -348,6 +356,10 @@ export default {
             "WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT: web-search rounds before the main model (1–10).\nAligns with suffix slots below.",
           roundSuffix:
             "WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON: suffix appended after the i-th retrieval query.\nUse leading newline from round 1+ to separate from the main question.",
+          starterDailyHotEnabled:
+            "CHAT_STARTER_DAILY_HOT_ENABLED: when off, scheduled web hot-topic ingestion stops; manual pool entries and follow-up prompts are unchanged.",
+          starterDailyHotCron:
+            "CHAT_STARTER_DAILY_HOT_CRON: when this tenant’s daily hot-topic job fires (6-field cron). Must align with the process ai.chat.starter-prompts.poller-cron tick.",
         },
       },
       circuitBreakerReadonly: {

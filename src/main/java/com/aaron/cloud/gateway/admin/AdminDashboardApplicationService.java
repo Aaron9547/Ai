@@ -11,7 +11,6 @@ import com.aaron.cloud.common.modelcfg.SysLlmModelRepository;
 import com.aaron.cloud.common.security.SecUserAccountRepository;
 import com.aaron.cloud.common.security.SysTenantMemberRepository;
 import com.aaron.cloud.common.time.BeijingTime;
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -33,6 +32,7 @@ public class AdminDashboardApplicationService {
 
     private final SysHttpAccessLogRepository accessLogRepository;
     private final MeteringUsageEventRepository meteringUsageEventRepository;
+    private final MeteringTokenDashboardAggregator meteringTokenDashboardAggregator;
     private final ChatConversationRepository chatConversationRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final JobTaskRepository jobTaskRepository;
@@ -44,6 +44,7 @@ public class AdminDashboardApplicationService {
     public AdminDashboardSummaryView buildForTenant(long tenantId) {
         LocalDate todayBj = BeijingTime.today();
         LocalDate start7 = todayBj.minusDays(6);
+        LocalDate start30 = todayBj.minusDays(MeteringTokenDashboardAggregator.TREND_DAYS - 1);
         LocalDateTime rangeStart = start7.atStartOfDay();
         LocalDateTime rangeEndExclusive = todayBj.plusDays(1).atStartOfDay();
         LocalDateTime since24h = BeijingTime.nowLocal().minusHours(24);
@@ -61,14 +62,13 @@ public class AdminDashboardApplicationService {
 
         long http24 = accessLogRepository.countByTenantSince(tenantId, since24h);
         long met24 = meteringUsageEventRepository.countByTenantSince(tenantId, since24h);
-        BigDecimal metQty24 = meteringUsageEventRepository.sumQuantityByTenantSince(tenantId, since24h);
+        MeteringTokenDashboardAggregator.Aggregated meteringTokens =
+                meteringTokenDashboardAggregator.aggregate(
+                        tenantId, since24h, start7, start30, todayBj, rangeEndExclusive);
         long audit24 = sysAuditEventRepository.countByTenantSince(tenantId, since24h);
 
         List<Map<String, Object>> rawHttp =
                 accessLogRepository.countByTenantGroupedByBeijingDate(tenantId, rangeStart, rangeEndExclusive);
-        List<Map<String, Object>> rawMetQty =
-                meteringUsageEventRepository.sumQuantityByTenantGroupedByBeijingDate(
-                        tenantId, rangeStart, rangeEndExclusive);
         List<Map<String, Object>> rawMetCnt =
                 meteringUsageEventRepository.countByTenantGroupedByBeijingDate(
                         tenantId, rangeStart, rangeEndExclusive);
@@ -82,10 +82,14 @@ public class AdminDashboardApplicationService {
                 new AdminDashboardSummaryView.Kpi(
                         members, conv, msgs, llmTotal, llmActive, jobBusy, job7d),
                 new AdminDashboardSummaryView.Recent24h(
-                        http24, met24, metQty24.doubleValue(), audit24),
+                        http24, met24, meteringTokens.prompt24(), meteringTokens.completion24(), audit24),
                 fillDailyLong(start7, todayBj, rawHttp, "cnt"),
-                fillDailyDecimal(start7, todayBj, rawMetQty, "total"),
+                fillDailyTokenTotals(start7, todayBj, meteringTokens.dailyTokenRows7d()),
                 fillDailyLong(start7, todayBj, rawMetCnt, "cnt"),
+                new AdminDashboardSummaryView.TokenTotals(
+                        longVal(meteringTokens.tenant7dRaw().get("prompt_sum")),
+                        longVal(meteringTokens.tenant7dRaw().get("completion_sum"))),
+                toModelDailyTrend(start30, todayBj, meteringTokens.modelTrendRaw30d()),
                 toNamedLongs(rawRegions),
                 toLoginIpStats(rawIpTop));
     }
@@ -173,36 +177,47 @@ public class AdminDashboardApplicationService {
         return out;
     }
 
-    private static List<AdminDashboardSummaryView.DailyDecimal> fillDailyDecimal(
-            LocalDate startInclusive,
-            LocalDate endInclusive,
-            List<Map<String, Object>> rows,
-            String totalKey) {
-        Map<String, Double> byDay = new HashMap<>();
+    private static List<AdminDashboardSummaryView.DailyTokenTotals> fillDailyTokenTotals(
+            LocalDate startInclusive, LocalDate endInclusive, List<Map<String, Object>> rows) {
+        Map<String, long[]> byDay = new HashMap<>();
         for (Map<String, Object> m : rows) {
             String d = normalizeDayKey(m.get("bucket"));
             if (d.isEmpty()) {
                 continue;
             }
-            Object t = m.get(totalKey);
-            double v = 0;
-            if (t instanceof BigDecimal bd) {
-                v = bd.doubleValue();
-            } else if (t instanceof Number num) {
-                v = num.doubleValue();
-            } else if (t != null) {
-                try {
-                    v = Double.parseDouble(String.valueOf(t).trim());
-                } catch (NumberFormatException ignored) {
-                    v = 0;
-                }
-            }
-            byDay.merge(d, v, Double::sum);
+            long p = longVal(m.get("prompt_sum"));
+            long c = longVal(m.get("completion_sum"));
+            byDay.merge(d, new long[] {p, c}, (a, b) -> new long[] {a[0] + b[0], a[1] + b[1]});
         }
-        List<AdminDashboardSummaryView.DailyDecimal> out = new ArrayList<>();
+        List<AdminDashboardSummaryView.DailyTokenTotals> out = new ArrayList<>();
         for (LocalDate d = startInclusive; !d.isAfter(endInclusive); d = d.plusDays(1)) {
             String key = d.format(DAY_FMT);
-            out.add(new AdminDashboardSummaryView.DailyDecimal(key, byDay.getOrDefault(key, 0.0)));
+            long[] v = byDay.getOrDefault(key, new long[] {0, 0});
+            out.add(new AdminDashboardSummaryView.DailyTokenTotals(key, v[0], v[1]));
+        }
+        return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<AdminDashboardSummaryView.ModelDailyTokenSeries> toModelDailyTrend(
+            LocalDate startInclusive, LocalDate endInclusive, List<Map<String, Object>> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+        List<AdminDashboardSummaryView.ModelDailyTokenSeries> out = new ArrayList<>();
+        for (Map<String, Object> m : rows) {
+            String alias = m.get("model_alias") == null ? "—" : String.valueOf(m.get("model_alias")).trim();
+            if (alias.isEmpty() || "-".equals(alias)) {
+                alias = "—";
+            }
+            Object dailyObj = m.get("daily");
+            List<Map<String, Object>> dailyRows =
+                    dailyObj instanceof List<?> list
+                            ? (List<Map<String, Object>>) list
+                            : List.of();
+            List<AdminDashboardSummaryView.DailyTokenTotals> daily =
+                    fillDailyTokenTotals(startInclusive, endInclusive, dailyRows);
+            out.add(new AdminDashboardSummaryView.ModelDailyTokenSeries(alias, daily));
         }
         return out;
     }

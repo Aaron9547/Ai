@@ -83,6 +83,22 @@ public enum TenantRuntimeSettingKey {
             "各轮问句后缀（JSON 数组）",
             SettingValueKind.STRING,
             "[]",
+            false),
+    /** 是否每日通过联网大模型刷新空会话推荐问句（热点兜底池）。 */
+    CHAT_STARTER_DAILY_HOT_ENABLED(
+            "CHAT_STARTER_DAILY_HOT_ENABLED",
+            "每日热点推荐（联网）",
+            SettingValueKind.BOOLEAN,
+            "true",
+            false),
+    /**
+     * Spring 6 段 cron（Asia/Shanghai）；进程每分钟 tick 一次，命中该表达式时为本租户拉取热点。默认每天 06:00。
+     */
+    CHAT_STARTER_DAILY_HOT_CRON(
+            "CHAT_STARTER_DAILY_HOT_CRON",
+            "每日热点拉取时刻（cron）",
+            SettingValueKind.STRING,
+            "0 0 6 * * *",
             false);
 
     @EnumValue
@@ -116,7 +132,9 @@ public enum TenantRuntimeSettingKey {
                     MEMORY_POLICY_JSON,
                     CHAT_INPUT_GUARD_JSON,
                     WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT,
-                    WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON -> true;
+                    WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON,
+                    CHAT_STARTER_DAILY_HOT_ENABLED,
+                    CHAT_STARTER_DAILY_HOT_CRON -> true;
             default -> false;
         };
     }

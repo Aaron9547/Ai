@@ -25,11 +25,17 @@
       </template>
 
       <el-table v-loading="loading" :data="rows" stripe border :empty-text="t('views.scheduledTasks.empty')">
-        <el-table-column :label="t('views.scheduledTasks.colExecutor')" width="180">
-          <template #default="{ row }">{{ row.executorLabel }}</template>
+        <el-table-column :label="t('views.scheduledTasks.colExecutor')" width="200">
+          <template #default="{ row }">{{ executorLabel(row) }}</template>
         </el-table-column>
         <el-table-column prop="name" :label="t('views.scheduledTasks.colName')" min-width="120" />
         <el-table-column prop="cronExpression" :label="t('views.scheduledTasks.colCron')" min-width="140" />
+        <el-table-column :label="t('views.scheduledTasks.colRunStatus')" width="120">
+          <template #default="{ row }">
+            <el-tag v-if="isRunning(row)" type="warning" size="small">{{ t("views.scheduledTasks.statusRunning") }}</el-tag>
+            <span v-else class="muted">—</span>
+          </template>
+        </el-table-column>
         <el-table-column :label="t('views.scheduledTasks.colEnabled')" width="72" align="center">
           <template #default="{ row }">
             <el-tag :type="row.enabled ? 'success' : 'info'" size="small">{{ row.enabled ? t("common.yes") : t("common.no") }}</el-tag>
@@ -41,9 +47,21 @@
         <el-table-column :label="t('views.scheduledTasks.colNextExec')" width="168">
           <template #default="{ row }">{{ formatTime(row.nextExecAt) }}</template>
         </el-table-column>
-        <el-table-column :label="t('views.scheduledTasks.colActions')" width="200" fixed="right" align="center">
+        <el-table-column :label="t('views.scheduledTasks.colActions')" width="240" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="runNow(row)">{{ t("views.scheduledTasks.runNow") }}</el-button>
+            <el-button
+              link
+              type="primary"
+              size="small"
+              :disabled="isRunning(row)"
+              :loading="runSubmittingId === row.id"
+              @click="runNow(row)"
+            >
+              {{ t("views.scheduledTasks.runNow") }}
+            </el-button>
+            <el-button v-if="isRunning(row)" link type="primary" size="small" @click="openProgress(row)">
+              {{ t("views.scheduledTasks.viewProgress") }}
+            </el-button>
             <el-button link type="primary" size="small" @click="openEdit(row)">{{ t("views.scheduledTasks.edit") }}</el-button>
             <el-button link type="danger" size="small" @click="remove(row)">{{ t("views.scheduledTasks.delete") }}</el-button>
           </template>
@@ -80,15 +98,43 @@
         <el-button type="primary" :loading="saving" @click="save">{{ t("views.scheduledTasks.save") }}</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="progressDlg"
+      :title="t('views.scheduledTasks.progressTitle', { name: progressTaskName })"
+      width="520px"
+      @closed="stopPoll"
+    >
+      <div v-if="progressRun">
+        <p class="progress-status">
+          <el-tag :type="progressStatusTag(progressRun.status)" size="small">{{ progressRun.status }}</el-tag>
+        </p>
+        <p v-if="progressParsed?.message" class="progress-msg">{{ progressParsed.message }}</p>
+        <p v-if="progressParsed?.stage" class="progress-stage">{{ progressParsed.stage }}</p>
+        <el-progress
+          v-if="progressParsed?.percent != null"
+          :percentage="progressParsed.percent"
+          :stroke-width="10"
+          style="margin-top: 12px"
+        />
+        <p v-if="progressParsed?.current != null && progressParsed?.total != null" class="progress-count">
+          {{ progressParsed.current }} / {{ progressParsed.total }}
+        </p>
+        <p v-if="progressRun.errorMessage" class="progress-err">{{ progressRun.errorMessage }}</p>
+      </div>
+      <template #footer>
+        <el-button @click="progressDlg = false">{{ t("views.scheduledTasks.close") }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from "element-plus";
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import * as stApi from "@/api/scheduledTasksAdmin";
-import type { ScheduledTaskMeta, ScheduledTaskRow } from "@/api/scheduledTasksAdmin";
+import type { ScheduledRunDetail, ScheduledTaskMeta, ScheduledTaskRow, TaskProgress } from "@/api/scheduledTasksAdmin";
 
 const { t } = useI18n();
 
@@ -97,6 +143,7 @@ const saving = ref(false);
 const rows = ref<ScheduledTaskRow[]>([]);
 const meta = ref<ScheduledTaskMeta>({ executors: [] });
 const filterExecutor = ref("");
+const runSubmittingId = ref<number | null>(null);
 
 const dlg = ref(false);
 const editId = ref<number | null>(null);
@@ -107,9 +154,37 @@ const form = reactive({
   enabled: true,
 });
 
+const progressDlg = ref(false);
+const progressTaskId = ref<number | null>(null);
+const progressTaskName = ref("");
+const progressRun = ref<ScheduledRunDetail | null>(null);
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+const progressParsed = computed<TaskProgress | null>(() =>
+  stApi.parseTaskProgress(progressRun.value?.progressJson),
+);
+
 function formatTime(raw?: string | null) {
   if (!raw) return "—";
   return raw.replace("T", " ").slice(0, 19);
+}
+
+function executorLabel(row: ScheduledTaskRow) {
+  if (row.executorLabel?.trim()) return row.executorLabel;
+  const hit = meta.value.executors.find((e) => e.code === row.executorCode);
+  return hit?.label || row.executorCode || "—";
+}
+
+function isRunning(row: ScheduledTaskRow) {
+  const st = row.activeRun?.status;
+  return st === "PENDING" || st === "RUNNING";
+}
+
+function progressStatusTag(status: string) {
+  if (status === "SUCCEEDED") return "success";
+  if (status === "FAILED") return "danger";
+  if (status === "RUNNING") return "warning";
+  return "info";
 }
 
 async function loadMeta() {
@@ -183,12 +258,69 @@ async function save() {
 }
 
 async function runNow(row: ScheduledTaskRow) {
+  if (isRunning(row)) {
+    openProgress(row);
+    return;
+  }
+  runSubmittingId.value = row.id;
   try {
-    await stApi.runScheduledTaskNow(row.id);
-    ElMessage.success(t("views.scheduledTasks.runStarted"));
+    const res = await stApi.runScheduledTaskNow(row.id);
+    if (res.duplicate) {
+      ElMessage.info(t("views.scheduledTasks.runDuplicate"));
+    } else {
+      ElMessage.success(t("views.scheduledTasks.runQueued"));
+    }
     await load();
+    progressTaskId.value = row.id;
+    progressTaskName.value = row.name;
+    progressRun.value = res.run;
+    progressDlg.value = true;
+    startPoll();
   } catch {
     ElMessage.error(t("views.scheduledTasks.saveFailed"));
+  } finally {
+    runSubmittingId.value = null;
+  }
+}
+
+function openProgress(row: ScheduledTaskRow) {
+  progressTaskId.value = row.id;
+  progressTaskName.value = row.name;
+  progressDlg.value = true;
+  void refreshProgress();
+  startPoll();
+}
+
+async function refreshProgress() {
+  if (progressTaskId.value == null) return;
+  try {
+    const run = await stApi.fetchActiveScheduledRun(progressTaskId.value);
+    if (run) {
+      progressRun.value = run;
+    } else if (progressRun.value?.id) {
+      progressRun.value = await stApi.fetchScheduledRun(progressRun.value.id);
+    }
+    const st = progressRun.value?.status;
+    if (st === "SUCCEEDED" || st === "FAILED") {
+      stopPoll();
+      await load();
+    }
+  } catch {
+    /* ignore poll errors */
+  }
+}
+
+function startPoll() {
+  stopPoll();
+  pollTimer = setInterval(() => {
+    void refreshProgress();
+  }, 2000);
+}
+
+function stopPoll() {
+  if (pollTimer != null) {
+    clearInterval(pollTimer);
+    pollTimer = null;
   }
 }
 
@@ -206,6 +338,10 @@ async function remove(row: ScheduledTaskRow) {
 onMounted(async () => {
   await loadMeta();
   await load();
+});
+
+onUnmounted(() => {
+  stopPoll();
 });
 </script>
 
@@ -243,5 +379,30 @@ onMounted(async () => {
   margin: 6px 0 0;
   font-size: 12px;
   color: var(--el-text-color-placeholder);
+}
+.muted {
+  color: var(--el-text-color-placeholder);
+}
+.progress-status {
+  margin: 0 0 8px;
+}
+.progress-msg {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+.progress-stage {
+  margin: 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.progress-count {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+.progress-err {
+  margin: 12px 0 0;
+  color: var(--el-color-danger);
+  font-size: 13px;
 }
 </style>

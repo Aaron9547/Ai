@@ -10,8 +10,11 @@ public record AdminDashboardSummaryView(
         Kpi kpi,
         Recent24h recent24h,
         List<DailyLong> httpAccessByDay,
-        List<DailyDecimal> meteringQuantityByDay,
+        List<DailyTokenTotals> meteringTokensByDay,
         List<DailyLong> meteringEventsByDay,
+        TokenTotals tenantTokens7d,
+        /** 近 30 日用量 Top3 模型按日 Token（北京时间自然日）；前端可截取 7/14/30 日窗口。 */
+        List<ModelDailyTokenSeries> topModelTokenTrend30d,
         List<NamedLong> memberLoginRegionCounts,
         List<LoginIpStat> topMemberClientIpsLast7d) {
 
@@ -25,11 +28,20 @@ public record AdminDashboardSummaryView(
             long jobTasksCreatedLast7d) {}
 
     public record Recent24h(
-            long httpAccessCount, long meteringEventCount, double meteringQuantitySum, long auditEventCount) {}
+            long httpAccessCount,
+            long meteringEventCount,
+            long promptTokens24h,
+            long completionTokens24h,
+            long auditEventCount) {}
 
     public record DailyLong(String day, long count) {}
 
-    public record DailyDecimal(String day, double total) {}
+    public record DailyTokenTotals(String day, long promptTokens, long completionTokens) {}
+
+    public record TokenTotals(long promptTokens, long completionTokens) {}
+
+    /** 单模型按日 Token 序列（与 {@link DailyTokenTotals} 同结构，按模型分组）。 */
+    public record ModelDailyTokenSeries(String modelAlias, List<DailyTokenTotals> daily) {}
 
     /** 在册成员按账号 {@code last_login_region} 聚合（空为「—」）。 */
     public record NamedLong(String name, long value) {}

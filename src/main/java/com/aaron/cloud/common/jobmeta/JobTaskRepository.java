@@ -39,6 +39,16 @@ public class JobTaskRepository {
                         .eq(JobTask::getTenantId, tenantId));
     }
 
+    /** 执行中上报进度（写入 {@code result_json}，不改变 status）。 */
+    public int updateProgress(long id, long tenantId, String progressJson) {
+        return mapper.update(
+                Wrappers.<JobTask>lambdaUpdate()
+                        .set(JobTask::getResultJson, progressJson)
+                        .eq(JobTask::getId, id)
+                        .eq(JobTask::getTenantId, tenantId)
+                        .eq(JobTask::getStatus, JobTaskStatus.RUNNING));
+    }
+
     /**
      * 管理端任务列表；{@code taskType} 非空时仅该类型。
      * {@code ragKbId} 非空时按 RAG 知识库筛选：优先 {@link com.aaron.cloud.common.jobmeta.entity.JobTask#getRagKbId()} 等值；列为空时回退

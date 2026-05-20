@@ -14,6 +14,8 @@ import com.aaron.cloud.common.rag.entity.RagChunk;
 import com.aaron.cloud.common.rag.entity.RagDocument;
 import com.aaron.cloud.common.rag.entity.RagWebCrawlUrlItem;
 import com.aaron.cloud.common.redis.RedisDistributedLockService;
+import com.aaron.cloud.common.task.LongRunningTaskProgressReporter;
+import com.aaron.cloud.common.task.LongRunningTaskProgressSupport;
 import com.aaron.cloud.common.time.BeijingTime;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
@@ -79,7 +81,8 @@ public class RagLocalSiteCrawlOrchestrationService {
                                 maxDepth,
                                 filterCrawled,
                                 chunkStrategy,
-                                categoryId));
+                                categoryId,
+                                null));
     }
 
     /**
@@ -94,7 +97,11 @@ public class RagLocalSiteCrawlOrchestrationService {
             Integer maxDepth,
             boolean filterCrawled,
             Integer chunkStrategy,
-            Long categoryId) {
+            Long categoryId,
+            LongRunningTaskProgressReporter progress) {
+        if (progress == null) {
+            progress = LongRunningTaskProgressSupport.noop();
+        }
         String lockKey =
                 scheduleId != null
                         ? TenantScheduledTaskLockKeys.siteRun(tenantId, scheduleId)
@@ -114,6 +121,7 @@ public class RagLocalSiteCrawlOrchestrationService {
         }
         try (var ignored = lock.get()) {
             try {
+                progress.report("LOCKED", "已获取爬取锁，准备发现链接", 5, null, null);
                 RagWebCrawlExtractConfig extractConfig = resolveSiteExtractConfig(tenantId, kbId, scheduleId);
                 log.info(
                         "本地规则网页爬取开始 tenantId={} kbId={} scheduleId={} baseUrl={} mode={} filterCrawled={}",
@@ -123,10 +131,12 @@ public class RagLocalSiteCrawlOrchestrationService {
                         baseUrl,
                         syncMode,
                         filterCrawled);
+                progress.report("DISCOVER", "正在发现文章链接", 10, null, null);
                 List<String> raw = linkDiscoveryService.discoverArticleLinks(baseUrl, maxDepth);
                 List<String> urls = RagWebCrawlUrlSupport.sanitizeForCrawl(raw, baseUrl);
                 if (urls.isEmpty()) {
                     log.warn("本地规则未发现可爬 URL，终止 tenantId={} baseUrl={}", tenantId, baseUrl);
+                    progress.report("DONE", "未发现可爬 URL", 100, 0, 0);
                     return true;
                 }
                 if (filterCrawled) {
@@ -138,13 +148,18 @@ public class RagLocalSiteCrawlOrchestrationService {
                 }
                 if (urls.isEmpty()) {
                     log.info("过滤已爬 URL 后无新增，tenantId={} baseUrl={}", tenantId, baseUrl);
+                    progress.report("DONE", "过滤后无新增 URL", 100, 0, 0);
                     return true;
                 }
                 if (syncMode != RagWebCrawlSyncMode.INCREMENTAL) {
+                    progress.report("PURGE", "全量模式：清理历史文档", 15, null, null);
                     purgeBeforeFull(tenantId, kbId, scheduleId, baseUrl);
                 }
+                int totalUrls = urls.size();
+                progress.report("CRAWL", "开始逐 URL 入库", 20, 0, totalUrls);
                 AtomicInteger ok = new AtomicInteger();
                 AtomicInteger fail = new AtomicInteger();
+                AtomicInteger done = new AtomicInteger();
                 var semaphore = new java.util.concurrent.Semaphore(WEB_MAX_CONCURRENT);
                 List<CompletableFuture<Void>> futures = new ArrayList<>();
                 for (String url : urls) {
@@ -170,11 +185,26 @@ public class RagLocalSiteCrawlOrchestrationService {
                                             fail.incrementAndGet();
                                             log.warn("单 URL 入库失败 url={} err={}", url, e.toString());
                                         } finally {
+                                            int d = done.incrementAndGet();
+                                            Integer pct =
+                                                    totalUrls > 0 ? 20 + (d * 75 / totalUrls) : null;
+                                            progress.report(
+                                                    "CRAWL",
+                                                    "爬取入库 " + d + "/" + totalUrls,
+                                                    pct,
+                                                    d,
+                                                    totalUrls);
                                             semaphore.release();
                                         }
                                     }));
                 }
                 CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
+                progress.report(
+                        "DONE",
+                        "爬取结束：成功 " + ok.get() + "，失败 " + fail.get(),
+                        100,
+                        ok.get(),
+                        totalUrls);
                 log.info(
                         "本地规则网页爬取结束 tenantId={} kbId={} scheduleId={} ok={} fail={} total={}",
                         tenantId,
@@ -184,6 +214,7 @@ public class RagLocalSiteCrawlOrchestrationService {
                         fail.get(),
                         urls.size());
             } catch (Exception e) {
+                progress.report("FAILED", "爬取异常：" + e.getMessage(), null, null, null);
                 log.error(
                         "本地规则网页爬取失败 tenantId={} kbId={} scheduleId={} baseUrl={}",
                         tenantId,
@@ -267,7 +298,12 @@ public class RagLocalSiteCrawlOrchestrationService {
     }
 
     /** 供 job 任务执行：payload 含 kbId、baseUrl 等。 */
-    public String runFromJobPayload(long tenantId, String payloadJson) throws Exception {
+    public String runFromJobPayload(
+            long tenantId, String payloadJson, LongRunningTaskProgressReporter progress)
+            throws Exception {
+        if (progress == null) {
+            progress = LongRunningTaskProgressSupport.noop();
+        }
         var root = objectMapper.readTree(payloadJson == null ? "{}" : payloadJson);
         long kbId = root.get("kbId").asLong();
         String baseUrl = root.get("baseUrl").asText();
@@ -291,7 +327,17 @@ public class RagLocalSiteCrawlOrchestrationService {
             siteId = root.get("scheduledTaskId").asLong();
         }
         boolean ran =
-                runCrawl(tenantId, kbId, siteId, baseUrl, mode, maxDepth, filterCrawled, chunkStrategy, categoryId);
+                runCrawl(
+                        tenantId,
+                        kbId,
+                        siteId,
+                        baseUrl,
+                        mode,
+                        maxDepth,
+                        filterCrawled,
+                        chunkStrategy,
+                        categoryId,
+                        progress);
         if (ran && siteId != null) {
             markSiteCrawlCompleted(tenantId, siteId);
         }

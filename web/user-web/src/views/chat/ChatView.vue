@@ -60,13 +60,21 @@
           <p class="empty-welcome">{{ t("chat.emptyWelcome") }}</p>
           <div class="quick-prompts" role="list">
             <button
-              v-for="(q, i) in quickPrompts"
-              :key="i"
+              v-for="q in emptyStarterPrompts"
+              :key="q.id ?? q.text"
               type="button"
               class="quick-prompt-chip"
-              @click="applyQuickPrompt(q)"
+              @click="applyStarterPrompt(q, 'EMPTY')"
             >
-              {{ q }}
+              {{ q.text }}
+            </button>
+            <button
+              type="button"
+              class="quick-prompt-chip quick-prompt-chip--refresh"
+              :disabled="emptyPromptsLoading"
+              @click="refreshEmptyStarterPrompts"
+            >
+              {{ t("chat.starterRefresh") }}
             </button>
           </div>
         </div>
@@ -291,6 +299,27 @@
                     </span>
                   </template>
                 </div>
+              </div>
+              <div
+                v-if="
+                  m.role === 'assistant' &&
+                  !m.streaming &&
+                  m.id &&
+                  (m.followUpPrompts?.length ?? 0) > 0
+                "
+                class="follow-up-prompts"
+                role="list"
+              >
+                <span class="follow-up-prompts-label">{{ t("chat.followUpLabel") }}</span>
+                <button
+                  v-for="fp in m.followUpPrompts"
+                  :key="fp.id ?? fp.text"
+                  type="button"
+                  class="quick-prompt-chip quick-prompt-chip--compact"
+                  @click="applyStarterPrompt(fp, 'FOLLOW_UP')"
+                >
+                  {{ fp.text }}
+                </button>
               </div>
               <div
                 v-if="m.role === 'assistant' && (m.modelAlias || showAssistantMainBubble(m))"
@@ -552,6 +581,11 @@
                     :aria-label="t('chat.thinkingAria')"
                     @click="thinkingEnabled = !thinkingEnabled"
                   >
+                    <span
+                      class="deep-think-toggle-dot"
+                      :class="{ 'deep-think-toggle-dot--live': thinkingEnabled }"
+                      aria-hidden="true"
+                    />
                     {{ t("chat.thinking") }}
                   </button>
                 </div>
@@ -564,6 +598,11 @@
                     :aria-label="t('chat.webSearchAria')"
                     @click="webSearchEnabled = !webSearchEnabled"
                   >
+                    <span
+                      class="deep-think-toggle-dot"
+                      :class="{ 'deep-think-toggle-dot--live': webSearchEnabled }"
+                      aria-hidden="true"
+                    />
                     {{ t("chat.webSearch") }}
                   </button>
                 </div>
@@ -766,6 +805,8 @@ type Msg = {
   intentTurnHit?: chatApi.ChatIntentTurnHit;
   /** 用户消息已上传附件（历史或发送后回显） */
   attachments?: chatApi.ChatAttachmentMessage[];
+  /** 助手回复后「猜你想问」（接口按需拉取） */
+  followUpPrompts?: chatApi.StarterPromptItem[];
 };
 
 /** 后端 {@code segmentId} 缺省时用于顶栏标题（与 Java 侧步骤 id 对齐）。 */
@@ -1301,6 +1342,7 @@ function finishAssistantStreamState(m: Msg) {
     m.reasoningCollapsed = true;
   }
   syncAssistantActiveToFlat(m);
+  void loadFollowUpForMessage(m);
 }
 
 function applyAssistantStreamPart(m: Msg, part: chatApi.StreamPart, tail: ReplyVariant | null) {
@@ -1561,10 +1603,83 @@ const pendingFiles = ref<File[]>([]);
 const dragDepth = ref(0);
 const dragOver = ref(false);
 
-const quickPrompts = computed(() => [t("chat.quick1"), t("chat.quick2"), t("chat.quick3")]);
+const emptyStarterPrompts = ref<chatApi.StarterPromptItem[]>([]);
+const emptyPromptsLoading = ref(false);
+const emptyPromptExcludeIds = ref<number[]>([]);
 
-function applyQuickPrompt(q: string) {
-  input.value = q;
+const fallbackEmptyPrompts = computed<chatApi.StarterPromptItem[]>(() => [
+  { id: null, text: t("chat.quick1"), source: "FALLBACK" },
+  { id: null, text: t("chat.quick2"), source: "FALLBACK" },
+  { id: null, text: t("chat.quick3"), source: "FALLBACK" },
+]);
+
+async function loadEmptyStarterPrompts(refresh = false) {
+  emptyPromptsLoading.value = true;
+  try {
+    const res = await chatApi.fetchStarterPrompts({
+      scene: "EMPTY",
+      limit: 6,
+      refresh,
+      excludeIds: refresh ? emptyPromptExcludeIds.value : undefined,
+      thinkingEnabled: thinkingEnabled.value,
+      webSearchEnabled: webSearchEnabled.value,
+    });
+    const items = res.items?.length ? res.items : fallbackEmptyPrompts.value;
+    emptyStarterPrompts.value = items;
+    if (refresh) {
+      for (const p of items) {
+        if (p.id != null) {
+          emptyPromptExcludeIds.value.push(p.id);
+        }
+      }
+    }
+  } catch {
+    emptyStarterPrompts.value = fallbackEmptyPrompts.value;
+  } finally {
+    emptyPromptsLoading.value = false;
+  }
+}
+
+function refreshEmptyStarterPrompts() {
+  void loadEmptyStarterPrompts(true);
+}
+
+/** 点击推荐问句时默认开启联网（租户已配置联网模型时）。 */
+function enableWebSearchForStarterPrompt() {
+  if (webSearchAllowed.value) {
+    webSearchEnabled.value = true;
+  }
+}
+
+async function applyStarterPrompt(
+  q: chatApi.StarterPromptItem,
+  scene: "EMPTY" | "FOLLOW_UP",
+) {
+  enableWebSearchForStarterPrompt();
+  input.value = q.text;
+  if (q.id != null) {
+    try {
+      await chatApi.recordStarterPromptEvent({
+        promptId: q.id,
+        scene,
+        eventType: "CLICK",
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+async function loadFollowUpForMessage(m: Msg) {
+  if (m.role !== "assistant" || m.streaming || m.id == null || convId.value == null) {
+    return;
+  }
+  try {
+    const res = await chatApi.fetchFollowUpPrompts(convId.value, m.id, 3);
+    m.followUpPrompts = res.items?.length ? res.items : [];
+  } catch {
+    m.followUpPrompts = [];
+  }
 }
 
 const currentModel = computed(() => models.value.find((m) => m.alias === modelAlias.value));
@@ -1873,6 +1988,10 @@ async function loadChatShellForCurrentTenant() {
     await loadMessagesForConv(convId.value);
   } else {
     await scrollToBottom();
+  }
+  if (messages.value.length === 0) {
+    emptyPromptExcludeIds.value = [];
+    await loadEmptyStarterPrompts(false);
   }
 }
 
@@ -2644,6 +2763,31 @@ async function send() {
   background: #f7f7f7;
 }
 
+.quick-prompt-chip--refresh {
+  border-style: dashed;
+  color: #52525b;
+}
+
+.quick-prompt-chip--compact {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.follow-up-prompts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  max-width: 100%;
+}
+
+.follow-up-prompts-label {
+  font-size: 12px;
+  color: #71717a;
+  flex-shrink: 0;
+}
+
 .messages {
   width: 100%;
   max-width: 58rem;
@@ -3179,8 +3323,9 @@ async function send() {
 .deep-think-toggle {
   --toggle-glow: rgba(32, 32, 32, 0.12);
   --toggle-ring: rgba(32, 32, 32, 0.35);
-  position: relative;
-  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   margin: 0;
   padding: 6px 12px;
   border: 1px solid #e4e4e7;
@@ -3196,6 +3341,23 @@ async function send() {
     color 0.18s ease,
     background 0.18s ease,
     border-color 0.18s ease;
+}
+
+.deep-think-toggle-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transform-origin: center;
+  opacity: 0;
+  background: transparent;
+  pointer-events: none;
+}
+
+.deep-think-toggle-dot--live {
+  background: var(--toggle-ring);
+  animation: composer-toggle-dot-breathe 2.4s ease-in-out infinite;
+  will-change: transform, opacity;
 }
 
 .deep-think-toggle--think {
@@ -3216,10 +3378,9 @@ async function send() {
 
 .deep-think-toggle--on {
   color: #18181b;
-  font-weight: 600;
+  font-weight: 500;
   background: #fff;
   border-color: #202020;
-  animation: composer-toggle-breathe 2.6s ease-in-out infinite;
 }
 
 .deep-think-toggle--on:hover {
@@ -3228,27 +3389,23 @@ async function send() {
   border-color: #202020;
 }
 
-@keyframes composer-toggle-breathe {
+@keyframes composer-toggle-dot-breathe {
   0%,
   100% {
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--toggle-ring) 35%, transparent),
-      0 0 0 0 var(--toggle-glow);
+    transform: scale(0.72);
+    opacity: 0.45;
   }
   50% {
-    box-shadow:
-      0 0 0 1px var(--toggle-ring),
-      0 0 0 3px color-mix(in srgb, var(--toggle-glow) 55%, transparent),
-      0 0 16px 4px var(--toggle-glow);
+    transform: scale(1.12);
+    opacity: 1;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .deep-think-toggle--on {
+  .deep-think-toggle-dot--live {
     animation: none;
-    box-shadow:
-      0 0 0 1px var(--toggle-ring),
-      0 0 10px 2px var(--toggle-glow);
+    transform: scale(1);
+    opacity: 0.85;
   }
 }
 
@@ -3871,7 +4028,13 @@ async function send() {
 }
 
 .chat-app--mobile .deep-think-toggle {
+  gap: 4px;
   padding: 6px 9px;
+}
+
+.chat-app--mobile .deep-think-toggle-dot {
+  width: 4px;
+  height: 4px;
 }
 
 .chat-app--mobile .send-fab {

@@ -2,6 +2,7 @@ package com.aaron.cloud.rag;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import com.aaron.cloud.common.api.enums.RagChunkStrategy;
 import java.util.List;
@@ -86,6 +87,41 @@ class RagMarkdownFenceSupportTest {
                                                 && p.trim().endsWith("```")
                                                 && p.contains("function a()"));
         assertTrue(hasCompleteFence, "expected one chunk with full fence, got: " + parts);
+    }
+
+    @Test
+    void fixedChar_chunksCoverSourceWithTableAndTasks() {
+        String md =
+                """
+                ## 说明
+
+                | 列 A | 列 B |
+                | --- | --- |
+                | 一 | 二 |
+
+                - [ ] 待办一
+                - [x] 已完成
+
+                正文段落，包含足够长度以便触发二次切分。正文段落，包含足够长度以便触发二次切分。
+                正文段落，包含足够长度以便触发二次切分。正文段落，包含足够长度以便触发二次切分。
+                """;
+        List<String> parts = RagChunkSplitter.split(md, RagChunkStrategy.FIXED_CHAR, 120, 0);
+        assertFalse(parts.isEmpty());
+        assertTrue(RagChunkSplitter.chunksCoverSourceInOrder(md, parts), "chunks: " + parts);
+        assertTrue(
+                RagChunkSplitter.totalChunkChars(parts) >= md.trim().length() * 85 / 100,
+                "total chunk chars too small vs source");
+    }
+
+    @Test
+    void slidingWindow_doesNotSkipMiddleCharacters() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 400; i++) {
+            sb.append((char) ('a' + (i % 26)));
+        }
+        String t = sb.toString();
+        List<String> parts = RagChunkSplitter.split(t, RagChunkStrategy.SLIDING_WINDOW, 100, 20);
+        assertTrue(RagChunkSplitter.chunksCoverSourceInOrder(t, parts), "sliding must cover all chars in order");
     }
 
     @Test

@@ -27,3 +27,6 @@
 - **`migrate_0_1_237_rag_semantic_default_and_crawl_extract.sql`**：新建库默认语义分片、**`extract_config`**、**`preview-chunks`** API；新库以 **`schema_v1.sql`** + 目录清单为准可跳过。
 - **`migrate_0_1_238_rag_parent_child_chunk.sql`**：**`rag_chunk.parent_chunk_id`** 及索引（子母分片母子关联；与 **`RagChunkStrategy.PARENT_CHILD`** 一致）；新库以 **`schema_v1.sql`** 为准可跳过。
 - **`migrate_0_1_239_rag_ingest_analyze_api.sql`**：**`POST …/ingest/analyze`**、**`analyze-upload`** 网关目录行；新库以 **`gw_api_endpoint_catalog_inserts.sql`** 为准可跳过。
+- **`migrate_0_1_240_chat_starter_prompt.sql`**：表 **`chat_starter_prompt`**、**`chat_starter_daily_batch`**、**`chat_starter_follow_up_cache`**、**`chat_starter_event`** 及推荐问题 Open/Admin API 目录行（与 **`pom.xml` `0.1.240-SNAPSHOT`** / **`PROJECT.md` `### 0.1.240-SNAPSHOT`** 一致）；**已建库（如 test_ai）必须执行**，否则推荐问题 API 报 `Table … doesn't exist`；新库若 **`schema_v1.sql`** 已含表可只补网关 **`INSERT IGNORE`** 段。
+- **`migrate_0_1_241_chat_starter_scheduled_task.sql`**：为各租户种子 **`CHAT_STARTER_DAILY_HOT`** 定时任务（从旧 **`CHAT_STARTER_DAILY_HOT_*`** 运行时参数迁移 Cron/启停）；**0.1.241** 起热点由 **`ten_scheduled_task`** 调度，管理端在 **「定时任务」** 配置；**已建库**若未手工建该执行器任务则**须执行**。
+- **`migrate_0_1_242_scheduled_run.sql`**：表 **`ten_scheduled_run`**（定时任务异步执行 run + **`progress_json`**）；网关补 **`scheduled-tasks/*/run/active`**、**`runs/*`**、**`job-tasks/*`** GET；与 **`pom.xml` `0.1.242-SNAPSHOT`** 一致；**已建库须执行**。

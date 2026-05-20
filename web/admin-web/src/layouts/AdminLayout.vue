@@ -86,6 +86,10 @@
             <el-icon><Promotion /></el-icon>
             <span>{{ t("admin.menu.intents") }}</span>
           </el-menu-item>
+          <el-menu-item v-if="menuAllowed('CHAT')" index="/chat/starter-prompts">
+            <el-icon><ChatLineRound /></el-icon>
+            <span>{{ t("admin.menu.starterPrompts") }}</span>
+          </el-menu-item>
         </el-sub-menu>
 
         <!-- 4. 接入层：网关策略与原始 HTTP 访问轨迹 -->
@@ -232,6 +236,7 @@ import {
   ArrowDown,
   Avatar,
   ChatDotRound,
+  ChatLineRound,
   Connection,
   Cpu,
   DataAnalysis,

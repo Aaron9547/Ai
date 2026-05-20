@@ -2,6 +2,7 @@ package com.aaron.cloud.scheduled;
 
 import com.aaron.cloud.common.api.enums.TenantScheduledExecutorCode;
 import com.aaron.cloud.common.scheduled.entity.TenantScheduledTask;
+import com.aaron.cloud.scheduled.run.TenantScheduledRunContext;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -29,7 +30,7 @@ public class TenantScheduledTaskExecutor {
                                         }));
     }
 
-    public void dispatch(TenantScheduledTask task) throws Exception {
+    public void dispatch(TenantScheduledTask task, TenantScheduledRunContext runContext) throws Exception {
         TenantScheduledExecutorCode code = task.getExecutorCode();
         if (code == null) {
             log.warn("定时任务缺少 executorCode taskId={}", task.getId());
@@ -40,6 +41,6 @@ public class TenantScheduledTaskExecutor {
             log.warn("未注册的执行器 taskId={} executor={}", task.getId(), code);
             return;
         }
-        handler.execute(task);
+        handler.execute(task, runContext);
     }
 }

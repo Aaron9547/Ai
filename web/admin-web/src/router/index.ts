@@ -79,6 +79,10 @@ const router = createRouter({
           component: () => import("../views/chat/IntentManageView.vue"),
         },
         {
+          path: "chat/starter-prompts",
+          component: () => import("../views/chat/ChatStarterPromptsView.vue"),
+        },
+        {
           path: "model/llm-models",
           component: () => import("../views/model/llm/LlmModelManageView.vue"),
         },

@@ -51,7 +51,12 @@ public final class RagChunkSplitter {
             raw = mergeParagraphs(t, maxPara);
         }
         int minCoalesce = Math.max(400, maxPara / 3);
-        return coalesceSmallChunks(raw, minCoalesce, maxPara);
+        List<String> result = coalesceSmallChunks(raw, minCoalesce, maxPara);
+        if (!chunksCoverSourceInOrder(t, result)
+                || totalChunkChars(result) < t.length() * 85 / 100) {
+            return splitFixed(t, maxPara);
+        }
+        return result;
     }
 
     private static List<String> splitMarkdownSections(String t) {
@@ -175,19 +180,61 @@ public final class RagChunkSplitter {
         if (window <= overlap) {
             return splitFixed(t, window);
         }
-        int step = window - overlap;
         List<String> out = new ArrayList<>();
-        for (int i = 0; i < t.length(); i += step) {
-            int hardEnd = Math.min(t.length(), i + window);
-            int end = RagMarkdownFenceSupport.preferBreakEnd(t, i, hardEnd);
-            String p = t.substring(i, end).trim();
+        int pos = 0;
+        while (pos < t.length()) {
+            int hardEnd = Math.min(t.length(), pos + window);
+            int end = RagMarkdownFenceSupport.preferBreakEnd(t, pos, hardEnd);
+            if (end <= pos) {
+                end = hardEnd;
+            }
+            String p = t.substring(pos, end).trim();
             if (!p.isEmpty()) {
                 out.add(p);
             }
             if (end >= t.length()) {
                 break;
             }
+            int next = end - overlap;
+            pos = next > pos ? next : end;
         }
         return out.isEmpty() ? List.of(t) : out;
+    }
+
+    /**
+     * 校验分片是否按顺序覆盖原文（忽略仅空白差异）。供测试与排查「丢字」问题。
+     */
+    static boolean chunksCoverSourceInOrder(String source, List<String> chunks) {
+        if (source == null || source.isBlank()) {
+            return chunks == null || chunks.isEmpty();
+        }
+        String src = source.trim();
+        int pos = 0;
+        for (String chunk : chunks) {
+            if (chunk == null || chunk.isBlank()) {
+                continue;
+            }
+            String c = chunk.trim();
+            int idx = src.indexOf(c, pos);
+            if (idx < 0) {
+                return false;
+            }
+            pos = idx + c.length();
+        }
+        return true;
+    }
+
+    /** 分片正文字符总数（trim 后），用于与原文长度粗比。 */
+    static int totalChunkChars(List<String> chunks) {
+        if (chunks == null) {
+            return 0;
+        }
+        int n = 0;
+        for (String c : chunks) {
+            if (c != null && !c.isBlank()) {
+                n += c.trim().length();
+            }
+        }
+        return n;
     }
 }

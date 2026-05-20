@@ -47,5 +47,39 @@ public final class TenantScheduledTaskAdminDtos {
             String lastExecAt,
             String nextExecAt,
             String createdAt,
+            String updatedAt,
+            ScheduledRunSummaryView activeRun) {}
+
+    public record ScheduledRunSummaryView(long runId, String status, String progressJson) {}
+
+    public record ScheduledRunView(
+            long id,
+            long registrationId,
+            String executorCode,
+            String executorLabel,
+            String status,
+            String triggerType,
+            String progressJson,
+            String childJobTaskIdsJson,
+            String errorMessage,
+            String startedAt,
+            String finishedAt,
+            String createdAt,
             String updatedAt) {}
+
+    public record ScheduledRunTriggerResult(
+            boolean accepted,
+            boolean duplicate,
+            long runId,
+            String status,
+            ScheduledRunView run) {
+
+        public static ScheduledRunTriggerResult started(ScheduledRunView run) {
+            return new ScheduledRunTriggerResult(true, false, run.id(), run.status(), run);
+        }
+
+        public static ScheduledRunTriggerResult existing(ScheduledRunView run) {
+            return new ScheduledRunTriggerResult(false, true, run.id(), run.status(), run);
+        }
+    }
 }
