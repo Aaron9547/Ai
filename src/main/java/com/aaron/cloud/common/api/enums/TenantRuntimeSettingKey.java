@@ -29,6 +29,15 @@ public enum TenantRuntimeSettingKey {
             "",
             false),
     /**
+     * 对话前置联网检索使用的模型：值为 {@code sys_llm_model.id}（须为 WEB_SEARCH、启用）；留空则按 {@code sort_order} 取租户默认联网实例。
+     */
+    WEB_SEARCH_GROUNDING_MODEL_ID(
+            "WEB_SEARCH_GROUNDING_MODEL_ID",
+            "联网检索模型 id（WEB_SEARCH）",
+            SettingValueKind.STRING,
+            "",
+            false),
+    /**
      * 主对话 RAG/联网注入及短期记忆预算（JSON 对象，键见 {@link ChatPromptLimitsRuntime}，含 {@code historyMaxMessages}
      * / {@code historyMaxCharsPerMessage} / {@code historyTotalMaxChars}；空对象表示代码默认）。
      */
@@ -138,6 +147,7 @@ public enum TenantRuntimeSettingKey {
         return switch (this) {
             case OUTBOUND_RESILIENCE_JSON,
                     MEMORY_EMBEDDING_VECTOR_MODEL_ID,
+                    WEB_SEARCH_GROUNDING_MODEL_ID,
                     CHAT_PROMPT_LIMITS_JSON,
                     MEMORY_POLICY_JSON,
                     CHAT_INPUT_GUARD_JSON,

@@ -5,7 +5,6 @@ import com.aaron.cloud.common.config.properties.AiRagProperties;
 import com.aaron.cloud.common.rag.RagKnowledgeBaseRepository;
 import com.aaron.cloud.common.rag.RagWebCrawlSiteRepository;
 import com.aaron.cloud.common.rag.entity.RagKnowledgeBase;
-import com.aaron.cloud.common.rag.entity.RagWebCrawlSite;
 import com.aaron.cloud.rag.RagHtmlToMarkdown.ParsedPage;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.ChunkPreviewChunkView;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.ChunkPreviewPageView;
@@ -14,10 +13,12 @@ import com.aaron.cloud.rag.dto.RagKbAdminDtos.ChunkPreviewView;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class RagIngestPreviewApplicationService {
@@ -52,24 +53,82 @@ public class RagIngestPreviewApplicationService {
                     slide,
                     List.of(page),
                     1,
-                    page.chunkCount());
+                    page.chunkCount(),
+                    1);
         }
 
+        String base = req.getBaseUrl().trim();
         int sampleN = Math.max(1, aiRagProperties.getSiteCrawl().getPreviewSiteSampleUrls());
-        List<String> raw = linkDiscoveryService.discoverArticleLinks(req.getBaseUrl().trim(), req.getMaxDepth());
-        List<String> urls = RagWebCrawlUrlSupport.sanitizeForCrawl(raw, req.getBaseUrl().trim());
+        List<String> raw = linkDiscoveryService.discoverSiteUrls(base, req.getMaxDepth());
+        List<String> urls = RagWebCrawlUrlSupport.sanitizeForCrawl(raw, base);
         if (urls.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "no crawlable urls discovered");
         }
-        List<String> sample = pickSample(urls, sampleN);
+        List<String> sample = pickPreviewSample(urls, sampleN, base);
+        log.info(
+                "站点分片预览抽样 baseUrl={} maxDepth={} discovered={} sample={}",
+                base,
+                req.getMaxDepth(),
+                urls.size(),
+                sample);
         List<ChunkPreviewPageView> pages = new ArrayList<>();
         int totalChunks = 0;
         for (String u : sample) {
-            ChunkPreviewPageView p = previewOneUrl(u, extractConfig, strategy, fixed, slide, maxChunks);
-            pages.add(p);
-            totalChunks += p.chunkCount();
+            try {
+                ChunkPreviewPageView p = previewOneUrl(u, extractConfig, strategy, fixed, slide, maxChunks);
+                pages.add(p);
+                totalChunks += p.chunkCount();
+            } catch (ResponseStatusException e) {
+                pages.add(failedPreviewPage(u, e.getReason()));
+                log.warn("站点分片预览单页失败 url={} reason={}", u, e.getReason());
+            } catch (Exception e) {
+                pages.add(failedPreviewPage(u, e.getMessage()));
+                log.warn("站点分片预览单页失败 url={} err={}", u, e.toString());
+            }
         }
-        return new ChunkPreviewView(strategy.getCode(), fixed, slide, pages, pages.size(), totalChunks);
+        return new ChunkPreviewView(
+                strategy.getCode(), fixed, slide, pages, pages.size(), totalChunks, urls.size());
+    }
+
+    /**
+     * 站点预览抽样：优先非首页的内页（列表/文章），最多 {@code n} 条；发现数不足时全部预览。
+     */
+    static List<String> pickPreviewSample(List<String> urls, int n, String baseUrl) {
+        if (urls == null || urls.isEmpty() || n < 1) {
+            return List.of();
+        }
+        if (urls.size() <= n) {
+            return new ArrayList<>(urls);
+        }
+        String normBase = RagWebCrawlUrlSupport.normalizeUrl(baseUrl);
+        List<String> inner = new ArrayList<>();
+        for (String u : urls) {
+            if (u != null && !u.equals(normBase)) {
+                inner.add(u);
+            }
+        }
+        List<String> pool = inner.size() >= n ? inner : new ArrayList<>(urls);
+        return pickEvenly(pool, n);
+    }
+
+    private static List<String> pickEvenly(List<String> urls, int n) {
+        List<String> out = new ArrayList<>(n);
+        int step = Math.max(1, urls.size() / n);
+        for (int i = 0; i < urls.size() && out.size() < n; i += step) {
+            out.add(urls.get(i));
+        }
+        for (int i = urls.size() - 1; i >= 0 && out.size() < n; i--) {
+            String u = urls.get(i);
+            if (!out.contains(u)) {
+                out.add(u);
+            }
+        }
+        return out;
+    }
+
+    private static ChunkPreviewPageView failedPreviewPage(String url, String message) {
+        String msg = message != null && !message.isBlank() ? message : "preview failed";
+        return new ChunkPreviewPageView(url, "预览失败", 0, 0, false, List.of(), msg);
     }
 
     private ChunkPreviewPageView previewOneUrl(
@@ -87,13 +146,16 @@ public class RagIngestPreviewApplicationService {
             throw new ResponseStatusException(
                     HttpStatus.BAD_GATEWAY, "fetch failed: " + url + " (" + e.getMessage() + ")", e);
         }
-        String html = new String(fetched.body(), fetched.charset());
+        String html = RagHttpFetch.decodeHtml(fetched);
         ParsedPage page = webPageParseService.parse(html, url, extractConfig);
         String md = page.markdown();
         if (md.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "empty markdown after crawl: " + url);
         }
-        String title = RagHtmlToMarkdown.resolveDocumentTitle(page, url);
+        String title =
+                page.title() != null && !page.title().isBlank()
+                        ? page.title().trim()
+                        : RagHtmlToMarkdown.resolveDocumentTitle(page, url);
         List<String> parts = RagChunkSplitter.split(md, strategy, fixed, slide);
         List<ChunkPreviewChunkView> chunks = new ArrayList<>();
         int seq = 0;
@@ -106,27 +168,7 @@ public class RagIngestPreviewApplicationService {
             seq++;
         }
         boolean truncated = parts.size() > maxChunks;
-        return new ChunkPreviewPageView(url, title, md.length(), parts.size(), truncated, chunks);
-    }
-
-    private static List<String> pickSample(List<String> urls, int n) {
-        if (urls.size() <= n) {
-            return urls;
-        }
-        List<String> out = new ArrayList<>();
-        int step = Math.max(1, urls.size() / n);
-        for (int i = 0; i < urls.size() && out.size() < n; i += step) {
-            out.add(urls.get(i));
-        }
-        while (out.size() < n && out.size() < urls.size()) {
-            String last = urls.get(urls.size() - 1);
-            if (!out.contains(last)) {
-                out.add(last);
-            } else {
-                break;
-            }
-        }
-        return out;
+        return new ChunkPreviewPageView(url, title, md.length(), parts.size(), truncated, chunks, null);
     }
 
     private RagWebCrawlExtractConfig resolveExtractConfig(long tenantId, long kbId, ChunkPreviewRequest req) {

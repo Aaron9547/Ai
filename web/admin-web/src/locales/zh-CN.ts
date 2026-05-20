@@ -280,6 +280,10 @@ export default {
         memoryEmbeddingPh: "不选择则按服务端默认",
         memoryEmbeddingOrphan: "已配置 id={id}，列表中无此模型（可保留或另选）",
         vectorModelsLoadFailed: "VECTOR 模型列表加载失败，请稍后刷新页面",
+        webSearchModel: "联网检索模型（WEB_SEARCH）",
+        webSearchModelPlaceholder: "请选择租户绑定的联网实例",
+        webSearchModelOrphan: "已配置 id={id}，列表中无此模型（可保留或另选）",
+        webSearchModelsLoadFailed: "WEB_SEARCH 模型列表加载失败，请稍后刷新页面",
         webSearchRounds: "联网检索轮数（1～10）",
         roundSuffixRound: "第 {n} 轮问句后缀",
         fields: {
@@ -327,9 +331,12 @@ export default {
         },
         validation: {
           embeddingId: "记忆嵌入模型 id 须为数字主键或留空",
+          webSearchModelId: "联网检索模型 id 须为数字主键或留空",
           guardRange: "最短字符须 ≥1，且最长 ≥ 最短",
         },
         tooltips: {
+          webSearchModel:
+            "写入 WEB_SEARCH_GROUNDING_MODEL_ID。\n对话开启「联网」、每日热点等前置检索均使用此 WEB_SEARCH 实例；选项来自「大模型管理 → 联网搜索」。\n留空：按该 Tab 内 sort_order 最小且启用的实例作为默认（与旧行为一致）。\n保存时须为启用状态的 WEB_SEARCH 行。",
           memoryEmbedding:
             "写入 MEMORY_EMBEDDING_VECTOR_MODEL_ID。\n用户分层记忆写入 Milvus 时使用的嵌入模型，选项来自「模型管理」中 VECTOR。\n清空：不调用上游嵌入接口，服务端用 RagQueryEmbeddingHasher 按用户正文与当前向量维数生成确定性占位向量，避免异步写入因嵌入失败而中断（非真实语义向量，检索效果弱于配置好的 VECTOR）。\n此外：配置的 id 不存在、类型非 VECTOR、模型未启用、API Key 解密失败或上游嵌入异常时，也会回退到同一套占位向量逻辑。",
           ragSnippetMaxChars:

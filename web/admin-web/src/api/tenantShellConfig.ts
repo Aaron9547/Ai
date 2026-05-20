@@ -17,6 +17,8 @@ export type TenantShellOutbound = {
 /** 与 {@code ten_runtime_setting} 中对话/记忆/联网相关键一致 */
 export type TenantShellModelCallingRuntime = {
   memoryEmbeddingVectorModelId: string;
+  /** WEB_SEARCH_GROUNDING_MODEL_ID；空则 sort_order 默认 */
+  webSearchGroundingModelId: string;
   chatPromptLimitsJson: string;
   memoryPolicyJson: string;
   chatInputGuardJson: string;

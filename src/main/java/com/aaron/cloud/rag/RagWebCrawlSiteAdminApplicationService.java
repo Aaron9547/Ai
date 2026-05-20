@@ -104,9 +104,15 @@ public class RagWebCrawlSiteAdminApplicationService {
     private void applyUpsert(RagWebCrawlSite row, RagWebCrawlSiteUpsertRequest req, long tenantId, long kbId) {
         row.setName(req.getName().trim());
         row.setBaseUrl(req.getBaseUrl().trim());
-        row.setSchedulePreset(ScheduledTaskIntervalPreset.fromCode(req.getSchedulePreset()));
-        row.setRunAtTime(parseRunAt(req.getRunAtTime()));
-        row.setEnabled(req.getEnabled() == null || req.getEnabled() ? 1 : 0);
+        boolean scheduling = req.getEnabled() != null && req.getEnabled();
+        row.setEnabled(scheduling ? 1 : 0);
+        if (scheduling) {
+            row.setSchedulePreset(ScheduledTaskIntervalPreset.fromCode(req.getSchedulePreset()));
+            row.setRunAtTime(parseRunAt(req.getRunAtTime()));
+        } else {
+            row.setSchedulePreset(ScheduledTaskIntervalPreset.MANUAL);
+            row.setRunAtTime(null);
+        }
         validateCategory(tenantId, kbId, req.getCategoryId());
         row.setCategoryId(req.getCategoryId());
         row.setChunkStrategy(

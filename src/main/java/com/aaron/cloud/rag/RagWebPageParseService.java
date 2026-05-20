@@ -9,91 +9,121 @@ import net.dankito.readability4j.Readability4J;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
-import org.jsoup.select.Elements;
 import org.springframework.stereotype.Service;
 
-/** 网页 HTML → 标题 + Markdown；支持 Jsoup 规则与 Readability。 */
+/**
+ * 网页正文解析唯一入口：高校 CMS 正文根 + 富 Markdown（图片/表格/链接），无简化版回退。
+ *
+ * <p>对齐 ly-ai {@code JsoupHelper#fetchPageAsMarkdown} + {@code LocalArticleLinksWebCrawlService} 入库链路。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class RagWebPageParseService {
 
+    private static final int MIN_USEFUL_MARKDOWN_LEN = 48;
+
     private final AiRagProperties aiRagProperties;
 
     public ParsedPage parse(String html, String sourceUrl, RagWebCrawlExtractConfig siteConfig) {
+        return parse(html, sourceUrl, siteConfig, null);
+    }
+
+    /**
+     * @param listTitleHint 列表页已解析出的文章标题（VSB 图文列表等），用于补全文档名
+     */
+    public ParsedPage parse(
+            String html, String sourceUrl, RagWebCrawlExtractConfig siteConfig, String listTitleHint) {
         if (html == null || html.isBlank()) {
             return new ParsedPage("", "");
         }
         RagWebCrawlExtractConfig cfg = siteConfig != null ? siteConfig : RagWebCrawlExtractConfig.empty();
-        String mode = resolveExtractorMode(cfg);
-        if ("readability".equalsIgnoreCase(mode)) {
-            try {
-                return parseWithReadability(html, sourceUrl, cfg);
-            } catch (Exception e) {
-                log.warn("Readability 解析失败，回退 Jsoup url={} err={}", sourceUrl, e.toString());
+        String baseUri =
+                sourceUrl != null && !sourceUrl.isBlank() ? sourceUrl.trim() : "https://local.invalid/";
+        Document doc = Jsoup.parse(html, baseUri);
+        doc.select("script, style, noscript, iframe, svg").remove();
+        applyExcludeSelectors(doc, cfg);
+
+        String pageTitle = resolvePageTitle(doc, cfg);
+        String md = renderPrimaryMarkdown(doc, cfg, pageTitle, baseUri);
+
+        if (md.length() < MIN_USEFUL_MARKDOWN_LEN && useReadabilityFallback(cfg)) {
+            String readabilityMd = renderReadabilityMarkdown(html, baseUri, pageTitle);
+            if (readabilityMd.length() > md.length()) {
+                md = readabilityMd;
             }
         }
-        return parseWithJsoup(html, sourceUrl, cfg);
-    }
 
-    private String resolveExtractorMode(RagWebCrawlExtractConfig cfg) {
-        if (cfg.getExtractor() != null && !cfg.getExtractor().isBlank()) {
-            return cfg.getExtractor().trim();
-        }
-        String global = aiRagProperties.getSiteCrawl().getContentExtractor();
-        return global != null && !global.isBlank() ? global.trim() : "jsoup";
-    }
-
-    private ParsedPage parseWithReadability(String html, String sourceUrl, RagWebCrawlExtractConfig cfg) {
-        String url = sourceUrl != null && !sourceUrl.isBlank() ? sourceUrl.trim() : "https://local.invalid/";
-        Readability4J readability = new Readability4J(url, html);
-        Article article = readability.parse();
-        String title = article.getTitle() != null ? article.getTitle().trim() : "";
-        String contentHtml = article.getContent();
-        if (contentHtml == null || contentHtml.isBlank()) {
-            return parseWithJsoup(html, sourceUrl, cfg);
-        }
-        Document d = Jsoup.parse(contentHtml, url);
-        applyExcludeSelectors(d, cfg);
-        Element root = pickRoot(d, cfg);
-        String md = RagHtmlToMarkdown.buildMarkdownFromRoot(title, root != null ? root : d.body());
         if (md.isBlank()) {
-            return parseWithJsoup(html, sourceUrl, cfg);
+            log.warn("网页正文 Markdown 为空 url={}（可能为跳转壳/纯首页/需登录）", baseUri);
+            return new ParsedPage(
+                    RagHtmlToMarkdown.resolveDocumentTitle(
+                            new ParsedPage(pageTitle, ""), baseUri, listTitleHint),
+                    "");
         }
-        if (title.isBlank()) {
-            title = RagHtmlToMarkdown.extractPageTitleFromDocument(Jsoup.parse(html, url), root);
-        }
-        return new ParsedPage(title, md);
+
+        String documentTitle =
+                RagHtmlToMarkdown.resolveDocumentTitle(new ParsedPage(pageTitle, md), baseUri, listTitleHint);
+        return new ParsedPage(documentTitle, md);
     }
 
-    private ParsedPage parseWithJsoup(String html, String sourceUrl, RagWebCrawlExtractConfig cfg) {
-        String baseUri = sourceUrl != null && !sourceUrl.isBlank() ? sourceUrl.trim() : "";
-        Document d = baseUri.isEmpty() ? Jsoup.parse(html) : Jsoup.parse(html, baseUri);
-        d.select("script, style, noscript, iframe, svg").remove();
-        applyExcludeSelectors(d, cfg);
-        Element root = pickRoot(d, cfg);
-        String pageTitle = RagHtmlToMarkdown.extractPageTitleFromDocument(d, root);
+    private String renderPrimaryMarkdown(
+            Document doc, RagWebCrawlExtractConfig cfg, String pageTitle, String baseUri) {
+        Element root = RagWebContentRootPicker.pick(doc, cfg);
+        String md = "";
+        if (root != null) {
+            md = RagRichHtmlToMarkdown.buildRichMarkdown(pageTitle, root.clone(), baseUri);
+        }
+        if (md.length() < MIN_USEFUL_MARKDOWN_LEN && doc.body() != null) {
+            String bodyMd =
+                    RagRichHtmlToMarkdown.buildRichMarkdown(pageTitle, doc.body().clone(), baseUri);
+            if (bodyMd.length() > md.length()) {
+                md = bodyMd;
+            }
+        }
+        return md;
+    }
+
+    private String renderReadabilityMarkdown(String html, String baseUri, String pageTitle) {
+        try {
+            Readability4J readability = new Readability4J(baseUri, html);
+            Article article = readability.parse();
+            String contentHtml = article.getContent();
+            if (contentHtml == null || contentHtml.isBlank()) {
+                return "";
+            }
+            String title =
+                    article.getTitle() != null && !article.getTitle().isBlank()
+                            ? article.getTitle().trim()
+                            : pageTitle;
+            Document fragment = Jsoup.parse(contentHtml, baseUri);
+            Element root = fragment.body();
+            return RagRichHtmlToMarkdown.buildRichMarkdown(title, root.clone(), baseUri);
+        } catch (Exception e) {
+            log.debug("Readability 富转换失败 url={} err={}", baseUri, e.toString());
+            return "";
+        }
+    }
+
+    private String resolvePageTitle(Document doc, RagWebCrawlExtractConfig cfg) {
+        Element root = RagWebContentRootPicker.pick(doc, cfg);
+        String pageTitle = RagHtmlToMarkdown.extractPageTitleFromDocument(doc, root);
         if (cfg.getTitleSelector() != null && !cfg.getTitleSelector().isBlank()) {
-            Element tEl = d.selectFirst(cfg.getTitleSelector().trim());
+            Element tEl = doc.selectFirst(cfg.getTitleSelector().trim());
             if (tEl != null && !tEl.text().isBlank()) {
                 pageTitle = RagHtmlToMarkdown.normalizeTitleStatic(tEl.text());
             }
         }
-        String md = RagHtmlToMarkdown.buildMarkdownFromRoot(pageTitle, root != null ? root : d.body());
-        return new ParsedPage(pageTitle, md);
+        return pageTitle;
     }
 
-    private Element pickRoot(Document d, RagWebCrawlExtractConfig cfg) {
-        if (cfg.getContentSelector() != null && !cfg.getContentSelector().isBlank()) {
-            Elements found = d.select(cfg.getContentSelector().trim());
-            if (!found.isEmpty()) {
-                Element el = found.first();
-                if (el != null && el.text().trim().length() > 20) {
-                    return el;
-                }
-            }
+    private boolean useReadabilityFallback(RagWebCrawlExtractConfig cfg) {
+        String mode = cfg.getExtractor();
+        if (mode != null && !mode.isBlank()) {
+            return "readability".equalsIgnoreCase(mode.trim());
         }
-        return RagHtmlToMarkdown.pickContentRootStatic(d);
+        String global = aiRagProperties.getSiteCrawl().getContentExtractor();
+        return global != null && "readability".equalsIgnoreCase(global.trim());
     }
 
     private void applyExcludeSelectors(Document d, RagWebCrawlExtractConfig cfg) {

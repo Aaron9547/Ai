@@ -236,6 +236,15 @@ export function validateMemoryEmbeddingId(s: string): boolean {
 
 /** 将运行时中的嵌入模型主键解析为下拉框用的 number；非法或空为 undefined。 */
 export function parseMemoryEmbeddingModelId(raw: string | undefined | null): number | undefined {
+  return parseBoundLlmModelId(raw);
+}
+
+/** 与 {@code WEB_SEARCH_GROUNDING_MODEL_ID} 一致，校验规则同记忆嵌入。 */
+export function parseWebSearchGroundingModelId(raw: string | undefined | null): number | undefined {
+  return parseBoundLlmModelId(raw);
+}
+
+function parseBoundLlmModelId(raw: string | undefined | null): number | undefined {
   const s = String(raw ?? "").trim();
   if (!s) return undefined;
   if (!validateMemoryEmbeddingId(s)) return undefined;

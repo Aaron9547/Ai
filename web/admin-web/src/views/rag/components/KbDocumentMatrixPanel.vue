@@ -71,8 +71,7 @@
                   >
                     {{ t("views.kbMatrix.triggerIndex") }}
                   </el-button>
-                  <el-button plain @click="openWebCrawlSitesDlg">{{ t("views.kbMatrix.webCrawlSitesBtn") }}</el-button>
-                  <el-button plain @click="openJobsDialog">{{ t("views.kbMatrix.jobsBtn") }}</el-button>
+                  <el-button plain @click="openWebCrawlProgressDlg">{{ t("views.kbMatrix.webCrawlProgressBtn") }}</el-button>
                   <el-button plain :disabled="!vectorMilvusEnabled" @click="openRetrievalTestDlg">
                     {{ t("views.kbMatrix.retrievalTestBtn") }}
                   </el-button>
@@ -168,120 +167,7 @@
             </div>
     </div>
 
-    <el-dialog
-      v-model="jobsDlgOpen"
-      :title="t('views.kbMatrix.jobsDlgTitle')"
-      width="920px"
-      append-to-body
-      class="jobs-dlg"
-      destroy-on-close
-      @open="onJobsDialogOpen"
-    >
-      <p class="jobs-dlg-hint">
-        {{ t("views.kbMatrix.jobsDlgHint") }}
-      </p>
-      <div class="jobs-dlg-toolbar">
-        <el-button type="primary" plain :loading="loadingJobs" @click="loadKbJobs">{{ t("views.kbMatrix.refreshJobs") }}</el-button>
-      </div>
-      <el-table
-        v-loading="loadingJobs"
-        :data="jobPipelineRows"
-        size="small"
-        stripe
-        border
-        class="jobs-dlg-table"
-        max-height="420"
-        :empty-text="t('views.kbMatrix.emptyJobs')"
-      >
-        <el-table-column :label="t('views.kbMatrix.colJobType')" width="108" align="center">
-          <template #default="{ row }">
-            <el-tag type="warning" size="small" effect="plain">{{ row.typeLabel }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('views.kbMatrix.colTitleAddr')" min-width="200">
-          <template #default="{ row }">
-            <div class="cell-title">{{ row.title }}</div>
-            <div v-if="row.subtitle" class="cell-sub">{{ row.subtitle }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('views.kbMatrix.colJobStatus')" width="100" align="center">
-          <template #default="{ row }">
-            <el-tag :type="row.statusType" size="small">{{ row.statusLabel }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('views.kbMatrix.colTime')" width="168">
-          <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
-        </el-table-column>
-        <el-table-column type="expand" width="48">
-          <template #default="{ row }">
-            <div class="expand-inner job-expand">
-              <el-descriptions :column="1" border size="small">
-                <el-descriptions-item :label="t('views.kbMatrix.expandJobId')">{{ row.job?.id }}</el-descriptions-item>
-                <el-descriptions-item :label="t('views.kbMatrix.expandTaskType')">{{ jobTaskTypeLabel(row.job?.taskType, t) }}</el-descriptions-item>
-                <el-descriptions-item :label="t('views.kbMatrix.expandStatus')">
-                  <el-tag v-if="row.job" :type="jobStatusMeta(row.job.status, t).tag" size="small">
-                    {{ jobStatusMeta(row.job.status, t).label }}
-                  </el-tag>
-                </el-descriptions-item>
-              </el-descriptions>
-              <div v-if="parseJobResultMetaRows(row.job?.resultJson, t).length" class="job-kv-block">
-                <div class="job-section-title">{{ t("views.kbMatrix.resultSummary") }}</div>
-                <el-descriptions :column="1" border size="small">
-                  <el-descriptions-item
-                    v-for="(r, ri) in parseJobResultMetaRows(row.job?.resultJson, t)"
-                    :key="'rm-' + ri"
-                    :label="r.label"
-                  >
-                    {{ r.value }}
-                  </el-descriptions-item>
-                </el-descriptions>
-              </div>
-              <div v-if="parseResultSteps(row.job?.resultJson).length" class="timeline-wrap">
-                <div class="job-section-title">{{ t("views.kbMatrix.jobTimelineTitle") }}</div>
-                <el-timeline>
-                  <el-timeline-item
-                    v-for="(s, i) in parseResultSteps(row.job?.resultJson)"
-                    :key="i"
-                    :timestamp="formatTime(s.at)"
-                    placement="top"
-                  >
-                    <strong>{{ jobStepPhaseLabel(s.phase, t) }}</strong>
-                    <span class="st"> · {{ jobStepStatusLabel(s.status, t) }}</span>
-                    <div v-if="humanizeJobStepDetail(s.detail, t)" class="td">{{ humanizeJobStepDetail(s.detail, t) }}</div>
-                  </el-timeline-item>
-                </el-timeline>
-              </div>
-              <div v-if="parseJobPayloadRows(row.job?.payloadJson, t).length" class="job-kv-block">
-                <div class="job-section-title">{{ t("views.kbMatrix.payloadSection") }}</div>
-                <el-descriptions :column="1" border size="small">
-                  <el-descriptions-item
-                    v-for="(r, pi) in parseJobPayloadRows(row.job?.payloadJson, t)"
-                    :key="'pl-' + pi"
-                    :label="r.label"
-                  >
-                    {{ r.value }}
-                  </el-descriptions-item>
-                </el-descriptions>
-              </div>
-              <el-collapse class="job-raw-collapse">
-                <el-collapse-item :title="t('views.kbMatrix.rawPayloadCollapse')" :name="'p-' + row.key">
-                  <el-scrollbar max-height="120px">
-                    <pre class="json-pre">{{ prettyJson(row.job?.payloadJson) }}</pre>
-                  </el-scrollbar>
-                </el-collapse-item>
-                <el-collapse-item :title="t('views.kbMatrix.rawResultCollapse')" :name="'r-' + row.key">
-                  <el-scrollbar max-height="140px">
-                    <pre class="json-pre">{{ prettyJson(row.job?.resultJson) }}</pre>
-                  </el-scrollbar>
-                </el-collapse-item>
-              </el-collapse>
-            </div>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-dialog>
-
-    <el-drawer v-model="ingestOpen" :title="t('views.kbMatrix.ingestDrawerTitle')" size="520px" destroy-on-close @closed="resetIngestForm">
+    <el-drawer v-model="ingestOpen" :title="t('views.kbMatrix.ingestDrawerTitle')" size="640px" destroy-on-close @closed="resetIngestForm">
       <el-radio-group v-model="ingestType" class="ingest-type">
         <el-radio-button label="crawl">{{ t("views.kbMatrix.ingestTabCrawl") }}</el-radio-button>
         <el-radio-button label="upload">{{ t("views.kbMatrix.ingestTabUpload") }}</el-radio-button>
@@ -291,38 +177,128 @@
 
       <el-form label-width="108px" class="ingest-form">
         <template v-if="ingestType === 'crawl'">
-          <el-form-item :label="t('views.kbMatrix.crawlModeLabel')">
-            <el-radio-group v-model="crawlForm.mode">
-              <el-radio-button label="single">{{ t("views.kbMatrix.crawlModeSingle") }}</el-radio-button>
-              <el-radio-button label="site">{{ t("views.kbMatrix.crawlModeSite") }}</el-radio-button>
-            </el-radio-group>
+          <el-form-item :label="t('views.kbMatrix.crawlModeLabel')" class="crawl-mode-form-item">
+            <KbCrawlModePicker v-model="crawlForm.mode" />
           </el-form-item>
           <template v-if="crawlForm.mode === 'single'">
+            <el-form-item class="crawl-intro-form-item" :label-width="0">
+              <el-alert type="info" show-icon :closable="false" class="crawl-warn">
+                {{ t("views.kbMatrix.singleCrawlIntro") }}
+              </el-alert>
+            </el-form-item>
             <el-form-item :label="t('views.kbMatrix.labelWebUrl')" required>
               <el-input v-model="crawlForm.url" :placeholder="t('views.ingest.urlPh')" type="url" />
             </el-form-item>
           </template>
           <template v-else>
-            <el-alert type="warning" show-icon :closable="false" class="crawl-warn">
-              {{ t("views.kbMatrix.crawlSiteWarn") }}
-            </el-alert>
-            <el-form-item :label="t('views.kbMatrix.labelSiteBaseUrl')" required>
-              <el-input v-model="crawlForm.baseUrl" :placeholder="t('views.kbMatrix.siteBaseUrlPh')" type="url" />
+            <el-form-item class="crawl-intro-form-item" :label-width="0">
+              <el-alert type="info" show-icon :closable="false" class="crawl-warn">
+                {{ t("views.kbMatrix.webCrawlIntro") }}
+              </el-alert>
             </el-form-item>
-            <el-form-item :label="t('views.kbMatrix.labelMaxDepth')">
-              <el-input-number v-model="crawlForm.maxDepth" :min="1" :max="8" />
-            </el-form-item>
-            <el-form-item :label="t('views.kbMatrix.labelSyncMode')">
-              <el-select v-model="crawlForm.syncMode" style="width: 100%">
-                <el-option
-                  v-for="o in crawlSyncModes"
-                  :key="o.code"
-                  :label="o.label"
-                  :value="o.code"
-                />
+            <el-form-item v-if="crawlSites.length > 0" :label="t('views.kbMatrix.labelLoadSaved')">
+              <el-select
+                v-model="crawlForm.siteId"
+                clearable
+                filterable
+                style="width: 100%"
+                :placeholder="t('views.kbMatrix.labelLoadSavedPh')"
+                @change="onRecurringSitePick"
+                @clear="resetRecurringSiteForm"
+              >
+                <el-option v-for="s in crawlSites" :key="s.id" :label="savedSiteOptionLabel(s)" :value="s.id" />
               </el-select>
             </el-form-item>
-            <el-form-item :label="t('views.kbMatrix.labelFilterCrawled')">
+            <el-form-item required>
+              <template #label>
+                <KbFormLabelTip
+                  :label="t('views.kbMatrix.labelWebsiteUrl')"
+                  :tip="t('views.kbMatrix.labelWebsiteUrlHint')"
+                />
+              </template>
+              <el-input v-model="crawlForm.baseUrl" :placeholder="t('views.kbMatrix.siteBaseUrlPh')" type="url" />
+            </el-form-item>
+            <el-form-item>
+              <template #label>
+                <KbFormLabelTip
+                  :label="t('views.kbMatrix.labelCrawlLayers')"
+                  :tip="t('views.kbMatrix.labelCrawlLayersHint')"
+                />
+              </template>
+              <el-input-number v-model="crawlForm.maxDepth" :min="1" :max="8" controls-position="right" />
+            </el-form-item>
+            <el-form-item :label="t('views.kbMatrix.labelTaskNote')">
+              <el-input v-model="crawlForm.name" maxlength="128" :placeholder="t('views.kbMatrix.labelTaskNotePh')" />
+            </el-form-item>
+            <el-form-item>
+              <template #label>
+                <KbFormLabelTip :label="t('views.kbMatrix.labelRunNow')" :tip="t('views.kbMatrix.labelRunNowHint')" />
+              </template>
+              <el-switch v-model="crawlForm.runNow" />
+            </el-form-item>
+            <el-form-item>
+              <template #label>
+                <KbFormLabelTip
+                  :label="t('views.kbMatrix.labelAutoRepeat')"
+                  :tip="t('views.kbMatrix.labelAutoRepeatHint')"
+                />
+              </template>
+              <el-switch v-model="crawlForm.autoRepeat" />
+            </el-form-item>
+            <template v-if="crawlForm.autoRepeat">
+              <el-form-item :label="t('views.kbMatrix.labelRepeatEvery')">
+                <el-select v-model="crawlForm.schedulePreset" style="width: 100%">
+                  <el-option v-for="o in crawlSchedulePresets" :key="o.code" :label="o.label" :value="o.code" />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="t('views.kbMatrix.labelRepeatAt')">
+                <el-time-picker
+                  v-model="crawlForm.runAtTime"
+                  format="HH:mm"
+                  value-format="HH:mm"
+                  style="width: 100%"
+                  clearable
+                />
+              </el-form-item>
+            </template>
+            <el-form-item :label="t('views.kbMatrix.ingestLabelCategory')">
+              <el-select
+                v-model="ingestCategoryId"
+                clearable
+                filterable
+                :placeholder="t('views.chunks.categoryPh')"
+                style="width: 100%"
+              >
+                <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
+              </el-select>
+            </el-form-item>
+            <el-form-item>
+              <template #label>
+                <KbFormLabelTip
+                  :label="t('views.ingest.labelChunkOverride')"
+                  :tip="t('views.kbMatrix.chunkStrategyWebHint')"
+                />
+              </template>
+              <el-select
+                v-model="ingestChunkStrategy"
+                clearable
+                :placeholder="t('views.ingest.chunkDefaultPh')"
+                style="width: 100%"
+              >
+                <el-option :label="t('views.ingest.chunk0')" :value="0" />
+                <el-option :label="t('views.ingest.chunk1')" :value="1" />
+                <el-option :label="t('views.ingest.chunk2')" :value="2" />
+                <el-option :label="t('views.ingest.chunk3')" :value="3" />
+                <el-option :label="t('views.ingest.chunk4')" :value="4" />
+              </el-select>
+            </el-form-item>
+            <el-form-item>
+              <template #label>
+                <KbFormLabelTip
+                  :label="t('views.kbMatrix.labelOnlyNewPages')"
+                  :tip="t('views.kbMatrix.labelOnlyNewPagesHint')"
+                />
+              </template>
               <el-switch v-model="crawlForm.filterCrawled" />
             </el-form-item>
           </template>
@@ -359,39 +335,45 @@
           </el-form-item>
         </template>
 
-        <el-form-item :label="t('views.kbMatrix.ingestLabelCategory')">
-          <el-select
-            v-model="ingestCategoryId"
-            clearable
-            filterable
-            :placeholder="t('views.chunks.categoryPh')"
-            style="width: 100%"
-          >
-            <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
-          </el-select>
-        </el-form-item>
+        <template v-if="ingestType !== 'crawl' || crawlForm.mode === 'single'">
+          <el-form-item :label="t('views.kbMatrix.ingestLabelCategory')">
+            <el-select
+              v-model="ingestCategoryId"
+              clearable
+              filterable
+              :placeholder="t('views.chunks.categoryPh')"
+              style="width: 100%"
+            >
+              <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item :label="t('views.ingest.labelChunkOverride')">
+            <el-select v-model="ingestChunkStrategy" clearable :placeholder="t('views.ingest.chunkDefaultPh')" style="width: 100%">
+              <el-option :label="t('views.ingest.chunk0')" :value="0" />
+              <el-option :label="t('views.ingest.chunk1')" :value="1" />
+              <el-option :label="t('views.ingest.chunk2')" :value="2" />
+              <el-option :label="t('views.ingest.chunk3')" :value="3" />
+              <el-option :label="t('views.ingest.chunk4')" :value="4" />
+            </el-select>
+            <p v-if="ingestType === 'upload' || ingestType === 'paste'" class="field-hint">
+              {{ t("views.kbMatrix.chunkStrategyUploadHint") }}
+            </p>
+          </el-form-item>
+        </template>
 
-        <el-form-item :label="t('views.ingest.labelChunkOverride')">
-          <el-select v-model="ingestChunkStrategy" clearable :placeholder="t('views.ingest.chunkDefaultPh')" style="width: 100%">
-            <el-option :label="t('views.ingest.chunk0')" :value="0" />
-            <el-option :label="t('views.ingest.chunk1')" :value="1" />
-            <el-option :label="t('views.ingest.chunk2')" :value="2" />
-            <el-option :label="t('views.ingest.chunk3')" :value="3" />
-            <el-option :label="t('views.ingest.chunk4')" :value="4" />
-          </el-select>
-          <p v-if="ingestType === 'crawl'" class="field-hint">{{ t("views.kbMatrix.chunkStrategyWebHint") }}</p>
-          <p v-else-if="ingestType === 'upload' || ingestType === 'paste'" class="field-hint">
-            {{ t("views.kbMatrix.chunkStrategyUploadHint") }}
-          </p>
-        </el-form-item>
-
-        <el-form-item>
-          <el-button v-if="ingestType === 'crawl'" :loading="chunkPreviewLoading" @click="runChunkPreview">{{
-            t("views.kbMatrix.chunkPreviewBtn")
-          }}</el-button>
-          <el-button type="primary" class="accent-btn" :loading="ingestSubmitting" @click="submitIngest">{{
-            t("views.kbMatrix.submitIngest")
-          }}</el-button>
+        <el-form-item class="ingest-submit-row">
+          <div class="ingest-submit-actions">
+            <el-button
+              v-if="ingestType === 'crawl'"
+              :loading="chunkPreviewLoading"
+              @click="runChunkPreview"
+            >
+              {{ t("views.kbMatrix.chunkPreviewBtn") }}
+            </el-button>
+            <el-button type="primary" class="accent-btn" :loading="ingestSubmitting" @click="submitIngest">{{
+              ingestSubmitLabel
+            }}</el-button>
+          </div>
         </el-form-item>
       </el-form>
     </el-drawer>
@@ -399,7 +381,9 @@
     <el-dialog v-model="chunkDlg" :title="t('views.chunks.dlgEditChunk')" width="800px" destroy-on-close @closed="onChunkDlgClosed">
       <el-tabs v-model="chunkEditTab" class="chunk-edit-tabs">
         <el-tab-pane :label="t('views.chunks.tabChunkPreview')" name="preview">
-          <div class="chunk-edit-preview chunk-md" v-html="chunkEditMarkdownHtml" />
+          <el-scrollbar class="chunk-edit-scrollbar" max-height="min(62vh, 520px)">
+            <div class="chunk-edit-preview chunk-md" v-html="chunkEditMarkdownHtml" />
+          </el-scrollbar>
         </el-tab-pane>
         <el-tab-pane :label="t('views.chunks.tabChunkSource')" name="source">
           <el-input v-model="chunkEditText" type="textarea" :rows="16" class="chunk-edit-source" />
@@ -553,7 +537,7 @@
       </template>
     </el-dialog>
 
-    <KbWebCrawlSitesDialog v-model="webCrawlSitesDlgOpen" :kb-id="kid" />
+    <KbWebCrawlProgressDialog v-model="webCrawlProgressDlgOpen" :kb-id="kid" />
     <KbChunkPreviewDialog ref="chunkPreviewRef" v-model="chunkPreviewDlgOpen" :kb-id="kid" />
   </div>
 </template>
@@ -561,34 +545,19 @@
 <script setup lang="ts">
 import { UploadFilled } from "@element-plus/icons-vue";
 import KbChunkPreviewDialog from "./KbChunkPreviewDialog.vue";
-import KbWebCrawlSitesDialog from "./KbWebCrawlSitesDialog.vue";
+import KbCrawlModePicker from "./KbCrawlModePicker.vue";
+import KbFormLabelTip from "./KbFormLabelTip.vue";
+import KbWebCrawlProgressDialog from "./KbWebCrawlProgressDialog.vue";
+import type { RagWebCrawlSiteRow } from "../../../api/ragAdmin";
 import { ElMessage, ElMessageBox } from "element-plus";
 import type { UploadFile } from "element-plus";
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import * as ragApi from "../../../api/ragAdmin";
-import * as jobApi from "../../../api/jobAdmin";
-import type {
-  JobTaskAdminRow,
-  RagChunkAdminRow,
-  RagDocumentAdminRow,
-  RagDocumentCategoryAdminRow,
-} from "../../../types/admin";
+import type { RagChunkAdminRow, RagDocumentAdminRow, RagDocumentCategoryAdminRow } from "../../../types/admin";
 import type { RagRetrievalTestResult } from "../../../api/ragAdmin";
 import { renderMarkdownToSafeHtml } from "../../../utils/renderMarkdown";
-import {
-  humanizeJobStepDetail,
-  jobStatusMeta,
-  jobStepPhaseLabel,
-  jobStepStatusLabel,
-  jobTaskTypeLabel,
-  jobTaskTypeShort,
-  parseJobPayloadRows,
-  parseJobResultMetaRows,
-  parseResultSteps,
-  prettyJson,
-  ragDocumentDisplayStatusLabel,
-} from "../../../utils/ragJobDisplay";
+import { ragDocumentDisplayStatusLabel } from "../../../utils/ragJobDisplay";
 
 const { t } = useI18n();
 const emDash = "\u2014";
@@ -655,7 +624,6 @@ const vectorMilvusEnabled = computed(() => props.vectorMilvusEnabled !== false);
 
 const loadingDocPage = ref(false);
 const loadingCategories = ref(false);
-const loadingJobs = ref(false);
 const indexingLoading = ref(false);
 
 const docRows = ref<RagDocumentAdminRow[]>([]);
@@ -672,9 +640,6 @@ const docsTableWrapRef = ref<HTMLElement | null>(null);
 /** 渚?el-table 鍥哄畾楂樺害锛屼娇鏃犳暟鎹椂琛ㄤ綋鍖哄煙浠嶅崰婊″墿浣欑┖闂?*/
 const docTableBodyHeight = ref(360);
 let docTableResizeObserver: ResizeObserver | null = null;
-
-const kbJobs = ref<JobTaskAdminRow[]>([]);
-let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 const chunksByDoc = ref<Record<number, RagChunkAdminRow[]>>({});
 const chunksDrawerOpen = ref(false);
@@ -701,8 +666,7 @@ const editingChunk = ref<{ doc: RagDocumentAdminRow; chunk: RagChunkAdminRow } |
 
 const chunkEditMarkdownHtml = computed(() => renderMarkdownToSafeHtml(chunkEditText.value || ""));
 
-const jobsDlgOpen = ref(false);
-const webCrawlSitesDlgOpen = ref(false);
+const webCrawlProgressDlgOpen = ref(false);
 
 const retrievalTestDlgOpen = ref(false);
 const retrievalQuery = ref("");
@@ -717,29 +681,24 @@ const chunkPreviewDlgOpen = ref(false);
 const chunkPreviewRef = ref<InstanceType<typeof KbChunkPreviewDialog> | null>(null);
 const chunkPreviewLoading = ref(false);
 const crawlForm = reactive({
-  mode: "site" as "single" | "site",
+  mode: "recurring" as "single" | "recurring",
   url: "",
+  siteId: null as number | null,
+  name: "",
   baseUrl: "",
+  schedulePreset: "DAILY",
+  runAtTime: undefined as string | undefined,
   maxDepth: 3,
-  syncMode: "FULL",
   filterCrawled: true,
+  runNow: true,
+  autoRepeat: false,
 });
-const crawlSyncModes = ref<{ code: string; label: string }[]>([]);
+const crawlSchedulePresets = ref<{ code: string; label: string }[]>([]);
+const crawlSites = ref<RagWebCrawlSiteRow[]>([]);
 const pasteForm = reactive({ originalFilename: "", contentType: "", markdownContent: "" });
 const uploadFileList = ref<UploadFile[]>([]);
 const ingestCategoryId = ref<number | undefined>(undefined);
 const ingestSubmitting = ref(false);
-
-type JobPipelineRow = {
-  key: string;
-  typeLabel: string;
-  title: string;
-  subtitle?: string;
-  statusLabel: string;
-  statusType: "success" | "warning" | "info" | "danger";
-  createdAt?: string | null;
-  job: JobTaskAdminRow;
-};
 
 const docRangeText = computed(() => {
   if (docPageTotal.value <= 0) return "0-0";
@@ -763,29 +722,33 @@ const chunksDrawerRows = computed(() => {
 });
 
 const ingestTip = computed(() => {
-  if (ingestType.value === "crawl") {
-    return crawlForm.mode === "site" ? t("views.kbMatrix.ingestTipCrawlSite") : t("views.kbMatrix.ingestTipCrawl");
+  if (ingestType.value === "crawl" && crawlForm.mode === "recurring") {
+    return "";
   }
+  if (ingestType.value === "crawl") return "";
   if (ingestType.value === "upload") return t("views.kbMatrix.ingestTipUpload");
   return t("views.kbMatrix.ingestTipPaste");
 });
 
-const jobPipelineRows = computed<JobPipelineRow[]>(() =>
-  kbJobs.value.map((j) => {
-    const st = jobStatusMeta(j.status, t);
-    const { title, subtitle } = jobTitleSubtitle(j);
-    return {
-      key: `job-${j.id}`,
-      typeLabel: jobTaskTypeShort(j.taskType, t),
-      title,
-      subtitle,
-      statusLabel: st.label,
-      statusType: st.tag,
-      createdAt: j.createdAt,
-      job: j,
-    };
-  }),
-);
+const ingestSubmitLabel = computed(() => {
+  if (ingestType.value === "crawl" && crawlForm.mode === "recurring") {
+    return crawlForm.runNow ? t("views.kbMatrix.submitStartCrawl") : t("views.kbMatrix.submitSaveCrawlTask");
+  }
+  if (ingestType.value === "crawl") return t("views.kbMatrix.submitSinglePage");
+  return t("views.kbMatrix.submitIngest");
+});
+
+function defaultSiteNameFromUrl(raw: string): string {
+  try {
+    return new URL(raw.trim()).hostname;
+  } catch {
+    return raw.trim().slice(0, 64);
+  }
+}
+
+function savedSiteOptionLabel(s: RagWebCrawlSiteRow): string {
+  return s.name?.trim() ? `${s.name} · ${s.baseUrl}` : s.baseUrl;
+}
 
 function docChunksRoute(row: RagDocumentAdminRow) {
   return {
@@ -804,24 +767,6 @@ function preview(s: string): string {
   return t.length > 160 ? `${t.slice(0, 160)}...` : t;
 }
 
-function jobTitleSubtitle(j: JobTaskAdminRow): { title: string; subtitle?: string } {
-  try {
-    const p = JSON.parse(j.payloadJson || "{}") as {
-      url?: string;
-      baseUrl?: string;
-      originalFilename?: string;
-    };
-    if (j.taskType === "RAG_SITE_CRAWL" && p.baseUrl) {
-      return { title: p.baseUrl, subtitle: jobTaskTypeLabel(j.taskType, t) };
-    }
-    if (j.taskType === "RAG_URL_IMPORT" && p.url) return { title: p.url, subtitle: jobTaskTypeLabel(j.taskType, t) };
-    if (p.originalFilename) return { title: p.originalFilename, subtitle: jobTaskTypeLabel(j.taskType, t) };
-  } catch {
-    /* ignore */
-  }
-  return { title: jobTaskTypeLabel(j.taskType, t), subtitle: formatTime(j.createdAt) };
-}
-
 async function triggerIndex() {
   if (!vectorMilvusEnabled.value) {
     ElMessage.warning(t("views.kbMatrix.milvusWarnIdx"));
@@ -831,7 +776,6 @@ async function triggerIndex() {
   try {
     await ragApi.enqueueRagKbIndexJob(kid.value);
     ElMessage.success(t("views.kbMatrix.indexQueued"));
-    await loadKbJobs();
   } catch (e: unknown) {
     const msg =
       e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : t("views.kbMatrix.enqueueFailed");
@@ -876,29 +820,8 @@ async function loadDocPage() {
   }
 }
 
-async function loadKbJobs() {
-  loadingJobs.value = true;
-  try {
-    const p = await jobApi.fetchJobTasks({ page: 1, size: 80, ragKbId: kid.value });
-    kbJobs.value = p.records.filter((j) => {
-      const t = j.taskType;
-      return t === "RAG_URL_IMPORT" || t === "RAG_FILE_IMPORT" || t === "RAG_INDEX";
-    });
-  } finally {
-    loadingJobs.value = false;
-  }
-}
-
-function openWebCrawlSitesDlg() {
-  webCrawlSitesDlgOpen.value = true;
-}
-
-function openJobsDialog() {
-  jobsDlgOpen.value = true;
-}
-
-function onJobsDialogOpen() {
-  void loadKbJobs();
+function openWebCrawlProgressDlg() {
+  webCrawlProgressDlgOpen.value = true;
 }
 
 function retrievalModeLabel(mode: string): string {
@@ -941,11 +864,6 @@ async function runRetrievalTest() {
 /** 浠呮枃妗ｄ笌鍒嗙被锛堜富鍖哄煙銆屽埛鏂般€嶏級銆?*/
 async function refreshDocs() {
   await Promise.all([loadCategories(), loadDocPage()]);
-}
-
-/** 鏂囨。 + 浠诲姟缂撳瓨锛堝垏鎹㈢煡璇嗗簱銆佸叆搴撴彁浜ゅ悗銆佽疆璇緷璧栵級銆?*/
-async function refreshDocsAndKbJobs() {
-  await Promise.all([loadCategories(), loadDocPage(), loadKbJobs()]);
 }
 
 function selectCategoryFilter(id: number | null) {
@@ -1156,32 +1074,62 @@ async function openIngest() {
     return;
   }
   resetIngestForm();
-  await loadCrawlSyncModes();
+  await loadCrawlMeta();
   ingestOpen.value = true;
 }
 
-async function loadCrawlSyncModes() {
-  if (crawlSyncModes.value.length > 0) return;
+async function loadCrawlMeta() {
   try {
-    crawlSyncModes.value = await ragApi.fetchWebCrawlSyncModes();
-    if (!crawlForm.syncMode && crawlSyncModes.value[0]) {
-      crawlForm.syncMode = crawlSyncModes.value[0].code;
-    }
+    const meta = await ragApi.fetchWebCrawlSiteMeta();
+    crawlSchedulePresets.value = meta.schedulePresets ?? [];
+    crawlSites.value = await ragApi.fetchWebCrawlSites(kid.value);
   } catch {
     /* ignore */
   }
 }
 
+function applyRecurringSiteToForm(row: RagWebCrawlSiteRow) {
+  crawlForm.siteId = row.id;
+  crawlForm.name = row.name;
+  crawlForm.baseUrl = row.baseUrl;
+  crawlForm.schedulePreset = row.schedulePreset;
+  crawlForm.runAtTime = row.runAtTime ?? undefined;
+  crawlForm.maxDepth = row.maxDepth ?? 3;
+  crawlForm.filterCrawled = row.filterCrawled;
+  crawlForm.autoRepeat = row.enabled;
+  crawlForm.runNow = false;
+  if (row.chunkStrategy != null) ingestChunkStrategy.value = row.chunkStrategy;
+  if (row.categoryId != null) ingestCategoryId.value = row.categoryId;
+}
+
+function resetRecurringSiteForm() {
+  crawlForm.siteId = null;
+  crawlForm.name = "";
+  crawlForm.baseUrl = "";
+  crawlForm.schedulePreset = "DAILY";
+  crawlForm.runAtTime = undefined;
+  crawlForm.maxDepth = 3;
+  crawlForm.filterCrawled = true;
+  crawlForm.runNow = true;
+  crawlForm.autoRepeat = false;
+}
+
+function onRecurringSitePick(siteId: number | null) {
+  if (siteId == null) {
+    resetRecurringSiteForm();
+    return;
+  }
+  const row = crawlSites.value.find((s) => s.id === siteId);
+  if (row) applyRecurringSiteToForm(row);
+}
 
 function resetIngestForm() {
   ingestType.value = "crawl";
   ingestChunkStrategy.value = 2;
   ingestCategoryId.value = selectedCategoryId.value ?? undefined;
-  crawlForm.mode = "site";
+  crawlForm.mode = "recurring";
   crawlForm.url = "";
-  crawlForm.baseUrl = "";
-  crawlForm.maxDepth = 3;
-  crawlForm.filterCrawled = true;
+  resetRecurringSiteForm();
   pasteForm.originalFilename = "";
   pasteForm.contentType = "";
   pasteForm.markdownContent = "";
@@ -1218,6 +1166,7 @@ async function runChunkPreview() {
         baseUrl: base,
         maxDepth: crawlForm.maxDepth,
         chunkStrategy: cs,
+        siteId: crawlForm.siteId ?? undefined,
       });
     }
   } finally {
@@ -1249,16 +1198,43 @@ async function submitIngest() {
           ElMessage.warning(t("views.kbMatrix.fillSiteBaseUrl"));
           return;
         }
-        await ragApi.submitLocalSiteCrawl(kid.value, {
+        if (!crawlForm.runNow && !crawlForm.autoRepeat) {
+          ElMessage.warning(t("views.kbMatrix.crawlNeedRunOrRepeat"));
+          return;
+        }
+        const name = crawlForm.name.trim() || defaultSiteNameFromUrl(base);
+        const body = {
+          name,
           baseUrl: base,
-          syncMode: crawlForm.syncMode,
+          syncMode: "FIRST_FULL_THEN_INCREMENTAL",
+          schedulePreset: crawlForm.autoRepeat ? crawlForm.schedulePreset : "MANUAL",
+          runAtTime: crawlForm.autoRepeat ? crawlForm.runAtTime : undefined,
           maxDepth: crawlForm.maxDepth,
           filterCrawled: crawlForm.filterCrawled,
+          enabled: crawlForm.autoRepeat,
           chunkStrategy: cs,
           categoryId: catId,
-          asyncJob: true,
-        });
-        ElMessage.success(t("views.kbMatrix.crawlSiteJobCreated"));
+        };
+        let siteId = crawlForm.siteId;
+        if (siteId != null) {
+          await ragApi.updateWebCrawlSite(kid.value, siteId, body);
+        } else {
+          const created = await ragApi.createWebCrawlSite(kid.value, body);
+          siteId = created.id;
+        }
+        const startedNow = crawlForm.runNow && siteId != null;
+        if (startedNow) {
+          await ragApi.runWebCrawlSiteNow(kid.value, siteId);
+        }
+        ingestOpen.value = false;
+        ElMessage.success(
+          startedNow ? t("views.kbMatrix.recurringCrawlSavedAndRun") : t("views.kbMatrix.webCrawlSitesSaved"),
+        );
+        if (startedNow) {
+          openWebCrawlProgressDlg();
+        }
+        void refreshDocs();
+        return;
       }
     } else if (ingestType.value === "upload") {
       const files = uploadFileList.value.map((item) => item.raw as File).filter((f): f is File => !!f);
@@ -1306,7 +1282,7 @@ async function submitIngest() {
       ElMessage.success(t("views.kbMatrix.fileJobCreated"));
     }
     ingestOpen.value = false;
-    await refreshDocsAndKbJobs();
+    void refreshDocs();
   } catch (e: unknown) {
     const msg =
       e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : t("views.kbMatrix.submitFailed");
@@ -1355,24 +1331,6 @@ async function saveChunk() {
   }
 }
 
-function startPolling() {
-  stopPolling();
-  pollTimer = setInterval(() => {
-    const active = kbJobs.value.some((j) => {
-      const s = (j.status || "").toUpperCase();
-      return s === "PENDING" || s === "RUNNING";
-    });
-    if (active) void loadKbJobs();
-  }, 6000);
-}
-
-function stopPolling() {
-  if (pollTimer) {
-    clearInterval(pollTimer);
-    pollTimer = null;
-  }
-}
-
 function unbindDocTableResize() {
   if (docTableResizeObserver) {
     docTableResizeObserver.disconnect();
@@ -1416,11 +1374,7 @@ watch(
     queryTitle.value = "";
     queryDisplayStatus.value = undefined;
     chunksByDoc.value = {};
-    stopPolling();
-    void refreshDocsAndKbJobs()
-      .then(() => startPolling())
-      .then(() => nextTick())
-      .then(() => bindDocTableResize());
+    void refreshDocs().then(() => nextTick()).then(() => bindDocTableResize());
   },
   { immediate: true },
 );
@@ -1435,7 +1389,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   unbindDocTableResize();
-  stopPolling();
 });
 </script>
 
@@ -1445,8 +1398,91 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
+.crawl-mode-form-item :deep(.el-form-item__label) {
+  align-self: flex-start;
+  padding-top: 12px;
+}
+
+.crawl-mode-form-item :deep(.el-form-item__content) {
+  line-height: normal;
+}
+
+/* 说明条通栏展示，不占右侧控件列宽 */
+.crawl-intro-form-item.el-form-item {
+  align-items: stretch;
+  margin-bottom: 8px;
+}
+
+.crawl-intro-form-item :deep(.el-form-item__content) {
+  margin-left: 0 !important;
+  width: 100%;
+  max-width: 100%;
+  min-height: 0;
+  display: block;
+  align-items: stretch;
+}
+
 .crawl-warn {
-  margin-bottom: 12px;
+  margin: 0;
+  width: 100%;
+}
+
+.crawl-warn :deep(.el-alert__content) {
+  line-height: 1.55;
+}
+
+.crawl-warn :deep(.el-alert__description) {
+  margin: 0;
+  line-height: inherit;
+}
+
+.ingest-form :deep(.el-form-item) {
+  align-items: center;
+}
+
+.ingest-form :deep(.el-form-item__label) {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: auto;
+  min-height: var(--el-component-size);
+  line-height: 1.35;
+  padding-right: 12px;
+}
+
+.ingest-form :deep(.el-form-item__content) {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  min-height: var(--el-component-size);
+}
+
+.ingest-form :deep(.el-form-item__content > .el-input),
+.ingest-form :deep(.el-form-item__content > .el-select),
+.ingest-form :deep(.el-form-item__content > .el-input-number) {
+  flex: 1;
+  width: 100%;
+  max-width: 100%;
+}
+
+.ingest-form :deep(.el-form-item__content > .el-input-number) {
+  flex: 0 1 auto;
+  width: auto;
+}
+
+.ingest-submit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.crawl-depth-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.45;
 }
 
 .kb-dmx-root {
@@ -1843,11 +1879,23 @@ onBeforeUnmount(() => {
   margin-top: -4px;
 }
 
+.chunk-edit-scrollbar {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-fill-color-blank);
+}
+
+.chunk-edit-scrollbar :deep(.el-scrollbar__wrap) {
+  overflow-x: hidden;
+}
+
+.chunk-edit-scrollbar :deep(.el-scrollbar__view) {
+  padding: 10px 12px;
+}
+
 .chunk-edit-preview {
-  min-height: 280px;
-  max-height: min(62vh, 520px);
-  overflow: auto;
-  padding: 4px 2px;
+  min-height: 240px;
+  padding: 0;
 }
 
 .chunk-edit-preview.chunk-md :deep(p) {

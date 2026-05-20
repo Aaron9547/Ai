@@ -39,7 +39,16 @@ public class TenantRuntimeSettingApplicationService {
 
     /** 用户记忆 Milvus 嵌入：{@code sys_llm_model.id}，未配置或非法时为空。 */
     public java.util.Optional<Long> memoryEmbeddingVectorModelId(long tenantId) {
-        String raw = effectiveValueText(tenantId, TenantRuntimeSettingKey.MEMORY_EMBEDDING_VECTOR_MODEL_ID).trim();
+        return parseOptionalLlmModelId(tenantId, TenantRuntimeSettingKey.MEMORY_EMBEDDING_VECTOR_MODEL_ID);
+    }
+
+    /** 对话联网检索：{@code sys_llm_model.id}，未配置或非法时为空（由仓储回退 {@code sort_order} 默认）。 */
+    public java.util.Optional<Long> webSearchGroundingModelId(long tenantId) {
+        return parseOptionalLlmModelId(tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MODEL_ID);
+    }
+
+    private java.util.Optional<Long> parseOptionalLlmModelId(long tenantId, TenantRuntimeSettingKey key) {
+        String raw = effectiveValueText(tenantId, key).trim();
         if (raw.isEmpty()) {
             return java.util.Optional.empty();
         }
@@ -308,14 +317,15 @@ public class TenantRuntimeSettingApplicationService {
             }
             return t;
         }
-        if (key == TenantRuntimeSettingKey.MEMORY_EMBEDDING_VECTOR_MODEL_ID) {
+        if (key == TenantRuntimeSettingKey.MEMORY_EMBEDDING_VECTOR_MODEL_ID
+                || key == TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MODEL_ID) {
             if (valueText == null || valueText.isBlank()) {
                 return "";
             }
             String t = valueText.trim();
             if (!t.matches("[0-9]{1,19}")) {
                 throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST, "MEMORY_EMBEDDING_VECTOR_MODEL_ID 须为数字主键或留空");
+                        HttpStatus.BAD_REQUEST, key.getStorage() + " 须为数字主键或留空");
             }
             return t;
         }

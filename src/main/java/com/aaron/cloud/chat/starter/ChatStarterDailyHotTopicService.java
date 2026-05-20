@@ -15,6 +15,7 @@ import com.aaron.cloud.common.context.TenantContextHolder;
 import com.aaron.cloud.common.modelcfg.LlmModelKindPolicy;
 import com.aaron.cloud.common.modelcfg.SysLlmModelRepository;
 import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
+import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService;
 import com.aaron.cloud.common.time.BeijingTime;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -41,6 +42,7 @@ public class ChatStarterDailyHotTopicService {
             """;
 
     private final SysLlmModelRepository llmModelRepository;
+    private final TenantRuntimeSettingApplicationService tenantRuntimeSettingApplicationService;
     private final ChatWebSearchGroundingService webSearchGroundingService;
     private final ModelInvokePort modelInvokePort;
     private final ChatStarterDailyBatchRepository dailyBatchRepository;
@@ -72,17 +74,14 @@ public class ChatStarterDailyHotTopicService {
                             return row;
                         });
 
-        if (!llmModelRepository.hasEnabledWebSearchModel(tenantId)) {
-            failBatch(batch, "租户未配置启用的联网搜索模型");
-            return;
-        }
-
         SysLlmModel webModel =
                 llmModelRepository
-                        .pickDefaultWebSearchModel(tenantId)
+                        .resolveWebSearchModel(
+                                tenantId,
+                                tenantRuntimeSettingApplicationService.webSearchGroundingModelId(tenantId))
                         .orElse(null);
         if (webModel == null) {
-            failBatch(batch, "无可用联网搜索模型");
+            failBatch(batch, "租户未配置可用的联网搜索模型");
             return;
         }
 

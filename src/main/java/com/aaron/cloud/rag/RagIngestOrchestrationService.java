@@ -63,7 +63,7 @@ public class RagIngestOrchestrationService {
         ArrayNode steps = objectMapper.createArrayNode();
         addStep(steps, "fetch_url", "running", url);
         RagHttpFetch.Fetched fetched = RagHttpFetch.get(url);
-        String html = new String(fetched.body(), fetched.charset());
+        String html = RagHttpFetch.decodeHtml(fetched);
         addStep(steps, "fetch_url", "ok", "bytes=" + fetched.body().length);
         RagWebCrawlExtractConfig extractConfig = extractConfigFrom(root);
         RagHtmlToMarkdown.ParsedPage page = webPageParseService.parse(html, url, extractConfig);
@@ -75,7 +75,10 @@ public class RagIngestOrchestrationService {
         RagChunkStrategy strategy = effectiveStrategy(kb, root);
         int fixed = effectiveFixed(kb);
         int slide = effectiveSlide(kb);
-        String title = RagHtmlToMarkdown.resolveDocumentTitle(page, url);
+        String title =
+                page.title() != null && !page.title().isBlank()
+                        ? page.title().trim()
+                        : RagHtmlToMarkdown.resolveDocumentTitle(page, url);
         final long txTenantId = tenantId;
         final long txKbId = kbId;
         final String txMd = md;

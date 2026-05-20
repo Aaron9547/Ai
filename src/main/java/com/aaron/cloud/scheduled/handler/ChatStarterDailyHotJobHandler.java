@@ -3,6 +3,7 @@ package com.aaron.cloud.scheduled.handler;
 import com.aaron.cloud.chat.starter.ChatStarterDailyHotTopicService;
 import com.aaron.cloud.common.api.enums.TenantScheduledExecutorCode;
 import com.aaron.cloud.common.modelcfg.SysLlmModelRepository;
+import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService;
 import com.aaron.cloud.common.scheduled.entity.TenantScheduledTask;
 import com.aaron.cloud.scheduled.TenantScheduledJobHandler;
 import com.aaron.cloud.scheduled.run.TenantScheduledRunContext;
@@ -18,6 +19,7 @@ public class ChatStarterDailyHotJobHandler implements TenantScheduledJobHandler 
 
     private final ChatStarterDailyHotTopicService dailyHotTopicService;
     private final SysLlmModelRepository llmModelRepository;
+    private final TenantRuntimeSettingApplicationService tenantRuntimeSettingApplicationService;
 
     @Override
     public TenantScheduledExecutorCode executorCode() {
@@ -29,12 +31,15 @@ public class ChatStarterDailyHotJobHandler implements TenantScheduledJobHandler 
             throws Exception {
         long tenantId = registration.getTenantId();
         runContext.report("CHECK", "检查联网搜索模型配置", 5, null, null);
-        if (!llmModelRepository.hasEnabledWebSearchModel(tenantId)) {
+        if (llmModelRepository
+                .resolveWebSearchModel(
+                        tenantId, tenantRuntimeSettingApplicationService.webSearchGroundingModelId(tenantId))
+                .isEmpty()) {
             log.warn(
-                    "[推荐问题] 每日热点跳过：租户未配置启用的联网搜索模型 tenantId={} taskId={}",
+                    "[推荐问题] 每日热点跳过：租户未配置可用的联网搜索模型 tenantId={} taskId={}",
                     tenantId,
                     registration.getId());
-            runContext.report("SKIPPED", "未配置启用的联网搜索模型", 100, null, null);
+            runContext.report("SKIPPED", "未配置可用的联网搜索模型", 100, null, null);
             return;
         }
         runContext.report("FETCH", "正在联网抓取并生成热点问句", 20, null, null);

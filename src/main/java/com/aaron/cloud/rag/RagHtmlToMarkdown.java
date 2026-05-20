@@ -15,12 +15,32 @@ public final class RagHtmlToMarkdown {
     /** 解析结果：页面标题 + 正文 Markdown。 */
     public record ParsedPage(String title, String markdown) {}
 
-    /** 文档展示名：页面标题 → Markdown 首行 H1 → URL 末段 → 主机名。 */
+    /** 文档展示名：Markdown H1 → 正文区标题 → 页面 title → 列表页标题 hint → URL。 */
     public static String resolveDocumentTitle(ParsedPage page, String sourceUrl) {
-        if (page != null && page.title() != null && !page.title().isBlank()) {
-            return clampTitle(page.title().trim());
-        }
+        return resolveDocumentTitle(page, sourceUrl, null);
+    }
+
+    public static String resolveDocumentTitle(ParsedPage page, String sourceUrl, String listTitleHint) {
         String fromMd = titleFromMarkdownLead(page != null ? page.markdown() : null);
+        if (isMeaningfulArticleTitle(fromMd)) {
+            return clampTitle(fromMd);
+        }
+        String hint = listTitleHint == null ? "" : listTitleHint.trim();
+        if (isMeaningfulArticleTitle(hint) && !looksLikeGarbledText(hint)) {
+            return clampTitle(hint);
+        }
+        String pageTitle = page != null && page.title() != null ? page.title().trim() : "";
+        if (isMeaningfulArticleTitle(pageTitle)
+                && !looksLikeSiteListTitle(pageTitle)
+                && !looksLikeGarbledText(pageTitle)) {
+            return clampTitle(normalizeTitleStatic(pageTitle));
+        }
+        if (!pageTitle.isBlank()) {
+            String shortPart = shortTitleBeforeDash(pageTitle);
+            if (isMeaningfulArticleTitle(shortPart)) {
+                return clampTitle(shortPart);
+            }
+        }
         if (!fromMd.isBlank()) {
             return clampTitle(fromMd);
         }
@@ -28,7 +48,7 @@ public final class RagHtmlToMarkdown {
     }
 
     public static String resolveDocumentTitle(String markdown, String sourceUrl) {
-        return resolveDocumentTitle(new ParsedPage("", markdown), sourceUrl);
+        return resolveDocumentTitle(new ParsedPage("", markdown), sourceUrl, null);
     }
 
     static String titleFromMarkdownLead(String markdown) {
@@ -45,29 +65,21 @@ public final class RagHtmlToMarkdown {
     }
 
     static Element pickContentRootStatic(Document d) {
-        for (String sel :
-                new String[] {
-                    "article",
-                    "main",
-                    "[role=main]",
-                    "#content",
-                    ".content",
-                    ".article-content",
-                    ".post-content",
-                    ".entry-content"
-                }) {
-            Elements found = d.select(sel);
-            if (!found.isEmpty()) {
-                Element el = found.first();
-                if (el != null && el.text().trim().length() > 80) {
-                    return el;
-                }
-            }
-        }
-        return d.body();
+        return RagWebContentRootPicker.pick(d, RagWebCrawlExtractConfig.empty());
     }
 
     static String extractPageTitleFromDocument(Document d, Element contentRoot) {
+        if (contentRoot != null) {
+            for (String sel : new String[] {"h1", ".arti_title", ".news_title", ".article-title", "h2"}) {
+                Element h = contentRoot.selectFirst(sel);
+                if (h != null) {
+                    String ht = h.text().trim();
+                    if (isMeaningfulArticleTitle(ht)) {
+                        return normalizeTitleStatic(ht);
+                    }
+                }
+            }
+        }
         String t = d.title();
         if (t != null && !t.isBlank()) {
             return normalizeTitleStatic(t);
@@ -98,41 +110,13 @@ public final class RagHtmlToMarkdown {
         return "";
     }
 
+    /** @deprecated 请使用 {@link RagRichHtmlToMarkdown#buildRichMarkdown} */
+    @Deprecated
     static String buildMarkdownFromRoot(String pageTitle, Element root) {
         if (root == null) {
             return "";
         }
-        StringBuilder md = new StringBuilder();
-        if (pageTitle != null && !pageTitle.isBlank()) {
-            md.append("# ").append(pageTitle.trim()).append("\n\n");
-        }
-        for (Element el : root.select("h1, h2, h3, h4, p, li, blockquote, pre")) {
-            String tag = el.tagName();
-            String txt = el.text().trim();
-            if (txt.isEmpty()) {
-                continue;
-            }
-            if ("h1".equals(tag) && pageTitle != null && txt.equals(pageTitle.trim())) {
-                continue;
-            }
-            switch (tag) {
-                case "h1" -> md.append("# ").append(txt).append("\n\n");
-                case "h2" -> md.append("## ").append(txt).append("\n\n");
-                case "h3" -> md.append("### ").append(txt).append("\n\n");
-                case "h4" -> md.append("#### ").append(txt).append("\n\n");
-                case "li" -> md.append("- ").append(txt).append("\n");
-                case "blockquote" -> md.append("> ").append(txt).append("\n\n");
-                case "pre" -> md.append("```\n").append(txt).append("\n```\n\n");
-                default -> md.append(txt).append("\n\n");
-            }
-        }
-        if (md.length() < 48) {
-            String body = root.text();
-            if (body != null && !body.isBlank()) {
-                md.append(body.trim());
-            }
-        }
-        return md.toString().trim();
+        return RagRichHtmlToMarkdown.buildRichMarkdown(pageTitle, root, "");
     }
 
     static String normalizeTitleStatic(String raw) {
@@ -168,6 +152,68 @@ public final class RagHtmlToMarkdown {
             /* fall through */
         }
         return url.length() > 200 ? url.substring(0, 200) : url;
+    }
+
+    static boolean isMeaningfulArticleTitle(String title) {
+        if (title == null) {
+            return false;
+        }
+        String t = title.trim();
+        return t.length() >= 2 && !t.matches("^\\d{1,4}$");
+    }
+
+    /** GBK 误按 UTF-8 解码后的典型乱码（如 Ã—Ã…、大量拉丁扩展）。 */
+    static boolean looksLikeGarbledText(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        String t = text.trim();
+        if (t.length() < 2) {
+            return false;
+        }
+        int bad = 0;
+        int cjk = 0;
+        for (int i = 0; i < t.length(); i++) {
+            char c = t.charAt(i);
+            if (c >= 0x4E00 && c <= 0x9FFF) {
+                cjk++;
+            } else if (c == '\uFFFD' || (c >= 0x80 && c <= 0xFF)) {
+                bad++;
+            } else if (c == 'Ã' || c == 'Â' || c == 'Ð' || c == 'Ñ') {
+                bad += 2;
+            }
+        }
+        if (cjk >= 2 && bad == 0) {
+            return false;
+        }
+        return bad >= 2 || (bad > 0 && cjk == 0 && t.length() <= 40);
+    }
+
+    static boolean looksLikeSiteListTitle(String title) {
+        if (title == null || title.isBlank()) {
+            return false;
+        }
+        String t = title.trim();
+        return t.contains("学院") && t.contains("-") && t.length() > 20
+                || t.endsWith("首页") || t.contains("列表");
+    }
+
+    static String shortTitleBeforeDash(String title) {
+        int dash = title.indexOf('-');
+        if (dash > 0) {
+            String left = title.substring(0, dash).trim();
+            if (isMeaningfulArticleTitle(left)) {
+                return left;
+            }
+        }
+        int enDash = title.indexOf('—');
+        if (enDash > 0) {
+            String left = title.substring(0, enDash).trim();
+            if (isMeaningfulArticleTitle(left)) {
+                return left;
+            }
+        }
+        return title.trim();
     }
 
     private static String clampTitle(String title) {

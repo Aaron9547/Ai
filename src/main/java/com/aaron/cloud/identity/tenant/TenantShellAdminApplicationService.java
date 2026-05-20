@@ -1,7 +1,11 @@
 package com.aaron.cloud.identity.tenant;
 
+import com.aaron.cloud.common.api.enums.LlmModelKind;
+import com.aaron.cloud.common.api.enums.LlmModelStatus;
 import com.aaron.cloud.common.api.enums.TenantRuntimeSettingKey;
 import com.aaron.cloud.common.config.properties.AiOutboundResilienceProperties;
+import com.aaron.cloud.common.modelcfg.SysLlmModelRepository;
+import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
 import com.aaron.cloud.common.outbound.TenantOutboundResilienceRuntime;
 import com.aaron.cloud.common.tenant.SysTenantRepository;
 import com.aaron.cloud.common.tenant.entity.SysTenant;
@@ -29,6 +33,7 @@ public class TenantShellAdminApplicationService {
     private static final int RUNTIME_JSON_MAX_CHARS = 65_000;
 
     private final SysTenantRepository sysTenantRepository;
+    private final SysLlmModelRepository llmModelRepository;
     private final TenantRuntimeSettingApplicationService tenantRuntimeSettingApplicationService;
     private final TenantOutboundResilienceRuntime tenantOutboundResilienceRuntime;
     private final TenantBrandLogoApplicationService tenantBrandLogoApplicationService;
@@ -101,6 +106,9 @@ public class TenantShellAdminApplicationService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "body required");
         }
         String mem = body.getMemoryEmbeddingVectorModelId() == null ? "" : body.getMemoryEmbeddingVectorModelId().trim();
+        String webModelId =
+                body.getWebSearchGroundingModelId() == null ? "" : body.getWebSearchGroundingModelId().trim();
+        validateOptionalWebSearchModelId(tenantId, webModelId);
         String limits = jsonOrDefault(body.getChatPromptLimitsJson(), "{}");
         String memPol = jsonOrDefault(body.getMemoryPolicyJson(), "{}");
         String guard = jsonOrDefault(body.getChatInputGuardJson(), "{}");
@@ -120,6 +128,7 @@ public class TenantShellAdminApplicationService {
         }
         List<PutItem> items = new ArrayList<>();
         items.add(item(TenantRuntimeSettingKey.MEMORY_EMBEDDING_VECTOR_MODEL_ID, mem));
+        items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MODEL_ID, webModelId));
         items.add(item(TenantRuntimeSettingKey.CHAT_PROMPT_LIMITS_JSON, limits));
         items.add(item(TenantRuntimeSettingKey.MEMORY_POLICY_JSON, memPol));
         items.add(item(TenantRuntimeSettingKey.CHAT_INPUT_GUARD_JSON, guard));
@@ -151,10 +160,40 @@ public class TenantShellAdminApplicationService {
         return raw.trim();
     }
 
+    private void validateOptionalWebSearchModelId(long tenantId, String rawId) {
+        if (rawId == null || rawId.isBlank()) {
+            return;
+        }
+        long id;
+        try {
+            id = Long.parseLong(rawId.trim());
+        } catch (NumberFormatException e) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "WEB_SEARCH_GROUNDING_MODEL_ID 须为数字主键或留空");
+        }
+        SysLlmModel m =
+                llmModelRepository
+                        .findById(tenantId, id)
+                        .orElseThrow(
+                                () ->
+                                        new ResponseStatusException(
+                                                HttpStatus.BAD_REQUEST,
+                                                "联网检索模型不存在或不属于本租户：" + id));
+        if (m.getModelKind() != LlmModelKind.WEB_SEARCH) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "所选模型须为「联网搜索」(WEB_SEARCH) 类型");
+        }
+        if (m.getStatus() != LlmModelStatus.ACTIVE) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "所选联网搜索模型须为启用状态");
+        }
+    }
+
     private ModelCallingRuntimeDto readModelCallingRuntime(long tenantId) {
         return new ModelCallingRuntimeDto(
                 tenantRuntimeSettingApplicationService.getEffectiveValueText(
                         tenantId, TenantRuntimeSettingKey.MEMORY_EMBEDDING_VECTOR_MODEL_ID),
+                tenantRuntimeSettingApplicationService.getEffectiveValueText(
+                        tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MODEL_ID),
                 tenantRuntimeSettingApplicationService.getEffectiveValueText(
                         tenantId, TenantRuntimeSettingKey.CHAT_PROMPT_LIMITS_JSON),
                 tenantRuntimeSettingApplicationService.getEffectiveValueText(
@@ -216,6 +255,7 @@ public class TenantShellAdminApplicationService {
 
     public record ModelCallingRuntimeDto(
             String memoryEmbeddingVectorModelId,
+            String webSearchGroundingModelId,
             String chatPromptLimitsJson,
             String memoryPolicyJson,
             String chatInputGuardJson,
@@ -250,6 +290,8 @@ public class TenantShellAdminApplicationService {
     @Data
     public static class ShellModelCallingPutBody {
         private String memoryEmbeddingVectorModelId;
+        /** {@link TenantRuntimeSettingKey#WEB_SEARCH_GROUNDING_MODEL_ID}；留空则按 sort_order 默认 */
+        private String webSearchGroundingModelId;
         private String chatPromptLimitsJson;
         private String memoryPolicyJson;
         private String chatInputGuardJson;

@@ -329,7 +329,8 @@ public final class RagKbAdminDtos {
             int markdownChars,
             int chunkCount,
             boolean chunksTruncated,
-            java.util.List<ChunkPreviewChunkView> chunks) {}
+            java.util.List<ChunkPreviewChunkView> chunks,
+            String error) {}
 
     public record ChunkPreviewView(
             int strategyCode,
@@ -337,5 +338,6 @@ public final class RagKbAdminDtos {
             int slideOverlap,
             java.util.List<ChunkPreviewPageView> pages,
             int pageCount,
-            int totalChunkCount) {}
+            int totalChunkCount,
+            int discoveredUrlCount) {}
 }

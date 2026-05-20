@@ -299,10 +299,15 @@ public class ChatApplicationService {
         return out;
     }
 
-    /** C 端是否展示「联网」开关：租户存在至少一条启用的 {@code WEB_SEARCH} 模型。 */
+    /** C 端是否展示「联网」开关：租户可解析出联网检索模型（绑定 id 或 {@code sort_order} 默认）。 */
     public boolean isWebSearchAvailableForCurrentTenant() {
         var snap = TenantContextHolder.require();
-        return llmModelRepository.hasEnabledWebSearchModel(snap.getTenantId());
+        return resolveWebSearchModelForTenant(snap.getTenantId()).isPresent();
+    }
+
+    private java.util.Optional<SysLlmModel> resolveWebSearchModelForTenant(long tenantId) {
+        return llmModelRepository.resolveWebSearchModel(
+                tenantId, tenantRuntimeSettingApplicationService.webSearchGroundingModelId(tenantId));
     }
 
     public SseEmitter streamUserMessage(long conversationId, ChatSendPayload payload) {
@@ -338,17 +343,13 @@ public class ChatApplicationService {
         }
 
         if (payload.isWebSearchEnabled()) {
-            if (!llmModelRepository.hasEnabledWebSearchModel(snap.getTenantId())) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "租户未配置启用的联网搜索模型，无法开启联网");
-            }
             SysLlmModel webRel =
-                    llmModelRepository
-                            .pickDefaultWebSearchModel(snap.getTenantId())
+                    resolveWebSearchModelForTenant(snap.getTenantId())
                             .orElseThrow(
                                     () ->
                                             new ResponseStatusException(
                                                     HttpStatus.BAD_REQUEST,
-                                                    "租户未配置启用的联网搜索模型，无法开启联网"));
+                                                    "租户未配置可用的联网搜索模型，请在「外观与模型调用」绑定或在「大模型管理」启用联网搜索实例"));
             llmTokenQuotaCoordinator.assertQuotaAllowsSend(webRel);
         }
 
@@ -621,8 +622,7 @@ public class ChatApplicationService {
                 millisSince(openT0));
         final SysLlmModel webSearchModelForStream =
                 payload.isWebSearchEnabled()
-                        ? llmModelRepository
-                                .pickDefaultWebSearchModel(snap.getTenantId())
+                        ? resolveWebSearchModelForTenant(snap.getTenantId())
                                 .orElseThrow(() -> new IllegalStateException("联网搜索模型不可用"))
                         : null;
         final ArrayList<WebSearchReference> webSearchRefsForStream = new ArrayList<>();
@@ -952,17 +952,13 @@ public class ChatApplicationService {
         }
 
         if (payload.isWebSearchEnabled()) {
-            if (!llmModelRepository.hasEnabledWebSearchModel(snap.getTenantId())) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "租户未配置启用的联网搜索模型，无法开启联网");
-            }
             SysLlmModel webRel =
-                    llmModelRepository
-                            .pickDefaultWebSearchModel(snap.getTenantId())
+                    resolveWebSearchModelForTenant(snap.getTenantId())
                             .orElseThrow(
                                     () ->
                                             new ResponseStatusException(
                                                     HttpStatus.BAD_REQUEST,
-                                                    "租户未配置启用的联网搜索模型，无法开启联网"));
+                                                    "租户未配置可用的联网搜索模型，请在「外观与模型调用」绑定或在「大模型管理」启用联网搜索实例"));
             llmTokenQuotaCoordinator.assertQuotaAllowsSend(webRel);
         }
 

@@ -18,7 +18,9 @@ import com.aaron.cloud.job.JobTaskExecutionService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
@@ -83,23 +85,11 @@ public class RagApplicationService {
         task.setPayloadJson(objectMapper.writeValueAsString(payload));
         task.setRagKbId(kbId);
         jobTaskRepository.insert(task);
-        var pub = jobPublisher.getIfAvailable();
-        if (pub != null) {
-            pub.publish(
-                    JobDispatchMessage.builder()
-                            .traceId(org.slf4j.MDC.get("traceId"))
-                            .tenantId(snap.getTenantId())
-                            .deviceId(snap.getDeviceId())
-                            .userId(snap.getUserId())
-                            .jobTaskId(task.getId())
-                            .build());
-        } else {
-            jobTaskExecutionService.processTask(task.getId(), snap.getTenantId());
-        }
+        dispatchJobTask(task);
         return task.getId();
     }
 
-    /** 缃戦〉鍏ュ簱锛氬悓鍩熺埇鍙栥€丮arkdown銆佸垎鍧椾笌鍚戦噺鍖栫敱 job 娴佹按绾挎墿灞曪紱姝ゅ浠呭叆闃熴€?*/
+    /** 网页入库锛氬悓鍩熺埇鍙栥€丮arkdown銆佸垎鍧椾笌鍚戦噺鍖栫敱 job 娴佹按绾挎墿灞曪紱姝ゅ浠呭叆闃熴€?*/
     public long enqueueUrlImportJob(long kbId, String url, Integer chunkStrategy, Long categoryId)
             throws Exception {
         var snap = TenantContextHolder.require();
@@ -122,23 +112,11 @@ public class RagApplicationService {
         task.setPayloadJson(objectMapper.writeValueAsString(payload));
         task.setRagKbId(kbId);
         jobTaskRepository.insert(task);
-        var pub = jobPublisher.getIfAvailable();
-        if (pub != null) {
-            pub.publish(
-                    JobDispatchMessage.builder()
-                            .traceId(org.slf4j.MDC.get("traceId"))
-                            .tenantId(snap.getTenantId())
-                            .deviceId(snap.getDeviceId())
-                            .userId(snap.getUserId())
-                            .jobTaskId(task.getId())
-                            .build());
-        } else {
-            jobTaskExecutionService.processTask(task.getId(), snap.getTenantId());
-        }
+        dispatchJobTask(task);
         return task.getId();
     }
 
-    /** 鏂囦欢鍏ョ煡璇嗗簱锛氫笌 {@code file} 棰勭鍚嶄笂浼犺鎺ュ墠锛屽厛鍏ラ槦鍗犱綅浠诲姟銆?*/
+    /** 文件入知识库锛氫笌 {@code file} 棰勭鍚嶄笂浼犺鎺ュ墠锛屽厛鍏ラ槦鍗犱綅浠诲姟銆?*/
     public long enqueueFileImportJob(
             long kbId,
             String originalFilename,
@@ -171,19 +149,7 @@ public class RagApplicationService {
         task.setPayloadJson(objectMapper.writeValueAsString(payload));
         task.setRagKbId(kbId);
         jobTaskRepository.insert(task);
-        var pub = jobPublisher.getIfAvailable();
-        if (pub != null) {
-            pub.publish(
-                    JobDispatchMessage.builder()
-                            .traceId(org.slf4j.MDC.get("traceId"))
-                            .tenantId(snap.getTenantId())
-                            .deviceId(snap.getDeviceId())
-                            .userId(snap.getUserId())
-                            .jobTaskId(task.getId())
-                            .build());
-        } else {
-            jobTaskExecutionService.processTask(task.getId(), snap.getTenantId());
-        }
+        dispatchJobTask(task);
         return task.getId();
     }
 
@@ -226,19 +192,7 @@ public class RagApplicationService {
         task.setPayloadJson(objectMapper.writeValueAsString(payload));
         task.setRagKbId(kbId);
         jobTaskRepository.insert(task);
-        var pub = jobPublisher.getIfAvailable();
-        if (pub != null) {
-            pub.publish(
-                    JobDispatchMessage.builder()
-                            .traceId(org.slf4j.MDC.get("traceId"))
-                            .tenantId(snap.getTenantId())
-                            .deviceId(snap.getDeviceId())
-                            .userId(snap.getUserId())
-                            .jobTaskId(task.getId())
-                            .build());
-        } else {
-            jobTaskExecutionService.processTask(task.getId(), snap.getTenantId());
-        }
+        dispatchJobTask(task);
         return task.getId();
     }
 
@@ -278,17 +232,30 @@ public class RagApplicationService {
         task.setPayloadJson(objectMapper.writeValueAsString(payload));
         task.setRagKbId(kbId);
         jobTaskRepository.insert(task);
-        var pub = jobPublisher.getIfAvailable();
+        dispatchJobTask(task.getId(), tenantId, null, null);
+        return task.getId();
+    }
+
+    /**
+     * 任务入队后异步执行：优先 RocketMQ；未启用 MQ 时走后台线程，避免 HTTP 请求同步跑完整站爬取。
+     */
+    private void dispatchJobTask(JobTask task) {
+        dispatchJobTask(task.getId(), task.getTenantId(), task.getDeviceId(), task.getUserId());
+    }
+
+    private void dispatchJobTask(long jobTaskId, long tenantId, String deviceId, Long userId) {
+        JobPublisher pub = jobPublisher.getIfAvailable();
         if (pub != null) {
             pub.publish(
                     JobDispatchMessage.builder()
-                            .traceId(org.slf4j.MDC.get("traceId"))
+                            .traceId(MDC.get("traceId"))
                             .tenantId(tenantId)
-                            .jobTaskId(task.getId())
+                            .deviceId(deviceId)
+                            .userId(userId)
+                            .jobTaskId(jobTaskId)
                             .build());
-        } else {
-            jobTaskExecutionService.processTask(task.getId(), tenantId);
+            return;
         }
-        return task.getId();
+        CompletableFuture.runAsync(() -> jobTaskExecutionService.processTask(jobTaskId, tenantId));
     }
 }

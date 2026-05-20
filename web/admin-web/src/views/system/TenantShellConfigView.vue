@@ -183,6 +183,30 @@
 
           <div class="outbound-section-head">{{ t("admin.shell.modelCalling.sectionWebSearch") }}</div>
           <div class="outbound-fields-grid">
+            <el-form-item class="outbound-field-span">
+              <template #label>
+                <ShellFieldLabel
+                  :label="t('admin.shell.modelCalling.webSearchModel')"
+                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.webSearchModel"
+                />
+              </template>
+              <el-select
+                v-model="webSearchGroundingModelId"
+                filterable
+                clearable
+                class="outbound-line-input"
+                :loading="loadingWebSearchModels"
+                :placeholder="t('admin.shell.modelCalling.webSearchModelPlaceholder')"
+              >
+                <el-option
+                  v-for="opt in webSearchModelSelectOptions"
+                  :key="opt.id"
+                  :label="opt.label"
+                  :value="opt.id"
+                  :disabled="opt.disabled"
+                />
+              </el-select>
+            </el-form-item>
             <el-form-item>
               <template #label>
                 <ShellFieldLabel :label="t('admin.shell.modelCalling.webSearchRounds')" tooltip-i18n-key="admin.shell.modelCalling.tooltips.webSearchRounds" />
@@ -572,6 +596,7 @@ import {
   serializeSuffixJson,
   validateInputGuard,
   parseMemoryEmbeddingModelId,
+  parseWebSearchGroundingModelId,
   validateMemoryEmbeddingId,
   WEB_SEARCH_CACHE_DEFAULT,
   parseWebSearchCacheJson,
@@ -589,8 +614,11 @@ const form = reactive({
 const outboundForm = reactive<OutboundResilienceForm>(readOutboundFormFromEffective({}));
 
 const memoryEmbeddingModelId = ref<number | undefined>(undefined);
+const webSearchGroundingModelId = ref<number | undefined>(undefined);
 const vectorModelsForMemory = ref<LlmModelAdminView[]>([]);
+const webSearchModelsForBinding = ref<LlmModelAdminView[]>([]);
 const loadingVectorModels = ref(false);
+const loadingWebSearchModels = ref(false);
 
 const memoryEmbeddingSelectOptions = computed(() => {
   void locale.value;
@@ -621,6 +649,37 @@ const memoryEmbeddingSelectOptions = computed(() => {
   }
   return rows;
 });
+
+const webSearchModelSelectOptions = computed(() => {
+  void locale.value;
+  const selected = webSearchGroundingModelId.value;
+  const rows = webSearchModelsForBinding.value
+    .slice()
+    .sort((a, b) => {
+      if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+      const ao = a.sortOrder ?? 0;
+      const bo = b.sortOrder ?? 0;
+      if (ao !== bo) return ao - bo;
+      return a.id - b.id;
+    })
+    .map((m) => ({
+      id: m.id,
+      label: `${m.displayName} (${m.alias}) · ${m.openaiModelId}`,
+      disabled: !m.enabled && m.id !== selected,
+    }));
+  if (typeof selected === "number" && !rows.some((r) => r.id === selected)) {
+    return [
+      {
+        id: selected,
+        label: t("admin.shell.modelCalling.webSearchModelOrphan", { id: selected }),
+        disabled: false,
+      },
+      ...rows,
+    ];
+  }
+  return rows;
+});
+
 const promptLimitsForm = reactive({ ...CHAT_PROMPT_DEFAULT });
 const memoryPolicyForm = reactive({ ...MEMORY_POLICY_DEFAULT });
 const inputGuardForm = reactive({ ...INPUT_GUARD_DEFAULT });
@@ -665,6 +724,7 @@ function applyModelCallingFromApi(mc: TenantShellModelCallingRuntime | undefined
     return;
   }
   memoryEmbeddingModelId.value = parseMemoryEmbeddingModelId(mc.memoryEmbeddingVectorModelId);
+  webSearchGroundingModelId.value = parseWebSearchGroundingModelId(mc.webSearchGroundingModelId);
   Object.assign(promptLimitsForm, parseChatPromptLimitsJson(mc.chatPromptLimitsJson ?? "{}"));
   Object.assign(memoryPolicyForm, parseMemoryPolicyJson(mc.memoryPolicyJson ?? "{}"));
   Object.assign(inputGuardForm, parseInputGuardJson(mc.chatInputGuardJson ?? "{}"));
@@ -682,10 +742,12 @@ function applyModelCallingFromApi(mc: TenantShellModelCallingRuntime | undefined
 
 async function reload() {
   loadingVectorModels.value = true;
+  loadingWebSearchModels.value = true;
   try {
-    const [shellRes, vecRes] = await Promise.allSettled([
+    const [shellRes, vecRes, webRes] = await Promise.allSettled([
       tenantShellApi.getTenantShellConfig(),
       listLlmModels({ modelKind: "VECTOR" }),
+      listLlmModels({ modelKind: "WEB_SEARCH" }),
     ]);
     if (shellRes.status === "rejected") {
       throw shellRes.reason;
@@ -698,6 +760,13 @@ async function reload() {
       vectorModelsForMemory.value = [];
       ElMessage.warning(t("admin.shell.modelCalling.vectorModelsLoadFailed"));
     }
+    if (webRes.status === "fulfilled") {
+      webSearchModelsForBinding.value = webRes.value;
+    } else {
+      console.warn("[tenant shell] list WEB_SEARCH models", webRes.reason);
+      webSearchModelsForBinding.value = [];
+      ElMessage.warning(t("admin.shell.modelCalling.webSearchModelsLoadFailed"));
+    }
     form.logoUrl = data.branding.logoUrl ?? "";
     form.portalTitle = data.branding.portalTitle ?? "";
     form.footerText = data.branding.footerText ?? "";
@@ -708,6 +777,7 @@ async function reload() {
     applyModelCallingFromApi(data.modelCallingRuntime);
   } finally {
     loadingVectorModels.value = false;
+    loadingWebSearchModels.value = false;
   }
 }
 
@@ -793,8 +863,14 @@ async function saveOutbound() {
 
 async function saveModelCalling() {
   const embStr = memoryEmbeddingModelId.value != null ? String(memoryEmbeddingModelId.value) : "";
+  const webModelStr =
+    webSearchGroundingModelId.value != null ? String(webSearchGroundingModelId.value) : "";
   if (!validateMemoryEmbeddingId(embStr)) {
     ElMessage.error(t("admin.shell.modelCalling.validation.embeddingId"));
+    return;
+  }
+  if (!validateMemoryEmbeddingId(webModelStr)) {
+    ElMessage.error(t("admin.shell.modelCalling.validation.webSearchModelId"));
     return;
   }
   if (!validateInputGuard(inputGuardForm)) {
@@ -805,6 +881,7 @@ async function saveModelCalling() {
   try {
     const body: tenantShellApi.TenantShellModelCallingPutBody = {
       memoryEmbeddingVectorModelId: embStr.trim(),
+      webSearchGroundingModelId: webModelStr.trim(),
       chatPromptLimitsJson: serializeChatPromptLimitsJson(promptLimitsForm),
       memoryPolicyJson: serializeMemoryPolicyJson(memoryPolicyForm),
       chatInputGuardJson: serializeInputGuardJson(inputGuardForm),

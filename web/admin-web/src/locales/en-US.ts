@@ -280,6 +280,10 @@ export default {
         memoryEmbeddingPh: "Unset uses server defaults",
         memoryEmbeddingOrphan: "Configured id={id} is not in the current model list (keep or pick another)",
         vectorModelsLoadFailed: "Failed to load VECTOR models; refresh the page later",
+        webSearchModel: "Web search model (WEB_SEARCH)",
+        webSearchModelPlaceholder: "Select the tenant-bound web search instance",
+        webSearchModelOrphan: "Configured id={id} is not in the current model list (keep or pick another)",
+        webSearchModelsLoadFailed: "Failed to load WEB_SEARCH models; refresh the page later",
         webSearchRounds: "Web search rounds (1–10)",
         roundSuffixRound: "Suffix for round {n}",
         fields: {
@@ -327,9 +331,12 @@ export default {
         },
         validation: {
           embeddingId: "Embedding model id must be numeric or empty",
+          webSearchModelId: "Web search model id must be numeric or empty",
           guardRange: "Min must be ≥1 and max must be ≥ min",
         },
         tooltips: {
+          webSearchModel:
+            "WEB_SEARCH_GROUNDING_MODEL_ID.\nUsed for chat web search and daily hot-topic retrieval; pick from Model admin → Web search.\nClear: falls back to the enabled WEB_SEARCH row with the lowest sort_order (legacy default).\nOn save, the row must be WEB_SEARCH and active.",
           memoryEmbedding:
             "MEMORY_EMBEDDING_VECTOR_MODEL_ID.\nVECTOR model used when layered user memory is embedded into Milvus; options come from Model admin (VECTOR).\nClear: no upstream embedding call—the server uses RagQueryEmbeddingHasher to build a deterministic placeholder vector from the text and configured vector dimension so background indexing keeps running (not a real semantic embedding; recall is weaker than a proper VECTOR).\nSame hash fallback also applies if the id is missing, not VECTOR/inactive, key decrypt fails, or the upstream embedding call errors.",
           ragSnippetMaxChars: "ragSnippetMaxChars: max chars per injected RAG snippet.\nDefault 900; server clamps (~120–16000).",

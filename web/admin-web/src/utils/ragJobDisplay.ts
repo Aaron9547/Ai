@@ -114,6 +114,8 @@ export function parseJobPayloadRows(
   const rows: JobKvRow[] = [];
   if (o.kbId != null && o.kbId !== "") rows.push({ label: String(t("views.kbAsync.payloadLabels.kb")), value: `#${String(o.kbId)}` });
   if (typeof o.url === "string" && o.url.trim()) rows.push({ label: String(t("views.kbAsync.payloadLabels.url")), value: o.url.trim() });
+  if (typeof o.baseUrl === "string" && o.baseUrl.trim())
+    rows.push({ label: String(t("views.kbAsync.payloadLabels.baseUrl")), value: o.baseUrl.trim() });
   if (typeof o.originalFilename === "string" && o.originalFilename.trim())
     rows.push({ label: String(t("views.kbAsync.payloadLabels.filename")), value: o.originalFilename.trim() });
   if (o.chunkStrategy != null && o.chunkStrategy !== "")
@@ -152,6 +154,36 @@ export function parseJobResultMetaRows(resultJson: string | null | undefined, t:
         value: String(t("views.kbAsync.resultMeta.indexedValue")),
       });
     }
+    if (typeof o.discoveredUrls === "number") {
+      rows.push({
+        label: String(t("views.kbAsync.resultMeta.discoveredUrls")),
+        value: String(o.discoveredUrls),
+      });
+    }
+    if (typeof o.toCrawlUrls === "number") {
+      rows.push({
+        label: String(t("views.kbAsync.resultMeta.toCrawlUrls")),
+        value: String(o.toCrawlUrls),
+      });
+    }
+    if (typeof o.successCount === "number") {
+      rows.push({
+        label: String(t("views.kbAsync.resultMeta.successCount")),
+        value: String(o.successCount),
+      });
+    }
+    if (typeof o.failCount === "number") {
+      rows.push({
+        label: String(t("views.kbAsync.resultMeta.failCount")),
+        value: String(o.failCount),
+      });
+    }
+    if (typeof o.summary === "string" && o.summary.trim()) {
+      rows.push({ label: String(t("views.kbAsync.resultMeta.summary")), value: o.summary.trim() });
+    }
+    if (typeof o.stage === "string" && typeof o.message === "string" && o.message.trim()) {
+      rows.push({ label: String(t("views.kbAsync.resultMeta.progress")), value: o.message.trim() });
+    }
     return rows;
   } catch {
     return [];
@@ -174,6 +206,18 @@ export function summarizeJobResult(resultJson: string | null | undefined, t: Com
       );
     }
     if (o.indexed === true) return String(t("views.kbAsync.summarize.indexDone"));
+    if (typeof o.successCount === "number" && typeof o.toCrawlUrls === "number") {
+      return String(
+        t("views.kbAsync.summarize.siteCrawl", {
+          ok: o.successCount,
+          total: o.toCrawlUrls,
+          fail: typeof o.failCount === "number" ? o.failCount : 0,
+        }),
+      );
+    }
+    if (typeof o.message === "string" && o.message.trim() && typeof o.stage === "string") {
+      return o.message.trim();
+    }
     const steps = o.steps as unknown[] | undefined;
     if (Array.isArray(steps) && steps.length > 0) return String(t("views.kbAsync.summarize.steps", { n: steps.length }));
   } catch {

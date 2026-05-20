@@ -40,6 +40,7 @@
 - **产品语义**：租户级 **对话前置联网检索**；用户侧可开关「联网」，须租户存在**已启用**的 **`LlmModelKind.WEB_SEARCH`** 实例（可用性见 **`GET /open/v1/chat/web-search-availability`**）。
 - **配置入口**：管理端 **「大模型管理 → 联网搜索」** Tab，维护 **`llm_model`** 行（**`model_kind = WEB_SEARCH`**）；**`integration_backend`** 存 **`LlmWebSearchProvider`** 码，与 **VECTOR** 共用列名、分选项 **`webSearchProviders`**（见 **「管理端 Accept-Language 与 LLM 元数据」** 表内说明）。
 - **编排位置**：**`ChatWebSearchGroundingService`** 由 **`ChatApplicationService#openAssistantSseStream`** 在 RAG 等之后、主 **`ModelInvokePort`** 之前注入网络检索 **system**；请求体 **`webSearchEnabled`**（及重试覆盖项）参与决策。
+- **联网实例选择**：租户在「外观与模型调用」配置 **`WEB_SEARCH_GROUNDING_MODEL_ID`**（**`sys_llm_model.id`**，须 **WEB_SEARCH** 且启用）；留空时 **`SysLlmModelRepository#resolveWebSearchModel`** 按 **`sort_order` + `id`** 取默认行（与记忆嵌入 **VECTOR** 绑定方式一致）。
 - **多轮检索与提示后缀**：轮数及各轮拼在用户问题后的说明为租户运行参数 **`WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT`**、**`WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON`**（**`TenantRuntimeSettingKey`**）；与 **`application.yml` 分层**见 **`.cursorrules` §3.8**。
 - **检索缓存**：**`WEB_SEARCH_GROUNDING_CACHE_JSON`**（Redis 精确 + 语义近邻，默认滚动 **6h/24h/48h**）；同会话相同问句复用见 **`WebSearchConversationReuseService`**。对话流式在 **`streamCompletion` 前**完成配置轮数联网（**`groundMultiRoundsWithRaw`**，SSE 渐进 **`webSearchRefs`**）见 **「变更记录」** **`### 0.1.244-SNAPSHOT`**。
 - **引用持久化与 SSE**：检索归一化条目落 **`chat_message.meta_json#webSearchReferences`**（助手行写入；**同一轮 user 行**在助手落库后同步写入或移除该键，便于按轮次导出）；主流式前下发 **`webSearchRefs`** 分帧（**`v`** 为 **`{"references":[…]}`**）。**`GET …/conversations/{id}/messages`** 经 **`ChatMessageView`** 对 **user / assistant** 均解析 **`webSearchReferences`**。**`VolcArkBotWebSearchProvider`** 合并根 **`references`** 与 **`bot_usage…tool_details…results`**（按 URL 去重）。用户端 **`web/user-web`**（**`chat.ts` / `ChatView.vue`**）与管理端类型 **`chatAdmin.ts`** 对齐字段；迭代明细见 **「变更记录」** 当前顶 **`###`** 节。
@@ -259,6 +260,21 @@ sequenceDiagram
 
 ### 0.1.244-SNAPSHOT
 
+- **RAG 站点爬取体验**：**`RagSiteLinkDiscoveryService#discoverSiteUrls`** 按深度 BFS 同域 URL、每 URL 独立入库；**`KbWebCrawlProgressDialog`** 替代原站点配置弹窗（本库爬取进度）；**「上传与入库」** 抽屉承载重复爬站完整配置（周期/深度/抽取/保存后立即爬取）；移除知识库列表区 **「入库任务」** 按钮与弹窗。
+- **管理端文案**：知识库「上传与入库」爬取模式 **「重复站点爬取」** 更名为 **「网站爬取」**（`viewMessages.zh` / `en`）。
+- **网站爬取表单（管理者向）**：`KbDocumentMatrixPanel` 仅保留首页地址、爬取层数、立即爬取/定时重复；正文引擎与 CSS 选择器等收入「更多选项」或后端默认；同步模式默认 **首次全量后续增量**。
+- **网站爬取表单 UX**：去掉「更多选项」折叠；短标签 + `KbFormLabelTip` 悬浮说明（`InfoFilled`）；爬取方式改为 `KbCrawlModePicker` 双卡片；预览与开始爬取同一行；单页说明 `el-alert`；`ingest-form` 标签列与控件垂直居中对齐。
+- **站点分片预览**：`RagIngestPreviewApplicationService` 发现链接后优先抽样内页（默认最多 3 篇）；单页失败不中断；`discoveredUrlCount`；`RagSiteLinkDiscoveryService` 补充 `area`/`data-href` 链接。
+- **站点文章链接发现（对齐 application-svc）**：`RagSiteLinkDiscoveryService` 按层探索；列表页跟完全部分页；仅文章 URL 入库（层数 1 不再只爬首页）；`RagArticleLinkHeuristics` / `RagSitemapSeedSupport`。
+- **爬取进度周期展示**：未开启定时时保存 `MANUAL`、列表显示「未开启定时」而非「每天」；`RagWebCrawlSiteAdminApplicationService` / `KbWebCrawlProgressDialog`。
+- **网站爬取异步入队**：`RagApplicationService#dispatchJobTask` 无 MQ 时后台线程执行；「开始爬取」后关闭抽屉并打开「爬取进度」。
+- **VSB 图文列表与标题**：`RagVsbListLinkSupport` 解析隐藏锚点与 `u_u*_title` 脚本；`/info/` 无锚文本亦识别为文章；正文区 `#vsb_newscontent` 与 Markdown H1 优先作文档标题。
+- **网页正文富 Markdown**：`RagRichHtmlToMarkdown` 对齐 ly-ai `JsoupHelper#fetchPageAsMarkdown`（图片绝对 URL、GFM 表格、链接、去导航壳层）；`RagWebPageParseService` 默认走富转换。
+- **站点爬取正文管线升级**：`RagWebPageParseService` 为唯一解析入口（无简化版回退）；`RagWebContentRootPicker` / `RagCrawlLinkExtractSupport` / 浏览器 UA；列表标题 hint 贯穿入库。
+- **GBK 与 meta refresh**：`RagHtmlCharsetDetector` 嗅探 GBK/GB2312；`RagHttpFetch` 跟随北方网等 refresh 跳转；乱码标题优先列表 hint；排除 `index.shtml` 入库。
+- **链接内图片 Markdown**：央广网 `/zhuanti/news/` 等为「图链」「文链」两个 `<a>`（非单卡片）；`appendAnchorMarkdown` 输出 `[![](img)](url)` + 独立 `h2/p`；`repairBrokenMarkdownLinkSyntax` 修复历史 `[\\!\\[\\](img)](url)` 入库正文。
+- **分片 Markdown 预览图**：`global.css` 卡片/表格预览缩略图（max-height 80px）；编辑弹窗 `el-scrollbar` + 大图 contain；`md-surface-scroll` 细滚动条（`DocumentChunksManageView` / `KbChunkPreviewDialog`）。
+- **分片编辑默认预览**：`DocumentChunksManageView#openEditChunk` 固定打开「渲染预览」Tab（不再按 `looksLikeMarkdown` 跳源码）。
 - **版本**：**`pom.xml`** bump **0.1.243 → 0.1.244-SNAPSHOT**。
 - **联网编排（全量后再出字）**：**`ChatApplicationService`** 恢复 **`groundMultiRoundsWithRaw`**（配置轮数全部完成并注入 system 后再 **`streamCompletion`**）；**`groundForChatStream`** 仍保留于代码库供后续可配置化，当前对话主路径不再使用。
 - **语义缓存命中增强**：**`WebSearchQueryNormalizer`** 去标点与零宽字符；索引存 **`normalizedQuery`** 二次匹配；默认相似度 **0.88**、索引上限 **300**（**`WebSearchGroundingCachePolicy#defaults`**）。
@@ -272,6 +288,7 @@ sequenceDiagram
 - **项目文档**：**「联网搜索」** / **「对话推荐问题」** 专节补充 Mermaid 流程图（配置落点、全量联网后出字、缓存分档、推荐/追问数据来源与 SSE 时序）。
 - **编译**：**`sendSseFollowUpPrompts`** 内 **`emitter.send`** 的 **`IOException`** 改为 try/catch（与 **`sendSseWebSearchRefFrames`** 一致）。
 - **用户端联网进度与总耗时**：SSE 新增 **`webSearchStatus`**（**`searching`/`done`**）与 **`end#durationMs`**；流式中展示「联网查询」/并入思考区，**`webSearchRefs`** 条数递增动画；助手消息下展示进行中/总耗时（**`chat.ts` / `ChatView.vue`**）。
+- **联网检索模型绑定**：租户运行参数 **`WEB_SEARCH_GROUNDING_MODEL_ID`**（**`ten_runtime_setting`**）；管理端「外观与模型调用 → 联网检索」下拉绑定 **`llm_model` WEB_SEARCH**；未配置时回退 **`sort_order` 默认**（**`SysLlmModelRepository#resolveWebSearchModel`**）；对话/每日热点等均走统一解析。
 
 ### 0.1.243-SNAPSHOT
 

@@ -155,6 +155,7 @@ export type ChunkPreviewPageRow = {
   chunkCount: number;
   chunksTruncated: boolean;
   chunks: ChunkPreviewChunkRow[];
+  error?: string | null;
 };
 
 export type ChunkPreviewResult = {
@@ -164,6 +165,7 @@ export type ChunkPreviewResult = {
   pages: ChunkPreviewPageRow[];
   pageCount: number;
   totalChunkCount: number;
+  discoveredUrlCount?: number;
 };
 
 export async function previewIngestChunks(kbId: number, body: ChunkPreviewRequestBody): Promise<ChunkPreviewResult> {

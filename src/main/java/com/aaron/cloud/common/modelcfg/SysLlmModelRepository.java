@@ -148,6 +148,24 @@ public class SysLlmModelRepository {
                                 .last("LIMIT 1")));
     }
 
+    /**
+     * 解析租户联网检索模型：优先 {@code configuredId}（须为本租户启用且 {@link LlmModelKind#WEB_SEARCH}），否则 {@link #pickDefaultWebSearchModel}。
+     */
+    public Optional<SysLlmModel> resolveWebSearchModel(long tenantId, Optional<Long> configuredId) {
+        if (configuredId != null && configuredId.isPresent()) {
+            Optional<SysLlmModel> bound =
+                    findById(tenantId, configuredId.get())
+                            .filter(
+                                    m ->
+                                            m.getModelKind() == LlmModelKind.WEB_SEARCH
+                                                    && m.getStatus() == LlmModelStatus.ACTIVE);
+            if (bound.isPresent()) {
+                return bound;
+            }
+        }
+        return pickDefaultWebSearchModel(tenantId);
+    }
+
     /** 默认对话语言模型：{@code sort_order} 升序后 {@code id} 升序第一条。 */
     public Optional<SysLlmModel> pickDefaultLanguageModel(long tenantId) {
         return Optional.ofNullable(

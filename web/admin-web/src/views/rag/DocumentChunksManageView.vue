@@ -106,7 +106,7 @@
             <button type="button" class="chunk-body" @click="openEditChunk(row)">
               <div
                 v-if="shouldRenderChunkMarkdown(row)"
-                class="chunk-text chunk-md"
+                class="chunk-text chunk-md md-surface-scroll"
                 v-html="chunkMarkdownHtml(row.content)"
               />
               <p v-else class="chunk-text">
@@ -172,7 +172,9 @@
     <el-dialog v-model="editDlg" :title="t('views.chunks.dlgEditChunk')" width="800px" destroy-on-close @closed="onEditDlgClosed">
       <el-tabs v-model="editTab" class="chunk-edit-tabs">
         <el-tab-pane :label="t('views.chunks.tabChunkPreview')" name="preview">
-          <div class="chunk-edit-preview chunk-md" v-html="editMarkdownHtml" />
+          <el-scrollbar class="chunk-edit-scrollbar" max-height="min(62vh, 520px)">
+            <div class="chunk-edit-preview chunk-md" v-html="editMarkdownHtml" />
+          </el-scrollbar>
         </el-tab-pane>
         <el-tab-pane :label="t('views.chunks.tabSource')" name="source">
           <el-input v-model="editText" type="textarea" :rows="16" class="chunk-edit-source" />
@@ -503,7 +505,8 @@ async function onToggleRetrieval(row: RagChunkAdminRow, enabled: boolean) {
 function openEditChunk(row: RagChunkAdminRow) {
   editingRow.value = row;
   editText.value = row.content;
-  editTab.value = looksLikeMarkdown(row.content || "") ? "preview" : "source";
+  // 与卡片列表一致：点击展开固定打开「渲染预览」，避免启发式误判为源码
+  editTab.value = "preview";
   editDlg.value = true;
 }
 
@@ -821,7 +824,7 @@ onMounted(() => {
 .chunk-text.chunk-md {
   white-space: normal;
   max-height: min(42vh, 360px);
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: auto;
   text-align: left;
 }
@@ -871,11 +874,23 @@ onMounted(() => {
   margin-top: -4px;
 }
 
+.chunk-edit-scrollbar {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-fill-color-blank);
+}
+
+.chunk-edit-scrollbar :deep(.el-scrollbar__wrap) {
+  overflow-x: hidden;
+}
+
+.chunk-edit-scrollbar :deep(.el-scrollbar__view) {
+  padding: 10px 12px;
+}
+
 .chunk-edit-preview {
-  min-height: 280px;
-  max-height: min(62vh, 520px);
-  overflow: auto;
-  padding: 4px 2px;
+  min-height: 240px;
+  padding: 0;
 }
 
 .chunk-edit-preview.chunk-md :deep(code),

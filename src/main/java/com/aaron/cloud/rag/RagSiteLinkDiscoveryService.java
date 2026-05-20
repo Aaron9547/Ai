@@ -5,11 +5,11 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -18,114 +18,256 @@ import org.jsoup.select.Elements;
 import org.springframework.stereotype.Service;
 
 /**
- * 本地规则发现站点文章链接：同根域 BFS + 正文页启发式（不依赖外部 LLM）。
+ * 站点爬取链接发现（对齐 ly-ai-application {@code BatchCrawlHandler#loopGetArticleLinksByDepthLocal}）。
  *
- * <p>语义对齐 ly-ai-application {@code crawlArticleLinksLocal}，实现为可维护的简化版。
+ * <ul>
+ *   <li>按「层」探索：第 N 层只处理当层入口页（首页/栏目），不把首页当作入库文章。</li>
+ *   <li>列表页：在同一层内跟完全部分页（下一页 / 页码 / 尾页），收集全部文章 URL。</li>
+ *   <li>文章 URL 才进入最终列表；栏目/列表链仅在 depth 未用尽时进入下一层。</li>
+ * </ul>
  */
 @Slf4j
 @Service
 public class RagSiteLinkDiscoveryService {
 
     private static final int MAX_EXPLORE_PAGES = 2_000;
-    private static final int FETCH_TIMEOUT_MS = 15_000;
-    private static final String USER_AGENT =
-            "Mozilla/5.0 (compatible; AiRagLocalCrawler/1.0; +https://ly-ai.local)";
+    private static final int MAX_PAGINATION_PAGES_PER_LIST = 80;
+    private static final int SITEMAP_SEED_MAX = 400;
 
-    public List<String> discoverArticleLinks(String baseUrl, Integer maxDepth) {
+    /**
+     * 发现待入库文章 URL（非整站每页都入库）。
+     *
+     * @param maxDepth 探索层数：1=仅处理入口页及其列表全部分页上的文章；2=再多探索一层栏目链接
+     */
+    public List<String> discoverSiteUrls(String baseUrl, Integer maxDepth) {
+        return new ArrayList<>(collectArticleMap(baseUrl, maxDepth).keySet());
+    }
+
+    /** 发现文章 URL 及列表页解析出的标题（VSB 图文列表等）。 */
+    public List<RagCrawlPageLink> discoverSiteArticles(String baseUrl, Integer maxDepth) {
+        LinkedHashMap<String, String> map = collectArticleMap(baseUrl, maxDepth);
+        List<RagCrawlPageLink> out = new ArrayList<>(map.size());
+        for (var e : map.entrySet()) {
+            out.add(new RagCrawlPageLink(e.getKey(), e.getValue()));
+        }
+        return out;
+    }
+
+    private LinkedHashMap<String, String> collectArticleMap(String baseUrl, Integer maxDepth) {
         String normBase = RagWebCrawlUrlSupport.normalizeUrl(baseUrl);
         if (normBase.isEmpty()) {
             throw new IllegalArgumentException("baseUrl 须为完整 http/https 地址");
         }
-        URI baseUri;
         try {
-            baseUri = new URI(normBase);
+            URI baseUri = new URI(normBase);
+            if (baseUri.getHost() == null) {
+                throw new IllegalArgumentException("baseUrl 格式不正确");
+            }
+        } catch (IllegalArgumentException e) {
+            throw e;
         } catch (Exception e) {
-            throw new IllegalArgumentException("baseUrl 格式不正确");
-        }
-        if (baseUri.getHost() == null) {
             throw new IllegalArgumentException("baseUrl 格式不正确");
         }
         String rootDomain = RagWebCrawlUrlSupport.resolveRootDomain(normBase);
         int depthLimit = RagWebCrawlUrlSupport.normalizeDepth(maxDepth);
 
-        Set<String> visited = new HashSet<>();
-        LinkedHashSet<String> articleUrls = new LinkedHashSet<>();
-        Deque<DepthUrl> queue = new ArrayDeque<>();
-        queue.add(new DepthUrl(normBase, 1));
+        Set<String> visitedExplore = new HashSet<>();
+        Set<String> queuedExplore = new HashSet<>();
+        LinkedHashMap<String, String> articleUrls = new LinkedHashMap<>();
+        List<String> currentLevel = new ArrayList<>();
+        currentLevel.add(normBase);
+        queuedExplore.add(normBase);
+        mergeSitemapSeeds(normBase, rootDomain, currentLevel, queuedExplore);
 
-        while (!queue.isEmpty() && visited.size() < MAX_EXPLORE_PAGES) {
-            DepthUrl node = queue.poll();
-            if (node == null || node.depth > depthLimit) {
-                continue;
-            }
-            String current = node.url;
-            if (!visited.add(current)) {
-                continue;
-            }
-            try {
-                Document doc =
-                        Jsoup.connect(current)
-                                .userAgent(USER_AGENT)
-                                .timeout(FETCH_TIMEOUT_MS)
-                                .followRedirects(true)
-                                .get();
-                if (looksLikeArticlePage(doc, current)) {
-                    articleUrls.add(current);
+        for (int depth = 1; depth <= depthLimit && !currentLevel.isEmpty(); depth++) {
+            LinkedHashSet<String> nextLevel = new LinkedHashSet<>();
+            for (String pageUrl : currentLevel) {
+                if (pageUrl == null || pageUrl.isBlank() || !visitedExplore.add(pageUrl)) {
+                    continue;
                 }
-                if (node.depth < depthLimit) {
-                    for (String child : extractSameDomainLinks(doc, current, rootDomain)) {
-                        if (!visited.contains(child)) {
-                            queue.add(new DepthUrl(child, node.depth + 1));
+                if (visitedExplore.size() > MAX_EXPLORE_PAGES) {
+                    log.warn("站点探索达到页面上限 {}，提前结束 baseUrl={}", MAX_EXPLORE_PAGES, normBase);
+                    break;
+                }
+                try {
+                    PageHarvest harvest = harvestListAndArticles(pageUrl, rootDomain, normBase);
+                    for (RagCrawlPageLink article : harvest.articleLinks()) {
+                        String norm = RagWebCrawlUrlSupport.normalizeUrl(article.href());
+                        if (norm.isEmpty() || isExcludedCrawlUrl(norm)) {
+                            continue;
+                        }
+                        String t = article.title() == null ? "" : article.title().trim();
+                        articleUrls.putIfAbsent(norm, t);
+                    }
+                    if (depth < depthLimit) {
+                        for (String child : harvest.nextLevelUrls()) {
+                            if (!visitedExplore.contains(child)
+                                    && !queuedExplore.contains(child)
+                                    && !isExcludedCrawlUrl(child)) {
+                                queuedExplore.add(child);
+                                nextLevel.add(child);
+                            }
                         }
                     }
+                } catch (Exception e) {
+                    log.debug("站点层探索失败 url={} depth={} err={}", pageUrl, depth, e.toString());
                 }
-            } catch (Exception e) {
-                log.debug("本地规则探索页面失败 url={} err={}", current, e.toString());
             }
+            currentLevel = new ArrayList<>(nextLevel);
         }
         log.info(
-                "本地规则链接发现完成 baseUrl={} depth={} exploredPages={} articleUrls={}",
+                "站点文章链接发现完成 baseUrl={} depthLimit={} exploredPages={} articleUrls={}",
                 normBase,
                 depthLimit,
-                visited.size(),
+                visitedExplore.size(),
                 articleUrls.size());
-        return new ArrayList<>(articleUrls);
+        return articleUrls;
     }
 
-    private static boolean looksLikeArticlePage(Document doc, String url) {
-        if (doc.selectFirst("article") != null) {
-            return true;
-        }
-        String lower = url.toLowerCase(Locale.ROOT);
-        if (lower.matches(".*/(news|article|content|info|detail|show|post|blog)/.*")) {
-            return true;
-        }
-        if (lower.matches(".*\\d{4}[/-]\\d{1,2}[/-]\\d{1,2}.*")) {
-            return true;
-        }
-        String text = doc.body() != null ? doc.body().text() : "";
-        return text.length() >= 280;
+    /** @deprecated 请使用 {@link #discoverSiteUrls}。 */
+    @Deprecated
+    public List<String> discoverArticleLinks(String baseUrl, Integer maxDepth) {
+        return discoverSiteUrls(baseUrl, maxDepth);
     }
 
-    private static List<String> extractSameDomainLinks(Document doc, String pageUrl, String rootDomain) {
-        List<String> out = new ArrayList<>();
-        Elements links = doc.select("a[href]");
-        for (Element a : links) {
-            String abs = a.absUrl("href");
+    private static void mergeSitemapSeeds(
+            String normBase, String rootDomain, List<String> currentLevel, Set<String> queuedExplore) {
+        try {
+            List<String> seeds = RagSitemapSeedSupport.fetchSeedUrls(normBase, rootDomain, SITEMAP_SEED_MAX);
+            for (String seed : seeds) {
+                String n = RagWebCrawlUrlSupport.normalizeUrl(seed);
+                if (n.isEmpty() || isExcludedCrawlUrl(n)) {
+                    continue;
+                }
+                if (queuedExplore.add(n)) {
+                    currentLevel.add(n);
+                }
+            }
+            if (!seeds.isEmpty()) {
+                log.info("已合并 sitemap 种子 baseUrl={} seedCount={}", normBase, seeds.size());
+            }
+        } catch (Exception e) {
+            log.debug("合并 sitemap 种子失败(忽略) baseUrl={} err={}", normBase, e.toString());
+        }
+    }
+
+    /**
+     * 处理单个入口/列表页：跟完全部分页并收集文章；下一层入口仅来自该页第一屏（避免分页重复扩层）。
+     */
+    private PageHarvest harvestListAndArticles(String entryUrl, String rootDomain, String normBase) throws Exception {
+        LinkedHashMap<String, String> articles = new LinkedHashMap<>();
+        Set<String> paginationVisited = new HashSet<>();
+        Deque<String> paginationQueue = new ArrayDeque<>();
+        paginationQueue.add(entryUrl);
+        Document firstPageDoc = null;
+
+        while (!paginationQueue.isEmpty() && paginationVisited.size() < MAX_PAGINATION_PAGES_PER_LIST) {
+            String pageUrl = paginationQueue.poll();
+            if (pageUrl == null || !paginationVisited.add(pageUrl)) {
+                continue;
+            }
+            Document doc = fetchDocument(pageUrl);
+            if (firstPageDoc == null && pageUrl.equals(entryUrl)) {
+                firstPageDoc = doc;
+            }
+            List<RagCrawlPageLink> links = extractPageLinks(doc, pageUrl);
+            for (RagCrawlPageLink link : links) {
+                String norm = RagWebCrawlUrlSupport.normalizeUrl(link.href());
+                if (norm.isEmpty()
+                        || !norm.startsWith("http")
+                        || RagWebCrawlUrlSupport.isStaticResource(norm)
+                        || !RagWebCrawlUrlSupport.isInRootDomain(norm, rootDomain)) {
+                    continue;
+                }
+                if (RagArticleLinkHeuristics.looksLikeArticle(link)) {
+                    String t = link.title() == null ? "" : link.title().trim();
+                    articles.putIfAbsent(norm, t);
+                    continue;
+                }
+                if (RagArticleLinkHeuristics.looksLikeNextPage(link)
+                        || RagArticleLinkHeuristics.looksLikeLastPage(link)
+                        || RagArticleLinkHeuristics.looksLikeNumericPageLink(link, entryUrl)) {
+                    if (!paginationVisited.contains(norm) && !isExcludedCrawlUrl(norm)) {
+                        paginationQueue.add(norm);
+                    }
+                }
+            }
+        }
+
+        LinkedHashSet<String> nextLevel = new LinkedHashSet<>();
+        if (firstPageDoc != null) {
+            for (RagCrawlPageLink link : extractPageLinks(firstPageDoc, entryUrl)) {
+                String norm = RagWebCrawlUrlSupport.normalizeUrl(link.href());
+                if (norm.isEmpty()
+                        || !RagWebCrawlUrlSupport.isInRootDomain(norm, rootDomain)
+                        || RagWebCrawlUrlSupport.isStaticResource(norm)
+                        || isExcludedCrawlUrl(norm)) {
+                    continue;
+                }
+                if (RagArticleLinkHeuristics.looksLikeExploreTarget(link, normBase)) {
+                    nextLevel.add(norm);
+                }
+            }
+        }
+        List<RagCrawlPageLink> articleLinks = new ArrayList<>(articles.size());
+        for (var e : articles.entrySet()) {
+            articleLinks.add(new RagCrawlPageLink(e.getKey(), e.getValue()));
+        }
+        return new PageHarvest(articleLinks, new ArrayList<>(nextLevel));
+    }
+
+    private static Document fetchDocument(String url) throws Exception {
+        return Jsoup.connect(url)
+                .userAgent(RagWebCrawlConstants.USER_AGENT)
+                .timeout(RagWebCrawlConstants.DISCOVERY_TIMEOUT_MS)
+                .followRedirects(true)
+                .get();
+    }
+
+    static List<RagCrawlPageLink> extractPageLinks(Document doc, String pageUrl) {
+        LinkedHashMap<String, RagCrawlPageLink> merged = new LinkedHashMap<>();
+        for (RagCrawlPageLink vsb : RagVsbListLinkSupport.extractListArticleLinks(doc, pageUrl)) {
+            String norm = RagWebCrawlUrlSupport.normalizeUrl(vsb.href());
+            if (!norm.isEmpty()) {
+                merged.putIfAbsent(norm, new RagCrawlPageLink(norm, vsb.title()));
+            }
+        }
+        Elements elements = doc.select("a[href], area[href], [data-href], [data-url], a[onclick]");
+        for (Element el : elements) {
+            String abs = RagCrawlLinkExtractSupport.extractHref(el, pageUrl);
             if (abs.isBlank()) {
                 continue;
             }
-            String norm = RagWebCrawlUrlSupport.normalizeUrl(abs);
-            if (norm.isEmpty()
-                    || !norm.startsWith("http")
-                    || RagWebCrawlUrlSupport.isStaticResource(norm)
-                    || !RagWebCrawlUrlSupport.isInRootDomain(norm, rootDomain)) {
-                continue;
-            }
-            out.add(norm);
+            String title = RagCrawlLinkExtractSupport.linkTitle(el);
+            merged.putIfAbsent(abs, new RagCrawlPageLink(abs, title));
         }
-        return out;
+        Element relNext = doc.selectFirst("link[rel=next][href]");
+        if (relNext != null) {
+            String abs = relNext.absUrl("href");
+            if (!abs.isBlank()) {
+                merged.putIfAbsent(abs, new RagCrawlPageLink(abs, "下一页"));
+            }
+        }
+        return new ArrayList<>(merged.values());
     }
 
-    private record DepthUrl(String url, int depth) {}
+    /** 登录、后台等明显非内容页。 */
+    static boolean isExcludedCrawlUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return true;
+        }
+        if (RagWebCrawlUrlSupport.isStaticResource(url)) {
+            return true;
+        }
+        String lower = url.toLowerCase(Locale.ROOT);
+        if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
+            return true;
+        }
+        return lower.matches(".*/(login|logout|signin|signout|register|cart|checkout)(/|$|\\?).*")
+                || lower.contains("/wp-admin/")
+                || lower.contains("/cgi-bin/")
+                || lower.contains("javascript:");
+    }
+
+    private record PageHarvest(List<RagCrawlPageLink> articleLinks, List<String> nextLevelUrls) {}
 }

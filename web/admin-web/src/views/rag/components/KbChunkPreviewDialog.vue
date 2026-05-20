@@ -12,6 +12,7 @@
             overlap: result.slideOverlap,
             pages: result.pageCount,
             chunks: result.totalChunkCount,
+            discovered: result.discoveredUrlCount ?? result.pageCount,
           })
         }}
       </p>
@@ -21,17 +22,20 @@
           {{ page.url }} · {{ page.markdownChars }} {{ t("views.kbMatrix.chunkPreviewChars") }} ·
           {{ page.chunkCount }} {{ t("views.kbMatrix.chunkPreviewBlocks") }}
         </p>
-        <el-alert v-if="page.chunksTruncated" type="info" :closable="false" show-icon class="preview-trunc">
+        <el-alert v-if="page.error" type="warning" :closable="false" show-icon class="preview-trunc">
+          {{ page.error }}
+        </el-alert>
+        <el-alert v-else-if="page.chunksTruncated" type="info" :closable="false" show-icon class="preview-trunc">
           {{ t("views.kbMatrix.chunkPreviewTruncated") }}
         </el-alert>
-        <el-table :data="page.chunks" size="small" border stripe>
+        <el-table v-if="!page.error && page.chunks.length" :data="page.chunks" size="small" border stripe>
           <el-table-column :label="t('views.kbMatrix.chunkPreviewColSeq')" width="56" align="center">
             <template #default="{ row }">#{{ row.seq + 1 }}</template>
           </el-table-column>
           <el-table-column :label="t('views.kbMatrix.chunkPreviewColLen')" width="72" align="right" prop="chars" />
           <el-table-column :label="t('views.kbMatrix.colPreview')" min-width="320">
             <template #default="{ row }">
-              <div class="preview-md" v-html="previewHtml(row.preview)" />
+              <div class="preview-md md-surface-scroll" v-html="previewHtml(row.preview)" />
             </template>
           </el-table-column>
         </el-table>
@@ -131,7 +135,8 @@ defineExpose({ run });
   font-size: 12px;
   line-height: 1.5;
   max-height: 120px;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   text-align: left;
 }
 

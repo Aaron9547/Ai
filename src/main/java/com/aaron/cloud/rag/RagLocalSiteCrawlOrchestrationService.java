@@ -32,7 +32,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
- * 一条龙本地规则网页爬取：发现链接 → 按模式清理历史 → 逐 URL 入库。
+ * 站点爬取编排：按层级 BFS 发现同域 URL → 按同步模式清理历史 → 每个 URL 独立入库为一篇文档。
  *
  * <p>参考 ly-ai-application {@code LocalArticleLinksWebCrawlService} 与 {@code crawlArticleLinksLocal}。
  */
@@ -85,10 +85,19 @@ public class RagLocalSiteCrawlOrchestrationService {
                                 null));
     }
 
+    private static final class SiteCrawlRunStats {
+        boolean executed;
+        int discovered;
+        int toCrawl;
+        int ok;
+        int fail;
+        String summary;
+    }
+
     /**
-     * @return 是否实际执行了爬取（未获得分布式锁时为 false）
+     * @return 执行统计（未获得分布式锁时 {@code executed=false}）
      */
-    private boolean runCrawl(
+    private SiteCrawlRunStats runCrawl(
             long tenantId,
             long kbId,
             Long scheduleId,
@@ -99,6 +108,7 @@ public class RagLocalSiteCrawlOrchestrationService {
             Integer chunkStrategy,
             Long categoryId,
             LongRunningTaskProgressReporter progress) {
+        var stats = new SiteCrawlRunStats();
         final LongRunningTaskProgressReporter progressReporter =
                 progress == null ? LongRunningTaskProgressSupport.noop() : progress;
         String lockKey =
@@ -116,9 +126,10 @@ public class RagLocalSiteCrawlOrchestrationService {
                     scheduleId,
                     baseUrl,
                     lockKey);
-            return false;
+            return stats;
         }
         try (var ignored = lock.get()) {
+            stats.executed = true;
             try {
                 progressReporter.report("LOCKED", "已获取爬取锁，准备发现链接", 5, null, null);
                 RagWebCrawlExtractConfig extractConfig = resolveSiteExtractConfig(tenantId, kbId, scheduleId);
@@ -130,13 +141,27 @@ public class RagLocalSiteCrawlOrchestrationService {
                         baseUrl,
                         syncMode,
                         filterCrawled);
-                progressReporter.report("DISCOVER", "正在发现文章链接", 10, null, null);
-                List<String> raw = linkDiscoveryService.discoverArticleLinks(baseUrl, maxDepth);
+                progressReporter.report("DISCOVER", "正在按层级发现站点链接", 10, null, null);
+                List<RagCrawlPageLink> rawArticles =
+                        linkDiscoveryService.discoverSiteArticles(baseUrl, maxDepth);
+                java.util.Map<String, String> listTitles = new java.util.LinkedHashMap<>();
+                List<String> raw = new ArrayList<>();
+                for (RagCrawlPageLink link : rawArticles) {
+                    if (link.href() != null && !link.href().isBlank()) {
+                        raw.add(link.href());
+                        if (link.title() != null && !link.title().isBlank()) {
+                            listTitles.putIfAbsent(
+                                    RagWebCrawlUrlSupport.normalizeUrl(link.href()), link.title().trim());
+                        }
+                    }
+                }
                 List<String> discovered = RagWebCrawlUrlSupport.sanitizeForCrawl(raw, baseUrl);
+                stats.discovered = discovered.size();
                 if (discovered.isEmpty()) {
                     log.warn("本地规则未发现可爬 URL，终止 tenantId={} baseUrl={}", tenantId, baseUrl);
-                    progressReporter.report("DONE", "未发现可爬 URL", 100, 0, 0);
-                    return true;
+                    stats.summary = "未发现可爬 URL";
+                    progressReporter.report("DONE", stats.summary, 100, 0, 0);
+                    return stats;
                 }
                 if (filterCrawled) {
                     Set<String> crawled =
@@ -148,9 +173,11 @@ public class RagLocalSiteCrawlOrchestrationService {
                 final List<String> urls = discovered;
                 if (urls.isEmpty()) {
                     log.info("过滤已爬 URL 后无新增，tenantId={} baseUrl={}", tenantId, baseUrl);
-                    progressReporter.report("DONE", "过滤后无新增 URL", 100, 0, 0);
-                    return true;
+                    stats.summary = "过滤已爬 URL 后无新增";
+                    progressReporter.report("DONE", stats.summary, 100, 0, 0);
+                    return stats;
                 }
+                stats.toCrawl = urls.size();
                 if (syncMode != RagWebCrawlSyncMode.INCREMENTAL) {
                     progressReporter.report("PURGE", "全量模式：清理历史文档", 15, null, null);
                     purgeBeforeFull(tenantId, kbId, scheduleId, baseUrl);
@@ -169,7 +196,11 @@ public class RagLocalSiteCrawlOrchestrationService {
                                         try {
                                             semaphore.acquire();
                                             Thread.sleep(WEB_PER_URL_PACING_MS);
-                                            FetchedPage fetched = fetchPage(url, extractConfig);
+                                            String listHint =
+                                                    listTitles.get(
+                                                            RagWebCrawlUrlSupport.normalizeUrl(url));
+                                            FetchedPage fetched =
+                                                    fetchPage(url, extractConfig, listHint);
                                             var pr =
                                                     ingestOrchestrationService.ingestWebMarkdownSync(
                                                             tenantId,
@@ -199,22 +230,21 @@ public class RagLocalSiteCrawlOrchestrationService {
                                     }));
                 }
                 CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
-                progressReporter.report(
-                        "DONE",
-                        "爬取结束：成功 " + ok.get() + "，失败 " + fail.get(),
-                        100,
-                        ok.get(),
-                        totalUrls);
+                stats.ok = ok.get();
+                stats.fail = fail.get();
+                stats.summary = "爬取结束：成功 " + stats.ok + "，失败 " + stats.fail;
+                progressReporter.report("DONE", stats.summary, 100, stats.ok, totalUrls);
                 log.info(
                         "本地规则网页爬取结束 tenantId={} kbId={} scheduleId={} ok={} fail={} total={}",
                         tenantId,
                         kbId,
                         scheduleId,
-                        ok.get(),
-                        fail.get(),
+                        stats.ok,
+                        stats.fail,
                         urls.size());
             } catch (Exception e) {
-                progressReporter.report("FAILED", "爬取异常：" + e.getMessage(), null, null, null);
+                stats.summary = "爬取异常：" + e.getMessage();
+                progressReporter.report("FAILED", stats.summary, null, null, null);
                 log.error(
                         "本地规则网页爬取失败 tenantId={} kbId={} scheduleId={} baseUrl={}",
                         tenantId,
@@ -223,7 +253,7 @@ public class RagLocalSiteCrawlOrchestrationService {
                         baseUrl,
                         e);
             }
-            return true;
+            return stats;
         }
     }
 
@@ -264,14 +294,29 @@ public class RagLocalSiteCrawlOrchestrationService {
 
     private record FetchedPage(String title, String markdown) {}
 
-    private FetchedPage fetchPage(String url, RagWebCrawlExtractConfig extractConfig) throws Exception {
-        var fetched = RagHttpFetch.get(url);
-        String html = new String(fetched.body(), fetched.charset());
-        RagHtmlToMarkdown.ParsedPage page = webPageParseService.parse(html, url, extractConfig);
+    private FetchedPage fetchPage(String url, RagWebCrawlExtractConfig extractConfig, String listTitleHint)
+            throws Exception {
+        var fetched = RagHttpFetch.get(url, 0, siteReferer(url));
+        String html = RagHttpFetch.decodeHtml(fetched);
+        String parseUrl = fetched.finalUrl() != null ? fetched.finalUrl() : url;
+        RagHtmlToMarkdown.ParsedPage page =
+                webPageParseService.parse(html, parseUrl, extractConfig, listTitleHint);
         if (page.markdown().isBlank()) {
             throw new IllegalStateException("empty markdown after crawl");
         }
-        return new FetchedPage(RagHtmlToMarkdown.resolveDocumentTitle(page, url), page.markdown());
+        return new FetchedPage(page.title(), page.markdown());
+    }
+
+    private static String siteReferer(String url) {
+        try {
+            java.net.URI u = java.net.URI.create(url);
+            if (u.getHost() == null) {
+                return null;
+            }
+            return u.getScheme() + "://" + u.getHost() + "/";
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private RagWebCrawlExtractConfig resolveSiteExtractConfig(long tenantId, long kbId, Long siteId) {
@@ -325,7 +370,7 @@ public class RagLocalSiteCrawlOrchestrationService {
         } else if (root.has("scheduledTaskId") && !root.get("scheduledTaskId").isNull()) {
             siteId = root.get("scheduledTaskId").asLong();
         }
-        boolean ran =
+        SiteCrawlRunStats stats =
                 runCrawl(
                         tenantId,
                         kbId,
@@ -337,14 +382,21 @@ public class RagLocalSiteCrawlOrchestrationService {
                         chunkStrategy,
                         categoryId,
                         progressReporter);
-        if (ran && siteId != null) {
+        if (stats.executed && siteId != null) {
             markSiteCrawlCompleted(tenantId, siteId);
         }
         ObjectNode out = objectMapper.createObjectNode();
-        out.put("executed", ran);
+        out.put("executed", stats.executed);
         out.put("kbId", kbId);
         out.put("baseUrl", baseUrl);
         out.put("syncMode", mode.getCode());
+        out.put("discoveredUrls", stats.discovered);
+        out.put("toCrawlUrls", stats.toCrawl);
+        out.put("successCount", stats.ok);
+        out.put("failCount", stats.fail);
+        if (stats.summary != null) {
+            out.put("summary", stats.summary);
+        }
         return objectMapper.writeValueAsString(out);
     }
 
