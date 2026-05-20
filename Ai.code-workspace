@@ -4,9 +4,6 @@
 			"path": "."
 		},
 		{
-			"path": "../ly-ai-application-svc"
-		},
-		{
 			"path": "../ly-mc-electricity-meter-svc"
 		}
 	],

@@ -102,7 +102,10 @@
                 <button
                   type="button"
                   class="reasoning-bar"
-                  :class="{ 'reasoning-bar--live': m.reasoningStreaming }"
+                  :class="{
+                    'reasoning-bar--live':
+                      m.reasoningStreaming || (m.webSearchPhase === 'searching'),
+                  }"
                   @click="onReasoningBarClick(m)"
                 >
                   <span class="reasoning-bar-title">{{ t("chat.reasoningTitle") }}</span>
@@ -117,6 +120,24 @@
                 </button>
                 <div v-show="isReasoningBodyVisible(m)" class="reasoning-body-wrap">
                   <div class="reasoning-body">
+                    <p
+                      v-if="showWebSearchProgressInBody(m)"
+                      class="reasoning-web-search"
+                      :class="{ 'reasoning-web-search--live': m.webSearchPhase === 'searching' }"
+                    >
+                      <el-icon
+                        v-if="m.webSearchPhase === 'searching'"
+                        class="wf-spin reasoning-web-search-ico"
+                        :size="15"
+                      />
+                      <span
+                        class="reasoning-web-search-text"
+                        :class="{ 'reasoning-web-search-count--tick': webSearchCountTickKey(m) }"
+                        :key="webSearchCountTickKey(m)"
+                      >
+                        {{ webSearchProgressText(m) }}
+                      </span>
+                    </p>
                     <template v-if="m.reasoning && m.reasoning.length">
                       {{ m.reasoning }}<span v-if="m.reasoningStreaming" class="cursor" />
                     </template>
@@ -125,7 +146,33 @@
                       class="reasoning-intent-hint"
                       v-html="t('chat.reasoningIntentHint')"
                     />
-                    <span v-else-if="m.reasoningStreaming" class="cursor" />
+                    <span v-else-if="m.reasoningStreaming && !showWebSearchProgressInBody(m)" class="cursor" />
+                  </div>
+                </div>
+              </div>
+              <div
+                v-if="m.role === 'assistant' && showWebSearchOnlyShell(m)"
+                class="reasoning reasoning--web-only"
+              >
+                <div class="reasoning-bar reasoning-bar--live">
+                  <span class="reasoning-bar-title">{{ t("chat.webSearchProgressTitle") }}</span>
+                  <span class="reasoning-live">{{ intentReasoningLiveLabel(m) }}</span>
+                </div>
+                <div class="reasoning-body-wrap">
+                  <div class="reasoning-body">
+                    <p
+                      class="reasoning-web-search reasoning-web-search--live"
+                      :class="{ 'reasoning-web-search--live': m.webSearchPhase === 'searching' }"
+                    >
+                      <el-icon class="wf-spin reasoning-web-search-ico" :size="15" />
+                      <span
+                        class="reasoning-web-search-text"
+                        :class="{ 'reasoning-web-search-count--tick': webSearchCountTickKey(m) }"
+                        :key="webSearchCountTickKey(m)"
+                      >
+                        {{ webSearchProgressText(m) }}
+                      </span>
+                    </p>
                   </div>
                 </div>
               </div>
@@ -301,16 +348,21 @@
                 </div>
               </div>
               <div
-                v-if="
-                  m.role === 'assistant' &&
-                  !m.streaming &&
-                  m.id &&
-                  (m.followUpPrompts?.length ?? 0) > 0
-                "
+                v-if="showFollowUpPromptsBlock(m, idx)"
                 class="follow-up-prompts"
                 role="list"
+                :aria-busy="m.followUpLoading ? 'true' : 'false'"
               >
                 <span class="follow-up-prompts-label">{{ t("chat.followUpLabel") }}</span>
+                <template v-if="m.followUpLoading && !(m.followUpPrompts?.length)">
+                  <span
+                    v-for="(w, sk) in followUpSkeletonWidths"
+                    :key="`follow-up-sk-${sk}`"
+                    class="follow-up-prompt-skeleton"
+                    :style="{ width: w }"
+                    aria-hidden="true"
+                  />
+                </template>
                 <button
                   v-for="fp in m.followUpPrompts"
                   :key="fp.id ?? fp.text"
@@ -463,16 +515,26 @@
                 </div>
               </div>
               <div
-                v-if="m.role === 'assistant' && m.usage && m.usage.totalTokens > 0"
+                v-if="m.role === 'assistant' && (assistantDurationLabel(m) || (m.usage && m.usage.totalTokens > 0))"
                 class="token-meta"
               >
-                {{
-                  t("chat.tokenLineMsg", {
-                    total: m.usage.totalTokens,
-                    prompt: m.usage.promptTokens,
-                    completion: m.usage.completionTokens,
-                  })
-                }}
+                <span v-if="assistantDurationLabel(m)">{{ assistantDurationLabel(m) }}</span>
+                <span
+                  v-if="assistantDurationLabel(m) && m.usage && m.usage.totalTokens > 0"
+                  class="token-meta-sep"
+                  aria-hidden="true"
+                >
+                  ·
+                </span>
+                <span v-if="m.usage && m.usage.totalTokens > 0">
+                  {{
+                    t("chat.tokenLineMsg", {
+                      total: m.usage.totalTokens,
+                      prompt: m.usage.promptTokens,
+                      completion: m.usage.completionTokens,
+                    })
+                  }}
+                </span>
               </div>
             </div>
           </div>
@@ -807,6 +869,20 @@ type Msg = {
   attachments?: chatApi.ChatAttachmentMessage[];
   /** 助手回复后「猜你想问」（接口按需拉取） */
   followUpPrompts?: chatApi.StarterPromptItem[];
+  /** SSE/REST 均未返回时展示骨架气泡 */
+  followUpLoading?: boolean;
+  /** 本轮是否开启联网（用于流式进度展示） */
+  webSearchTurnEnabled?: boolean;
+  /** 联网检索阶段（SSE {@code webSearchStatus} 或发送时乐观置 searching） */
+  webSearchPhase?: chatApi.WebSearchStatusPhase;
+  /** 联网引用目标条数（SSE 累积 {@code webSearchRefs}） */
+  webSearchRefCount?: number;
+  /** 联网条数展示用（递增动画，≤ {@code webSearchRefCount}） */
+  webSearchDisplayCount?: number;
+  /** 流式开始时间戳（客户端，用于进行中耗时） */
+  streamStartedAtMs?: number;
+  /** SSE {@code end#durationMs} 或流结束时的总耗时（毫秒） */
+  replyDurationMs?: number;
 };
 
 /** 后端 {@code segmentId} 缺省时用于顶栏标题（与 Java 侧步骤 id 对齐）。 */
@@ -1136,6 +1212,8 @@ async function loadMessagesForConv(id: number) {
   } catch {
     ElMessage.error(t("chat.loadHistoryFail"));
   }
+  await ensureEmptyStarterPromptsIfNeeded();
+  void loadFollowUpForAllAssistants();
   await scrollToBottom();
 }
 
@@ -1236,20 +1314,60 @@ function workflowSegmentRichHtml(text: string): string {
   return renderMarkdownToSafeHtml(s);
 }
 
+function assistantThinkingShellEnabled(): boolean {
+  return !!(thinkingEnabled.value && currentModel.value?.supportsThinking);
+}
+
+function showWebSearchProgressInBody(m: Msg): boolean {
+  if (!m.webSearchTurnEnabled) return false;
+  if (m.webSearchPhase === "searching") return true;
+  return (m.webSearchRefCount ?? 0) > 0 || (m.webSearchDisplayCount ?? 0) > 0;
+}
+
+/** 未开思考时：联网进度独立卡片，替代思考外壳 */
+function showWebSearchOnlyShell(m: Msg): boolean {
+  if (m.role !== "assistant" || assistantThinkingShellEnabled()) return false;
+  if (!m.streaming && m.webSearchPhase !== "searching") return false;
+  return showWebSearchProgressInBody(m);
+}
+
 /** 是否展示「思考过程」外壳（含意图编排且已开思考；流结束后仍保留，避免说明与正文割裂） */
 function showAssistantReasoningShell(m: Msg): boolean {
   if (m.role !== "assistant") return false;
+  if (showWebSearchOnlyShell(m)) return false;
   if (m.reasoningStreaming || (m.reasoning != null && m.reasoning.length > 0)) {
     return true;
   }
+  if (
+    m.streaming &&
+    assistantThinkingShellEnabled() &&
+    m.webSearchTurnEnabled &&
+    showWebSearchProgressInBody(m)
+  ) {
+    return true;
+  }
   return !!(
-    thinkingEnabled.value &&
-    currentModel.value?.supportsThinking &&
+    assistantThinkingShellEnabled() &&
     (m.workflowSegments?.length ?? 0) > 0
   );
 }
 
+function webSearchCountTickKey(m: Msg): string {
+  return `${m.webSearchPhase ?? ""}-${m.webSearchDisplayCount ?? 0}`;
+}
+
+function webSearchProgressText(m: Msg): string {
+  const shown = m.webSearchDisplayCount ?? 0;
+  if (m.webSearchPhase === "searching" && shown <= 0) {
+    return t("chat.webSearchSearching");
+  }
+  return t("chat.webSearchFound", { n: shown > 0 ? shown : m.webSearchRefCount ?? 0 });
+}
+
 function intentReasoningLiveLabel(m: Msg): string {
+  if (m.webSearchTurnEnabled && m.webSearchPhase === "searching" && !(m.reasoning && m.reasoning.length > 0)) {
+    return t("chat.webSearchSearchingShort");
+  }
   if (m.reasoning && m.reasoning.length > 0) {
     return t("chat.thinkingLive");
   }
@@ -1257,6 +1375,90 @@ function intentReasoningLiveLabel(m: Msg): string {
     return t("chat.intentOrchestrating");
   }
   return t("chat.thinkingLive");
+}
+
+function formatReplyDurationMs(ms: number): string {
+  if (ms < 1000) {
+    return t("chat.replyDurationSubSec", { ms: Math.max(1, Math.round(ms)) });
+  }
+  const sec = ms / 1000;
+  return sec >= 10 ? t("chat.replyDurationSec", { s: Math.round(sec) }) : t("chat.replyDurationSec", { s: sec.toFixed(1) });
+}
+
+function assistantDurationLabel(m: Msg): string | null {
+  if (m.role !== "assistant") return null;
+  if (m.streaming && m.streamStartedAtMs) {
+    void streamElapsedTick.value;
+    const live = Date.now() - m.streamStartedAtMs;
+    return t("chat.replyDurationLive", { label: formatReplyDurationMs(live) });
+  }
+  if (m.replyDurationMs != null && m.replyDurationMs > 0) {
+    return t("chat.replyDurationDone", { label: formatReplyDurationMs(m.replyDurationMs) });
+  }
+  return null;
+}
+
+const webSearchCountAnimTimers = new WeakMap<Msg, ReturnType<typeof setInterval>>();
+
+function stopWebSearchCountAnim(m: Msg) {
+  const tmr = webSearchCountAnimTimers.get(m);
+  if (tmr != null) {
+    clearInterval(tmr);
+    webSearchCountAnimTimers.delete(m);
+  }
+}
+
+function bumpWebSearchDisplayCount(m: Msg, target: number) {
+  const goal = Math.max(0, target);
+  m.webSearchRefCount = goal;
+  const cur = m.webSearchDisplayCount ?? 0;
+  if (goal <= cur) {
+    m.webSearchDisplayCount = goal;
+    return;
+  }
+  stopWebSearchCountAnim(m);
+  m.webSearchDisplayCount = cur;
+  const tmr = setInterval(() => {
+    const n = (m.webSearchDisplayCount ?? 0) + 1;
+    m.webSearchDisplayCount = Math.min(n, goal);
+    if (m.webSearchDisplayCount >= goal) {
+      stopWebSearchCountAnim(m);
+    }
+  }, 140);
+  webSearchCountAnimTimers.set(m, tmr);
+}
+
+function beginAssistantStreamTiming(m: Msg, webSearchTurn: boolean) {
+  m.streamStartedAtMs = Date.now();
+  m.replyDurationMs = undefined;
+  if (webSearchTurn) {
+    m.webSearchTurnEnabled = true;
+    m.webSearchPhase = "searching";
+    m.webSearchRefCount = 0;
+    m.webSearchDisplayCount = 0;
+  } else {
+    m.webSearchTurnEnabled = false;
+    m.webSearchPhase = undefined;
+    m.webSearchRefCount = undefined;
+    m.webSearchDisplayCount = undefined;
+  }
+  ensureStreamElapsedTicker();
+}
+
+const streamElapsedTick = ref(0);
+let streamElapsedTimer: ReturnType<typeof setInterval> | null = null;
+
+function ensureStreamElapsedTicker() {
+  if (streamElapsedTimer != null) return;
+  streamElapsedTimer = setInterval(() => {
+    streamElapsedTick.value += 1;
+    if (!messages.value.some((row) => row.streaming)) {
+      if (streamElapsedTimer != null) {
+        clearInterval(streamElapsedTimer);
+        streamElapsedTimer = null;
+      }
+    }
+  }, 200);
 }
 
 /** 思考区展示意图说明（模型无 reasoning 分片、且已有流程步骤；流结束后仍展示） */
@@ -1282,6 +1484,9 @@ function isReasoningBodyVisible(m: Msg): boolean {
   if (m.reasoningStreaming && !hasMain) {
     return true;
   }
+  if (m.streaming && showWebSearchProgressInBody(m) && !hasMain) {
+    return true;
+  }
   if (reasoningIntentOrchestrationHint(m)) {
     return m.reasoningCollapsed !== true;
   }
@@ -1299,12 +1504,21 @@ function showAssistantMdBubble(m: Msg): boolean {
   if ((m.workflowSegments?.length ?? 0) > 0) {
     return false;
   }
+  const hasMain = m.content.trim().length > 0;
+  if (m.streaming && !hasMain) {
+    if (showWebSearchOnlyShell(m)) {
+      return false;
+    }
+    if (showWebSearchProgressInBody(m) && assistantThinkingShellEnabled() && !(m.reasoning?.length)) {
+      return false;
+    }
+  }
   const reasonUi =
     m.reasoningStreaming === true || (m.reasoning != null && m.reasoning.length > 0);
   if (!reasonUi) {
     return true;
   }
-  return m.content.trim().length > 0 || !m.streaming;
+  return hasMain || !m.streaming;
 }
 
 /** 是否视为「有助手主区」：用于模型行、复制等（含仅工作流卡片、无 Markdown 气泡的情况） */
@@ -1332,6 +1546,13 @@ function onReasoningBarClick(m: Msg) {
 function finishAssistantStreamState(m: Msg) {
   m.streaming = false;
   m.reasoningStreaming = false;
+  if (m.webSearchPhase === "searching") {
+    m.webSearchPhase = "done";
+  }
+  if (m.streamStartedAtMs && (m.replyDurationMs == null || m.replyDurationMs <= 0)) {
+    m.replyDurationMs = Date.now() - m.streamStartedAtMs;
+  }
+  stopWebSearchCountAnim(m);
   const hasWorkflow = (m.workflowSegments?.length ?? 0) > 0;
   if (m.replyVariants?.length) {
     const tail = m.replyVariants[m.replyVariants.length - 1];
@@ -1342,13 +1563,20 @@ function finishAssistantStreamState(m: Msg) {
     m.reasoningCollapsed = true;
   }
   syncAssistantActiveToFlat(m);
-  void loadFollowUpForMessage(m);
 }
 
 function applyAssistantStreamPart(m: Msg, part: chatApi.StreamPart, tail: ReplyVariant | null) {
   const body = tail ?? m;
   if (part.type === "content" && part.v) {
-    if (!body.content && part.v.trim().length > 0 && (m.workflowSegments?.length ?? 0) === 0) {
+    if (m.webSearchPhase === "searching") {
+      m.webSearchPhase = "done";
+    }
+    if (
+      !body.content &&
+      part.v.trim().length > 0 &&
+      (m.workflowSegments?.length ?? 0) === 0 &&
+      !m.reasoningStreaming
+    ) {
       if (tail) {
         tail.reasoningCollapsed = true;
       } else {
@@ -1361,16 +1589,30 @@ function applyAssistantStreamPart(m: Msg, part: chatApi.StreamPart, tail: ReplyV
       return;
     }
     body.ragRetrievalTitles = [...(body.ragRetrievalTitles ?? []), part.title];
+  } else if (part.type === "webSearchStatus") {
+    if (!m.streaming) {
+      return;
+    }
+    m.webSearchTurnEnabled = true;
+    m.webSearchPhase = part.phase;
+    if (part.phase === "searching" && (m.webSearchDisplayCount ?? 0) === 0) {
+      m.webSearchDisplayCount = 0;
+    }
   } else if (part.type === "webSearchRefs" && part.references?.length) {
     if (!m.streaming) {
       return;
     }
     body.webSearchReferences = [...part.references];
+    m.webSearchTurnEnabled = true;
+    bumpWebSearchDisplayCount(m, part.references.length);
     if (webSearchRefsFoldable(part.references)) {
       m.webSearchRefsCollapsed = true;
       body.webSearchRefsCollapsed = true;
     }
   } else if (part.type === "reasoning" && part.v) {
+    if (m.webSearchPhase === "searching") {
+      m.webSearchPhase = "done";
+    }
     m.reasoningStreaming = true;
     body.reasoning = (body.reasoning ?? "") + part.v;
   } else if (part.type === "inputBlocked") {
@@ -1387,10 +1629,25 @@ function applyAssistantStreamPart(m: Msg, part: chatApi.StreamPart, tail: ReplyV
     body.content += `\n\n（${msg}）`;
   } else if (part.type === "workflowStage") {
     mergeWorkflowStage(m, part.stage);
+  } else if (part.type === "followUpPrompts" && part.items?.length) {
+    m.followUpPrompts = part.items;
+    finishFollowUpLoading(m);
   } else if (part.type === "end") {
+    if (part.assistantMessageId != null) {
+      m.id = part.assistantMessageId;
+    }
+    if (part.durationMs != null && part.durationMs > 0) {
+      m.replyDurationMs = part.durationMs;
+    }
     finishAssistantStreamState(m);
     if ("usage" in part && part.usage && part.usage.totalTokens > 0) {
       body.usage = { ...part.usage };
+    }
+    if (!(m.followUpPrompts?.length)) {
+      beginFollowUpLoading(m);
+      if (m.id != null && convId.value != null) {
+        void loadFollowUpForMessage(m);
+      }
     }
   }
 }
@@ -1493,6 +1750,27 @@ function isLastAssistantIndex(idx: number): boolean {
     return false;
   }
   return messages.value[idx]?.role === "assistant";
+}
+
+/** 猜你想问骨架条宽度（三条错落，贴近真实 chip） */
+const followUpSkeletonWidths = ["76px", "104px", "88px"] as const;
+
+function showFollowUpPromptsBlock(m: Msg, idx: number): boolean {
+  if (m.role !== "assistant" || m.streaming) {
+    return false;
+  }
+  if ((m.followUpPrompts?.length ?? 0) > 0) {
+    return true;
+  }
+  return !!(m.followUpLoading && isLastAssistantIndex(idx));
+}
+
+function beginFollowUpLoading(m: Msg) {
+  m.followUpLoading = true;
+}
+
+function finishFollowUpLoading(m: Msg) {
+  m.followUpLoading = false;
 }
 
 async function setAssistantFeedback(m: Msg, vote: chatApi.ChatAssistantFeedbackVote) {
@@ -1644,6 +1922,13 @@ function refreshEmptyStarterPrompts() {
   void loadEmptyStarterPrompts(true);
 }
 
+/** 空会话展示推荐问句：首屏若直接打开有历史的会话，此前不会拉取，新建/切换到空会话须显式调用。 */
+async function ensureEmptyStarterPromptsIfNeeded() {
+  if (messages.value.length > 0) return;
+  emptyPromptExcludeIds.value = [];
+  await loadEmptyStarterPrompts(false);
+}
+
 /** 点击推荐问句时默认开启联网（租户已配置联网模型时）。 */
 function enableWebSearchForStarterPrompt() {
   if (webSearchAllowed.value) {
@@ -1674,11 +1959,26 @@ async function loadFollowUpForMessage(m: Msg) {
   if (m.role !== "assistant" || m.streaming || m.id == null || convId.value == null) {
     return;
   }
+  if (m.followUpPrompts?.length) {
+    finishFollowUpLoading(m);
+    return;
+  }
+  beginFollowUpLoading(m);
   try {
     const res = await chatApi.fetchFollowUpPrompts(convId.value, m.id, 3);
     m.followUpPrompts = res.items?.length ? res.items : [];
   } catch {
     m.followUpPrompts = [];
+  } finally {
+    finishFollowUpLoading(m);
+  }
+}
+
+async function loadFollowUpForAllAssistants() {
+  for (const m of messages.value) {
+    if (m.role === "assistant" && m.id != null && !m.streaming) {
+      await loadFollowUpForMessage(m);
+    }
   }
 }
 
@@ -1747,6 +2047,13 @@ watch(
 
 onBeforeUnmount(() => {
   cancelActiveStream();
+  if (streamElapsedTimer != null) {
+    clearInterval(streamElapsedTimer);
+    streamElapsedTimer = null;
+  }
+  for (const row of messages.value) {
+    stopWebSearchCountAnim(row);
+  }
   if (scrollBottomRaf != null) {
     cancelAnimationFrame(scrollBottomRaf);
     scrollBottomRaf = null;
@@ -1842,6 +2149,7 @@ async function retryAssistantAt(assistantIdx: number) {
   prev.workflowSegments = [];
   prev.streaming = true;
   prev.reasoningStreaming = false;
+  beginAssistantStreamTiming(prev, useWeb);
   syncAssistantActiveToFlat(prev);
 
   sending.value = true;
@@ -1889,6 +2197,7 @@ async function retryAssistantAt(assistantIdx: number) {
     sending.value = false;
     if (syncHistory && convId.value) {
       await syncThreadAfterStream(convId.value);
+      await loadFollowUpForAllAssistants();
     }
     await scrollToBottom();
   }
@@ -1989,10 +2298,7 @@ async function loadChatShellForCurrentTenant() {
   } else {
     await scrollToBottom();
   }
-  if (messages.value.length === 0) {
-    emptyPromptExcludeIds.value = [];
-    await loadEmptyStarterPrompts(false);
-  }
+  await ensureEmptyStarterPromptsIfNeeded();
 }
 
 function readJwtSub(token: string | null): string | null {
@@ -2107,6 +2413,7 @@ async function newConv() {
   }
   await refresh();
   clearThread();
+  await ensureEmptyStarterPromptsIfNeeded();
   ElMessage.success(t("chat.convCreated"));
 }
 
@@ -2170,7 +2477,7 @@ async function send() {
     ...(uploadedAttachmentViews.length ? { attachments: uploadedAttachmentViews } : {}),
   });
   input.value = "";
-  messages.value.push({
+  const assistantRow: Msg = {
     role: "assistant",
     clientRowKey: newClientRowKey(),
     content: "",
@@ -2180,7 +2487,9 @@ async function send() {
     reasoning: undefined,
     reasoningStreaming: false,
     modelAlias: modelAlias.value,
-  });
+  };
+  beginAssistantStreamTiming(assistantRow, useWeb);
+  messages.value.push(assistantRow);
   const assistantIdx = messages.value.length - 1;
   sending.value = true;
   await scrollToBottom();
@@ -2213,7 +2522,7 @@ async function send() {
       { signal: streamSignal },
     );
     const m = messages.value[assistantIdx];
-    if (m) {
+    if (m?.streaming) {
       finishAssistantStreamState(m);
     }
   } catch (e: unknown) {
@@ -2223,7 +2532,9 @@ async function send() {
       const m = messages.value[assistantIdx];
       if (m) {
         m.content = m.content || t("chat.replyFailed");
-        finishAssistantStreamState(m);
+        if (m.streaming) {
+          finishAssistantStreamState(m);
+        }
       }
       ElMessage.error(apiRequestErrorMessage(e, t("chat.sendFail")));
     }
@@ -2234,6 +2545,10 @@ async function send() {
       await refresh();
       if (convId.value) {
         await syncThreadAfterStream(convId.value);
+        const m = messages.value[assistantIdx];
+        if (!m?.followUpPrompts?.length) {
+          await loadFollowUpForAllAssistants();
+        }
       }
     }
     await scrollToBottom();
@@ -2401,6 +2716,59 @@ async function send() {
   white-space: normal;
   word-break: break-word;
   overflow-wrap: anywhere;
+}
+
+.reasoning-web-search {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #52525b;
+}
+
+.reasoning-web-search--live {
+  color: #3f3f46;
+}
+
+.reasoning-web-search-ico {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #71717a;
+}
+
+.reasoning-web-search-text {
+  display: inline-block;
+}
+
+.reasoning-web-search-count--tick {
+  animation: web-search-count-tick 0.22s ease-out;
+}
+
+@keyframes web-search-count-tick {
+  0% {
+    opacity: 0.35;
+    transform: translateY(3px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.reasoning--web-only {
+  margin-bottom: 10px;
+}
+
+.reasoning--web-only .reasoning-bar {
+  cursor: default;
+}
+
+.token-meta-sep {
+  margin: 0 6px;
+  opacity: 0.55;
 }
 
 .reasoning-intent-hint strong {
@@ -2786,6 +3154,35 @@ async function send() {
   font-size: 12px;
   color: #71717a;
   flex-shrink: 0;
+}
+
+.follow-up-prompt-skeleton {
+  display: inline-block;
+  height: 28px;
+  min-width: 64px;
+  border-radius: 999px;
+  border: 1px solid #e4e4e7;
+  background: linear-gradient(90deg, #f4f4f5 0%, #e4e4e7 45%, #f4f4f5 90%);
+  background-size: 220% 100%;
+  animation: follow-up-prompt-shimmer 1.15s ease-in-out infinite;
+  box-sizing: border-box;
+}
+
+.follow-up-prompt-skeleton:nth-of-type(2) {
+  animation-delay: 0.12s;
+}
+
+.follow-up-prompt-skeleton:nth-of-type(3) {
+  animation-delay: 0.24s;
+}
+
+@keyframes follow-up-prompt-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
 }
 
 .messages {
@@ -3406,6 +3803,11 @@ async function send() {
     animation: none;
     transform: scale(1);
     opacity: 0.85;
+  }
+
+  .follow-up-prompt-skeleton {
+    animation: none;
+    background: #ececef;
   }
 }
 

@@ -22,6 +22,8 @@ export type TenantShellModelCallingRuntime = {
   chatInputGuardJson: string;
   webSearchGroundingMultiRoundCount: string;
   webSearchGroundingRoundSuffixesJson: string;
+  /** WEB_SEARCH_GROUNDING_CACHE_JSON */
+  webSearchGroundingCacheJson: string;
 };
 
 export type TenantShellConfig = {

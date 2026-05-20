@@ -13,6 +13,7 @@
         <template #default="{ row }">{{ row.enabled ? t("common.yes") : t("common.no") }}</template>
       </el-table-column>
       <el-table-column prop="sortOrder" :label="t('views.chatStarter.colSort')" width="72" />
+      <el-table-column prop="createdAt" :label="t('views.chatStarter.colCreatedAt')" width="168" show-overflow-tooltip />
       <el-table-column :label="t('views.chatStarter.colActions')" width="140" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" size="small" @click="openEdit(row)">{{ t("common.edit") }}</el-button>

@@ -41,8 +41,68 @@
 - **配置入口**：管理端 **「大模型管理 → 联网搜索」** Tab，维护 **`llm_model`** 行（**`model_kind = WEB_SEARCH`**）；**`integration_backend`** 存 **`LlmWebSearchProvider`** 码，与 **VECTOR** 共用列名、分选项 **`webSearchProviders`**（见 **「管理端 Accept-Language 与 LLM 元数据」** 表内说明）。
 - **编排位置**：**`ChatWebSearchGroundingService`** 由 **`ChatApplicationService#openAssistantSseStream`** 在 RAG 等之后、主 **`ModelInvokePort`** 之前注入网络检索 **system**；请求体 **`webSearchEnabled`**（及重试覆盖项）参与决策。
 - **多轮检索与提示后缀**：轮数及各轮拼在用户问题后的说明为租户运行参数 **`WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT`**、**`WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON`**（**`TenantRuntimeSettingKey`**）；与 **`application.yml` 分层**见 **`.cursorrules` §3.8**。
+- **检索缓存**：**`WEB_SEARCH_GROUNDING_CACHE_JSON`**（Redis 精确 + 语义近邻，默认滚动 **6h/24h/48h**）；同会话相同问句复用见 **`WebSearchConversationReuseService`**。对话流式在 **`streamCompletion` 前**完成配置轮数联网（**`groundMultiRoundsWithRaw`**，SSE 渐进 **`webSearchRefs`**）见 **「变更记录」** **`### 0.1.244-SNAPSHOT`**。
 - **引用持久化与 SSE**：检索归一化条目落 **`chat_message.meta_json#webSearchReferences`**（助手行写入；**同一轮 user 行**在助手落库后同步写入或移除该键，便于按轮次导出）；主流式前下发 **`webSearchRefs`** 分帧（**`v`** 为 **`{"references":[…]}`**）。**`GET …/conversations/{id}/messages`** 经 **`ChatMessageView`** 对 **user / assistant** 均解析 **`webSearchReferences`**。**`VolcArkBotWebSearchProvider`** 合并根 **`references`** 与 **`bot_usage…tool_details…results`**（按 URL 去重）。用户端 **`web/user-web`**（**`chat.ts` / `ChatView.vue`**）与管理端类型 **`chatAdmin.ts`** 对齐字段；迭代明细见 **「变更记录」** 当前顶 **`###`** 节。
 - **扩展与实现真源**：**`WebSearchProviderRegistry`** / **`WebSearchModelProvider`**（首版 **`VolcArkBotWebSearchProvider`** 等）、**`SysLlmModel`** 解析、计量回写、**`WebSearchFlagDeserializer`** 等与周边模块的细则以代码及 **`LlmModelKind`** 注释为准。
+
+**管理端配置落点（示意）**
+
+```mermaid
+flowchart LR
+  subgraph admin [管理端]
+    M[大模型管理 · 联网搜索 Tab]
+    S[外观与模型调用]
+    S --> R[联网多轮检索<br/>MULTI_ROUND_COUNT / ROUND_SUFFIXES_JSON]
+    S --> C[联网检索缓存 Redis<br/>WEB_SEARCH_GROUNDING_CACHE_JSON]
+    S --> E[记忆嵌入 VECTOR<br/>MEMORY_EMBEDDING_VECTOR_MODEL_ID]
+  end
+  subgraph store [ten_runtime_setting]
+    DB[(键值表)]
+  end
+  M --> LLM[(llm_model WEB_SEARCH)]
+  R --> DB
+  C --> DB
+  E --> DB
+  C -.语义近邻.-> E
+```
+
+**对话流式：联网后再出字（`groundMultiRoundsWithRaw`）**
+
+```mermaid
+sequenceDiagram
+  participant U as 用户端 SSE
+  participant Chat as ChatApplicationService
+  participant WS as ChatWebSearchGroundingService
+  participant LLM as 主模型 streamCompletion
+
+  Chat->>WS: 配置轮数全量联网 groundMultiRoundsWithRaw
+  WS-->>U: webSearchRefs（每轮累积）
+  WS-->>Chat: WebGroundingBundle
+  Chat->>Chat: 注入 system
+  Chat->>LLM: streamCompletion
+  LLM-->>U: reasoning / content 分片
+  Chat->>Chat: 落库助手消息
+  Chat->>U: followUpPrompts（运营池/内置即时，LLM 后台写缓存）
+  Chat->>U: end（含 assistantMessageId）
+```
+
+**检索缓存命中档位（`WEB_SEARCH_GROUNDING_CACHE_JSON`）**
+
+```mermaid
+flowchart TD
+  Q[规范化问句] --> A{精确键 Redis?}
+  A -->|命中| T1[按缓存年龄分档]
+  A -->|未中| B{索引 normalizedQuery 相同?}
+  B -->|是| T1
+  B -->|否| C{语义向量相似度 ≥ 阈值?}
+  C -->|是| T1
+  C -->|否| D[会话内相同问句复用 6h]
+  D -->|未中| MISS[全量配置轮数外呼]
+  T1 --> FRESH["≤ freshHours：0 外呼"]
+  T1 --> WARM["≤ warmHours：最多 1 轮 + 合并"]
+  T1 --> STALE["≤ staleHours：最多 1 轮 + 合并"]
+  T1 --> EXP[超过 stale：全量轮数]
+```
 
 **迭代写在哪里**：本专节**不随每次提交加长**。**文件、迁移、行为、前后端联调等变更**一律写在下方 **「变更记录」** 中**当前开发线对应的 `### x.y.z-SNAPSHOT` 节**（与 **`pom.xml` `<version>`** 对齐；**小改**并入该节，**大改** bump 后新开顶节，见 **「版本策略」**表）。**禁止**把迭代清单搬进本节以代替「变更记录」。
 
@@ -58,6 +118,53 @@
 - **编排位置**：**`ChatStarterPromptApplicationService`**（抽样）、**`ChatStarterDailyHotTopicService`** + **`ChatStarterDailyHotJobHandler`**（热点）、**`ChatStarterFollowUpService`**（追问）；包 **`com.aaron.cloud.chat.starter`** / **`com.aaron.cloud.scheduled.handler`**。
 - **Open API**：**`GET /open/v1/chat/starter-prompts`**、**`POST …/starter-prompts/events`**、**`GET …/conversations/{id}/messages/{msgId}/follow-up-prompts`**。
 - **已建库运维**：**必须**手工执行 **`db/mysql/migrate_0_1_240_chat_starter_prompt.sql`**（应用**不会**自动建表）；迭代明细见 **「变更记录」** **`### 0.1.240-SNAPSHOT`**。
+
+**空会话推荐 vs 猜你想问（数据从哪来）**
+
+```mermaid
+flowchart TB
+  subgraph empty [空会话推荐 scene=EMPTY]
+    OPEN[打开空对话] --> API1[GET /open/v1/chat/starter-prompts?scene=EMPTY]
+    API1 --> POOL1[(chat_starter_prompt 运营池 + 每日热点)]
+    POOL1 --> UI1[欢迎区 chips]
+    REF[用户点换一批 refresh=true] --> HOT[ChatStarterDailyHotTopicService<br/>联网 + 语言模型写池]
+    HOT --> POOL1
+  end
+  subgraph follow [猜你想问]
+    SSE[助手流结束 SSE] --> FU[followUpPrompts 帧]
+    FU --> UI2[助手消息下 chips]
+    SSE --> REST[可选 GET follow-up-prompts<br/>历史/补拉]
+    REST --> CACHE[(chat_starter_follow_up_cache)]
+    REST --> LLM2[语言模型按上下文生成]
+    REST --> POOL2[(FOLLOW_UP 运营池 / 内置兜底)]
+  end
+```
+
+**猜你想问即时下发（与主回复同屏）**
+
+```mermaid
+sequenceDiagram
+  participant LLM as 主模型流式
+  participant FU as 追问 LLM 并行
+  participant W as 联网后续轮 join
+  participant S as SSE
+
+  LLM->>LLM: streamCompletion 结束
+  par
+    FU->>FU: startFollowUpGeneration
+    W->>W: webRemainderFuture
+  end
+  Note over S: 落库助手消息
+  S->>S: followUpPrompts（≤500ms 用 LLM，否则运营池）
+  S->>S: end + assistantMessageId
+```
+
+**管理端维护入口**
+
+| 能力 | 路径 |
+|------|------|
+| 运营池（含插入时间列） | 管理端 **推荐问题与猜你想问** `/chat/starter-prompts` |
+| 每日热点批次 | 同页 **每日热点** Tab；Cron 在 **定时任务** `CHAT_STARTER_DAILY_HOT` |
 
 **迭代写在哪里**：同 **「联网搜索」** 专节约定。
 
@@ -149,6 +256,30 @@
 | **提交前自检** | 仓库根 **`.\scripts\check-project-changelog.ps1 -IncludeUntracked`**（校验：动代码须同集改 **`PROJECT.md`**，且顶节 **`###`** 与 **`pom.xml` `<version>`** 一致）。Agent 必读 **`AGENTS.md`**。 |
 
 ## 变更记录
+
+### 0.1.244-SNAPSHOT
+
+- **版本**：**`pom.xml`** bump **0.1.243 → 0.1.244-SNAPSHOT**。
+- **联网编排（全量后再出字）**：**`ChatApplicationService`** 恢复 **`groundMultiRoundsWithRaw`**（配置轮数全部完成并注入 system 后再 **`streamCompletion`**）；**`groundForChatStream`** 仍保留于代码库供后续可配置化，当前对话主路径不再使用。
+- **语义缓存命中增强**：**`WebSearchQueryNormalizer`** 去标点与零宽字符；索引存 **`normalizedQuery`** 二次匹配；默认相似度 **0.88**、索引上限 **300**（**`WebSearchGroundingCachePolicy#defaults`**）。
+- **猜你想问全覆盖**：**`ChatStarterFollowUpService`** 运营池与 LLM 均空时内置兜底；**`ChatView`** 在 **`syncThreadAfterStream`** 之后及历史加载时为全部助手消息拉取追问（修复流结束时尚无 **`m.id`** 导致首条无 chips）。
+- **猜你想问即时展示**：主模型流式结束后并行启动追问 LLM；落库后 **`resolveForStreamEndImmediate`** 不阻塞 SSE（已完成的 LLM 结果即用，否则运营池/内置兜底，后台写 **`chat_starter_follow_up_cache`**）；**`followUpPrompts`** 与 **`end`** 紧接下发；移除落库前 **`remainderFuture.get(180s)`** 等待。
+- **深度思考展示**：仅当 SSE 收到 **`reasoning`** 分片或意图工作流阶段时展示思考外壳（未返回思考内容的模型不再占位「思考中」）；首字到达时若仍在 **`reasoningStreaming`** 则不提前折叠思考区。
+- **流式租户上下文**：对话 SSE 虚拟线程内 **`TenantContextHolder.set(snap)`**，修复收尾 **`resolveForStreamEndImmediate` → fastFallback** 触发 **`tenant context missing`** 并以 SSE 错误弹窗展示的问题。
+- **猜你想问本地相似度**：**`ChatStarterPromptSimilarityService`** 从运营池按问句+回复做字词/向量相似度挑选，流式 **`followUpPrompts`** 与 **`GET …/follow-up-prompts`** 均本地优先；LLM 追问后台写缓存。空会话「换一批」改为后台刷新热点，接口立即返回当前池。
+- **猜你想问加载态（用户端）**：流式 **`end`** 后若尚无追问数据，最后一条助手消息下展示 3 条 chip 骨架气泡，**`GET …/follow-up-prompts`** 返回后替换为真实 chips。
+- **管理端**：**`WEB_SEARCH_GROUNDING_CACHE_JSON`** 在「外观与模型调用 → 联网检索缓存」表单配置与回显；**「推荐问题与猜你想问」** 池子表增加 **插入时间** 列。
+- **项目文档**：**「联网搜索」** / **「对话推荐问题」** 专节补充 Mermaid 流程图（配置落点、全量联网后出字、缓存分档、推荐/追问数据来源与 SSE 时序）。
+- **编译**：**`sendSseFollowUpPrompts`** 内 **`emitter.send`** 的 **`IOException`** 改为 try/catch（与 **`sendSseWebSearchRefFrames`** 一致）。
+- **用户端联网进度与总耗时**：SSE 新增 **`webSearchStatus`**（**`searching`/`done`**）与 **`end#durationMs`**；流式中展示「联网查询」/并入思考区，**`webSearchRefs`** 条数递增动画；助手消息下展示进行中/总耗时（**`chat.ts` / `ChatView.vue`**）。
+
+### 0.1.243-SNAPSHOT
+
+- **版本**：**`pom.xml`** bump **0.1.242 → 0.1.243-SNAPSHOT**。
+- **用户端推荐问题**：**`ChatView`** 新建会话 / 切换到空会话时调用 **`ensureEmptyStarterPromptsIfNeeded`**，修复「新建对话无推荐、刷新才有」。
+- **定时任务进度（刷新可续看）**：**`ScheduledTasksView`** 列表 3s 轮询 **`activeRun`**；执行状态列展示进度摘要；刷新后 **`sessionStorage`** 自动恢复进度弹窗；顶栏提示 +「查看进度」。
+- **编译修复**：**`TenantScheduledRunOrchestrator`** 补 **`LongRunningTaskProgressSupport`** import；**`TenantScheduledTaskAdminApplicationService`** **`tenantId`** 改为 **`Long`**；**`RagLocalSiteCrawlOrchestrationService`** lambda 用 **`final`** 进度与 URL 列表。
+- **联网检索缓存（默认方案 C + D）**：**`WebSearchGroundingCacheService`**（Redis 精确键 + 语义近邻，嵌入模型同 **`MEMORY_EMBEDDING_VECTOR_MODEL_ID`**）；滚动 **6h/24h/48h**（FRESH 0 外呼 / WARM·STALE 最多 1 轮 / 过期全量）；**`WebSearchConversationReuseService`** 会话内相同问句复用；租户参数 **`WEB_SEARCH_GROUNDING_CACHE_JSON`**（**`migrate_0_1_243_web_search_grounding_cache.sql`** 种子默认）。**`WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT`** 仍可调轮数。
 
 ### 0.1.242-SNAPSHOT
 

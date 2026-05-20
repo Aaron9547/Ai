@@ -12,6 +12,8 @@ import com.aaron.cloud.chat.dto.ChatRegenerateRequest;
 import com.aaron.cloud.chat.dto.ChatSendPayload;
 import com.aaron.cloud.chat.websearch.ChatWebSearchGroundingService;
 import com.aaron.cloud.chat.websearch.WebGroundingBundle;
+import com.aaron.cloud.chat.dto.ChatStarterPromptDtos;
+import com.aaron.cloud.chat.starter.ChatStarterFollowUpService;
 import com.aaron.cloud.chat.dto.WebSearchReferenceView;
 import com.aaron.cloud.chat.websearch.WebSearchReference;
 import com.aaron.cloud.chat.dto.PriorAssistantVersionView;
@@ -77,6 +79,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -117,6 +120,7 @@ public class ChatApplicationService {
     private final TenantRuntimeSettingApplicationService tenantRuntimeSettingApplicationService;
     private final ChatWebSearchGroundingService chatWebSearchGroundingService;
     private final ChatTurnDigestApplicationService chatTurnDigestApplicationService;
+    private final ChatStarterFollowUpService chatStarterFollowUpService;
 
     public ChatConversation createConversation(String title) {
         var snap = TenantContextHolder.require();
@@ -670,6 +674,7 @@ public class ChatApplicationService {
         final long openAssistantWallMs = openT0;
         Runnable run =
                 () -> {
+                    TenantContextHolder.set(snap);
                     try {
                         log.info(
                                 "[对话] ⑯ 大模型流式线程已启动：租户 {}，会话 {}，距开放助手开始 {}ms",
@@ -683,6 +688,7 @@ public class ChatApplicationService {
                                     snap.getTenantId(),
                                     conversationId,
                                     millisSince(openAssistantWallMs));
+                            sendSseWebSearchStatus(emitter, seq, "searching");
                             long tWeb = System.currentTimeMillis();
                             WebGroundingBundle wb =
                                     chatWebSearchGroundingService.groundMultiRoundsWithRaw(
@@ -692,6 +698,7 @@ public class ChatApplicationService {
                                             conversationId,
                                             cumulative ->
                                                     sendSseWebSearchRefFrames(emitter, seq, cumulative));
+                            sendSseWebSearchStatus(emitter, seq, "done");
                             webSearchRefsForStream.clear();
                             if (wb.references() != null) {
                                 webSearchRefsForStream.addAll(wb.references());
@@ -736,6 +743,13 @@ public class ChatApplicationService {
                                         emitter.completeWithError(e);
                                     }
                                 });
+                        final String userQForFollowUp =
+                                payload.getContent() == null ? "" : payload.getContent().trim();
+                        CompletableFuture<List<String>> followUpInflight =
+                                chatStarterFollowUpService.startFollowUpGeneration(
+                                        snap.getTenantId(),
+                                        userQForFollowUp,
+                                        assistantBuf.toString());
                         long durationMs = System.currentTimeMillis() - streamStartedAt;
                         if (!isMock && modelCfg != null) {
                             SysLlmModel billingCfg = modelCfg;
@@ -757,10 +771,6 @@ public class ChatApplicationService {
                                     usageRef.get(),
                                     durationMs);
                         }
-                        emitter.send(
-                                org.springframework.web.servlet.mvc.method.annotation.SseEmitter.event()
-                                        .data(sseEndPayload(usageRef.get()))
-                                        .id(String.valueOf(seq.incrementAndGet())));
                         var asst = new ChatMessage();
                         asst.setTenantId(snap.getTenantId());
                         asst.setRole(ChatMessageRole.ASSISTANT);
@@ -776,6 +786,23 @@ public class ChatApplicationService {
                                         webSearchRefsForStream));
                         messageRepository.insert(asst);
                         linkMessage(conversationId, asst.getId(), snap.getTenantId());
+                        ChatStarterPromptDtos.StarterPromptListView followUpForSse =
+                                chatStarterFollowUpService.resolveForStreamEndImmediate(
+                                        snap.getTenantId(),
+                                        asst.getId(),
+                                        followUpInflight,
+                                        userQForFollowUp,
+                                        assistantBuf.toString(),
+                                        3);
+                        sendSseFollowUpPrompts(emitter, seq, followUpForSse);
+                        emitter.send(
+                                org.springframework.web.servlet.mvc.method.annotation.SseEmitter.event()
+                                        .data(
+                                                sseEndPayload(
+                                                        usageRef.get(),
+                                                        asst.getId(),
+                                                        millisSince(openAssistantWallMs)))
+                                        .id(String.valueOf(seq.incrementAndGet())));
                         if (pairedUserMessageId != null && payload.isWebSearchEnabled()) {
                             mergeWebSearchReferencesIntoUserMessageMeta(
                                     pairedUserMessageId, snap.getTenantId(), webSearchRefsForStream);
@@ -851,12 +878,18 @@ public class ChatApplicationService {
                                             .id(String.valueOf(seq.incrementAndGet())));
                             emitter.send(
                                     SseEmitter.event()
-                                            .data(sseEndPayload(usageRef.get()))
+                                            .data(
+                                                    sseEndPayload(
+                                                            usageRef.get(),
+                                                            null,
+                                                            millisSince(openAssistantWallMs)))
                                             .id(String.valueOf(seq.incrementAndGet())));
                         } catch (Exception sendEx) {
                             log.warn("[对话] SSE 推送错误帧失败", sendEx);
                         }
                         emitter.complete();
+                    } finally {
+                        TenantContextHolder.clear();
                     }
                 };
         Thread.startVirtualThread(run);
@@ -1076,6 +1109,7 @@ public class ChatApplicationService {
         AtomicInteger seq = new AtomicInteger(0);
         Runnable run =
                 () -> {
+                    TenantContextHolder.set(snap);
                     try {
                         var userMsg = new ChatMessage();
                         userMsg.setTenantId(snap.getTenantId());
@@ -1121,9 +1155,20 @@ public class ChatApplicationService {
                                 SseEmitter.event()
                                         .data(sseChunk("content", template))
                                         .id(String.valueOf(seq.incrementAndGet())));
+                        String blockedUserQ =
+                                payload.getContent() == null ? "" : payload.getContent().trim();
+                        ChatStarterPromptDtos.StarterPromptListView blockedFollowUp =
+                                chatStarterFollowUpService.resolveForStreamEndImmediate(
+                                        snap.getTenantId(),
+                                        asst.getId(),
+                                        null,
+                                        blockedUserQ,
+                                        template,
+                                        3);
+                        sendSseFollowUpPrompts(emitter, seq, blockedFollowUp);
                         emitter.send(
                                 SseEmitter.event()
-                                        .data(sseEndPayload(null))
+                                        .data(sseEndPayload(null, asst.getId(), 0L))
                                         .id(String.valueOf(seq.incrementAndGet())));
                         emitter.complete();
                     } catch (Exception e) {
@@ -1139,6 +1184,8 @@ public class ChatApplicationService {
                             log.warn("[对话] SSE completeWithError 失败", completeEx);
                             emitter.complete();
                         }
+                    } finally {
+                        TenantContextHolder.clear();
                     }
                 };
         Thread.startVirtualThread(run);
@@ -1258,6 +1305,23 @@ public class ChatApplicationService {
         }
     }
 
+    /** 联网检索阶段（JSON 在 {@code v} 内，形如 {@code {"phase":"searching"|"done"}}）。 */
+    private void sendSseWebSearchStatus(SseEmitter emitter, AtomicInteger seq, String phase) {
+        if (phase == null || phase.isBlank()) {
+            return;
+        }
+        try {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("phase", phase);
+            emitter.send(
+                    SseEmitter.event()
+                            .data(sseChunk("webSearchStatus", objectMapper.writeValueAsString(root)))
+                            .id(String.valueOf(seq.incrementAndGet())));
+        } catch (Exception ex) {
+            log.warn("[对话] SSE 推送联网状态帧失败，序号 {}", seq.get(), ex);
+        }
+    }
+
     /** 主模型流式 token 之前下发联网引用（JSON 在 {@code v} 内，形如 {@code {"references":[...]}}）。 */
     private void sendSseWebSearchRefFrames(
             SseEmitter emitter, AtomicInteger seq, List<WebSearchReference> refs) {
@@ -1302,9 +1366,16 @@ public class ChatApplicationService {
         return objectMapper.writeValueAsString(o);
     }
 
-    private String sseEndPayload(ModelTokenUsage usage) throws JsonProcessingException {
+    private String sseEndPayload(ModelTokenUsage usage, Long assistantMessageId, long durationMs)
+            throws JsonProcessingException {
         ObjectNode o = objectMapper.createObjectNode();
         o.put("type", "end");
+        if (assistantMessageId != null && assistantMessageId > 0L) {
+            o.put("assistantMessageId", assistantMessageId);
+        }
+        if (durationMs > 0L) {
+            o.put("durationMs", durationMs);
+        }
         if (usage != null && usage.totalTokens() > 0) {
             ObjectNode u = o.putObject("usage");
             u.put("promptTokens", usage.promptTokens());
@@ -1312,6 +1383,37 @@ public class ChatApplicationService {
             u.put("totalTokens", usage.totalTokens());
         }
         return objectMapper.writeValueAsString(o);
+    }
+
+    private void sendSseFollowUpPrompts(
+            SseEmitter emitter, AtomicInteger seq, ChatStarterPromptDtos.StarterPromptListView view) {
+        if (view == null || view.items() == null || view.items().isEmpty()) {
+            return;
+        }
+        try {
+            ObjectNode root = objectMapper.createObjectNode();
+            ArrayNode items = root.putArray("items");
+            for (ChatStarterPromptDtos.StarterPromptItem item : view.items()) {
+                if (item == null || item.text() == null || item.text().isBlank()) {
+                    continue;
+                }
+                ObjectNode row = items.addObject();
+                if (item.id() != null) {
+                    row.put("id", item.id());
+                }
+                row.put("text", item.text());
+                row.put("source", item.source() == null ? "" : item.source());
+            }
+            if (items.isEmpty()) {
+                return;
+            }
+            emitter.send(
+                    SseEmitter.event()
+                            .data(sseChunk("followUpPrompts", objectMapper.writeValueAsString(root)))
+                            .id(String.valueOf(seq.incrementAndGet())));
+        } catch (Exception ex) {
+            log.warn("[对话] SSE 推送猜你想问帧失败，序号 {}", seq.get(), ex);
+        }
     }
 
     private String sseErrorPayload(LlmOutboundException e) throws JsonProcessingException {

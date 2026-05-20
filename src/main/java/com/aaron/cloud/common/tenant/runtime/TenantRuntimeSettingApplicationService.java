@@ -64,6 +64,51 @@ public class TenantRuntimeSettingApplicationService {
         return new WebSearchGroundingMultiRoundConfig(rounds, suffixes);
     }
 
+    /** 联网检索 Redis 缓存策略（{@link TenantRuntimeSettingKey#WEB_SEARCH_GROUNDING_CACHE_JSON}）。 */
+    public WebSearchGroundingCachePolicy webSearchGroundingCachePolicy(long tenantId) {
+        String raw = effectiveValueText(tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_CACHE_JSON);
+        return parseWebSearchGroundingCachePolicy(raw);
+    }
+
+    private WebSearchGroundingCachePolicy parseWebSearchGroundingCachePolicy(String raw) {
+        WebSearchGroundingCachePolicy d = WebSearchGroundingCachePolicy.defaults();
+        if (raw == null || raw.isBlank() || "{}".equals(raw.trim())) {
+            return d;
+        }
+        try {
+            JsonNode n = objectMapper.readTree(raw.trim());
+            if (!n.isObject()) {
+                return d;
+            }
+            boolean enabled = n.path("enabled").asBoolean(d.enabled());
+            int fresh = clampHours(n.path("freshHours").asInt(d.freshHours()));
+            int warm = clampHours(n.path("warmHours").asInt(d.warmHours()));
+            int stale = clampHours(n.path("staleHours").asInt(d.staleHours()));
+            if (warm < fresh) {
+                warm = fresh;
+            }
+            if (stale < warm) {
+                stale = warm;
+            }
+            boolean semantic = n.path("semanticEnabled").asBoolean(d.semanticEnabled());
+            double sim = n.path("similarityThreshold").asDouble(d.similarityThreshold());
+            if (sim < 0.5 || sim > 0.999) {
+                sim = d.similarityThreshold();
+            }
+            int indexMax = n.path("indexMaxEntries").asInt(d.indexMaxEntries());
+            indexMax = Math.clamp(indexMax, 10, 500);
+            int convHours = clampHours(n.path("conversationReuseHours").asInt(d.conversationReuseHours()));
+            return new WebSearchGroundingCachePolicy(
+                    enabled, fresh, warm, stale, semantic, sim, indexMax, convHours);
+        } catch (Exception e) {
+            return d;
+        }
+    }
+
+    private static int clampHours(int h) {
+        return Math.clamp(h, 0, 24 * 14);
+    }
+
     private static int parseWebSearchGroundingRoundCount(String raw) {
         if (raw == null || raw.isBlank()) {
             return 3;
@@ -317,6 +362,31 @@ public class TenantRuntimeSettingApplicationService {
             } catch (Exception e) {
                 throw new ResponseStatusException(
                         HttpStatus.BAD_REQUEST, "WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON 非法 JSON");
+            }
+            return t;
+        }
+        if (key == TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_CACHE_JSON) {
+            if (valueText == null || valueText.isBlank()) {
+                return "{}";
+            }
+            String t = valueText.trim();
+            if (t.length() > RUNTIME_JSON_MAX_CHARS) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "WEB_SEARCH_GROUNDING_CACHE_JSON 过长（上限 " + RUNTIME_JSON_MAX_CHARS + " 字符）");
+            }
+            try {
+                JsonNode n = objectMapper.readTree(t);
+                if (!n.isObject()) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST, "WEB_SEARCH_GROUNDING_CACHE_JSON 须为 JSON 对象");
+                }
+                parseWebSearchGroundingCachePolicy(t);
+            } catch (ResponseStatusException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST, "WEB_SEARCH_GROUNDING_CACHE_JSON 非法 JSON");
             }
             return t;
         }

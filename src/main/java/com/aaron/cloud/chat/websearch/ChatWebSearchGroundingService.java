@@ -1,5 +1,12 @@
 package com.aaron.cloud.chat.websearch;
 
+import com.aaron.cloud.chat.websearch.cache.WebSearchConversationReuseService;
+import com.aaron.cloud.chat.websearch.cache.WebSearchGroundingCacheLookup;
+import com.aaron.cloud.chat.websearch.cache.WebSearchGroundingCacheService;
+import com.aaron.cloud.common.tenant.runtime.WebSearchCacheTier;
+import com.aaron.cloud.common.tenant.runtime.WebSearchGroundingCachePolicy;
+import com.aaron.cloud.chat.websearch.cache.WebSearchGroundingMergeSupport;
+import com.aaron.cloud.chat.websearch.cache.WebSearchQueryNormalizer;
 import com.aaron.cloud.common.api.dto.model.ModelTokenUsage;
 import com.aaron.cloud.common.api.enums.LlmWebSearchProvider;
 import com.aaron.cloud.common.context.TenantContextHolder;
@@ -12,6 +19,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +30,7 @@ import org.springframework.web.client.RestClientResponseException;
 
 /**
  * 对话编排：解析租户默认 {@link com.aaron.cloud.common.api.enums.LlmModelKind#WEB_SEARCH} 行并调用可插拔 Provider；可选解析 usage 并计量。
+ * 支持 Redis 缓存（精确 + 语义近邻，滚动 6h/24h/48h）与会话内问句复用。
  */
 @Slf4j
 @Service
@@ -32,6 +42,8 @@ public class ChatWebSearchGroundingService {
     private final ObjectMapper objectMapper;
     private final LlmModelUsageRecorder llmModelUsageRecorder;
     private final TenantRuntimeSettingApplicationService tenantRuntimeSettingApplicationService;
+    private final WebSearchGroundingCacheService webSearchGroundingCacheService;
+    private final WebSearchConversationReuseService webSearchConversationReuseService;
 
     /**
      * 连续多轮调用联网 API（轮数与各轮后缀见租户运行参数 {@link com.aaron.cloud.common.api.enums.TenantRuntimeSettingKey#WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT}
@@ -46,32 +58,243 @@ public class ChatWebSearchGroundingService {
             String userQueryPlaintext,
             long conversationId,
             Consumer<List<WebSearchReference>> onCumulativeReferences) {
-        if (webSearchModel.getApiKeyCipher() == null || webSearchModel.getApiKeyCipher().isBlank()) {
-            throw new IllegalStateException("联网搜索模型未配置 API Key");
-        }
-        var webProv = webSearchModel.resolveWebSearchProvider();
-        if (webProv == null) {
-            throw new IllegalStateException("联网搜索模型未配置 integration_backend（检索实现）");
-        }
-        WebSearchModelProvider provider = registry.require(webProv);
-        String apiKey;
-        try {
-            apiKey = aesSecretCipher.decryptFromBase64(webSearchModel.getApiKeyCipher());
-        } catch (Exception e) {
-            throw new IllegalStateException("联网搜索 API Key 解密失败", e);
-        }
+        WebSearchExecutionContext ctx = resolveExecutionContext(snap, webSearchModel);
         String base = userQueryPlaintext == null ? "" : userQueryPlaintext;
+        String normalized = WebSearchQueryNormalizer.normalize(base);
         var multi =
                 tenantRuntimeSettingApplicationService.webSearchGroundingMultiRoundConfig(snap.getTenantId());
         List<String> roundSuffixes = multi.suffixes();
-        int rounds = multi.rounds();
+        int configuredRounds = multi.rounds();
+        WebSearchGroundingCachePolicy cachePolicy = webSearchGroundingCacheService.policy(snap.getTenantId());
+        String configScope =
+                webSearchGroundingCacheService.configScopeHash(configuredRounds, roundSuffixes);
+        long modelId = webSearchModel.getId() == null ? 0L : webSearchModel.getId();
+
+        Optional<WebGroundingBundle> conversationReuse =
+                webSearchConversationReuseService.tryReuse(
+                        snap.getTenantId(), conversationId, normalized, cachePolicy);
+        if (conversationReuse.isPresent()) {
+            WebGroundingBundle b = conversationReuse.get();
+            emitCumulative(onCumulativeReferences, b.references());
+            webSearchGroundingCacheService.store(
+                    snap.getTenantId(), modelId, configScope, normalized, b, cachePolicy);
+            return b;
+        }
+
+        Optional<WebSearchGroundingCacheLookup> cached =
+                webSearchGroundingCacheService.lookup(
+                        snap.getTenantId(), modelId, configScope, normalized, cachePolicy);
+        int effectiveRounds = configuredRounds;
+        WebGroundingBundle seed = null;
+        WebSearchCacheTier tier = WebSearchCacheTier.MISS;
+        if (cached.isPresent() && cached.get().usable()) {
+            WebSearchGroundingCacheLookup hit = cached.get();
+            tier = hit.tier();
+            seed = hit.bundle();
+            effectiveRounds = cachePolicy.effectiveRoundsForTier(tier, configuredRounds);
+            log.info(
+                    "[联网缓存] 命中 {}：租户 {}，会话 {}，配置轮数 {}，实际外呼轮数 {}，语义近邻={}",
+                    tier,
+                    snap.getTenantId(),
+                    conversationId,
+                    configuredRounds,
+                    effectiveRounds,
+                    hit.semanticNearMatch());
+        }
+
+        if (effectiveRounds <= 0 && seed != null) {
+            emitCumulative(onCumulativeReferences, seed.references());
+            return seed;
+        }
+
+        WebGroundingBundle live =
+                executeRounds(
+                        ctx,
+                        snap,
+                        webSearchModel,
+                        base,
+                        roundSuffixes,
+                        0,
+                        effectiveRounds,
+                        null,
+                        conversationId,
+                        onCumulativeReferences);
+
+        WebGroundingBundle merged = seed == null ? live : WebSearchGroundingMergeSupport.merge(seed, live);
+        webSearchGroundingCacheService.store(
+                snap.getTenantId(), modelId, configScope, normalized, merged, cachePolicy);
+        return merged;
+    }
+
+    /**
+     * 对话流式：首轮（或缓存命中）同步返回以尽快注入主模型；配置多轮时其余轮在虚拟线程中补全并通过 {@code onCumulativeReferences} 渐进下发。
+     */
+    public WebSearchStreamGroundingSession groundForChatStream(
+            TenantContextHolder.TenantSnapshot snap,
+            SysLlmModel webSearchModel,
+            String userQueryPlaintext,
+            long conversationId,
+            Consumer<List<WebSearchReference>> onCumulativeReferences) {
+        WebSearchExecutionContext ctx = resolveExecutionContext(snap, webSearchModel);
+        String base = userQueryPlaintext == null ? "" : userQueryPlaintext;
+        String normalized = WebSearchQueryNormalizer.normalize(base);
+        var multi =
+                tenantRuntimeSettingApplicationService.webSearchGroundingMultiRoundConfig(snap.getTenantId());
+        List<String> roundSuffixes = multi.suffixes();
+        int configuredRounds = multi.rounds();
+        WebSearchGroundingCachePolicy cachePolicy = webSearchGroundingCacheService.policy(snap.getTenantId());
+        String configScope =
+                webSearchGroundingCacheService.configScopeHash(configuredRounds, roundSuffixes);
+        long modelId = webSearchModel.getId() == null ? 0L : webSearchModel.getId();
+
+        Optional<WebGroundingBundle> conversationReuse =
+                webSearchConversationReuseService.tryReuse(
+                        snap.getTenantId(), conversationId, normalized, cachePolicy);
+        if (conversationReuse.isPresent()) {
+            WebGroundingBundle b = conversationReuse.get();
+            emitCumulative(onCumulativeReferences, b.references());
+            webSearchGroundingCacheService.store(
+                    snap.getTenantId(), modelId, configScope, normalized, b, cachePolicy);
+            return WebSearchStreamGroundingSession.completed(b);
+        }
+
+        Optional<WebSearchGroundingCacheLookup> cached =
+                webSearchGroundingCacheService.lookup(
+                        snap.getTenantId(), modelId, configScope, normalized, cachePolicy);
+        int effectiveRounds = configuredRounds;
+        WebGroundingBundle seed = null;
+        if (cached.isPresent() && cached.get().usable()) {
+            WebSearchGroundingCacheLookup hit = cached.get();
+            seed = hit.bundle();
+            effectiveRounds = cachePolicy.effectiveRoundsForTier(hit.tier(), configuredRounds);
+            log.info(
+                    "[联网缓存] 命中 {}：租户 {}，会话 {}，配置轮数 {}，实际外呼轮数 {}，语义近邻={}",
+                    hit.tier(),
+                    snap.getTenantId(),
+                    conversationId,
+                    configuredRounds,
+                    effectiveRounds,
+                    hit.semanticNearMatch());
+        }
+
+        if (effectiveRounds <= 0 && seed != null) {
+            emitCumulative(onCumulativeReferences, seed.references());
+            return WebSearchStreamGroundingSession.completed(seed);
+        }
+
+        if (effectiveRounds <= 1) {
+            WebGroundingBundle live =
+                    executeRounds(
+                            ctx,
+                            snap,
+                            webSearchModel,
+                            base,
+                            roundSuffixes,
+                            0,
+                            1,
+                            null,
+                            conversationId,
+                            onCumulativeReferences);
+            WebGroundingBundle merged =
+                    seed == null ? live : WebSearchGroundingMergeSupport.merge(seed, live);
+            webSearchGroundingCacheService.store(
+                    snap.getTenantId(), modelId, configScope, normalized, merged, cachePolicy);
+            return WebSearchStreamGroundingSession.completed(merged);
+        }
+
+        WebGroundingBundle afterFirst =
+                executeRounds(
+                        ctx,
+                        snap,
+                        webSearchModel,
+                        base,
+                        roundSuffixes,
+                        0,
+                        1,
+                        null,
+                        conversationId,
+                        onCumulativeReferences);
+        WebGroundingBundle initial =
+                seed == null ? afterFirst : WebSearchGroundingMergeSupport.merge(seed, afterFirst);
+
+        final int remainingRounds = effectiveRounds - 1;
+        final WebGroundingBundle initialForAsync = initial;
+        CompletableFuture<WebGroundingBundle> remainder =
+                CompletableFuture.supplyAsync(
+                        () -> {
+                            WebGroundingBundle rest =
+                                    executeRounds(
+                                            ctx,
+                                            snap,
+                                            webSearchModel,
+                                            base,
+                                            roundSuffixes,
+                                            1,
+                                            remainingRounds,
+                                            initialForAsync,
+                                            conversationId,
+                                            onCumulativeReferences);
+                            webSearchGroundingCacheService.store(
+                                    snap.getTenantId(),
+                                    modelId,
+                                    configScope,
+                                    normalized,
+                                    rest,
+                                    cachePolicy);
+                            return rest;
+                        },
+                        command -> Thread.startVirtualThread(command));
+
+        return new WebSearchStreamGroundingSession(initial, remainder);
+    }
+
+    public WebSearchExecutionResult groundWithRaw(
+            TenantContextHolder.TenantSnapshot snap,
+            SysLlmModel webSearchModel,
+            String userQueryPlaintext,
+            long conversationId) {
+        WebGroundingBundle b =
+                groundMultiRoundsWithRaw(snap, webSearchModel, userQueryPlaintext, conversationId, null);
+        return new WebSearchExecutionResult(b, null);
+    }
+
+    private WebGroundingBundle executeRounds(
+            WebSearchExecutionContext ctx,
+            TenantContextHolder.TenantSnapshot snap,
+            SysLlmModel webSearchModel,
+            String base,
+            List<String> roundSuffixes,
+            int startRoundIndex,
+            int roundsToRun,
+            WebGroundingBundle carryIn,
+            long conversationId,
+            Consumer<List<WebSearchReference>> onCumulativeReferences) {
         List<WebSearchReference> accumulated = new ArrayList<>();
         List<String> summaryOrder = new ArrayList<>();
-        for (int round = 0; round < rounds; round++) {
+        if (carryIn != null) {
+            String carried = carryIn.summaryText() == null ? "" : carryIn.summaryText().trim();
+            if (!carried.isBlank()) {
+                summaryOrder.add(carried);
+            }
+            if (carryIn.references() != null) {
+                accumulated.addAll(carryIn.references());
+            }
+            emitCumulative(onCumulativeReferences, List.copyOf(accumulated));
+        }
+        int rounds = Math.clamp(roundsToRun, 1, 10);
+        for (int i = 0; i < rounds; i++) {
+            int round = startRoundIndex + i;
             String suffix = round < roundSuffixes.size() ? roundSuffixes.get(round) : "";
             String q = base + (suffix == null ? "" : suffix);
             WebSearchExecutionResult one =
-                    executeSingleRound(snap, webSearchModel, provider, webProv, apiKey, q, conversationId);
+                    executeSingleRound(
+                            snap,
+                            webSearchModel,
+                            ctx.provider(),
+                            ctx.webProv(),
+                            ctx.apiKey(),
+                            q,
+                            conversationId);
             WebGroundingBundle b = one.bundle();
             String piece = b.summaryText() == null ? "" : b.summaryText().trim();
             if (!piece.isBlank()) {
@@ -80,36 +303,18 @@ public class ChatWebSearchGroundingService {
             List<WebSearchReference> refs = b.references() == null ? List.of() : b.references();
             for (WebSearchReference r : refs) {
                 accumulated.add(r);
-                if (onCumulativeReferences != null) {
-                    onCumulativeReferences.accept(List.copyOf(accumulated));
-                }
+                emitCumulative(onCumulativeReferences, List.copyOf(accumulated));
             }
         }
         String mergedSummary = String.join("\n\n---\n\n", summaryOrder);
         return new WebGroundingBundle(mergedSummary, List.copyOf(accumulated));
     }
 
-    public WebSearchExecutionResult groundWithRaw(
-            TenantContextHolder.TenantSnapshot snap,
-            SysLlmModel webSearchModel,
-            String userQueryPlaintext,
-            long conversationId) {
-        if (webSearchModel.getApiKeyCipher() == null || webSearchModel.getApiKeyCipher().isBlank()) {
-            throw new IllegalStateException("联网搜索模型未配置 API Key");
+    private static void emitCumulative(
+            Consumer<List<WebSearchReference>> onCumulativeReferences, List<WebSearchReference> accumulated) {
+        if (onCumulativeReferences != null && accumulated != null && !accumulated.isEmpty()) {
+            onCumulativeReferences.accept(List.copyOf(accumulated));
         }
-        var webProv = webSearchModel.resolveWebSearchProvider();
-        if (webProv == null) {
-            throw new IllegalStateException("联网搜索模型未配置 integration_backend（检索实现）");
-        }
-        WebSearchModelProvider provider = registry.require(webProv);
-        String apiKey;
-        try {
-            apiKey = aesSecretCipher.decryptFromBase64(webSearchModel.getApiKeyCipher());
-        } catch (Exception e) {
-            throw new IllegalStateException("联网搜索 API Key 解密失败", e);
-        }
-        return executeSingleRound(
-                snap, webSearchModel, provider, webProv, apiKey, userQueryPlaintext, conversationId);
     }
 
     private WebSearchExecutionResult executeSingleRound(
@@ -156,6 +361,28 @@ public class ChatWebSearchGroundingService {
             throw new IllegalStateException("联网检索失败：" + e.getMessage(), e);
         }
     }
+
+    private WebSearchExecutionContext resolveExecutionContext(
+            TenantContextHolder.TenantSnapshot snap, SysLlmModel webSearchModel) {
+        if (webSearchModel.getApiKeyCipher() == null || webSearchModel.getApiKeyCipher().isBlank()) {
+            throw new IllegalStateException("联网搜索模型未配置 API Key");
+        }
+        var webProv = webSearchModel.resolveWebSearchProvider();
+        if (webProv == null) {
+            throw new IllegalStateException("联网搜索模型未配置 integration_backend（检索实现）");
+        }
+        WebSearchModelProvider provider = registry.require(webProv);
+        String apiKey;
+        try {
+            apiKey = aesSecretCipher.decryptFromBase64(webSearchModel.getApiKeyCipher());
+        } catch (Exception e) {
+            throw new IllegalStateException("联网搜索 API Key 解密失败", e);
+        }
+        return new WebSearchExecutionContext(provider, webProv, apiKey);
+    }
+
+    private record WebSearchExecutionContext(
+            WebSearchModelProvider provider, LlmWebSearchProvider webProv, String apiKey) {}
 
     private static WebSearchExecutionResult degradedEmptyResult() {
         return new WebSearchExecutionResult(new WebGroundingBundle("", List.of()), null);

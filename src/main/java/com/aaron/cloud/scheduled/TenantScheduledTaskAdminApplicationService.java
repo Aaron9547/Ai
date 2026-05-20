@@ -113,7 +113,7 @@ public class TenantScheduledTaskAdminApplicationService {
     }
 
     private ScheduledTaskAdminView toView(TenantScheduledTask s) {
-        long tenantId = s.getTenantId();
+        Long tenantId = s.getTenantId();
         String executorCode = resolveExecutorCode(s);
         String executorLabel = resolveExecutorLabel(s, executorCode);
         ScheduledRunSummaryView activeRun = null;

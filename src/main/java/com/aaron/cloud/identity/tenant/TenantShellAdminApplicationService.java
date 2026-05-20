@@ -110,10 +110,12 @@ public class TenantShellAdminApplicationService {
                         ? "3"
                         : body.getWebSearchGroundingMultiRoundCount().trim();
         String suffixes = jsonArrayOrDefault(body.getWebSearchGroundingRoundSuffixesJson(), "[]");
+        String cacheJson = jsonOrDefault(body.getWebSearchGroundingCacheJson(), "{}");
         if (limits.length() > RUNTIME_JSON_MAX_CHARS
                 || memPol.length() > RUNTIME_JSON_MAX_CHARS
                 || guard.length() > RUNTIME_JSON_MAX_CHARS
-                || suffixes.length() > RUNTIME_JSON_MAX_CHARS) {
+                || suffixes.length() > RUNTIME_JSON_MAX_CHARS
+                || cacheJson.length() > RUNTIME_JSON_MAX_CHARS) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "JSON 字段过长");
         }
         List<PutItem> items = new ArrayList<>();
@@ -123,6 +125,7 @@ public class TenantShellAdminApplicationService {
         items.add(item(TenantRuntimeSettingKey.CHAT_INPUT_GUARD_JSON, guard));
         items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT, rounds));
         items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON, suffixes));
+        items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_CACHE_JSON, cacheJson));
         tenantRuntimeSettingApplicationService.replace(tenantId, items);
         return load(tenantId);
     }
@@ -161,7 +164,9 @@ public class TenantShellAdminApplicationService {
                 tenantRuntimeSettingApplicationService.getEffectiveValueText(
                         tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT),
                 tenantRuntimeSettingApplicationService.getEffectiveValueText(
-                        tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON));
+                        tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON),
+                tenantRuntimeSettingApplicationService.getEffectiveValueText(
+                        tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_CACHE_JSON));
     }
 
     private static ShellBrandingPutBody toBrandingBody(ShellPutBody body) {
@@ -215,7 +220,8 @@ public class TenantShellAdminApplicationService {
             String memoryPolicyJson,
             String chatInputGuardJson,
             String webSearchGroundingMultiRoundCount,
-            String webSearchGroundingRoundSuffixesJson) {}
+            String webSearchGroundingRoundSuffixesJson,
+            String webSearchGroundingCacheJson) {}
 
     public record BrandingDto(
             String logoUrl, String portalTitle, String footerText, String portalTitleResolved) {}
@@ -250,5 +256,7 @@ public class TenantShellAdminApplicationService {
         /** 1～10 的十进制字符串，与 {@link TenantRuntimeSettingKey#WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT} 一致 */
         private String webSearchGroundingMultiRoundCount;
         private String webSearchGroundingRoundSuffixesJson;
+        /** {@link TenantRuntimeSettingKey#WEB_SEARCH_GROUNDING_CACHE_JSON}；{@code {}} 表示服务端内置默认 */
+        private String webSearchGroundingCacheJson;
     }
 }

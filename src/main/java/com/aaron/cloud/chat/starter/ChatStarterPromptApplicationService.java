@@ -40,11 +40,35 @@ public class ChatStarterPromptApplicationService {
             boolean thinkingEnabled,
             boolean webSearchEnabled) {
         var snap = TenantContextHolder.require();
-        long tenantId = snap.getTenantId();
+        return listForTenant(
+                snap.getTenantId(),
+                snap.getUserId(),
+                snap.getDeviceId(),
+                scene,
+                limit,
+                refresh,
+                excludeIds,
+                thinkingEnabled,
+                webSearchEnabled);
+    }
+
+    /**
+     * 开放接口推荐问句（显式租户，供流式虚拟线程等无 {@link TenantContextHolder} 场景调用）。
+     */
+    public ChatStarterPromptDtos.StarterPromptListView listForTenant(
+            long tenantId,
+            Long userId,
+            String deviceId,
+            ChatStarterPromptScene scene,
+            int limit,
+            boolean refresh,
+            Set<Long> excludeIds,
+            boolean thinkingEnabled,
+            boolean webSearchEnabled) {
         int cap = Math.max(1, Math.min(limit, 12));
 
         if (scene == ChatStarterPromptScene.EMPTY && refresh) {
-            dailyHotTopicService.refreshForTenant(tenantId, false);
+            Thread.startVirtualThread(() -> dailyHotTopicService.refreshForTenant(tenantId, false));
         }
 
         List<ChatStarterPrompt> pool =
@@ -82,7 +106,9 @@ public class ChatStarterPromptApplicationService {
                                                         ? "MANUAL"
                                                         : p.getSource().getCode()))
                         .toList();
-        recordImpressions(snap, scene, picked);
+        if (userId != null || deviceId != null) {
+            recordImpressions(tenantId, userId, deviceId, scene, picked);
+        }
         return new ChatStarterPromptDtos.StarterPromptListView(items, false);
     }
 
@@ -102,7 +128,9 @@ public class ChatStarterPromptApplicationService {
     }
 
     private void recordImpressions(
-            TenantContextHolder.TenantSnapshot snap,
+            long tenantId,
+            Long userId,
+            String deviceId,
             ChatStarterPromptScene scene,
             List<ChatStarterPrompt> picked) {
         for (ChatStarterPrompt p : picked) {
@@ -110,9 +138,9 @@ public class ChatStarterPromptApplicationService {
                 continue;
             }
             var row = new ChatStarterEvent();
-            row.setTenantId(snap.getTenantId());
-            row.setUserId(snap.getUserId());
-            row.setDeviceId(snap.getDeviceId());
+            row.setTenantId(tenantId);
+            row.setUserId(userId);
+            row.setDeviceId(deviceId);
             row.setPromptId(p.getId());
             row.setScene(scene);
             row.setEventType(ChatStarterEventType.IMPRESSION);

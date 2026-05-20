@@ -263,7 +263,16 @@ export default {
         sectionMemoryPolicy: "Long-term user memory",
         sectionInputGuard: "Input safety",
         sectionWebSearch: "Multi-round web search",
+        sectionWebSearchCache: "Web search cache (Redis)",
         sectionStarterPrompts: "Starter prompts (daily hot topics)",
+        webCacheEnabled: "Enable retrieval cache",
+        webCacheSemantic: "Semantic near-match",
+        webCacheFreshHours: "Fresh window (hours)",
+        webCacheWarmHours: "Warm tier cap (hours)",
+        webCacheStaleHours: "Stale cap (hours)",
+        webCacheSimilarity: "Similarity threshold",
+        webCacheIndexMax: "Semantic index max entries",
+        webCacheConvReuseHours: "In-conversation reuse (hours)",
         starterDailyHotEnabled: "Enable daily hot-topic pool",
         starterDailyHotCron: "Daily hot-topic cron",
         memoryEmbedding: "Memory embedding model (VECTOR)",
@@ -301,6 +310,8 @@ export default {
           regexPatterns: "Injection regex (one per line)",
         },
         hints: {
+          webSearchCache:
+            "WEB_SEARCH_GROUNDING_CACHE_JSON. Requires Redis; semantic match uses the memory embedding model above. Saving {} applies server defaults.",
           sensitiveWords: "One phrase per line; substring match blocks.",
           regexPatterns:
             "Leave empty to keep built-in jailbreak regexes. Any non-empty line replaces the entire built-in list. Invalid regex lines are skipped server-side.",
@@ -356,6 +367,14 @@ export default {
             "WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT: web-search rounds before the main model (1–10).\nAligns with suffix slots below.",
           roundSuffix:
             "WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON: suffix appended after the i-th retrieval query.\nUse leading newline from round 1+ to separate from the main question.",
+          webCacheEnabled: "enabled: when off, every request runs the configured full web-search rounds.",
+          webCacheSemantic: "semanticEnabled: vector similarity against indexed past queries (besides exact key).",
+          webCacheFreshHours: "Within freshHours: 0 API calls; reuse cache only.",
+          webCacheWarmHours: "After fresh, up to warmHours: at most 1 call merged with cache.",
+          webCacheStaleHours: "Beyond staleHours: treat as expired; full configured rounds.",
+          webCacheSimilarity: "similarityThreshold: 0.5–0.999; higher is stricter.",
+          webCacheIndexMax: "indexMaxEntries: max rows kept in Redis semantic index (10–500).",
+          webCacheConvReuseHours: "conversationReuseHours: reuse window for same normalized question in one chat.",
           starterDailyHotEnabled:
             "CHAT_STARTER_DAILY_HOT_ENABLED: when off, scheduled web hot-topic ingestion stops; manual pool entries and follow-up prompts are unchanged.",
           starterDailyHotCron:

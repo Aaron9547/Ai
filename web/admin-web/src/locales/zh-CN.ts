@@ -263,7 +263,16 @@ export default {
         sectionMemoryPolicy: "用户长期记忆",
         sectionInputGuard: "输入安全护栏",
         sectionWebSearch: "联网多轮检索",
+        sectionWebSearchCache: "联网检索缓存（Redis）",
         sectionStarterPrompts: "推荐问题（每日热点）",
+        webCacheEnabled: "启用检索缓存",
+        webCacheSemantic: "语义近邻命中",
+        webCacheFreshHours: "新鲜窗口（小时）",
+        webCacheWarmHours: "温缓存上限（小时）",
+        webCacheStaleHours: "过期上限（小时）",
+        webCacheSimilarity: "语义相似度阈值",
+        webCacheIndexMax: "语义索引条数上限",
+        webCacheConvReuseHours: "会话内问句复用（小时）",
         starterDailyHotEnabled: "启用每日热点兜底池",
         starterDailyHotCron: "每日热点生成 Cron",
         memoryEmbedding: "记忆嵌入模型（VECTOR）",
@@ -301,6 +310,8 @@ export default {
           regexPatterns: "越狱正则（每行一条）",
         },
         hints: {
+          webSearchCache:
+            "对应 WEB_SEARCH_GROUNDING_CACHE_JSON。需 Redis；语义近邻依赖上方「记忆嵌入模型」。{} 保存后按服务端内置默认生效。",
           sensitiveWords: "每行一个词或短语；子串命中即拦截。",
           regexPatterns:
             "留空则使用服务端内置越狱正则。若填写任意一行，将整表替换内置列表（请谨慎）。错误正则会在服务端被跳过。",
@@ -356,6 +367,14 @@ export default {
           webSearchRounds: "WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT：前置联网 Bot 检索轮数，1～10。\n与下方各轮后缀数组下标一一对应。",
           roundSuffix:
             "WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON：第 i 轮检索问句后拼接的后缀字符串。\n可从第二轮起使用换行开头，便于与主问题分段。",
+          webCacheEnabled: "enabled：关闭后每次按配置轮数全量外呼联网 API。",
+          webCacheSemantic: "semanticEnabled：开启后除精确键外，用向量相似度匹配历史问句缓存。",
+          webCacheFreshHours: "freshHours 内：0 次外呼，直接复用缓存。",
+          webCacheWarmHours: "超过 fresh、不超过 warm：最多 1 轮外呼并与缓存合并。",
+          webCacheStaleHours: "超过 stale：视为过期，按配置轮数全量检索。",
+          webCacheSimilarity: "similarityThreshold：0.5～0.999，越高越严格。",
+          webCacheIndexMax: "indexMaxEntries：Redis 语义索引最多保留条数（10～500）。",
+          webCacheConvReuseHours: "conversationReuseHours：同会话相同规范化问句复用窗口。",
           starterDailyHotEnabled:
             "CHAT_STARTER_DAILY_HOT_ENABLED：关闭后不再定时拉取联网热点写入推荐池；运营手动条目与追问推荐不受影响。",
           starterDailyHotCron:

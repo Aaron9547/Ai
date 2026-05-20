@@ -9,6 +9,8 @@ import com.aaron.cloud.common.scheduled.TenantScheduledRunRepository;
 import com.aaron.cloud.common.scheduled.TenantScheduledTaskRepository;
 import com.aaron.cloud.common.scheduled.entity.TenantScheduledRun;
 import com.aaron.cloud.common.scheduled.entity.TenantScheduledTask;
+import com.aaron.cloud.common.task.LongRunningTaskProgress;
+import com.aaron.cloud.common.task.LongRunningTaskProgressSupport;
 import com.aaron.cloud.common.time.BeijingTime;
 import com.aaron.cloud.scheduled.TenantScheduledCronSupport;
 import com.aaron.cloud.scheduled.TenantScheduledTaskExecutor;
@@ -64,8 +66,7 @@ public class TenantScheduledRunOrchestrator {
         run.setProgressJson(
                 LongRunningTaskProgressSupport.toJson(
                         objectMapper,
-                        new com.aaron.cloud.common.task.LongRunningTaskProgress(
-                                "QUEUED", "已入队，等待执行", 0, null, null)));
+                        new LongRunningTaskProgress("QUEUED", "已入队，等待执行", 0, null, null)));
         runRepository.insert(run);
 
         long runId = run.getId();
@@ -127,8 +128,7 @@ public class TenantScheduledRunOrchestrator {
             run.setProgressJson(
                     LongRunningTaskProgressSupport.toJson(
                             objectMapper,
-                            new com.aaron.cloud.common.task.LongRunningTaskProgress(
-                                    "RUNNING", "执行中", null, null, null)));
+                            new LongRunningTaskProgress("RUNNING", "执行中", null, null, null)));
             runRepository.updateById(run);
 
             TenantScheduledRunContext ctx =
@@ -141,8 +141,7 @@ public class TenantScheduledRunOrchestrator {
                 run.setProgressJson(
                         LongRunningTaskProgressSupport.toJson(
                                 objectMapper,
-                                new com.aaron.cloud.common.task.LongRunningTaskProgress(
-                                        "DONE", "执行完成", 100, null, null)));
+                                new LongRunningTaskProgress("DONE", "执行完成", 100, null, null)));
                 runRepository.updateById(run);
 
                 registration.setLastExecAt(now);
@@ -172,8 +171,7 @@ public class TenantScheduledRunOrchestrator {
         run.setProgressJson(
                 LongRunningTaskProgressSupport.toJson(
                         objectMapper,
-                        new com.aaron.cloud.common.task.LongRunningTaskProgress(
-                                "FAILED", run.getErrorMessage(), null, null, null)));
+                        new LongRunningTaskProgress("FAILED", run.getErrorMessage(), null, null, null)));
         runRepository.updateById(run);
     }
 

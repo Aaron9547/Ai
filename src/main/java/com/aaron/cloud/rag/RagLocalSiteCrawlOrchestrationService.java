@@ -99,9 +99,8 @@ public class RagLocalSiteCrawlOrchestrationService {
             Integer chunkStrategy,
             Long categoryId,
             LongRunningTaskProgressReporter progress) {
-        if (progress == null) {
-            progress = LongRunningTaskProgressSupport.noop();
-        }
+        final LongRunningTaskProgressReporter progressReporter =
+                progress == null ? LongRunningTaskProgressSupport.noop() : progress;
         String lockKey =
                 scheduleId != null
                         ? TenantScheduledTaskLockKeys.siteRun(tenantId, scheduleId)
@@ -121,7 +120,7 @@ public class RagLocalSiteCrawlOrchestrationService {
         }
         try (var ignored = lock.get()) {
             try {
-                progress.report("LOCKED", "已获取爬取锁，准备发现链接", 5, null, null);
+                progressReporter.report("LOCKED", "已获取爬取锁，准备发现链接", 5, null, null);
                 RagWebCrawlExtractConfig extractConfig = resolveSiteExtractConfig(tenantId, kbId, scheduleId);
                 log.info(
                         "本地规则网页爬取开始 tenantId={} kbId={} scheduleId={} baseUrl={} mode={} filterCrawled={}",
@@ -131,12 +130,12 @@ public class RagLocalSiteCrawlOrchestrationService {
                         baseUrl,
                         syncMode,
                         filterCrawled);
-                progress.report("DISCOVER", "正在发现文章链接", 10, null, null);
+                progressReporter.report("DISCOVER", "正在发现文章链接", 10, null, null);
                 List<String> raw = linkDiscoveryService.discoverArticleLinks(baseUrl, maxDepth);
-                List<String> urls = RagWebCrawlUrlSupport.sanitizeForCrawl(raw, baseUrl);
-                if (urls.isEmpty()) {
+                List<String> discovered = RagWebCrawlUrlSupport.sanitizeForCrawl(raw, baseUrl);
+                if (discovered.isEmpty()) {
                     log.warn("本地规则未发现可爬 URL，终止 tenantId={} baseUrl={}", tenantId, baseUrl);
-                    progress.report("DONE", "未发现可爬 URL", 100, 0, 0);
+                    progressReporter.report("DONE", "未发现可爬 URL", 100, 0, 0);
                     return true;
                 }
                 if (filterCrawled) {
@@ -144,19 +143,20 @@ public class RagLocalSiteCrawlOrchestrationService {
                             scheduleId != null
                                     ? urlItemRepository.activeUrlsForSchedule(tenantId, scheduleId)
                                     : urlItemRepository.activeUrlsForTenant(tenantId);
-                    urls = urls.stream().filter(u -> !crawled.contains(u)).toList();
+                    discovered = discovered.stream().filter(u -> !crawled.contains(u)).toList();
                 }
+                final List<String> urls = discovered;
                 if (urls.isEmpty()) {
                     log.info("过滤已爬 URL 后无新增，tenantId={} baseUrl={}", tenantId, baseUrl);
-                    progress.report("DONE", "过滤后无新增 URL", 100, 0, 0);
+                    progressReporter.report("DONE", "过滤后无新增 URL", 100, 0, 0);
                     return true;
                 }
                 if (syncMode != RagWebCrawlSyncMode.INCREMENTAL) {
-                    progress.report("PURGE", "全量模式：清理历史文档", 15, null, null);
+                    progressReporter.report("PURGE", "全量模式：清理历史文档", 15, null, null);
                     purgeBeforeFull(tenantId, kbId, scheduleId, baseUrl);
                 }
-                int totalUrls = urls.size();
-                progress.report("CRAWL", "开始逐 URL 入库", 20, 0, totalUrls);
+                final int totalUrls = urls.size();
+                progressReporter.report("CRAWL", "开始逐 URL 入库", 20, 0, totalUrls);
                 AtomicInteger ok = new AtomicInteger();
                 AtomicInteger fail = new AtomicInteger();
                 AtomicInteger done = new AtomicInteger();
@@ -188,7 +188,7 @@ public class RagLocalSiteCrawlOrchestrationService {
                                             int d = done.incrementAndGet();
                                             Integer pct =
                                                     totalUrls > 0 ? 20 + (d * 75 / totalUrls) : null;
-                                            progress.report(
+                                            progressReporter.report(
                                                     "CRAWL",
                                                     "爬取入库 " + d + "/" + totalUrls,
                                                     pct,
@@ -199,7 +199,7 @@ public class RagLocalSiteCrawlOrchestrationService {
                                     }));
                 }
                 CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
-                progress.report(
+                progressReporter.report(
                         "DONE",
                         "爬取结束：成功 " + ok.get() + "，失败 " + fail.get(),
                         100,
@@ -214,7 +214,7 @@ public class RagLocalSiteCrawlOrchestrationService {
                         fail.get(),
                         urls.size());
             } catch (Exception e) {
-                progress.report("FAILED", "爬取异常：" + e.getMessage(), null, null, null);
+                progressReporter.report("FAILED", "爬取异常：" + e.getMessage(), null, null, null);
                 log.error(
                         "本地规则网页爬取失败 tenantId={} kbId={} scheduleId={} baseUrl={}",
                         tenantId,
@@ -301,9 +301,8 @@ public class RagLocalSiteCrawlOrchestrationService {
     public String runFromJobPayload(
             long tenantId, String payloadJson, LongRunningTaskProgressReporter progress)
             throws Exception {
-        if (progress == null) {
-            progress = LongRunningTaskProgressSupport.noop();
-        }
+        final LongRunningTaskProgressReporter progressReporter =
+                progress == null ? LongRunningTaskProgressSupport.noop() : progress;
         var root = objectMapper.readTree(payloadJson == null ? "{}" : payloadJson);
         long kbId = root.get("kbId").asLong();
         String baseUrl = root.get("baseUrl").asText();
@@ -337,7 +336,7 @@ public class RagLocalSiteCrawlOrchestrationService {
                         filterCrawled,
                         chunkStrategy,
                         categoryId,
-                        progress);
+                        progressReporter);
         if (ran && siteId != null) {
             markSiteCrawlCompleted(tenantId, siteId);
         }

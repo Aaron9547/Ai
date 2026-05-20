@@ -24,15 +24,31 @@
         </div>
       </template>
 
+      <el-alert
+        v-if="runningRows.length > 0"
+        type="info"
+        :closable="false"
+        show-icon
+        class="running-banner"
+      >
+        <span>{{ t("views.scheduledTasks.runningBanner", { n: runningRows.length }) }}</span>
+        <el-button link type="primary" size="small" @click="openProgress(runningRows[0]!)">
+          {{ t("views.scheduledTasks.viewProgress") }}
+        </el-button>
+      </el-alert>
+
       <el-table v-loading="loading" :data="rows" stripe border :empty-text="t('views.scheduledTasks.empty')">
         <el-table-column :label="t('views.scheduledTasks.colExecutor')" width="200">
           <template #default="{ row }">{{ executorLabel(row) }}</template>
         </el-table-column>
         <el-table-column prop="name" :label="t('views.scheduledTasks.colName')" min-width="120" />
         <el-table-column prop="cronExpression" :label="t('views.scheduledTasks.colCron')" min-width="140" />
-        <el-table-column :label="t('views.scheduledTasks.colRunStatus')" width="120">
+        <el-table-column :label="t('views.scheduledTasks.colRunStatus')" min-width="200">
           <template #default="{ row }">
-            <el-tag v-if="isRunning(row)" type="warning" size="small">{{ t("views.scheduledTasks.statusRunning") }}</el-tag>
+            <template v-if="isRunning(row)">
+              <el-tag type="warning" size="small">{{ t("views.scheduledTasks.statusRunning") }}</el-tag>
+              <span v-if="rowProgressHint(row)" class="run-hint">{{ rowProgressHint(row) }}</span>
+            </template>
             <span v-else class="muted">—</span>
           </template>
         </el-table-column>
@@ -103,7 +119,7 @@
       v-model="progressDlg"
       :title="t('views.scheduledTasks.progressTitle', { name: progressTaskName })"
       width="520px"
-      @closed="stopPoll"
+      @closed="onProgressDlgClosed"
     >
       <div v-if="progressRun">
         <p class="progress-status">
@@ -159,10 +175,86 @@ const progressTaskId = ref<number | null>(null);
 const progressTaskName = ref("");
 const progressRun = ref<ScheduledRunDetail | null>(null);
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+let listPollTimer: ReturnType<typeof setInterval> | null = null;
+
+/** 刷新页面后若仍在监视进度，自动恢复弹窗（见 {@link tryRestoreProgressWatch}）。 */
+const PROGRESS_LS_KEY = "AI_ADMIN_SCHEDULED_TASK_PROGRESS";
+
+const runningRows = computed(() => rows.value.filter(isRunning));
 
 const progressParsed = computed<TaskProgress | null>(() =>
   stApi.parseTaskProgress(progressRun.value?.progressJson),
 );
+
+function rowProgressHint(row: ScheduledTaskRow): string | null {
+  const p = stApi.parseTaskProgress(row.activeRun?.progressJson);
+  if (!p) return null;
+  if (p.message?.trim()) return p.message.trim();
+  if (p.percent != null) return `${p.percent}%`;
+  if (p.current != null && p.total != null) return `${p.current}/${p.total}`;
+  if (p.stage?.trim()) return p.stage.trim();
+  return null;
+}
+
+function runSummaryToDetail(row: ScheduledTaskRow): ScheduledRunDetail | null {
+  const ar = row.activeRun;
+  if (!ar) return null;
+  return {
+    id: ar.runId,
+    registrationId: row.id,
+    executorCode: row.executorCode,
+    executorLabel: row.executorLabel,
+    status: ar.status,
+    triggerType: "",
+    progressJson: ar.progressJson ?? null,
+    childJobTaskIdsJson: null,
+    errorMessage: null,
+    startedAt: null,
+    finishedAt: null,
+  };
+}
+
+function persistProgressWatch() {
+  if (progressTaskId.value == null) return;
+  try {
+    sessionStorage.setItem(
+      PROGRESS_LS_KEY,
+      JSON.stringify({
+        taskId: progressTaskId.value,
+        taskName: progressTaskName.value,
+        runId: progressRun.value?.id ?? null,
+      }),
+    );
+  } catch {
+    /* ignore quota */
+  }
+}
+
+function clearProgressWatch() {
+  try {
+    sessionStorage.removeItem(PROGRESS_LS_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+async function tryRestoreProgressWatch() {
+  let saved: { taskId?: number; taskName?: string } | null = null;
+  try {
+    const raw = sessionStorage.getItem(PROGRESS_LS_KEY);
+    if (raw) saved = JSON.parse(raw) as { taskId?: number; taskName?: string };
+  } catch {
+    clearProgressWatch();
+    return;
+  }
+  if (saved?.taskId == null) return;
+  const row = rows.value.find((r) => r.id === saved!.taskId);
+  if (row && isRunning(row)) {
+    openProgress(row, true);
+    return;
+  }
+  clearProgressWatch();
+}
 
 function formatTime(raw?: string | null) {
   if (!raw) return "—";
@@ -194,14 +286,44 @@ async function loadMeta() {
   }
 }
 
-async function load() {
-  loading.value = true;
+async function load(silent = false) {
+  if (!silent) loading.value = true;
   try {
     rows.value = await stApi.fetchScheduledTasks(filterExecutor.value || undefined);
+    syncListPoll();
+    patchProgressFromListRow();
   } catch {
-    ElMessage.error(t("views.scheduledTasks.loadFailed"));
+    if (!silent) ElMessage.error(t("views.scheduledTasks.loadFailed"));
   } finally {
-    loading.value = false;
+    if (!silent) loading.value = false;
+  }
+}
+
+/** 列表轮询刷新时，同步弹窗内进度（不必等 detail 接口）。 */
+function patchProgressFromListRow() {
+  if (!progressDlg.value || progressTaskId.value == null || !progressRun.value) return;
+  const row = rows.value.find((r) => r.id === progressTaskId.value);
+  if (!row?.activeRun) return;
+  progressRun.value = {
+    ...progressRun.value,
+    status: row.activeRun.status,
+    progressJson: row.activeRun.progressJson ?? progressRun.value.progressJson,
+  };
+}
+
+function syncListPoll() {
+  stopListPoll();
+  if (rows.value.some(isRunning)) {
+    listPollTimer = setInterval(() => {
+      void load(true);
+    }, 3000);
+  }
+}
+
+function stopListPoll() {
+  if (listPollTimer != null) {
+    clearInterval(listPollTimer);
+    listPollTimer = null;
   }
 }
 
@@ -275,6 +397,7 @@ async function runNow(row: ScheduledTaskRow) {
     progressTaskName.value = row.name;
     progressRun.value = res.run;
     progressDlg.value = true;
+    persistProgressWatch();
     startPoll();
   } catch {
     ElMessage.error(t("views.scheduledTasks.saveFailed"));
@@ -283,10 +406,12 @@ async function runNow(row: ScheduledTaskRow) {
   }
 }
 
-function openProgress(row: ScheduledTaskRow) {
+function openProgress(row: ScheduledTaskRow, _fromRestore = false) {
   progressTaskId.value = row.id;
   progressTaskName.value = row.name;
+  progressRun.value = runSummaryToDetail(row) ?? progressRun.value;
   progressDlg.value = true;
+  persistProgressWatch();
   void refreshProgress();
   startPoll();
 }
@@ -303,10 +428,22 @@ async function refreshProgress() {
     const st = progressRun.value?.status;
     if (st === "SUCCEEDED" || st === "FAILED") {
       stopPoll();
+      clearProgressWatch();
       await load();
+    } else {
+      persistProgressWatch();
     }
   } catch {
     /* ignore poll errors */
+  }
+}
+
+function onProgressDlgClosed() {
+  stopPoll();
+  const id = progressTaskId.value;
+  const row = id != null ? rows.value.find((r) => r.id === id) : undefined;
+  if (!row || !isRunning(row)) {
+    clearProgressWatch();
   }
 }
 
@@ -338,10 +475,12 @@ async function remove(row: ScheduledTaskRow) {
 onMounted(async () => {
   await loadMeta();
   await load();
+  await tryRestoreProgressWatch();
 });
 
 onUnmounted(() => {
   stopPoll();
+  stopListPoll();
 });
 </script>
 
@@ -382,6 +521,16 @@ onUnmounted(() => {
 }
 .muted {
   color: var(--el-text-color-placeholder);
+}
+.running-banner {
+  margin-bottom: 12px;
+}
+.run-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.4;
 }
 .progress-status {
   margin: 0 0 8px;

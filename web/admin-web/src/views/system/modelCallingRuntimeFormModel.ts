@@ -247,3 +247,83 @@ export function parseMemoryEmbeddingModelId(raw: string | undefined | null): num
 export function validateInputGuard(form: InputGuardForm): boolean {
   return form.minUserTextChars >= 1 && form.maxUserTextChars >= form.minUserTextChars;
 }
+
+/** 与 {@code WEB_SEARCH_GROUNDING_CACHE_JSON} / WebSearchGroundingCachePolicy 对齐 */
+export type WebSearchCacheForm = {
+  enabled: boolean;
+  freshHours: number;
+  warmHours: number;
+  staleHours: number;
+  semanticEnabled: boolean;
+  similarityThreshold: number;
+  indexMaxEntries: number;
+  conversationReuseHours: number;
+};
+
+export const WEB_SEARCH_CACHE_DEFAULT: WebSearchCacheForm = {
+  enabled: true,
+  freshHours: 6,
+  warmHours: 24,
+  staleHours: 48,
+  semanticEnabled: true,
+  similarityThreshold: 0.88,
+  indexMaxEntries: 300,
+  conversationReuseHours: 6,
+};
+
+function clampHours(n: number, fallback: number): number {
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(24 * 14, Math.floor(n)));
+}
+
+export function parseWebSearchCacheJson(raw: string | undefined | null): WebSearchCacheForm {
+  const d = { ...WEB_SEARCH_CACHE_DEFAULT };
+  const t = String(raw ?? "").trim();
+  if (!t || t === "{}") return d;
+  try {
+    const o = JSON.parse(t) as Record<string, unknown>;
+    if (typeof o.enabled === "boolean") d.enabled = o.enabled;
+    d.freshHours = clampHours(Number(o.freshHours), d.freshHours);
+    d.warmHours = clampHours(Number(o.warmHours), d.warmHours);
+    d.staleHours = clampHours(Number(o.staleHours), d.staleHours);
+    if (d.warmHours < d.freshHours) d.warmHours = d.freshHours;
+    if (d.staleHours < d.warmHours) d.staleHours = d.warmHours;
+    if (typeof o.semanticEnabled === "boolean") d.semanticEnabled = o.semanticEnabled;
+    let sim = Number(o.similarityThreshold);
+    if (Number.isFinite(sim) && sim >= 0.5 && sim <= 0.999) d.similarityThreshold = sim;
+    let idx = Number(o.indexMaxEntries);
+    if (Number.isFinite(idx)) d.indexMaxEntries = Math.max(10, Math.min(500, Math.floor(idx)));
+    d.conversationReuseHours = clampHours(Number(o.conversationReuseHours), d.conversationReuseHours);
+    return d;
+  } catch {
+    return d;
+  }
+}
+
+export function serializeWebSearchCacheJson(form: WebSearchCacheForm): string {
+  const fresh = clampHours(form.freshHours, WEB_SEARCH_CACHE_DEFAULT.freshHours);
+  let warm = clampHours(form.warmHours, WEB_SEARCH_CACHE_DEFAULT.warmHours);
+  let stale = clampHours(form.staleHours, WEB_SEARCH_CACHE_DEFAULT.staleHours);
+  if (warm < fresh) warm = fresh;
+  if (stale < warm) stale = warm;
+  let sim = form.similarityThreshold;
+  if (!Number.isFinite(sim) || sim < 0.5 || sim > 0.999) {
+    sim = WEB_SEARCH_CACHE_DEFAULT.similarityThreshold;
+  }
+  let idx = Math.floor(form.indexMaxEntries);
+  if (!Number.isFinite(idx)) idx = WEB_SEARCH_CACHE_DEFAULT.indexMaxEntries;
+  idx = Math.max(10, Math.min(500, idx));
+  return JSON.stringify({
+    enabled: !!form.enabled,
+    freshHours: fresh,
+    warmHours: warm,
+    staleHours: stale,
+    semanticEnabled: !!form.semanticEnabled,
+    similarityThreshold: sim,
+    indexMaxEntries: idx,
+    conversationReuseHours: clampHours(
+      form.conversationReuseHours,
+      WEB_SEARCH_CACHE_DEFAULT.conversationReuseHours,
+    ),
+  });
+}

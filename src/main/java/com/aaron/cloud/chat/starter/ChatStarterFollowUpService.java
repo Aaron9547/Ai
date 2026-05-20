@@ -22,6 +22,9 @@ import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
 import com.aaron.cloud.common.time.BeijingTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -39,6 +42,12 @@ public class ChatStarterFollowUpService {
             只输出 JSON 数组，不要 markdown。每项中文 8～36 字，与上文强相关、不重复。
             """;
 
+    private static final List<String> BUILTIN_FOLLOW_UP_FALLBACK =
+            List.of("能再具体说说吗？", "还有其他需要注意的吗？", "请举一个实际例子");
+
+    /** 流式结束前与联网收尾并行等待 LLM 追问的最长时间（毫秒）。 */
+    private static final long STREAM_FOLLOW_UP_WAIT_MS = 500L;
+
     private final ChatConversationRepository conversationRepository;
     private final ChatMessageRepository messageRepository;
     private final LnkChatConversationMessageRepository lnkRepository;
@@ -48,6 +57,7 @@ public class ChatStarterFollowUpService {
     private final ModelInvokePort modelInvokePort;
     private final ChatStarterPromptJsonSupport jsonSupport;
     private final ChatStarterPromptApplicationService starterPromptApplicationService;
+    private final ChatStarterPromptSimilarityService starterPromptSimilarityService;
 
     public ChatStarterPromptDtos.StarterPromptListView listFollowUp(
             long conversationId, long assistantMessageId, int limit) {
@@ -57,7 +67,7 @@ public class ChatStarterFollowUpService {
 
         var cached = cacheRepository.findByAssistantMessage(tenantId, assistantMessageId);
         if (cached.isPresent()) {
-            return fromJson(cached.get().getQuestionsJson(), limit);
+            return ensureNonEmpty(fromJson(cached.get().getQuestionsJson(), limit), limit);
         }
 
         ChatMessage assistant =
@@ -74,14 +84,42 @@ public class ChatStarterFollowUpService {
         String userQ = findPairedUserQuestion(tenantId, conversationId, assistantMessageId);
         String assistantText = assistant.getContent() == null ? "" : assistant.getContent().trim();
         if (assistantText.isBlank()) {
-            return starterPromptApplicationService.listForOpen(
-                    ChatStarterPromptScene.FOLLOW_UP, limit, false, null, false, false);
+            return ensureNonEmpty(
+                    starterPromptApplicationService.listForTenant(
+                            tenantId,
+                            snap.getUserId(),
+                            snap.getDeviceId(),
+                            ChatStarterPromptScene.FOLLOW_UP,
+                            limit,
+                            false,
+                            null,
+                            false,
+                            false),
+                    limit);
+        }
+
+        var localSimilar =
+                starterPromptSimilarityService.pickForConversation(
+                        tenantId, userQ, assistantText, limit);
+        if (localSimilar.isPresent()) {
+            scheduleFollowUpLlmCache(tenantId, assistantMessageId, userQ, assistantText);
+            return ensureNonEmpty(localSimilar.get(), limit);
         }
 
         List<String> generated = generateFollowUpQuestions(tenantId, userQ, assistantText);
         if (generated.isEmpty()) {
-            return starterPromptApplicationService.listForOpen(
-                    ChatStarterPromptScene.FOLLOW_UP, limit, false, null, false, false);
+            return ensureNonEmpty(
+                    starterPromptApplicationService.listForTenant(
+                            tenantId,
+                            snap.getUserId(),
+                            snap.getDeviceId(),
+                            ChatStarterPromptScene.FOLLOW_UP,
+                            limit,
+                            false,
+                            null,
+                            false,
+                            false),
+                    limit);
         }
 
         var cache = new ChatStarterFollowUpCache();
@@ -92,7 +130,163 @@ public class ChatStarterFollowUpService {
 
         syncFollowUpPool(tenantId, generated);
 
-        return fromJson(cache.getQuestionsJson(), limit);
+        return ensureNonEmpty(fromJson(cache.getQuestionsJson(), limit), limit);
+    }
+
+    /**
+     * 主模型流式结束后立即启动追问 LLM（与联网后续轮 {@code join} 并行，缩短端到端等待）。
+     */
+    public CompletableFuture<List<String>> startFollowUpGeneration(
+            long tenantId, String userQ, String assistantText) {
+        String u = userQ == null ? "" : userQ.trim();
+        String a = assistantText == null ? "" : assistantText.trim();
+        if (a.isBlank()) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        return CompletableFuture.supplyAsync(
+                () -> generateFollowUpQuestions(tenantId, u, a),
+                command -> Thread.startVirtualThread(command));
+    }
+
+    /**
+     * 流式收尾（即时）：不阻塞 SSE；若追问 LLM 已结束则用其结果，否则立即运营池/内置兜底，后台写完缓存供 REST 复用。
+     */
+    public ChatStarterPromptDtos.StarterPromptListView resolveForStreamEndImmediate(
+            long tenantId,
+            long assistantMessageId,
+            CompletableFuture<List<String>> inflight,
+            String userQ,
+            String assistantText,
+            int limit) {
+        int cap = Math.max(1, Math.min(limit, 6));
+        if (inflight != null) {
+            if (inflight.isDone()) {
+                try {
+                    List<String> generated = inflight.get();
+                    if (generated != null && !generated.isEmpty()) {
+                        persistFollowUpCache(tenantId, assistantMessageId, generated);
+                        syncFollowUpPool(tenantId, generated);
+                        return fromJson(jsonSupport.toJson(generated), cap);
+                    }
+                } catch (Exception ex) {
+                    log.debug(
+                            "[推荐问题] 流式追问已完成但读取失败 assistantMessageId={}",
+                            assistantMessageId,
+                            ex);
+                }
+            } else {
+                inflight.whenComplete(
+                        (qs, ex) -> {
+                            if (ex == null && qs != null && !qs.isEmpty()) {
+                                persistFollowUpCache(tenantId, assistantMessageId, qs);
+                                syncFollowUpPool(tenantId, qs);
+                            }
+                        });
+            }
+        }
+        var local =
+                starterPromptSimilarityService.pickForConversation(
+                        tenantId, userQ, assistantText, cap);
+        if (local.isPresent()) {
+            return ensureNonEmpty(local.get(), cap);
+        }
+        return fastFallback(tenantId, cap);
+    }
+
+    /**
+     * 流式收尾：优先采用已完成的 LLM 结果（限时等待），否则运营池/内置兜底；超时后后台写完缓存供 REST 复用。
+     */
+    public ChatStarterPromptDtos.StarterPromptListView resolveForStreamEnd(
+            long tenantId,
+            long assistantMessageId,
+            CompletableFuture<List<String>> inflight,
+            int limit) {
+        int cap = Math.max(1, Math.min(limit, 6));
+        if (inflight != null) {
+            try {
+                List<String> generated = inflight.get(STREAM_FOLLOW_UP_WAIT_MS, TimeUnit.MILLISECONDS);
+                if (!generated.isEmpty()) {
+                    persistFollowUpCache(tenantId, assistantMessageId, generated);
+                    syncFollowUpPool(tenantId, generated);
+                    return fromJson(jsonSupport.toJson(generated), cap);
+                }
+            } catch (TimeoutException te) {
+                inflight.whenComplete(
+                        (qs, ex) -> {
+                            if (ex == null && qs != null && !qs.isEmpty()) {
+                                persistFollowUpCache(tenantId, assistantMessageId, qs);
+                                syncFollowUpPool(tenantId, qs);
+                            }
+                        });
+            } catch (Exception ex) {
+                log.debug("[推荐问题] 流式追问等待失败 assistantMessageId={}", assistantMessageId, ex);
+            }
+        }
+        return fastFallback(tenantId, cap);
+    }
+
+    private ChatStarterPromptDtos.StarterPromptListView fastFallback(long tenantId, int limit) {
+        return ensureNonEmpty(
+                starterPromptApplicationService.listForTenant(
+                        tenantId,
+                        null,
+                        null,
+                        ChatStarterPromptScene.FOLLOW_UP,
+                        limit,
+                        false,
+                        null,
+                        false,
+                        false),
+                limit);
+    }
+
+    private void scheduleFollowUpLlmCache(
+            long tenantId, long assistantMessageId, String userQ, String assistantText) {
+        Thread.startVirtualThread(
+                () -> {
+                    try {
+                        List<String> generated =
+                                generateFollowUpQuestions(tenantId, userQ, assistantText);
+                        if (!generated.isEmpty()) {
+                            persistFollowUpCache(tenantId, assistantMessageId, generated);
+                            syncFollowUpPool(tenantId, generated);
+                        }
+                    } catch (Exception ex) {
+                        log.debug(
+                                "[推荐问题] 后台 LLM 追问缓存失败 assistantMessageId={}",
+                                assistantMessageId,
+                                ex);
+                    }
+                });
+    }
+
+    private void persistFollowUpCache(long tenantId, long assistantMessageId, List<String> questions) {
+        if (questions == null || questions.isEmpty()) {
+            return;
+        }
+        if (cacheRepository.findByAssistantMessage(tenantId, assistantMessageId).isPresent()) {
+            return;
+        }
+        var cache = new ChatStarterFollowUpCache();
+        cache.setTenantId(tenantId);
+        cache.setAssistantMessageId(assistantMessageId);
+        cache.setQuestionsJson(jsonSupport.toJson(questions));
+        cacheRepository.insert(cache);
+    }
+
+    private ChatStarterPromptDtos.StarterPromptListView ensureNonEmpty(
+            ChatStarterPromptDtos.StarterPromptListView view, int limit) {
+        if (view != null && view.items() != null && !view.items().isEmpty()) {
+            return view;
+        }
+        int cap = Math.max(1, Math.min(limit, 6));
+        List<ChatStarterPromptDtos.StarterPromptItem> items = new ArrayList<>();
+        for (int i = 0; i < Math.min(cap, BUILTIN_FOLLOW_UP_FALLBACK.size()); i++) {
+            items.add(
+                    new ChatStarterPromptDtos.StarterPromptItem(
+                            null, BUILTIN_FOLLOW_UP_FALLBACK.get(i), "BUILTIN_FOLLOW_UP"));
+        }
+        return new ChatStarterPromptDtos.StarterPromptListView(items, false);
     }
 
     private void syncFollowUpPool(long tenantId, List<String> questions) {

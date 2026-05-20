@@ -84,6 +84,16 @@ public enum TenantRuntimeSettingKey {
             SettingValueKind.STRING,
             "[]",
             false),
+    /**
+     * 联网检索 Redis 缓存（JSON 对象）：{@code enabled}、{@code freshHours}/{@code warmHours}/{@code staleHours}（默认 6/24/48）、
+     * {@code semanticEnabled}、{@code similarityThreshold}、{@code indexMaxEntries}、{@code conversationReuseHours}；{@code {}} 走内置默认。
+     */
+    WEB_SEARCH_GROUNDING_CACHE_JSON(
+            "WEB_SEARCH_GROUNDING_CACHE_JSON",
+            "联网检索缓存（JSON）",
+            SettingValueKind.STRING,
+            "{}",
+            false),
     /** 是否每日通过联网大模型刷新空会话推荐问句（热点兜底池）。 */
     CHAT_STARTER_DAILY_HOT_ENABLED(
             "CHAT_STARTER_DAILY_HOT_ENABLED",
@@ -133,6 +143,7 @@ public enum TenantRuntimeSettingKey {
                     CHAT_INPUT_GUARD_JSON,
                     WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT,
                     WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON,
+                    WEB_SEARCH_GROUNDING_CACHE_JSON,
                     CHAT_STARTER_DAILY_HOT_ENABLED,
                     CHAT_STARTER_DAILY_HOT_CRON -> true;
             default -> false;

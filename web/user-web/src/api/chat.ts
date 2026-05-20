@@ -209,11 +209,14 @@ export type TokenUsageChunk = {
   totalTokens: number;
 };
 
+export type WebSearchStatusPhase = "searching" | "done";
+
 export type StreamPart =
   | { type: "content"; v?: string }
   | { type: "reasoning"; v?: string }
   | { type: "ragDoc"; documentId?: number; title?: string }
   | { type: "webSearchRefs"; references: WebSearchRefItem[] }
+  | { type: "webSearchStatus"; phase: WebSearchStatusPhase }
   | { type: "workflowStage"; stage: WorkflowStagePayload }
   | { type: "inputBlocked"; reason?: string }
   | {
@@ -225,7 +228,8 @@ export type StreamPart =
       kind?: string;
       bodySnippet?: string;
     }
-  | { type: "end"; usage?: TokenUsageChunk };
+  | { type: "followUpPrompts"; items: StarterPromptItem[] }
+  | { type: "end"; usage?: TokenUsageChunk; assistantMessageId?: number; durationMs?: number };
 
 function parseSsePayload(raw: string): StreamPart | null {
   const t = raw.trim();
@@ -235,6 +239,7 @@ function parseSsePayload(raw: string): StreamPart | null {
       type?: string;
       v?: string;
       usage?: TokenUsageChunk;
+      assistantMessageId?: number;
       reason?: string;
       code?: string;
       message?: string;
@@ -291,6 +296,17 @@ function parseSsePayload(raw: string): StreamPart | null {
         /* ignore */
       }
     }
+    if (o.type === "webSearchStatus" && typeof o.v === "string") {
+      try {
+        const j = JSON.parse(o.v) as { phase?: string };
+        const phase = j.phase === "searching" || j.phase === "done" ? j.phase : null;
+        if (phase) {
+          return { type: "webSearchStatus", phase };
+        }
+      } catch {
+        /* ignore */
+      }
+    }
     if (o.type === "workflowStage" && typeof o.v === "string") {
       try {
         const j = JSON.parse(o.v) as WorkflowStagePayload;
@@ -313,8 +329,27 @@ function parseSsePayload(raw: string): StreamPart | null {
     if (o.type === "inputBlocked") {
       return { type: "inputBlocked", reason: typeof o.reason === "string" ? o.reason : undefined };
     }
+    if (o.type === "followUpPrompts" && typeof o.v === "string") {
+      try {
+        const j = JSON.parse(o.v) as { items?: StarterPromptItem[] };
+        const items = Array.isArray(j.items) ? j.items.filter((x) => x?.text?.trim()) : [];
+        if (items.length) {
+          return { type: "followUpPrompts", items };
+        }
+      } catch {
+        /* ignore */
+      }
+    }
     if (o.type === "end") {
-      return { type: "end", usage: o.usage };
+      return {
+        type: "end",
+        usage: o.usage,
+        assistantMessageId:
+          typeof o.assistantMessageId === "number" ? o.assistantMessageId : undefined,
+        durationMs: typeof (o as { durationMs?: number }).durationMs === "number"
+          ? (o as { durationMs: number }).durationMs
+          : undefined,
+      };
     }
   } catch {
     return { type: "content", v: t };
@@ -466,7 +501,7 @@ export async function fetchFollowUpPrompts(
   return data as StarterPromptList;
 }
 
-/** 使用 fetch 读取 SSE（携带 {@code X-Tenant-Id} 或 {@code X-Tenant-Code} 与 {@code X-Device-Id}）。data 行为 JSON 分帧：content / reasoning / ragDoc / webSearchRefs / end */
+/** 使用 fetch 读取 SSE（携带 {@code X-Tenant-Id} 或 {@code X-Tenant-Code} 与 {@code X-Device-Id}）。data 行为 JSON 分帧：content / reasoning / ragDoc / webSearchRefs / webSearchStatus / end */
 export async function streamAssistantReply(
   conversationId: number,
   payload: ChatSendPayload,

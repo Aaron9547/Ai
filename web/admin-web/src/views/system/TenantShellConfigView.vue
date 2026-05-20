@@ -202,6 +202,98 @@
             </el-form-item>
           </div>
 
+          <div class="outbound-section-head">{{ t("admin.shell.modelCalling.sectionWebSearchCache") }}</div>
+          <p class="field-hint web-cache-hint">{{ t("admin.shell.modelCalling.hints.webSearchCache") }}</p>
+          <div class="outbound-fields-grid">
+            <el-form-item>
+              <template #label>
+                <ShellFieldLabel
+                  :label="t('admin.shell.modelCalling.webCacheEnabled')"
+                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.webCacheEnabled"
+                />
+              </template>
+              <el-switch v-model="webSearchCacheForm.enabled" />
+            </el-form-item>
+            <el-form-item>
+              <template #label>
+                <ShellFieldLabel
+                  :label="t('admin.shell.modelCalling.webCacheSemantic')"
+                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.webCacheSemantic"
+                />
+              </template>
+              <el-switch v-model="webSearchCacheForm.semanticEnabled" />
+            </el-form-item>
+            <el-form-item>
+              <template #label>
+                <ShellFieldLabel
+                  :label="t('admin.shell.modelCalling.webCacheFreshHours')"
+                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.webCacheFreshHours"
+                />
+              </template>
+              <el-input-number v-model="webSearchCacheForm.freshHours" :min="0" :max="336" :step="1" controls-position="right" class="num-wide" />
+            </el-form-item>
+            <el-form-item>
+              <template #label>
+                <ShellFieldLabel
+                  :label="t('admin.shell.modelCalling.webCacheWarmHours')"
+                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.webCacheWarmHours"
+                />
+              </template>
+              <el-input-number v-model="webSearchCacheForm.warmHours" :min="0" :max="336" :step="1" controls-position="right" class="num-wide" />
+            </el-form-item>
+            <el-form-item>
+              <template #label>
+                <ShellFieldLabel
+                  :label="t('admin.shell.modelCalling.webCacheStaleHours')"
+                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.webCacheStaleHours"
+                />
+              </template>
+              <el-input-number v-model="webSearchCacheForm.staleHours" :min="0" :max="336" :step="1" controls-position="right" class="num-wide" />
+            </el-form-item>
+            <el-form-item>
+              <template #label>
+                <ShellFieldLabel
+                  :label="t('admin.shell.modelCalling.webCacheSimilarity')"
+                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.webCacheSimilarity"
+                />
+              </template>
+              <el-input-number
+                v-model="webSearchCacheForm.similarityThreshold"
+                :min="0.5"
+                :max="0.999"
+                :step="0.01"
+                :precision="2"
+                controls-position="right"
+                class="num-wide"
+              />
+            </el-form-item>
+            <el-form-item>
+              <template #label>
+                <ShellFieldLabel
+                  :label="t('admin.shell.modelCalling.webCacheIndexMax')"
+                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.webCacheIndexMax"
+                />
+              </template>
+              <el-input-number v-model="webSearchCacheForm.indexMaxEntries" :min="10" :max="500" :step="10" controls-position="right" class="num-wide" />
+            </el-form-item>
+            <el-form-item>
+              <template #label>
+                <ShellFieldLabel
+                  :label="t('admin.shell.modelCalling.webCacheConvReuseHours')"
+                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.webCacheConvReuseHours"
+                />
+              </template>
+              <el-input-number
+                v-model="webSearchCacheForm.conversationReuseHours"
+                :min="0"
+                :max="336"
+                :step="1"
+                controls-position="right"
+                class="num-wide"
+              />
+            </el-form-item>
+          </div>
+
           <el-form-item class="outbound-footer-actions">
             <div class="outbound-footer-actions-inner">
               <el-button type="primary" :loading="savingModelCalling" @click="saveModelCalling">{{ t("admin.shell.saveModelCalling") }}</el-button>
@@ -481,6 +573,9 @@ import {
   validateInputGuard,
   parseMemoryEmbeddingModelId,
   validateMemoryEmbeddingId,
+  WEB_SEARCH_CACHE_DEFAULT,
+  parseWebSearchCacheJson,
+  serializeWebSearchCacheJson,
 } from "@/views/system/modelCallingRuntimeFormModel";
 
 const { t, locale } = useI18n();
@@ -531,6 +626,7 @@ const memoryPolicyForm = reactive({ ...MEMORY_POLICY_DEFAULT });
 const inputGuardForm = reactive({ ...INPUT_GUARD_DEFAULT });
 const webSearchRounds = ref(3);
 const suffixSlots = ref<string[]>([""]);
+const webSearchCacheForm = reactive({ ...WEB_SEARCH_CACHE_DEFAULT });
 watch(webSearchRounds, (n) => {
   suffixSlots.value = resizeSuffixSlots([...suffixSlots.value], n);
 });
@@ -578,6 +674,10 @@ function applyModelCallingFromApi(mc: TenantShellModelCallingRuntime | undefined
     ? mc.webSearchGroundingRoundSuffixesJson
     : "[]";
   suffixSlots.value = resizeSuffixSlots(parseSuffixJsonArray(rawSuffix), webSearchRounds.value);
+  Object.assign(
+    webSearchCacheForm,
+    parseWebSearchCacheJson(mc.webSearchGroundingCacheJson ?? "{}"),
+  );
 }
 
 async function reload() {
@@ -710,6 +810,7 @@ async function saveModelCalling() {
       chatInputGuardJson: serializeInputGuardJson(inputGuardForm),
       webSearchGroundingMultiRoundCount: String(webSearchRounds.value),
       webSearchGroundingRoundSuffixesJson: serializeSuffixJson(suffixSlots.value, webSearchRounds.value),
+      webSearchGroundingCacheJson: serializeWebSearchCacheJson(webSearchCacheForm),
     };
     const data = await tenantShellApi.putTenantShellModelCallingRuntime(body);
     applyModelCallingFromApi(data.modelCallingRuntime);
