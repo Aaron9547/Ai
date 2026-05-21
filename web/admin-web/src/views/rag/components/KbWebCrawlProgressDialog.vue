@@ -1,113 +1,150 @@
 <template>
-  <el-dialog
+  <KbDataPanelDialog
     v-model="visible"
     :title="t('views.kbMatrix.webCrawlProgressTitle')"
-    width="960px"
-    destroy-on-close
-    @open="onOpen"
+    :subtitle="t('views.kbMatrix.webCrawlProgressHint')"
     @closed="onClosed"
   >
-    <p class="hint">{{ t("views.kbMatrix.webCrawlProgressHint") }}</p>
-    <div class="toolbar">
-      <el-button :loading="loading" @click="loadAll">{{ t("views.kbMatrix.refresh") }}</el-button>
-    </div>
+    <template #toolbar>
+      <el-button type="primary" plain :loading="loading" @click="loadAll">{{ t("views.kbMatrix.refresh") }}</el-button>
+      <span v-if="jobsTotal > 0" class="toolbar-stat">
+        {{ t("views.kbMatrix.webCrawlProgressJobs") }}
+        <strong>{{ jobsTotal }}</strong>
+      </span>
+    </template>
 
-    <div class="section-title">{{ t("views.kbMatrix.webCrawlProgressSites") }}</div>
-    <el-table v-loading="loading" :data="sites" border stripe size="small" :empty-text="t('views.kbMatrix.webCrawlSitesEmpty')">
-      <el-table-column prop="name" :label="t('views.kbMatrix.webCrawlSitesColName')" min-width="96" />
-      <el-table-column prop="baseUrl" :label="t('views.kbMatrix.webCrawlSitesColUrl')" min-width="160" show-overflow-tooltip />
-      <el-table-column :label="t('views.kbMatrix.webCrawlSitesColPreset')" width="100">
-        <template #default="{ row }">{{ scheduleDisplay(row) }}</template>
-      </el-table-column>
-      <el-table-column :label="t('views.kbMatrix.webCrawlSitesColLast')" width="150">
-        <template #default="{ row }">{{ formatTime(row.lastCrawlAt) }}</template>
-      </el-table-column>
-      <el-table-column :label="t('views.kbMatrix.colJobStatus')" width="100" align="center">
-        <template #default="{ row }">
-          <el-tag v-if="siteJobMeta(row.id)" :type="siteJobMeta(row.id)!.tag" size="small">
-            {{ siteJobMeta(row.id)!.label }}
-          </el-tag>
-          <span v-else class="muted">{{ emDash }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('views.kbMatrix.colActions')" width="100" align="center">
-        <template #default="{ row }">
-          <el-button link type="primary" size="small" :loading="runningSiteId === row.id" @click="runSite(row)">
-            {{ t("views.kbMatrix.webCrawlSitesRun") }}
-          </el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+    <template #default="{ tableHeight }">
+      <div class="panel-stack">
+        <el-tabs v-model="activeTab" class="kb-panel-tabs" @tab-change="onTabChange">
+        <el-tab-pane :label="t('views.kbMatrix.webCrawlProgressSites')" name="sites">
+          <el-table
+            v-loading="loading"
+            :data="sites"
+            :height="tableHeight"
+            class="kb-panel-table"
+            size="small"
+            :empty-text="t('views.kbMatrix.webCrawlSitesEmpty')"
+          >
+            <el-table-column prop="name" :label="t('views.kbMatrix.webCrawlSitesColName')" width="100" show-overflow-tooltip />
+            <el-table-column prop="baseUrl" :label="t('views.kbMatrix.webCrawlSitesColUrl')" min-width="160" show-overflow-tooltip />
+            <el-table-column :label="t('views.kbMatrix.webCrawlSitesColPreset')" width="100" show-overflow-tooltip>
+              <template #default="{ row }">{{ scheduleDisplay(row) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('views.kbMatrix.webCrawlSitesColLast')" width="140">
+              <template #default="{ row }">{{ formatTime(row.lastCrawlAt) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('views.kbMatrix.colJobStatus')" width="88" align="center">
+              <template #default="{ row }">
+                <el-tag v-if="siteJobMeta(row.id)" :type="siteJobMeta(row.id)!.tag" size="small" effect="light" round>
+                  {{ siteJobMeta(row.id)!.label }}
+                </el-tag>
+                <span v-else class="muted">{{ emDash }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('views.kbMatrix.colActions')" width="148" align="center" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" :loading="runningSiteId === row.id" @click="runSite(row)">
+                  {{ t("views.kbMatrix.webCrawlSitesRun") }}
+                </el-button>
+                <el-button link type="danger" size="small" @click="confirmDeleteSite(row)">
+                  {{ t("views.kbMatrix.webCrawlSitesDelete") }}
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
 
-    <div class="section-title jobs-title">{{ t("views.kbMatrix.webCrawlProgressJobs") }}</div>
-    <el-table
-      v-loading="loadingJobs"
-      :data="crawlJobs"
-      border
-      stripe
-      size="small"
-      max-height="360"
-      :empty-text="t('views.kbMatrix.webCrawlProgressJobsEmpty')"
-    >
-      <el-table-column :label="t('views.kbMatrix.colJobType')" width="108" align="center">
-        <template #default="{ row }">
-          <el-tag type="warning" size="small" effect="plain">{{ jobTaskTypeShort(row.taskType, t) }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('views.kbMatrix.colTitleAddr')" min-width="180">
-        <template #default="{ row }">
-          <div class="cell-title">{{ jobRowTitle(row) }}</div>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('views.kbMatrix.colJobStatus')" width="96" align="center">
-        <template #default="{ row }">
-          <el-tag :type="jobStatusMeta(row.status, t).tag" size="small">{{ jobStatusMeta(row.status, t).label }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('views.kbMatrix.colTime')" width="168">
-        <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
-      </el-table-column>
-      <el-table-column :label="t('views.kbMatrix.resultSummary')" min-width="140" show-overflow-tooltip>
-        <template #default="{ row }">{{ summarizeJobResult(row.resultJson, t) }}</template>
-      </el-table-column>
-      <el-table-column type="expand" width="44">
-        <template #default="{ row }">
-          <div class="expand-inner job-expand">
-            <div v-if="parseJobResultMetaRows(row.resultJson, t).length" class="job-kv-block">
-              <el-descriptions :column="1" border size="small">
-                <el-descriptions-item
-                  v-for="(r, ri) in parseJobResultMetaRows(row.resultJson, t)"
-                  :key="'rm-' + ri"
-                  :label="r.label"
-                >
-                  {{ r.value }}
-                </el-descriptions-item>
-              </el-descriptions>
-            </div>
-            <p v-else class="muted">{{ t("views.kbMatrix.webCrawlProgressNoDetail") }}</p>
-          </div>
-        </template>
-      </el-table-column>
-    </el-table>
-  </el-dialog>
+        <el-tab-pane :label="jobsTabLabel" name="jobs">
+          <el-table
+            v-loading="loadingJobs"
+            :data="jobsPageRows"
+            :height="tableHeight"
+            class="kb-panel-table"
+            size="small"
+            highlight-current-row
+            :empty-text="t('views.kbMatrix.webCrawlProgressJobsEmpty')"
+            @row-click="onJobRowClick"
+          >
+            <el-table-column :label="t('views.kbMatrix.colJobType')" width="100" show-overflow-tooltip>
+              <template #default="{ row }">{{ jobTaskTypeShort(row.taskType, t) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('views.kbMatrix.colTitleAddr')" min-width="140" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span class="cell-title">{{ jobRowTitle(row) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('views.kbMatrix.colJobStatus')" width="84" align="center">
+              <template #default="{ row }">
+                <el-tag :type="jobStatusMeta(row.status, t).tag" size="small" effect="light" round>
+                  {{ jobStatusMeta(row.status, t).label }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('views.kbMatrix.colUpdated')" width="140">
+              <template #default="{ row }">{{ formatTime(row.updatedAt || row.createdAt) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('views.kbMatrix.resultSummary')" min-width="160" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span class="summary-cell">{{ summarizeJobResult(row.resultJson, t) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('views.kbMatrix.colActions')" width="64" fixed="right" align="center">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click.stop="openJobDetail(row)">
+                  {{ t("views.kbAsync.detail") }}
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+        </el-tabs>
+        <div v-if="activeTab === 'jobs' && jobsTotal > jobsPageSize" class="panel-stack__pager">
+          <el-pagination
+            v-model:current-page="jobsPage"
+            layout="total, prev, pager, next"
+            :total="jobsTotal"
+            :page-size="jobsPageSize"
+            small
+            background
+          />
+        </div>
+      </div>
+    </template>
+  </KbDataPanelDialog>
+
+  <KbJobTaskDetailDrawer
+    v-model="jobDetailOpen"
+    :job="jobDetailRow"
+    :run-detail-slice="jobDetailRunSlice"
+    :resuming="resumingRunId != null"
+    :retrying="retryingRunId != null"
+    @resume-pending="resumePendingRun"
+    @retry-failed="retryFailedRun"
+    @closed="onJobDetailClosed"
+  />
 </template>
 
 <script setup lang="ts">
-import { ElMessage } from "element-plus";
-import { computed, onBeforeUnmount, ref } from "vue";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import * as jobApi from "@/api/jobAdmin";
 import * as ragApi from "@/api/ragAdmin";
 import type { JobTaskAdminRow } from "@/types/admin";
-import type { RagWebCrawlSiteRow } from "@/api/ragAdmin";
+import type { CrawlRunDetailView, RagWebCrawlSiteRow } from "@/api/ragAdmin";
 import {
   jobStatusMeta,
   jobTaskTypeShort,
-  parseJobResultMetaRows,
   summarizeJobResult,
+  type SiteCrawlRunDetailSlice,
 } from "@/utils/ragJobDisplay";
+import KbDataPanelDialog from "./KbDataPanelDialog.vue";
+import KbJobTaskDetailDrawer from "./KbJobTaskDetailDrawer.vue";
 
-const props = defineProps<{ modelValue: boolean; kbId: number }>();
+const props = withDefaults(
+  defineProps<{ modelValue: boolean; kbId: number; defaultTab?: "sites" | "jobs" }>(),
+  { defaultTab: "jobs" },
+);
 const emit = defineEmits<{ "update:modelValue": [boolean] }>();
 
 const { t } = useI18n();
@@ -118,12 +155,142 @@ const visible = computed({
   set: (v) => emit("update:modelValue", v),
 });
 
+const activeTab = ref<"sites" | "jobs">("jobs");
 const loading = ref(false);
 const loadingJobs = ref(false);
 const sites = ref<RagWebCrawlSiteRow[]>([]);
-const crawlJobs = ref<JobTaskAdminRow[]>([]);
+const allCrawlJobs = ref<JobTaskAdminRow[]>([]);
+const jobsPage = ref(1);
+const jobsPageSize = 15;
+const runDetailsByRunId = ref<Map<number, CrawlRunDetailView>>(new Map());
+const loadingRunDetailId = ref<number | null>(null);
+const resumingRunId = ref<number | null>(null);
 const runningSiteId = ref<number | null>(null);
+const retryingRunId = ref<number | null>(null);
+const jobDetailOpen = ref(false);
+const jobDetailRow = ref<JobTaskAdminRow | null>(null);
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+const jobsTotal = computed(() => allCrawlJobs.value.length);
+
+const jobsPageRows = computed(() => {
+  const start = (jobsPage.value - 1) * jobsPageSize;
+  return allCrawlJobs.value.slice(start, start + jobsPageSize);
+});
+
+const jobsTabLabel = computed(() => {
+  const base = t("views.kbMatrix.webCrawlProgressJobs");
+  const n = jobsTotal.value;
+  return n > 0 ? `${base} (${n})` : String(base);
+});
+
+const jobDetailRunSlice = computed((): SiteCrawlRunDetailSlice | null => {
+  const job = jobDetailRow.value;
+  if (!job) return null;
+  const runId = parseRunId(job.resultJson);
+  if (runId == null) return null;
+  const d = runDetailsByRunId.value.get(runId);
+  if (!d) return null;
+  return {
+    ok: d.ok,
+    skipped: d.skipped,
+    fail: d.fail,
+    failedByCode: d.failedByCode,
+    queueByStatus: d.queueByStatus,
+  };
+});
+
+function parseRunId(resultJson: string | null | undefined): number | null {
+  if (!resultJson?.trim()) return null;
+  try {
+    const o = JSON.parse(resultJson) as { runId?: number };
+    return typeof o.runId === "number" ? o.runId : null;
+  } catch {
+    return null;
+  }
+}
+
+async function ensureRunDetailLoaded(runId: number) {
+  if (runDetailsByRunId.value.has(runId)) return;
+  loadingRunDetailId.value = runId;
+  try {
+    const detail = await ragApi.fetchCrawlRun(props.kbId, runId);
+    const next = new Map(runDetailsByRunId.value);
+    next.set(runId, detail);
+    runDetailsByRunId.value = next;
+  } catch {
+    /* drawer still shows summary from result_json */
+  } finally {
+    if (loadingRunDetailId.value === runId) {
+      loadingRunDetailId.value = null;
+    }
+  }
+}
+
+function onJobRowClick(row: JobTaskAdminRow, _col: unknown, event: MouseEvent) {
+  const target = event.target as HTMLElement | null;
+  if (target?.closest("button, a, .el-button, .el-link")) return;
+  openJobDetail(row);
+}
+
+function openJobDetail(row: JobTaskAdminRow) {
+  jobDetailRow.value = row;
+  jobDetailOpen.value = true;
+  const runId = parseRunId(row.resultJson);
+  if (runId != null) {
+    void ensureRunDetailLoaded(runId);
+  }
+}
+
+function onJobDetailClosed() {
+  jobDetailRow.value = null;
+}
+
+function onTabChange() {
+  /* tab 切换后表体高度由 KbDataPanelDialog ResizeObserver 自动重算 */
+}
+
+watch(visible, (isOpen) => {
+  if (isOpen) {
+    activeTab.value = props.defaultTab;
+    jobsPage.value = 1;
+    void loadAll().then(() => {
+      if (hasActiveJobs()) startPolling();
+    });
+  } else {
+    stopPolling();
+  }
+});
+
+async function resumePendingRun(runId: number) {
+  resumingRunId.value = runId;
+  try {
+    const res = await ragApi.resumeCrawlRunPending(props.kbId, runId);
+    ElMessage.success(res.summary || t("views.kbMatrix.webCrawlRetryFailedOk"));
+    runDetailsByRunId.value = new Map();
+    await ensureRunDetailLoaded(runId);
+    await loadJobs();
+  } catch {
+    ElMessage.error(t("views.kbMatrix.webCrawlSitesSaveFailed"));
+  } finally {
+    resumingRunId.value = null;
+  }
+}
+
+async function retryFailedRun(runId: number) {
+  retryingRunId.value = runId;
+  try {
+    const res = await ragApi.retryCrawlRunFailed(props.kbId, runId);
+    ElMessage.success(res.summary || t("views.kbMatrix.webCrawlRetryFailedOk"));
+    runDetailsByRunId.value = new Map();
+    await ensureRunDetailLoaded(runId);
+    await loadJobs();
+  } catch {
+    ElMessage.error(t("views.kbMatrix.webCrawlSitesSaveFailed"));
+  } finally {
+    retryingRunId.value = null;
+  }
+}
 
 function formatTime(raw?: string | null) {
   if (!raw) return emDash;
@@ -153,12 +320,15 @@ function parsePayload(job: JobTaskAdminRow): { baseUrl?: string; siteId?: number
 }
 
 function jobRowTitle(job: JobTaskAdminRow): string {
+  if ((job.taskType || "").toUpperCase() === "RAG_INDEX") {
+    return String(t("views.kbAsync.jobTypes.RAG_INDEX"));
+  }
   const p = parsePayload(job);
   return p.baseUrl?.trim() || `#${job.id}`;
 }
 
 function siteJobMeta(siteId: number): { label: string; tag: "success" | "warning" | "info" | "danger" } | null {
-  const job = crawlJobs.value.find((j) => {
+  const job = allCrawlJobs.value.find((j) => {
     const p = parsePayload(j);
     const sid = p.siteId ?? p.scheduleId;
     return sid === siteId;
@@ -174,8 +344,13 @@ async function loadSites() {
 async function loadJobs() {
   loadingJobs.value = true;
   try {
-    const p = await jobApi.fetchJobTasks({ page: 1, size: 50, ragKbId: props.kbId });
-    crawlJobs.value = p.records.filter((j) => j.taskType === "RAG_SITE_CRAWL");
+    const p = await jobApi.fetchJobTasks({ page: 1, size: 100, ragKbId: props.kbId });
+    const ragTypes = new Set(["RAG_SITE_CRAWL", "RAG_INDEX", "RAG_URL_IMPORT", "RAG_FILE_IMPORT"]);
+    allCrawlJobs.value = p.records.filter((j) => ragTypes.has((j.taskType || "").toUpperCase()));
+    const maxPage = Math.max(1, Math.ceil(allCrawlJobs.value.length / jobsPageSize));
+    if (jobsPage.value > maxPage) {
+      jobsPage.value = maxPage;
+    }
   } finally {
     loadingJobs.value = false;
   }
@@ -193,7 +368,7 @@ async function loadAll() {
 }
 
 function hasActiveJobs() {
-  return crawlJobs.value.some((j) => {
+  return allCrawlJobs.value.some((j) => {
     const s = (j.status || "").toUpperCase();
     return s === "PENDING" || s === "RUNNING";
   });
@@ -216,16 +391,52 @@ function stopPolling() {
   }
 }
 
-function onOpen() {
-  void loadAll().then(() => {
-    if (hasActiveJobs()) startPolling();
-  });
-}
-
 function onClosed() {
   stopPolling();
   sites.value = [];
-  crawlJobs.value = [];
+  allCrawlJobs.value = [];
+  runDetailsByRunId.value = new Map();
+  loadingRunDetailId.value = null;
+  jobsPage.value = 1;
+  activeTab.value = props.defaultTab;
+}
+
+async function confirmDeleteSite(row: RagWebCrawlSiteRow) {
+  try {
+    const choice = await ElMessageBox.confirm(
+      t("views.kbMatrix.webCrawlDeletePrompt", { name: row.name }),
+      t("views.kbMatrix.webCrawlSitesDelete"),
+      {
+        distinguishCancelAndClose: true,
+        confirmButtonText: t("views.kbMatrix.webCrawlDeleteWithDocs"),
+        cancelButtonText: t("views.kbMatrix.webCrawlDeleteConfigOnly"),
+        type: "warning",
+      },
+    );
+    const purgeDocuments = choice === "confirm";
+    await deleteSite(row, purgeDocuments);
+  } catch (action) {
+    if (action === "cancel") {
+      await deleteSite(row, false);
+    }
+  }
+}
+
+async function deleteSite(row: RagWebCrawlSiteRow, purgeDocuments: boolean) {
+  try {
+    const res = await ragApi.deleteWebCrawlSite(props.kbId, row.id, purgeDocuments);
+    const msg = purgeDocuments
+      ? t("views.kbMatrix.webCrawlDeleteDoneWithDocs", {
+          docs: res.documentsPurged,
+          runs: res.crawlRunsRemoved,
+        })
+      : t("views.kbMatrix.webCrawlDeleteDoneConfig");
+    ElMessage.success(msg);
+    runDetailsByRunId.value = new Map();
+    await loadAll();
+  } catch {
+    ElMessage.error(t("views.kbMatrix.webCrawlSitesSaveFailed"));
+  }
 }
 
 async function runSite(row: RagWebCrawlSiteRow) {
@@ -233,6 +444,7 @@ async function runSite(row: RagWebCrawlSiteRow) {
   try {
     await ragApi.runWebCrawlSiteNow(props.kbId, row.id);
     ElMessage.success(t("views.kbMatrix.webCrawlSitesRunStarted"));
+    activeTab.value = "jobs";
     await loadAll();
     startPolling();
   } catch {
@@ -242,42 +454,108 @@ async function runSite(row: RagWebCrawlSiteRow) {
   }
 }
 
+watch(visible, (isOpen) => {
+  if (isOpen) {
+    activeTab.value = props.defaultTab;
+    jobsPage.value = 1;
+    void loadAll().then(() => {
+      if (hasActiveJobs()) startPolling();
+    });
+  } else {
+    stopPolling();
+  }
+});
+
 onBeforeUnmount(() => stopPolling());
 </script>
 
 <style scoped>
-.hint {
-  margin: 0 0 12px;
+.panel-stack {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.panel-stack__pager {
+  flex-shrink: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--el-border-color-extra-light);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.kb-panel-tabs {
+  flex: 1;
+  min-height: 0;
+}
+
+.toolbar-stat {
+  margin-left: auto;
   font-size: 13px;
   color: var(--el-text-color-secondary);
-  line-height: 1.5;
 }
-.toolbar {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-.section-title {
-  margin: 16px 0 8px;
-  font-size: 13px;
-  font-weight: 600;
+
+.toolbar-stat strong {
+  margin-left: 4px;
   color: var(--el-text-color-primary);
+  font-weight: 600;
 }
-.jobs-title {
-  margin-top: 20px;
+
+.kb-panel-tabs {
+  display: flex;
+  flex-direction: column;
 }
+
+.kb-panel-tabs :deep(.el-tabs__header) {
+  margin-bottom: 0;
+  flex-shrink: 0;
+}
+
+.kb-panel-tabs :deep(.el-tabs__content) {
+  flex: 1;
+  min-height: 0;
+  padding-top: 8px;
+}
+
+.kb-panel-tabs :deep(.el-tab-pane) {
+  height: 100%;
+}
+
 .muted {
   color: var(--el-text-color-secondary);
   font-size: 12px;
 }
+
 .cell-title {
-  font-size: 13px;
-  word-break: break-all;
+  font-size: 12px;
 }
-.job-kv-block {
-  padding: 8px 4px;
+
+.summary-cell {
+  font-size: 12px;
+  color: var(--el-text-color-regular);
 }
-.expand-inner {
-  padding: 8px 12px;
+
+:deep(.kb-panel-table) {
+  width: 100%;
+}
+
+:deep(.kb-panel-table .el-table__inner-wrapper::before) {
+  display: none;
+}
+
+:deep(.kb-panel-table th.el-table__cell) {
+  background: var(--el-fill-color-light);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--el-text-color-secondary);
+}
+
+:deep(.kb-panel-table .el-table__row) {
+  cursor: pointer;
+}
+
+:deep(.kb-panel-table .el-table__row:hover > td.el-table__cell) {
+  background-color: var(--el-fill-color-light) !important;
 }
 </style>

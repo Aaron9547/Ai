@@ -159,6 +159,11 @@ INSERT IGNORE INTO gw_api_endpoint (path_pattern, http_method, display_name, rem
 ('/api/v1/admin/rag-kbs/*/*/ingest/analyze', 'POST', '上传文档入库前分析（子母分片推荐）', NULL, 1, 4262, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/rag-kbs/*/*/ingest/analyze-upload', 'POST', '上传文件入库前分析（子母分片推荐）', NULL, 1, 4263, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/rag-kbs/*/*/retrieval-test', 'POST', '知识库检索试跑', NULL, 1, 4310, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/rag-kbs/*/*/crawl-runs', 'GET', '站点爬取 run 列表', NULL, 1, 4267, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/rag-kbs/*/*/crawl-runs/*', 'GET', '查询站点爬取 run 详情', NULL, 1, 4264, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/rag-kbs/*/*/crawl-runs/*/resume-pending', 'POST', '站点爬取续跑待处理队列', NULL, 1, 4268, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/rag-kbs/*/*/crawl-runs/*/retry-failed', 'POST', '站点爬取仅重试失败队列项', NULL, 1, 4265, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/tenant-shell-config/site-crawl-runtime-template', 'GET', '站点爬取档位默认 JSON 模板', NULL, 1, 4266, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 -- ---------- API：租户定时任务（调度注册；爬站业务在 rag_web_crawl_site） ----------
 ('/api/v1/admin/scheduled-tasks/meta', 'GET', '定时任务类型与周期枚举', NULL, 1, 4311, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/scheduled-tasks', 'GET', '租户定时任务列表', NULL, 1, 4320, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),

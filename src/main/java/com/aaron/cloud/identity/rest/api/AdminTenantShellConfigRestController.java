@@ -9,10 +9,12 @@ import com.aaron.cloud.identity.tenant.TenantShellAdminApplicationService.ShellO
 import com.aaron.cloud.identity.tenant.TenantShellAdminApplicationService.ShellPutBody;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
+import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
@@ -29,6 +31,11 @@ public class AdminTenantShellConfigRestController extends ApiV1ControllerBases.A
     @GetMapping
     public TenantShellAdminApplicationService.ShellConfigResponse get() {
         return tenantShellAdminApplicationService.load(TenantContextHolder.require().getTenantId());
+    }
+
+    @GetMapping("/site-crawl-runtime-template")
+    public Map<String, String> siteCrawlRuntimeTemplate(@RequestParam("preset") String preset) {
+        return tenantShellAdminApplicationService.siteCrawlRuntimeTemplate(preset);
     }
 
     @PutMapping

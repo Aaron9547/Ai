@@ -13,7 +13,6 @@ import com.aaron.cloud.common.chat.LnkChatConversationMessageRepository;
 import com.aaron.cloud.common.chat.ChatStarterFollowUpCacheRepository;
 import com.aaron.cloud.common.chat.ChatStarterPromptRepository;
 import com.aaron.cloud.common.chat.entity.ChatMessage;
-import com.aaron.cloud.common.chat.entity.ChatStarterFollowUpCache;
 import com.aaron.cloud.common.chat.entity.ChatStarterPrompt;
 import com.aaron.cloud.common.context.TenantContextHolder;
 import com.aaron.cloud.common.modelcfg.LlmModelKindPolicy;
@@ -122,15 +121,12 @@ public class ChatStarterFollowUpService {
                     limit);
         }
 
-        var cache = new ChatStarterFollowUpCache();
-        cache.setTenantId(tenantId);
-        cache.setAssistantMessageId(assistantMessageId);
-        cache.setQuestionsJson(jsonSupport.toJson(generated));
-        cacheRepository.insert(cache);
+        String questionsJson = jsonSupport.toJson(generated);
+        cacheRepository.saveQuestions(tenantId, assistantMessageId, questionsJson);
 
         syncFollowUpPool(tenantId, generated);
 
-        return ensureNonEmpty(fromJson(cache.getQuestionsJson(), limit), limit);
+        return ensureNonEmpty(fromJson(questionsJson, limit), limit);
     }
 
     /**
@@ -182,6 +178,8 @@ public class ChatStarterFollowUpService {
                                 syncFollowUpPool(tenantId, qs);
                             }
                         });
+                // 追问 LLM 未完成时不推送运营池占位，由前端骨架 + REST 拉取本轮结果
+                return new ChatStarterPromptDtos.StarterPromptListView(List.of(), false);
             }
         }
         var local =
@@ -190,7 +188,10 @@ public class ChatStarterFollowUpService {
         if (local.isPresent()) {
             return ensureNonEmpty(local.get(), cap);
         }
-        return fastFallback(tenantId, cap);
+        if (assistantText == null || assistantText.isBlank()) {
+            return fastFallback(tenantId, cap);
+        }
+        return new ChatStarterPromptDtos.StarterPromptListView(List.of(), false);
     }
 
     /**
@@ -264,14 +265,7 @@ public class ChatStarterFollowUpService {
         if (questions == null || questions.isEmpty()) {
             return;
         }
-        if (cacheRepository.findByAssistantMessage(tenantId, assistantMessageId).isPresent()) {
-            return;
-        }
-        var cache = new ChatStarterFollowUpCache();
-        cache.setTenantId(tenantId);
-        cache.setAssistantMessageId(assistantMessageId);
-        cache.setQuestionsJson(jsonSupport.toJson(questions));
-        cacheRepository.insert(cache);
+        cacheRepository.saveQuestions(tenantId, assistantMessageId, jsonSupport.toJson(questions));
     }
 
     private ChatStarterPromptDtos.StarterPromptListView ensureNonEmpty(

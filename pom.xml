@@ -13,7 +13,7 @@
 
     <groupId>com.aaron.cloud</groupId>
     <artifactId>Ai</artifactId>
-    <version>0.1.244-SNAPSHOT</version>
+    <version>0.1.245-SNAPSHOT</version>
     <packaging>jar</packaging>
     <name>Ai</name>
     <description>Ai 中台（对话为核心，多租户）</description>
@@ -153,6 +153,12 @@
             <groupId>org.jsoup</groupId>
             <artifactId>jsoup</artifactId>
             <version>1.18.3</version>
+        </dependency>
+        <!-- 站点爬取 JS 发现（可选）；部署须安装 Chromium：{@code mvn exec:java -e -D exec.mainClass=com.microsoft.playwright.CLI -D exec.args="install chromium"} -->
+        <dependency>
+            <groupId>com.microsoft.playwright</groupId>
+            <artifactId>playwright</artifactId>
+            <version>1.49.0</version>
         </dependency>
         <dependency>
             <groupId>net.dankito.readability4j</groupId>

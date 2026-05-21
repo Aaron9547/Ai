@@ -309,6 +309,27 @@ export function parseWebSearchCacheJson(raw: string | undefined | null): WebSear
   }
 }
 
+export type SiteCrawlPresetValue = "CONSERVATIVE" | "BALANCED" | "AGGRESSIVE" | "CUSTOM";
+
+export function normalizeSiteCrawlPreset(raw: string | undefined | null): SiteCrawlPresetValue {
+  const t = String(raw ?? "BALANCED").trim().toUpperCase();
+  if (t === "CONSERVATIVE" || t === "BALANCED" || t === "AGGRESSIVE" || t === "CUSTOM") {
+    return t;
+  }
+  return "BALANCED";
+}
+
+export function parseSiteCrawlRuntimeJson(raw: string | undefined | null): string {
+  const t = String(raw ?? "").trim();
+  if (!t || t === "{}") return "{}";
+  try {
+    JSON.parse(t);
+    return t;
+  } catch {
+    return "{}";
+  }
+}
+
 export function serializeWebSearchCacheJson(form: WebSearchCacheForm): string {
   const fresh = clampHours(form.freshHours, WEB_SEARCH_CACHE_DEFAULT.freshHours);
   let warm = clampHours(form.warmHours, WEB_SEARCH_CACHE_DEFAULT.warmHours);

@@ -18,7 +18,11 @@ final class RagEmbeddingHttpSupport {
     private RagEmbeddingHttpSupport() {}
 
     static String buildEmbeddingsRequestBody(
-            ObjectMapper objectMapper, String modelId, String text, LlmVectorBackend vectorBackend)
+            ObjectMapper objectMapper,
+            String modelId,
+            String text,
+            LlmVectorBackend vectorBackend,
+            int targetDimension)
             throws Exception {
         String payload = text == null ? "" : text;
         if (payload.length() > MAX_INPUT_CHARS) {
@@ -33,11 +37,43 @@ final class RagEmbeddingHttpSupport {
             block.put("text", payload);
             return objectMapper.writeValueAsString(root);
         }
-        return objectMapper
-                .createObjectNode()
-                .put("model", modelId)
-                .put("input", payload)
-                .toString();
+        if (vectorBackend == LlmVectorBackend.DASHSCOPE_TEXT_EMBEDDING) {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("model", modelId);
+            ObjectNode input = root.putObject("input");
+            ArrayNode texts = input.putArray("texts");
+            texts.add(payload);
+            if (targetDimension > 0) {
+                root.putObject("parameters").put("dimension", targetDimension);
+            }
+            return objectMapper.writeValueAsString(root);
+        }
+        if (vectorBackend == LlmVectorBackend.DASHSCOPE_MULTIMODAL_EMBEDDING) {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("model", modelId);
+            ObjectNode input = root.putObject("input");
+            ArrayNode contents = input.putArray("contents");
+            ObjectNode block = contents.addObject();
+            block.put("text", payload);
+            if (targetDimension > 0) {
+                root.putObject("parameters").put("dimension", targetDimension);
+            }
+            return objectMapper.writeValueAsString(root);
+        }
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("model", modelId);
+        root.put("input", payload);
+        if (supportsOpenAiStyleDimensions(vectorBackend) && targetDimension > 0) {
+            root.put("dimensions", targetDimension);
+        }
+        return objectMapper.writeValueAsString(root);
+    }
+
+    /** OpenAI 兼容 / 方舟文本 / 百炼兼容：请求体可带 {@code dimensions}，与 Milvus 配置对齐。 */
+    private static boolean supportsOpenAiStyleDimensions(LlmVectorBackend vectorBackend) {
+        return vectorBackend == LlmVectorBackend.OPENAI_COMPATIBLE
+                || vectorBackend == LlmVectorBackend.DASHSCOPE_COMPATIBLE
+                || vectorBackend == LlmVectorBackend.VOLCENGINE_ARK;
     }
 
     /**
@@ -53,10 +89,24 @@ final class RagEmbeddingHttpSupport {
             if (!fallback.isEmpty()) {
                 return fallback;
             }
+        } else if (vectorBackend == LlmVectorBackend.DASHSCOPE_TEXT_EMBEDDING
+                || vectorBackend == LlmVectorBackend.DASHSCOPE_MULTIMODAL_EMBEDDING) {
+            List<Float> dash = readDashscopeOutputEmbeddings(root);
+            if (!dash.isEmpty()) {
+                return dash;
+            }
+            List<Float> openAi = readOpenAiListEmbedding(root);
+            if (!openAi.isEmpty()) {
+                return openAi;
+            }
         } else {
             List<Float> openAi = readOpenAiListEmbedding(root);
             if (!openAi.isEmpty()) {
                 return openAi;
+            }
+            List<Float> dash = readDashscopeOutputEmbeddings(root);
+            if (!dash.isEmpty()) {
+                return dash;
             }
             List<Float> mm = readMultimodalObjectEmbedding(root);
             if (!mm.isEmpty()) {
@@ -64,6 +114,26 @@ final class RagEmbeddingHttpSupport {
             }
         }
         throw new IllegalStateException("embeddings 响应缺少 embedding 数组");
+    }
+
+    /**
+     * 百炼 DashScope 原生文本 / 多模态：{@code output.embeddings[]}；多模态纯文本时优先 {@code type=text} 条目。
+     */
+    private static List<Float> readDashscopeOutputEmbeddings(JsonNode root) {
+        JsonNode arr = root.path("output").path("embeddings");
+        if (!arr.isArray() || arr.isEmpty()) {
+            return List.of();
+        }
+        for (JsonNode item : arr) {
+            String type = item.path("type").asText("").trim();
+            if ("text".equalsIgnoreCase(type)) {
+                List<Float> v = readFloatArray(item.path("embedding"));
+                if (!v.isEmpty()) {
+                    return v;
+                }
+            }
+        }
+        return readFloatArray(arr.path(0).path("embedding"));
     }
 
     private static List<Float> readOpenAiListEmbedding(JsonNode root) {

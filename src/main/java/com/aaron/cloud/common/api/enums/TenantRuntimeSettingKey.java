@@ -103,6 +103,26 @@ public enum TenantRuntimeSettingKey {
             SettingValueKind.STRING,
             "{}",
             false),
+    /**
+     * 知识库站点爬取快捷档位：{@code CONSERVATIVE} / {@code BALANCED}（默认）/ {@code AGGRESSIVE} / {@code CUSTOM}；
+     * 仅在租户 Shell「外观与模型调用」配置。
+     */
+    SITE_CRAWL_PRESET(
+            "SITE_CRAWL_PRESET",
+            "站点爬取档位",
+            SettingValueKind.STRING,
+            "BALANCED",
+            false),
+    /**
+     * 站点爬取运行时策略 JSON（discovery / politeness / fetch / extract / ingest）；{@code CUSTOM} 时必填有效对象；
+     * 非 CUSTOM 时可存预设模板快照或 {@code {}}（由 {@code SiteCrawlPolicyResolver} 合并）。
+     */
+    SITE_CRAWL_RUNTIME_JSON(
+            "SITE_CRAWL_RUNTIME_JSON",
+            "站点爬取运行时（JSON）",
+            SettingValueKind.STRING,
+            "{}",
+            false),
     /** 是否每日通过联网大模型刷新空会话推荐问句（热点兜底池）。 */
     CHAT_STARTER_DAILY_HOT_ENABLED(
             "CHAT_STARTER_DAILY_HOT_ENABLED",
@@ -154,6 +174,8 @@ public enum TenantRuntimeSettingKey {
                     WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT,
                     WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON,
                     WEB_SEARCH_GROUNDING_CACHE_JSON,
+                    SITE_CRAWL_PRESET,
+                    SITE_CRAWL_RUNTIME_JSON,
                     CHAT_STARTER_DAILY_HOT_ENABLED,
                     CHAT_STARTER_DAILY_HOT_CRON -> true;
             default -> false;

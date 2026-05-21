@@ -11,7 +11,13 @@ import java.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** 受控 HTTP 拉取：charset 嗅探、meta refresh 一次跟随。 */
+/**
+ * 受控 HTTP 拉取：charset 嗅探、meta refresh 一次跟随。
+ *
+ * @deprecated 站点爬取与预览请使用 {@link com.aaron.cloud.rag.crawl.fetch.HttpFetcher} +
+ *     {@link com.aaron.cloud.rag.crawl.fetch.PolitenessGate}。
+ */
+@Deprecated(since = "0.1.245")
 public final class RagHttpFetch {
 
     private static final Logger log = LoggerFactory.getLogger(RagHttpFetch.class);

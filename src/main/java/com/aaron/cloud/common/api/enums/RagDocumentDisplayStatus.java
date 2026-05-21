@@ -10,12 +10,16 @@ import lombok.RequiredArgsConstructor;
 @Getter
 @RequiredArgsConstructor
 public enum RagDocumentDisplayStatus {
-    /** 已入库且可检索（默认）。 */
-    PUBLISHED("PUBLISHED"),
-    /** 异步解析或流水线处理中。 */
+    /** 正文已落库，分片/向量化尚未完成。 */
     PARSING("PARSING"),
-    /** 解析或入库失败，可重试。 */
-    PARSE_FAILED("PARSE_FAILED");
+    /** 分片中或正在调用嵌入模型写入向量库（及混合模式下的 ES）。 */
+    EMBEDDING("EMBEDDING"),
+    /** 分片与向量索引均完成，可参与检索。 */
+    PUBLISHED("PUBLISHED"),
+    /** 解析或正文质量校验失败。 */
+    PARSE_FAILED("PARSE_FAILED"),
+    /** 分片、嵌入或 Milvus/ES 索引失败。 */
+    INDEX_FAILED("INDEX_FAILED");
 
     @EnumValue private final String code;
 

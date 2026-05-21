@@ -195,6 +195,53 @@ public class ElasticsearchRagSearchClient {
         return t;
     }
 
+    /** 混合检索入库：与 {@link #searchCitationHits} 字段约定一致。 */
+    public void indexChunks(
+            long tenantId, long kbId, long documentId, String title, List<ChunkIndexRow> chunks) {
+        if (chunks == null || chunks.isEmpty()) {
+            return;
+        }
+        String docTitle = title == null ? "" : title.trim();
+        for (ChunkIndexRow row : chunks) {
+            if (row.chunkId() <= 0 || row.content() == null || row.content().isBlank()) {
+                continue;
+            }
+            String id = tenantId + "_" + kbId + "_" + row.chunkId();
+            Map<String, Object> doc =
+                    Map.of(
+                            "tenant_id",
+                            tenantId,
+                            "kb_id",
+                            kbId,
+                            "chunk_id",
+                            row.chunkId(),
+                            "document_id",
+                            documentId,
+                            "title",
+                            docTitle,
+                            "content",
+                            row.content());
+            try {
+                client.index(i -> i.index(indexName).id(id).document(doc));
+            } catch (Exception ex) {
+                throw new IllegalStateException(
+                        "Elasticsearch index chunk failed index="
+                                + indexName
+                                + " chunkId="
+                                + row.chunkId(),
+                        ex);
+            }
+        }
+        log.debug(
+                "Elasticsearch indexed chunks tenantId={} kbId={} docId={} n={}",
+                tenantId,
+                kbId,
+                documentId,
+                chunks.size());
+    }
+
+    public record ChunkIndexRow(long chunkId, String content) {}
+
     public List<String> searchContents(long tenantId, long kbId, String query, int topK) {
         if (query == null || query.isBlank()) {
             return List.of();

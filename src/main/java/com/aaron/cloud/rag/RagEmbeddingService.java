@@ -224,10 +224,19 @@ public class RagEmbeddingService implements RagEmbeddingPort {
         int dim = dimensions();
         if (floats.size() != dim) {
             log.error(
-                    "embedding 维数 {} 与 ai.providers.milvus.vector-dimension={} 不一致，请调整模型或 Milvus 配置",
+                    "embedding 维数 {} 与 ai.providers.milvus.vector-dimension={} 不一致",
                     floats.size(),
                     dim);
-            throw new IllegalStateException("embedding dimension mismatch: " + floats.size() + " vs " + dim);
+            throw new IllegalStateException(
+                    "嵌入向量维数 "
+                            + floats.size()
+                            + " 与 Milvus 配置 "
+                            + dim
+                            + " 不一致。请将 application.yml 的 ai.providers.milvus.vector-dimension"
+                            + "（或环境变量 AI_MILVUS_VECTOR_DIM）改为 "
+                            + floats.size()
+                            + " 后重启并全库重建索引；若模型支持 dimensions 参数（如百炼 text-embedding-v4），"
+                            + "请确认集成策略为百炼 OpenAI 兼容或百炼原生文本并已重启服务。");
         }
         float[] out = new float[dim];
         for (int i = 0; i < dim; i++) {
@@ -249,7 +258,10 @@ public class RagEmbeddingService implements RagEmbeddingPort {
         if (url.isBlank()) {
             throw new IllegalStateException("向量模型 Base URL 为空");
         }
-        String body = RagEmbeddingHttpSupport.buildEmbeddingsRequestBody(objectMapper, modelId, text, vectorBackend);
+        int targetDim = dimensions();
+        String body =
+                RagEmbeddingHttpSupport.buildEmbeddingsRequestBody(
+                        objectMapper, modelId, text, vectorBackend, targetDim);
         HttpRequest.Builder rb =
                 HttpRequest.newBuilder(URI.create(url))
                         .timeout(Duration.ofSeconds(60))
@@ -285,7 +297,13 @@ public class RagEmbeddingService implements RagEmbeddingPort {
         if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
             String bodyStr = resp.body() == null ? "" : resp.body();
             String prefix = bodyStr.substring(0, Math.min(400, bodyStr.length()));
-            log.warn("embeddings upstream HTTP {} url={} bodyPrefix={}", resp.statusCode(), url, prefix);
+            log.warn(
+                    "embeddings upstream HTTP {} url={} modelId={} vectorBackend={} bodyPrefix={}",
+                    resp.statusCode(),
+                    url,
+                    modelId,
+                    vectorBackend,
+                    prefix);
             outboundTenantUpstreamQuarantine.recordHardFailureIfSignal(
                     tenantId,
                     LlmOutboundException.upstreamHttp(

@@ -163,12 +163,15 @@ public class MilvusVectorStore implements VectorStorePort {
                 rows.add(row);
             }
             if (rows.isEmpty()) {
-                return;
+                throw new IllegalStateException(
+                        "Milvus upsert produced no valid rows (check embedding dimension vs collection): "
+                                + collection);
             }
             client.insert(InsertReq.builder().collectionName(collection).data(rows).build());
             log.debug("Milvus insert rows={} collection={}", rows.size(), collection);
         } catch (Exception e) {
             log.error("Milvus upsertChunks failed tenantId={} collection={}", tenantId, collection, e);
+            throw new IllegalStateException("Milvus upsert failed collection=" + collection, e);
         }
     }
 

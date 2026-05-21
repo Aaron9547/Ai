@@ -257,7 +257,11 @@ public final class RagKbAdminDtos {
             int topK,
             int hitCount,
             java.util.List<RagRetrievalTestHitView> hits,
-            java.util.List<String> snippets) {}
+            java.util.List<String> snippets,
+            int milvusRecallCount,
+            int afterCosineThresholdCount,
+            double minCosineThreshold,
+            String diagnosticsHint) {}
 
     @Data
     public static class RagWebCrawlSiteUpsertRequest {

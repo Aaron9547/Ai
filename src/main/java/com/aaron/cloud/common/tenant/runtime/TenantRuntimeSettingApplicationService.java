@@ -3,6 +3,8 @@ package com.aaron.cloud.common.tenant.runtime;
 import com.aaron.cloud.common.api.enums.TenantRuntimeSettingKey;
 import com.aaron.cloud.common.api.enums.TenantRuntimeSettingKey.SettingValueKind;
 import com.aaron.cloud.common.tenant.runtime.entity.TenRuntimeSetting;
+import com.aaron.cloud.rag.crawl.policy.SiteCrawlPreset;
+import com.aaron.cloud.rag.crawl.policy.SiteCrawlRuntimeValidator;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
@@ -71,6 +73,16 @@ public class TenantRuntimeSettingApplicationService {
                         effectiveValueText(tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON),
                         rounds);
         return new WebSearchGroundingMultiRoundConfig(rounds, suffixes);
+    }
+
+    /** 站点爬取快捷档位（{@link TenantRuntimeSettingKey#SITE_CRAWL_PRESET}）。 */
+    public SiteCrawlPreset siteCrawlPreset(long tenantId) {
+        return SiteCrawlPreset.fromStorage(effectiveValueText(tenantId, TenantRuntimeSettingKey.SITE_CRAWL_PRESET));
+    }
+
+    /** 站点爬取运行时 JSON 原文（{@link TenantRuntimeSettingKey#SITE_CRAWL_RUNTIME_JSON}）。 */
+    public String siteCrawlRuntimeJson(long tenantId) {
+        return effectiveValueText(tenantId, TenantRuntimeSettingKey.SITE_CRAWL_RUNTIME_JSON);
     }
 
     /** 联网检索 Redis 缓存策略（{@link TenantRuntimeSettingKey#WEB_SEARCH_GROUNDING_CACHE_JSON}）。 */
@@ -373,6 +385,20 @@ public class TenantRuntimeSettingApplicationService {
                 throw new ResponseStatusException(
                         HttpStatus.BAD_REQUEST, "WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON 非法 JSON");
             }
+            return t;
+        }
+        if (key == TenantRuntimeSettingKey.SITE_CRAWL_PRESET) {
+            if (valueText == null || valueText.isBlank()) {
+                return SiteCrawlPreset.BALANCED.name();
+            }
+            return SiteCrawlRuntimeValidator.normalizePresetStorage(valueText);
+        }
+        if (key == TenantRuntimeSettingKey.SITE_CRAWL_RUNTIME_JSON) {
+            if (valueText == null || valueText.isBlank()) {
+                return "{}";
+            }
+            String t = valueText.trim();
+            SiteCrawlRuntimeValidator.parseObject(t, objectMapper);
             return t;
         }
         if (key == TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_CACHE_JSON) {

@@ -26,6 +26,8 @@ export type TenantShellModelCallingRuntime = {
   webSearchGroundingRoundSuffixesJson: string;
   /** WEB_SEARCH_GROUNDING_CACHE_JSON */
   webSearchGroundingCacheJson: string;
+  siteCrawlPreset: string;
+  siteCrawlRuntimeJson: string;
 };
 
 export type TenantShellConfig = {
@@ -52,6 +54,16 @@ export type TenantShellOutboundPutBody = {
 };
 
 export type TenantShellModelCallingPutBody = TenantShellModelCallingRuntime;
+
+export async function fetchSiteCrawlRuntimeTemplate(
+  preset: "CONSERVATIVE" | "BALANCED" | "AGGRESSIVE",
+): Promise<string> {
+  const { data } = await http.get<{ json: string }>(
+    "/api/v1/admin/tenant-shell-config/site-crawl-runtime-template",
+    { params: { preset } },
+  );
+  return data.json ?? "{}";
+}
 
 export async function getTenantShellConfig(): Promise<TenantShellConfig> {
   const { data } = await http.get<TenantShellConfig>("/api/v1/admin/tenant-shell-config");

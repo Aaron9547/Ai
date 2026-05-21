@@ -14,7 +14,7 @@
 
 ## 当前开发线
 
-以 **`pom.xml`** 为准（**`0.1.244-SNAPSHOT`**）。详见 **`PROJECT.md` 顶节 `### 0.1.244-SNAPSHOT`**。
+以 **`pom.xml`** 为准（**`0.1.245-SNAPSHOT`**）。详见 **`PROJECT.md` 顶节 `### 0.1.245-SNAPSHOT`**。
 
 ## 相关文件
 

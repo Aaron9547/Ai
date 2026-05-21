@@ -340,6 +340,66 @@ public class RagQueryBridgeService implements RagQueryPort {
         return hitsToCitations(tenantId, kbId, hits, topK);
     }
 
+    /**
+     * 管理端检索试跑诊断：解释 Milvus 有召回但被余弦阈值或分片关联过滤掉的情况。
+     */
+    public RagRetrievalTestDiagnostics buildRetrievalTestDiagnostics(
+            long tenantId, long kbId, String query, int topK) {
+        if (aiProvidersProperties.resolvedVectorStore() != VectorStoreProviderMode.milvus) {
+            return new RagRetrievalTestDiagnostics(
+                    0, 0, 0, 0d, "当前 ai.providers.vector-store 非 milvus，向量检索不可用。");
+        }
+        String q = query == null ? "" : query;
+        float[] vec = ragEmbeddingPort.embed(tenantId, kbId, q);
+        List<RagVectorRecallHit> hits =
+                vectorStorePort.searchVectors(tenantId, collectionName(kbId), vec, topK);
+        double minCos = resolveChatVectorMinCosineScore(tenantId, kbId);
+        int afterCosine = 0;
+        int resolvable = 0;
+        for (RagVectorRecallHit hit : hits) {
+            if (!passesMilvusCosineThreshold(hit.score(), minCos)) {
+                continue;
+            }
+            afterCosine++;
+            long chunkId = parseChunkRef(hit.embeddingRef());
+            if (chunkId > 0
+                    && ragChunkRepository.findCitationHitForKb(tenantId, kbId, chunkId).isPresent()) {
+                resolvable++;
+            }
+        }
+        String hint = buildRetrievalHint(hits.size(), afterCosine, resolvable, minCos);
+        return new RagRetrievalTestDiagnostics(hits.size(), afterCosine, resolvable, minCos, hint);
+    }
+
+    private static String buildRetrievalHint(
+            int milvusRecall, int afterCosine, int resolvable, double minCos) {
+        if (milvusRecall == 0) {
+            return "Milvus 未召回任何分片：请确认文档状态为「已发布」、入库时 Milvus 写入成功，或对本库执行「触发索引」。"
+                    + " 混合检索模式下历史文档可能仅有 Milvus 无 ES 词条。";
+        }
+        if (afterCosine == 0) {
+            return "Milvus 召回 "
+                    + milvusRecall
+                    + " 条，但均未达到本库对话向量阈值 "
+                    + minCos
+                    + "；可在知识库高级设置中调低 chat_vector_min_cosine_score。";
+        }
+        if (resolvable == 0) {
+            return "通过阈值 "
+                    + afterCosine
+                    + " 条，但分片无法关联到本库可引用记录（可能 embedding_ref 与库内分片不一致）。";
+        }
+        return "Milvus 召回 "
+                + milvusRecall
+                + " 条，阈值过滤后 "
+                + afterCosine
+                + " 条，可引用 "
+                + resolvable
+                + " 条（阈值 "
+                + minCos
+                + "）。";
+    }
+
     private List<RagCitationHit> searchMilvusCitationsWithVec(
             long tenantId, long kbId, String queryIgnored, int topK, float[] milvusQueryVec) {
         return searchMilvusCitationsWithVec(tenantId, kbId, milvusQueryVec, topK);

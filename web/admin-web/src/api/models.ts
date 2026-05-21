@@ -11,7 +11,10 @@ export type LlmWebSearchProviderCode = "VOLCENGINE_ARK_BOT";
 export type LlmVectorBackendCode =
   | "OPENAI_COMPATIBLE"
   | "VOLCENGINE_ARK"
-  | "VOLCENGINE_ARK_MULTIMODAL";
+  | "VOLCENGINE_ARK_MULTIMODAL"
+  | "DASHSCOPE_COMPATIBLE"
+  | "DASHSCOPE_TEXT_EMBEDDING"
+  | "DASHSCOPE_MULTIMODAL_EMBEDDING";
 
 /** VECTOR / WEB_SEARCH 写入后端的 integration_backend 码（下拉项仍分 vectorBackends / webSearchProviders）。 */
 export type LlmIntegrationBackendCode = LlmVectorBackendCode | LlmWebSearchProviderCode;

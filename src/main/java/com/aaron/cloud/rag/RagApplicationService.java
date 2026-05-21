@@ -208,6 +208,34 @@ public class RagApplicationService {
             Long categoryId,
             long siteId)
             throws Exception {
+        return enqueueSiteCrawlJobForSite(
+                tenantId,
+                kbId,
+                baseUrl,
+                syncMode,
+                maxDepth,
+                filterCrawled,
+                chunkStrategy,
+                categoryId,
+                siteId,
+                null);
+    }
+
+    /**
+     * @param triggeredByUserId 手动「立即爬取」时传当前管理员 {@code sec_user_account.id}；定时调度传 null
+     */
+    public long enqueueSiteCrawlJobForSite(
+            long tenantId,
+            long kbId,
+            String baseUrl,
+            RagWebCrawlSyncMode syncMode,
+            Integer maxDepth,
+            boolean filterCrawled,
+            Integer chunkStrategy,
+            Long categoryId,
+            long siteId,
+            Long triggeredByUserId)
+            throws Exception {
         ragKbVectorModelGuard.assertKbHasVectorEmbeddingModel(tenantId, kbId);
         Map<String, Object> payload = new HashMap<>();
         payload.put("kbId", kbId);
@@ -227,12 +255,13 @@ public class RagApplicationService {
         }
         var task = new JobTask();
         task.setTenantId(tenantId);
+        task.setUserId(triggeredByUserId);
         task.setTaskType(JobTaskType.RAG_SITE_CRAWL);
         task.setStatus(JobTaskStatus.PENDING);
         task.setPayloadJson(objectMapper.writeValueAsString(payload));
         task.setRagKbId(kbId);
         jobTaskRepository.insert(task);
-        dispatchJobTask(task.getId(), tenantId, null, null);
+        dispatchJobTask(task);
         return task.getId();
     }
 

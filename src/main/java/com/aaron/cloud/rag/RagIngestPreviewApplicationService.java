@@ -9,6 +9,10 @@ import com.aaron.cloud.rag.RagHtmlToMarkdown.ParsedPage;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.ChunkPreviewChunkView;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.ChunkPreviewPageView;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.ChunkPreviewRequest;
+import com.aaron.cloud.rag.crawl.fetch.HttpFetcher;
+import com.aaron.cloud.rag.crawl.fetch.PolitenessGate;
+import com.aaron.cloud.rag.crawl.policy.EffectiveSiteCrawlPolicy;
+import com.aaron.cloud.rag.crawl.policy.SiteCrawlPolicyResolver;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.ChunkPreviewView;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,6 +35,9 @@ public class RagIngestPreviewApplicationService {
     private final RagWebCrawlExtractConfigSupport extractConfigSupport;
     private final RagSiteLinkDiscoveryService linkDiscoveryService;
     private final AiRagProperties aiRagProperties;
+    private final SiteCrawlPolicyResolver siteCrawlPolicyResolver;
+    private final HttpFetcher httpFetcher;
+    private final PolitenessGate politenessGate;
 
     public ChunkPreviewView preview(long tenantId, long kbId, ChunkPreviewRequest req) {
         RagKnowledgeBase kb = requireKb(tenantId, kbId);
@@ -40,13 +47,15 @@ public class RagIngestPreviewApplicationService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "provide exactly one of url or baseUrl");
         }
         RagWebCrawlExtractConfig extractConfig = resolveExtractConfig(tenantId, kbId, req);
+        EffectiveSiteCrawlPolicy crawlPolicy = siteCrawlPolicyResolver.resolve(tenantId, extractConfig);
         RagChunkStrategy strategy = resolveStrategy(kb, req.getChunkStrategy());
         int fixed = effectiveFixed(kb);
         int slide = effectiveSlide(kb);
         int maxChunks = aiRagProperties.getSiteCrawl().getPreviewMaxChunks();
 
         if (hasUrl) {
-            ChunkPreviewPageView page = previewOneUrl(req.getUrl().trim(), extractConfig, strategy, fixed, slide, maxChunks);
+            ChunkPreviewPageView page =
+                    previewOneUrl(req.getUrl().trim(), extractConfig, crawlPolicy, strategy, fixed, slide, maxChunks);
             return new ChunkPreviewView(
                     strategy.getCode(),
                     fixed,
@@ -75,7 +84,7 @@ public class RagIngestPreviewApplicationService {
         int totalChunks = 0;
         for (String u : sample) {
             try {
-                ChunkPreviewPageView p = previewOneUrl(u, extractConfig, strategy, fixed, slide, maxChunks);
+                ChunkPreviewPageView p = previewOneUrl(u, extractConfig, crawlPolicy, strategy, fixed, slide, maxChunks);
                 pages.add(p);
                 totalChunks += p.chunkCount();
             } catch (ResponseStatusException e) {
@@ -134,19 +143,44 @@ public class RagIngestPreviewApplicationService {
     private ChunkPreviewPageView previewOneUrl(
             String url,
             RagWebCrawlExtractConfig extractConfig,
+            EffectiveSiteCrawlPolicy crawlPolicy,
             RagChunkStrategy strategy,
             int fixed,
             int slide,
             int maxChunks) {
-        int maxBytes = aiRagProperties.getSiteCrawl().getPreviewMaxBodyBytes();
-        final RagHttpFetch.Fetched fetched;
+        int maxBytes =
+                Math.min(
+                        crawlPolicy.fetch().maxBodyBytes(),
+                        aiRagProperties.getSiteCrawl().getPreviewMaxBodyBytes());
+        EffectiveSiteCrawlPolicy.FetchPolicy fetchPolicy =
+                new EffectiveSiteCrawlPolicy.FetchPolicy(
+                        maxBytes,
+                        crawlPolicy.fetch().timeoutMs(),
+                        crawlPolicy.fetch().metaRefreshMaxHops(),
+                        crawlPolicy.fetch().conditionalRequest(),
+                        crawlPolicy.fetch().sharedHttpClient());
+        politenessGate.configure(crawlPolicy.politeness());
+        String html;
         try {
-            fetched = RagHttpFetch.get(url, maxBytes);
+            politenessGate.acquire(url, crawlPolicy.politeness());
+            try {
+                var fetched =
+                        httpFetcher.fetch(
+                                url,
+                                fetchPolicy,
+                                siteReferer(url),
+                                null,
+                                null);
+                html = new String(fetched.body(), fetched.charset());
+            } finally {
+                politenessGate.release();
+            }
+        } catch (PolitenessGate.RobotsDisallowedException e) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "robots disallow: " + url);
         } catch (Exception e) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_GATEWAY, "fetch failed: " + url + " (" + e.getMessage() + ")", e);
         }
-        String html = RagHttpFetch.decodeHtml(fetched);
         ParsedPage page = webPageParseService.parse(html, url, extractConfig);
         String md = page.markdown();
         if (md.isBlank()) {
@@ -197,6 +231,18 @@ public class RagIngestPreviewApplicationService {
 
     private static int effectiveSlide(RagKnowledgeBase kb) {
         return kb.getChunkSlideOverlap() != null && kb.getChunkSlideOverlap() >= 0 ? kb.getChunkSlideOverlap() : 120;
+    }
+
+    private static String siteReferer(String url) {
+        try {
+            java.net.URI u = java.net.URI.create(url);
+            if (u.getHost() == null) {
+                return null;
+            }
+            return u.getScheme() + "://" + u.getHost() + "/";
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private RagKnowledgeBase requireKb(long tenantId, long kbId) {

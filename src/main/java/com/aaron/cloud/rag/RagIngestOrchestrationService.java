@@ -4,6 +4,8 @@ import com.aaron.cloud.common.api.enums.RagChunkRetrievalEnabled;
 import com.aaron.cloud.common.api.enums.RagChunkStrategy;
 import com.aaron.cloud.common.api.enums.RagDocumentDisplayStatus;
 import com.aaron.cloud.common.api.enums.RagDocumentSourceType;
+import com.aaron.cloud.common.api.enums.RagRetrievalMode;
+import com.aaron.cloud.common.config.properties.AiRagProperties;
 import com.aaron.cloud.common.context.TenantContextHolder;
 import com.aaron.cloud.common.rag.LnkRagDocumentChunkRepository;
 import com.aaron.cloud.common.rag.LnkRagKbDocumentRepository;
@@ -18,7 +20,12 @@ import com.aaron.cloud.common.rag.entity.LnkRagKbDocument;
 import com.aaron.cloud.common.rag.entity.RagChunk;
 import com.aaron.cloud.common.rag.entity.RagDocument;
 import com.aaron.cloud.common.rag.entity.RagKnowledgeBase;
+import com.aaron.cloud.common.task.LongRunningTaskProgressReporter;
 import com.aaron.cloud.common.time.BeijingTime;
+import com.aaron.cloud.rag.crawl.fetch.HttpFetcher;
+import com.aaron.cloud.rag.crawl.fetch.PolitenessGate;
+import com.aaron.cloud.rag.crawl.policy.EffectiveSiteCrawlPolicy;
+import com.aaron.cloud.rag.crawl.policy.SiteCrawlPolicyResolver;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -28,8 +35,10 @@ import java.util.List;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Slf4j
@@ -52,8 +61,13 @@ public class RagIngestOrchestrationService {
     private final RagWebPageParseService webPageParseService;
     private final RagWebCrawlExtractConfigSupport extractConfigSupport;
     private final RagDocumentChunkPurgeService ragDocumentChunkPurgeService;
+    private final HttpFetcher httpFetcher;
+    private final PolitenessGate politenessGate;
+    private final SiteCrawlPolicyResolver siteCrawlPolicyResolver;
+    private final AiRagProperties aiRagProperties;
+    private final ObjectProvider<ElasticsearchRagSearchClient> elasticsearchRagSearchClient;
 
-    /** @param root 浠诲姟 payload锛岄』鍚?{@code kbId}銆亄@code url}锛屽彲閫?{@code chunkStrategy} 鏁存暟鐮佽鐩栫煡璇嗗簱榛樿绛栫暐銆?*/
+    /** @param root 任务 payload，须含 {@code kbId}、{@code url}，可选 {@code chunkStrategy} 覆盖知识库默认策略。 */
     public String runUrlImport(long tenantId, JsonNode root) throws Exception {
         ragVectorInfrastructure.assertMilvusOrThrow();
         long kbId = root.get("kbId").asLong();
@@ -62,9 +76,19 @@ public class RagIngestOrchestrationService {
         ragKbVectorModelGuard.assertKbHasVectorEmbeddingModel(tenantId, kbId);
         ArrayNode steps = objectMapper.createArrayNode();
         addStep(steps, "fetch_url", "running", url);
-        RagHttpFetch.Fetched fetched = RagHttpFetch.get(url);
-        String html = RagHttpFetch.decodeHtml(fetched);
-        addStep(steps, "fetch_url", "ok", "bytes=" + fetched.body().length);
+        EffectiveSiteCrawlPolicy policy = siteCrawlPolicyResolver.resolve(tenantId);
+        politenessGate.configure(policy.politeness());
+        politenessGate.acquire(url, policy.politeness());
+        String html;
+        try {
+            var fetched =
+                    httpFetcher.fetch(
+                            url, policy.fetch(), siteReferer(url), null, null);
+            html = new String(fetched.body(), fetched.charset());
+            addStep(steps, "fetch_url", "ok", "bytes=" + fetched.body().length);
+        } finally {
+            politenessGate.release();
+        }
         RagWebCrawlExtractConfig extractConfig = extractConfigFrom(root);
         RagHtmlToMarkdown.ParsedPage page = webPageParseService.parse(html, url, extractConfig);
         String md = page.markdown();
@@ -337,6 +361,41 @@ public class RagIngestOrchestrationService {
             int fixedChars,
             int slideOverlap,
             Long categoryId) {
+        PersistBodyResult body =
+                runInRequiresNewTransaction(
+                        () ->
+                                persistDocumentBody(
+                                        tenantId,
+                                        kbId,
+                                        md,
+                                        title,
+                                        sourceUri,
+                                        originalFilename,
+                                        sourceType,
+                                        categoryId));
+        return indexAfterBodyPersisted(
+                tenantId,
+                kbId,
+                body.documentId(),
+                body.documentTitle(),
+                md,
+                strategy,
+                fixedChars,
+                slideOverlap);
+    }
+
+    private record PersistBodyResult(long documentId, String documentTitle) {}
+
+    /** 正文落库并提交（{@link RagDocumentDisplayStatus#PARSING}），与后续向量化事务分离。 */
+    private PersistBodyResult persistDocumentBody(
+            long tenantId,
+            long kbId,
+            String md,
+            String title,
+            String sourceUri,
+            String originalFilename,
+            RagDocumentSourceType sourceType,
+            Long categoryId) {
         RagDocument doc;
         if (sourceType == RagDocumentSourceType.URL_CRAWL
                 && sourceUri != null
@@ -351,10 +410,10 @@ public class RagIngestOrchestrationService {
                 doc.setSourceUri(sourceUri.trim());
                 doc.setMdContent(md);
                 doc.setContentLength((long) md.length());
-                doc.setDisplayStatus(RagDocumentDisplayStatus.PUBLISHED);
+                doc.setDisplayStatus(RagDocumentDisplayStatus.PARSING);
+                applyUploadedByFromContext(doc);
                 ragDocumentRepository.updateById(doc);
-                return writeChunksForDocument(
-                        tenantId, kbId, doc.getId(), md, strategy, fixedChars, slideOverlap);
+                return new PersistBodyResult(doc.getId(), doc.getTitle());
             }
         }
         doc = new RagDocument();
@@ -367,34 +426,127 @@ public class RagIngestOrchestrationService {
         doc.setOriginalFilename(originalFilename);
         doc.setMdContent(md);
         doc.setContentLength((long) md.length());
-        doc.setDisplayStatus(RagDocumentDisplayStatus.PUBLISHED);
-        var snap = TenantContextHolder.getOrNull();
-        if (snap != null && snap.getUserId() != null) {
-            doc.setUploadedByUserId(snap.getUserId());
-        }
+        doc.setDisplayStatus(RagDocumentDisplayStatus.PARSING);
+        applyUploadedByFromContext(doc);
         ragDocumentRepository.insert(doc);
         LnkRagKbDocument lnk = new LnkRagKbDocument();
         lnk.setKbId(kbId);
         lnk.setDocumentId(doc.getId());
         lnkRagKbDocumentRepository.insert(lnk);
-        return writeChunksForDocument(
-                tenantId, kbId, doc.getId(), md, strategy, fixedChars, slideOverlap);
+        return new PersistBodyResult(doc.getId(), doc.getTitle());
+    }
+
+    /**
+     * 正文已在库（可能处于外层事务）；向量化在独立事务中执行。失败时另起事务标 {@link
+     * RagDocumentDisplayStatus#INDEX_FAILED} 并清理分片，便于管理端删除。
+     */
+    private PersistResult indexAfterBodyPersisted(
+            long tenantId,
+            long kbId,
+            long documentId,
+            String documentTitle,
+            String md,
+            RagChunkStrategy strategy,
+            int fixedChars,
+            int slideOverlap) {
+        try {
+            return runInRequiresNewTransaction(
+                    () ->
+                            indexChunksThenPublish(
+                                    tenantId,
+                                    kbId,
+                                    documentId,
+                                    documentTitle,
+                                    md,
+                                    strategy,
+                                    fixedChars,
+                                    slideOverlap));
+        } catch (Exception ex) {
+            runInRequiresNewTransaction(
+                    () -> markDocumentIndexFailed(tenantId, kbId, documentId));
+            throw ex;
+        }
+    }
+
+    /** 分片 → 嵌入 → Milvus（及混合模式 ES），成功才 {@link RagDocumentDisplayStatus#PUBLISHED}。 */
+    private PersistResult indexChunksThenPublish(
+            long tenantId,
+            long kbId,
+            long documentId,
+            String documentTitle,
+            String md,
+            RagChunkStrategy strategy,
+            int fixedChars,
+            int slideOverlap) {
+        RagDocument doc = ragDocumentRepository.findByIdAndTenant(documentId, tenantId);
+        if (doc == null || Objects.equals(doc.getDeleted(), 1)) {
+            throw new IllegalStateException("document missing: " + documentId);
+        }
+        updateDocumentDisplayStatus(doc, RagDocumentDisplayStatus.EMBEDDING);
+        PersistResult result =
+                writeChunksForDocument(
+                        tenantId, kbId, documentId, documentTitle, md, strategy, fixedChars, slideOverlap);
+        updateDocumentDisplayStatus(doc, RagDocumentDisplayStatus.PUBLISHED);
+        return result;
+    }
+
+    private void markDocumentIndexFailed(long tenantId, long kbId, long documentId) {
+        RagDocument doc = ragDocumentRepository.findByIdAndTenant(documentId, tenantId);
+        if (doc == null || Objects.equals(doc.getDeleted(), 1)) {
+            return;
+        }
+        ragDocumentChunkPurgeService.purgeAllChunksForDocument(tenantId, kbId, documentId);
+        updateDocumentDisplayStatus(doc, RagDocumentDisplayStatus.INDEX_FAILED);
+        log.warn(
+                "[RAG 入库] 向量化/索引失败，已标记 INDEX_FAILED 供管理端清理：tenantId={} kbId={} docId={}",
+                tenantId,
+                kbId,
+                documentId);
+    }
+
+    private void updateDocumentDisplayStatus(RagDocument doc, RagDocumentDisplayStatus status) {
+        doc.setDisplayStatus(status);
+        ragDocumentRepository.updateById(doc);
+    }
+
+    /** 异步爬取/入库任务执行前须由 {@link com.aaron.cloud.job.JobTaskExecutionService} 绑定租户上下文。 */
+    private static void applyUploadedByFromContext(RagDocument doc) {
+        var snap = TenantContextHolder.getOrNull();
+        if (snap != null && snap.getUserId() != null) {
+            doc.setUploadedByUserId(snap.getUserId());
+        }
+    }
+
+    private <T> T runInRequiresNewTransaction(java.util.function.Supplier<T> action) {
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        return template.execute(status -> action.get());
+    }
+
+    private void runInRequiresNewTransaction(Runnable action) {
+        runInRequiresNewTransaction(
+                () -> {
+                    action.run();
+                    return null;
+                });
     }
 
     private PersistResult writeChunksForDocument(
             long tenantId,
             long kbId,
             long documentId,
+            String documentTitle,
             String md,
             RagChunkStrategy strategy,
             int fixedChars,
             int slideOverlap) {
         if (strategy == RagChunkStrategy.PARENT_CHILD) {
-            return persistParentChildMarkdown(tenantId, kbId, documentId, md, fixedChars);
+            return persistParentChildMarkdown(tenantId, kbId, documentId, documentTitle, md, fixedChars);
         }
         List<String> parts = RagChunkSplitter.split(md, strategy, fixedChars, slideOverlap);
         List<String> chunkIds = new ArrayList<>();
         List<float[]> vectors = new ArrayList<>();
+        List<ElasticsearchRagSearchClient.ChunkIndexRow> esRows = new ArrayList<>();
         int seq = 0;
         for (String part : parts) {
             RagChunk ch = new RagChunk();
@@ -414,19 +566,24 @@ public class RagIngestOrchestrationService {
             ragChunkRepository.updateById(ch);
             chunkIds.add(ref);
             vectors.add(ragEmbeddingPort.embed(tenantId, kbId, part));
+            esRows.add(new ElasticsearchRagSearchClient.ChunkIndexRow(ch.getId(), part));
         }
-        if (!chunkIds.isEmpty()) {
-            vectorStorePort.upsertChunks(tenantId, "kb_" + kbId, chunkIds, vectors);
-        }
+        upsertVectorsAndSearchIndex(tenantId, kbId, documentId, documentTitle, chunkIds, vectors, esRows);
         return new PersistResult(documentId, parts.size());
     }
 
     private PersistResult persistParentChildMarkdown(
-            long tenantId, long kbId, long documentId, String md, int parentMaxChars) {
+            long tenantId,
+            long kbId,
+            long documentId,
+            String documentTitle,
+            String md,
+            int parentMaxChars) {
         List<RagParentChildChunkSupport.ParentChildBlock> blocks =
                 RagParentChildChunkSupport.split(md, parentMaxChars, RagParentChildChunkSupport.DEFAULT_CHILD_CHARS);
         List<String> chunkIds = new ArrayList<>();
         List<float[]> vectors = new ArrayList<>();
+        List<ElasticsearchRagSearchClient.ChunkIndexRow> esRows = new ArrayList<>();
         int seq = 0;
         int retrievableCount = 0;
         for (RagParentChildChunkSupport.ParentChildBlock block : blocks) {
@@ -463,12 +620,134 @@ public class RagIngestOrchestrationService {
                 ragChunkRepository.updateById(child);
                 chunkIds.add(ref);
                 vectors.add(ragEmbeddingPort.embed(tenantId, kbId, childText));
+                esRows.add(new ElasticsearchRagSearchClient.ChunkIndexRow(child.getId(), childText));
                 retrievableCount++;
             }
         }
+        upsertVectorsAndSearchIndex(tenantId, kbId, documentId, documentTitle, chunkIds, vectors, esRows);
+        return new PersistResult(documentId, retrievableCount);
+    }
+
+    private void upsertVectorsAndSearchIndex(
+            long tenantId,
+            long kbId,
+            long documentId,
+            String documentTitle,
+            List<String> chunkIds,
+            List<float[]> vectors,
+            List<ElasticsearchRagSearchClient.ChunkIndexRow> esRows) {
         if (!chunkIds.isEmpty()) {
             vectorStorePort.upsertChunks(tenantId, "kb_" + kbId, chunkIds, vectors);
+            indexElasticsearchIfHybrid(tenantId, kbId, documentId, documentTitle, esRows);
         }
-        return new PersistResult(documentId, retrievableCount);
+    }
+
+    private void indexElasticsearchIfHybrid(
+            long tenantId,
+            long kbId,
+            long documentId,
+            String documentTitle,
+            List<ElasticsearchRagSearchClient.ChunkIndexRow> esRows) {
+        if (aiRagProperties.resolvedRetrievalMode() != RagRetrievalMode.MILVUS_ES_HYBRID
+                || esRows == null
+                || esRows.isEmpty()) {
+            return;
+        }
+        ElasticsearchRagSearchClient es = elasticsearchRagSearchClient.getIfAvailable();
+        if (es == null) {
+            log.warn(
+                    "[RAG 入库] 检索模式为 Milvus+ES 混合，但 Elasticsearch 客户端未装配，跳过 ES 索引：kbId={} docId={}",
+                    kbId,
+                    documentId);
+            return;
+        }
+        es.indexChunks(tenantId, kbId, documentId, documentTitle, esRows);
+    }
+
+    private static String siteReferer(String url) {
+        try {
+            java.net.URI u = java.net.URI.create(url);
+            if (u.getHost() == null) {
+                return null;
+            }
+            return u.getScheme() + "://" + u.getHost() + "/";
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 全库向量重建：遍历知识库内未删除文档，对已有 Markdown 正文的条目重新分片并写入 Milvus（混合模式时同步
+     * ES）。由 {@link com.aaron.cloud.job.JobTaskExecutionService} 的 {@code RAG_INDEX} 任务调用。
+     */
+    public String runKbReindex(long tenantId, long kbId, LongRunningTaskProgressReporter progress)
+            throws Exception {
+        ragVectorInfrastructure.assertMilvusOrThrow();
+        RagKnowledgeBase kb = requireKb(tenantId, kbId);
+        ragKbVectorModelGuard.assertKbHasVectorEmbeddingModel(tenantId, kbId);
+        List<RagDocument> docs = ragDocumentRepository.listActiveByKbId(tenantId, kbId);
+        RagChunkStrategy strategy = effectiveStrategy(kb, null);
+        int fixed = effectiveFixed(kb);
+        int slide = effectiveSlide(kb);
+        int total = docs.size();
+        int indexed = 0;
+        int skipped = 0;
+        int failed = 0;
+        int chunkCount = 0;
+        progress.report("REINDEX", "开始全库索引，共 " + total + " 篇文档", 0, 0, total);
+        for (int i = 0; i < docs.size(); i++) {
+            RagDocument doc = docs.get(i);
+            int pct = total > 0 ? (i * 100 / total) : 100;
+            String title =
+                    doc.getTitle() != null && !doc.getTitle().isBlank()
+                            ? doc.getTitle().trim()
+                            : ("#" + doc.getId());
+            progress.report("REINDEX", "正在处理：" + title, pct, i + 1, total);
+            String md = doc.getMdContent();
+            if (md == null || md.isBlank()) {
+                skipped++;
+                continue;
+            }
+            try {
+                ragDocumentChunkPurgeService.purgeAllChunksForDocument(tenantId, kbId, doc.getId());
+                PersistResult pr =
+                        indexAfterBodyPersisted(
+                                tenantId, kbId, doc.getId(), doc.getTitle(), md, strategy, fixed, slide);
+                indexed++;
+                chunkCount += pr.chunkCount();
+            } catch (Exception ex) {
+                failed++;
+                log.warn(
+                        "[RAG 全库索引] 文档失败 tenantId={} kbId={} docId={} title={}",
+                        tenantId,
+                        kbId,
+                        doc.getId(),
+                        title,
+                        ex);
+            }
+        }
+        String summary =
+                String.format(
+                        "全库索引完成：%d 篇成功，%d 篇跳过（无正文），%d 篇失败，共 %d 个分片",
+                        indexed, skipped, failed, chunkCount);
+        log.info(
+                "[RAG 全库索引] tenantId={} kbId={} total={} indexed={} skipped={} failed={} chunks={}",
+                tenantId,
+                kbId,
+                total,
+                indexed,
+                skipped,
+                failed,
+                chunkCount);
+        progress.report("DONE", summary, 100, indexed, total);
+        ObjectNode out = objectMapper.createObjectNode();
+        out.put("kbId", kbId);
+        out.put("documentTotal", total);
+        out.put("indexedDocuments", indexed);
+        out.put("skippedDocuments", skipped);
+        out.put("failedDocuments", failed);
+        out.put("chunkCount", chunkCount);
+        out.put("summary", summary);
+        return objectMapper.writeValueAsString(out);
     }
 }

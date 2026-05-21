@@ -52,6 +52,30 @@ class VectorEmbeddingsUrlTest {
     }
 
     @Test
+    void dashscopeCompatible_compatibleModeV1_appendsEmbeddings() {
+        assertEquals(
+                "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings",
+                VectorEmbeddingsUrl.resolve(
+                        "https://dashscope.aliyuncs.com/compatible-mode/v1", LlmVectorBackend.DASHSCOPE_COMPATIBLE));
+    }
+
+    @Test
+    void dashscopeTextEmbedding_apiV1_appendsServicePath() {
+        assertEquals(
+                "https://dashscope.aliyuncs.com/api/v1/services/embeddings/text-embedding/text-embedding",
+                VectorEmbeddingsUrl.resolve(
+                        "https://dashscope.aliyuncs.com/api/v1", LlmVectorBackend.DASHSCOPE_TEXT_EMBEDDING));
+    }
+
+    @Test
+    void dashscopeMultimodalEmbedding_apiV1_appendsServicePath() {
+        assertEquals(
+                "https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding",
+                VectorEmbeddingsUrl.resolve(
+                        "https://dashscope.aliyuncs.com/api/v1", LlmVectorBackend.DASHSCOPE_MULTIMODAL_EMBEDDING));
+    }
+
+    @Test
     void fullEmbeddingsUrl_unchanged() {
         assertEquals(
                 "http://127.0.0.1:9999/v1/embeddings",

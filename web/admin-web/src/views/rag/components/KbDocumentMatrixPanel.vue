@@ -56,7 +56,9 @@
                   <el-select v-model="queryDisplayStatus" :placeholder="t('views.kbMatrix.statusPh')" clearable class="q-status">
                     <el-option :label="t('views.kbMatrix.statusPublished')" value="PUBLISHED" />
                     <el-option :label="t('views.kbMatrix.statusParsing')" value="PARSING" />
+                    <el-option :label="t('views.kbMatrix.statusEmbedding')" value="EMBEDDING" />
                     <el-option :label="t('views.kbMatrix.statusFailed')" value="PARSE_FAILED" />
+                    <el-option :label="t('views.kbMatrix.statusIndexFailed')" value="INDEX_FAILED" />
                   </el-select>
                   <el-button @click="resetDocQuery">{{ t("views.kbMatrix.reset") }}</el-button>
                   <el-button type="primary" @click="runDocQuery">{{ t("views.kbMatrix.query") }}</el-button>
@@ -107,7 +109,7 @@
                   <template #default="{ row }">{{ row.applicableScope || emDash }}</template>
                 </el-table-column>
                 <el-table-column :label="t('views.kbMatrix.colUploader')" width="120" show-overflow-tooltip>
-                  <template #default="{ row }">{{ row.uploadedByLabel || emDash }}</template>
+                  <template #default="{ row }">{{ docUploaderLabel(row) }}</template>
                 </el-table-column>
                 <el-table-column :label="t('views.kbMatrix.colUpdated')" width="172">
                   <template #default="{ row }">{{ formatTime(row.updatedAt) }}</template>
@@ -120,8 +122,14 @@
                     <el-tag v-else-if="row.displayStatus === 'PARSING'" type="warning" size="small">{{
                       t("views.kbMatrix.statusParsing")
                     }}</el-tag>
+                    <el-tag v-else-if="row.displayStatus === 'EMBEDDING'" type="warning" size="small">{{
+                      t("views.kbMatrix.statusEmbedding")
+                    }}</el-tag>
                     <el-tag v-else-if="row.displayStatus === 'PARSE_FAILED'" type="danger" size="small">{{
                       t("views.kbMatrix.statusFailed")
+                    }}</el-tag>
+                    <el-tag v-else-if="row.displayStatus === 'INDEX_FAILED'" type="danger" size="small">{{
+                      t("views.kbMatrix.statusIndexFailed")
                     }}</el-tag>
                     <el-tag v-else size="small">{{ ragDocumentDisplayStatusLabel(row.displayStatus, t) }}</el-tag>
                   </template>
@@ -135,12 +143,23 @@
                       <el-button link type="primary" size="small" @click="downloadDocMarkdown(row)">{{ t("views.kbMatrix.download") }}</el-button>
                       <el-button link type="primary" size="small" @click="openChunksDrawer(row)">{{ t("views.kbMatrix.chunks") }}</el-button>
                     </template>
-                    <template v-else-if="row.displayStatus === 'PARSE_FAILED'">
-                      <el-button link type="primary" size="small" @click="openIngest">{{ t("views.kbMatrix.reupload") }}</el-button>
-                      <el-button link type="danger" size="small" @click="removeDoc(row)">{{ t("views.kbMatrix.removeDoc") }}</el-button>
-                      <el-button link type="primary" size="small" @click="downloadDocMarkdown(row)">{{ t("views.kbMatrix.download") }}</el-button>
+                    <template v-else>
+                      <el-button
+                        v-if="row.displayStatus === 'PARSE_FAILED' || row.displayStatus === 'INDEX_FAILED'"
+                        link
+                        type="primary"
+                        size="small"
+                        @click="openIngest"
+                      >
+                        {{ t("views.kbMatrix.reupload") }}
+                      </el-button>
+                      <el-button link type="primary" size="small" @click="downloadDocMarkdown(row)">
+                        {{ t("views.kbMatrix.download") }}
+                      </el-button>
+                      <el-button link type="danger" size="small" @click="removeDoc(row, true)">
+                        {{ t("views.kbMatrix.removeDoc") }}
+                      </el-button>
                     </template>
-                    <span v-else class="muted">{{ emDash }}</span>
                   </template>
                 </el-table-column>
                 </el-table>
@@ -194,6 +213,15 @@
             <el-form-item class="crawl-intro-form-item" :label-width="0">
               <el-alert type="info" show-icon :closable="false" class="crawl-warn">
                 {{ t("views.kbMatrix.webCrawlIntro") }}
+              </el-alert>
+              <el-alert
+                v-if="tenantCrawlPolicySummary"
+                type="warning"
+                show-icon
+                :closable="false"
+                class="crawl-warn tenant-crawl-preset-hint"
+              >
+                {{ t("views.kbMatrix.tenantCrawlPresetHint", { summary: tenantCrawlPolicySummary }) }}
               </el-alert>
             </el-form-item>
             <el-form-item v-if="crawlSites.length > 0" :label="t('views.kbMatrix.labelLoadSaved')">
@@ -300,6 +328,19 @@
                 />
               </template>
               <el-switch v-model="crawlForm.filterCrawled" />
+            </el-form-item>
+            <el-form-item class="crawl-intro-form-item" :label-width="0">
+              <el-collapse>
+                <el-collapse-item :title="t('views.kbMatrix.siteExtractAdvanced')" name="extract">
+                  <p class="field-hint">{{ t("views.kbMatrix.siteExtractAdvancedHint") }}</p>
+                  <el-input
+                    v-model="crawlForm.extractConfigJson"
+                    type="textarea"
+                    :rows="6"
+                    placeholder='{"presetLock":"CONSERVATIVE","discovery":{"maxDepth":2}}'
+                  />
+                </el-collapse-item>
+              </el-collapse>
             </el-form-item>
           </template>
         </template>
@@ -491,7 +532,22 @@
           <el-descriptions-item :label="t('views.kbMatrix.retrievalHitCountLabel')">
             {{ retrievalTestResult.hitCount }}
           </el-descriptions-item>
+          <el-descriptions-item :label="t('views.kbMatrix.retrievalMilvusRecallLabel')">
+            {{ retrievalTestResult.milvusRecallCount ?? 0 }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('views.kbMatrix.retrievalAfterThresholdLabel')">
+            {{ retrievalTestResult.afterCosineThresholdCount ?? 0 }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('views.kbMatrix.retrievalMinCosineLabel')">
+            {{ retrievalTestResult.minCosineThreshold ?? emDash }}
+          </el-descriptions-item>
         </el-descriptions>
+        <p
+          v-if="retrievalTestResult.diagnosticsHint"
+          class="jobs-dlg-hint retrieval-diag-hint"
+        >
+          {{ retrievalTestResult.diagnosticsHint }}
+        </p>
         <div v-if="retrievalTestResult.hits.length" class="retrieval-section">
           <div class="job-section-title">{{ t("views.kbMatrix.retrievalHitsTitle") }}</div>
           <el-table :data="retrievalTestResult.hits" size="small" stripe border max-height="280">
@@ -537,7 +593,11 @@
       </template>
     </el-dialog>
 
-    <KbWebCrawlProgressDialog v-model="webCrawlProgressDlgOpen" :kb-id="kid" />
+    <KbWebCrawlProgressDialog
+      v-model="webCrawlProgressDlgOpen"
+      :kb-id="kid"
+      :default-tab="webCrawlProgressTab"
+    />
     <KbChunkPreviewDialog ref="chunkPreviewRef" v-model="chunkPreviewDlgOpen" :kb-id="kid" />
   </div>
 </template>
@@ -667,6 +727,7 @@ const editingChunk = ref<{ doc: RagDocumentAdminRow; chunk: RagChunkAdminRow } |
 const chunkEditMarkdownHtml = computed(() => renderMarkdownToSafeHtml(chunkEditText.value || ""));
 
 const webCrawlProgressDlgOpen = ref(false);
+const webCrawlProgressTab = ref<"sites" | "jobs">("jobs");
 
 const retrievalTestDlgOpen = ref(false);
 const retrievalQuery = ref("");
@@ -692,8 +753,10 @@ const crawlForm = reactive({
   filterCrawled: true,
   runNow: true,
   autoRepeat: false,
+  extractConfigJson: "",
 });
 const crawlSchedulePresets = ref<{ code: string; label: string }[]>([]);
+const tenantCrawlPolicySummary = ref("");
 const crawlSites = ref<RagWebCrawlSiteRow[]>([]);
 const pasteForm = reactive({ originalFilename: "", contentType: "", markdownContent: "" });
 const uploadFileList = ref<UploadFile[]>([]);
@@ -750,6 +813,16 @@ function savedSiteOptionLabel(s: RagWebCrawlSiteRow): string {
   return s.name?.trim() ? `${s.name} · ${s.baseUrl}` : s.baseUrl;
 }
 
+function docUploaderLabel(row: RagDocumentAdminRow): string {
+  if (row.uploadedByLabel?.trim()) {
+    return row.uploadedByLabel.trim();
+  }
+  if (row.sourceType === "URL_CRAWL") {
+    return String(t("views.kbMatrix.uploaderSiteCrawlSystem"));
+  }
+  return emDash;
+}
+
 function docChunksRoute(row: RagDocumentAdminRow) {
   return {
     path: `/knowledge-center/workspace/${kid.value}/documents/${row.id}/chunks`,
@@ -767,6 +840,31 @@ function preview(s: string): string {
   return t.length > 160 ? `${t.slice(0, 160)}...` : t;
 }
 
+/** 全库向量重建：超过该文档数时须二次确认（与当前列表筛选无关，为知识库内全部文档）。 */
+const REINDEX_WARN_DOC_THRESHOLD = 50;
+
+async function confirmKbReindex(docTotal: number): Promise<boolean> {
+  if (docTotal <= 0) {
+    ElMessage.warning(t("views.kbMatrix.indexNoDocuments"));
+    return false;
+  }
+  if (docTotal < REINDEX_WARN_DOC_THRESHOLD) {
+    return true;
+  }
+  try {
+    const msgKey =
+      docTotal >= 200 ? "views.kbMatrix.indexReindexWarnMessageLarge" : "views.kbMatrix.indexReindexWarnMessage";
+    await ElMessageBox.confirm(t(msgKey, { n: docTotal }), t("views.kbMatrix.indexReindexWarnTitle"), {
+      type: "warning",
+      confirmButtonText: t("views.kbMatrix.indexReindexConfirm"),
+      cancelButtonText: t("common.cancel"),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function triggerIndex() {
   if (!vectorMilvusEnabled.value) {
     ElMessage.warning(t("views.kbMatrix.milvusWarnIdx"));
@@ -774,8 +872,19 @@ async function triggerIndex() {
   }
   indexingLoading.value = true;
   try {
+    const countPage = await ragApi.fetchRagKbDocumentsPage(kid.value, { page: 1, size: 1 });
+    const docTotal = countPage.total ?? 0;
+    if (!(await confirmKbReindex(docTotal))) {
+      return;
+    }
     await ragApi.enqueueRagKbIndexJob(kid.value);
-    ElMessage.success(t("views.kbMatrix.indexQueued"));
+    ElMessage.success({
+      message: `${t("views.kbMatrix.indexQueued")} — ${t("views.kbMatrix.indexQueuedDetail")}`,
+      duration: 6000,
+    });
+    webCrawlProgressTab.value = "jobs";
+    webCrawlProgressDlgOpen.value = true;
+    void refreshDocs();
   } catch (e: unknown) {
     const msg =
       e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : t("views.kbMatrix.enqueueFailed");
@@ -821,6 +930,7 @@ async function loadDocPage() {
 }
 
 function openWebCrawlProgressDlg() {
+  webCrawlProgressTab.value = "sites";
   webCrawlProgressDlgOpen.value = true;
 }
 
@@ -1082,6 +1192,7 @@ async function loadCrawlMeta() {
   try {
     const meta = await ragApi.fetchWebCrawlSiteMeta();
     crawlSchedulePresets.value = meta.schedulePresets ?? [];
+    tenantCrawlPolicySummary.value = meta.tenantSiteCrawlPolicySummary?.trim() ?? "";
     crawlSites.value = await ragApi.fetchWebCrawlSites(kid.value);
   } catch {
     /* ignore */
@@ -1100,6 +1211,10 @@ function applyRecurringSiteToForm(row: RagWebCrawlSiteRow) {
   crawlForm.runNow = false;
   if (row.chunkStrategy != null) ingestChunkStrategy.value = row.chunkStrategy;
   if (row.categoryId != null) ingestCategoryId.value = row.categoryId;
+  crawlForm.extractConfigJson =
+    row.extractConfig && Object.keys(row.extractConfig).length > 0
+      ? JSON.stringify(row.extractConfig, null, 2)
+      : "";
 }
 
 function resetRecurringSiteForm() {
@@ -1112,6 +1227,7 @@ function resetRecurringSiteForm() {
   crawlForm.filterCrawled = true;
   crawlForm.runNow = true;
   crawlForm.autoRepeat = false;
+  crawlForm.extractConfigJson = "";
 }
 
 function onRecurringSitePick(siteId: number | null) {
@@ -1203,7 +1319,7 @@ async function submitIngest() {
           return;
         }
         const name = crawlForm.name.trim() || defaultSiteNameFromUrl(base);
-        const body = {
+        const body: Parameters<typeof ragApi.createWebCrawlSite>[1] = {
           name,
           baseUrl: base,
           syncMode: "FIRST_FULL_THEN_INCREMENTAL",
@@ -1215,6 +1331,15 @@ async function submitIngest() {
           chunkStrategy: cs,
           categoryId: catId,
         };
+        const rawJson = crawlForm.extractConfigJson.trim();
+        if (rawJson) {
+          try {
+            body.extractConfig = JSON.parse(rawJson) as ragApi.RagWebCrawlExtractConfig;
+          } catch {
+            ElMessage.warning(t("views.kbMatrix.siteExtractJsonInvalid"));
+            return;
+          }
+        }
         let siteId = crawlForm.siteId;
         if (siteId != null) {
           await ragApi.updateWebCrawlSite(kid.value, siteId, body);
@@ -1292,10 +1417,14 @@ async function submitIngest() {
   }
 }
 
-async function removeDoc(row: RagDocumentAdminRow) {
+async function removeDoc(row: RagDocumentAdminRow, incomplete = false) {
   try {
+    const confirmKey =
+      incomplete && row.displayStatus !== "PARSE_FAILED"
+        ? "views.kbMatrix.deleteIncompleteDocConfirm"
+        : "views.kbMatrix.deleteDocConfirm";
     await ElMessageBox.confirm(
-      t("views.kbMatrix.deleteDocConfirm", { title: row.title || t("views.kbMatrix.noTitle") }),
+      t(confirmKey, { title: row.title || t("views.kbMatrix.noTitle") }),
       t("views.menuItems.confirm"),
       { type: "warning" },
     );
@@ -1420,6 +1549,10 @@ onBeforeUnmount(() => {
   min-height: 0;
   display: block;
   align-items: stretch;
+}
+
+.tenant-crawl-preset-hint {
+  margin-top: 8px;
 }
 
 .crawl-warn {

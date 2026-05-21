@@ -148,10 +148,28 @@ export function parseJobResultMetaRows(resultJson: string | null | undefined, t:
     }
     if (typeof o.kbId === "number") rows.push({ label: String(t("views.kbAsync.resultMeta.kbId")), value: String(o.kbId) });
     if (typeof o.error === "string" && o.error.trim()) rows.push({ label: String(t("views.kbAsync.resultMeta.error")), value: o.error.trim() });
-    if (o.indexed === true) {
+    if (typeof o.documentTotal === "number") {
       rows.push({
-        label: String(t("views.kbAsync.resultMeta.indexedLabel")),
-        value: String(t("views.kbAsync.resultMeta.indexedValue")),
+        label: String(t("views.kbAsync.resultMeta.documentTotal")),
+        value: String(o.documentTotal),
+      });
+    }
+    if (typeof o.indexedDocuments === "number") {
+      rows.push({
+        label: String(t("views.kbAsync.resultMeta.indexedDocuments")),
+        value: String(o.indexedDocuments),
+      });
+    }
+    if (typeof o.skippedDocuments === "number") {
+      rows.push({
+        label: String(t("views.kbAsync.resultMeta.skippedDocuments")),
+        value: String(o.skippedDocuments),
+      });
+    }
+    if (typeof o.failedDocuments === "number") {
+      rows.push({
+        label: String(t("views.kbAsync.resultMeta.failedDocuments")),
+        value: String(o.failedDocuments),
       });
     }
     if (typeof o.discoveredUrls === "number") {
@@ -166,10 +184,22 @@ export function parseJobResultMetaRows(resultJson: string | null | undefined, t:
         value: String(o.toCrawlUrls),
       });
     }
+    if (typeof o.preset === "string" && o.preset.trim()) {
+      rows.push({ label: String(t("views.kbAsync.resultMeta.crawlPreset")), value: o.preset.trim() });
+    }
+    if (typeof o.policySummary === "string" && o.policySummary.trim()) {
+      rows.push({ label: String(t("views.kbAsync.resultMeta.crawlPolicy")), value: o.policySummary.trim() });
+    }
     if (typeof o.successCount === "number") {
       rows.push({
         label: String(t("views.kbAsync.resultMeta.successCount")),
         value: String(o.successCount),
+      });
+    }
+    if (typeof o.skippedCount === "number") {
+      rows.push({
+        label: String(t("views.kbAsync.resultMeta.skippedCount")),
+        value: String(o.skippedCount),
       });
     }
     if (typeof o.failCount === "number") {
@@ -180,6 +210,35 @@ export function parseJobResultMetaRows(resultJson: string | null | undefined, t:
     }
     if (typeof o.summary === "string" && o.summary.trim()) {
       rows.push({ label: String(t("views.kbAsync.resultMeta.summary")), value: o.summary.trim() });
+    }
+    if (typeof o.runId === "number") {
+      rows.push({ label: String(t("views.kbAsync.resultMeta.crawlRunId")), value: String(o.runId) });
+    }
+    const fbc = o.failedByCode as Record<string, unknown> | undefined;
+    if (fbc && typeof fbc === "object") {
+      const parts = Object.entries(fbc)
+        .filter(([, v]) => typeof v === "number")
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(", ");
+      if (parts) {
+        rows.push({
+          label: String(t("views.kbAsync.resultMeta.failedByCode")),
+          value: parts,
+        });
+      }
+    }
+    const dbs = o.discoveryByStrategy as Record<string, unknown> | undefined;
+    if (dbs && typeof dbs === "object") {
+      const parts = Object.entries(dbs)
+        .filter(([, v]) => typeof v === "number")
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(", ");
+      if (parts) {
+        rows.push({
+          label: String(t("views.kbAsync.resultMeta.discoveryByStrategy")),
+          value: parts,
+        });
+      }
     }
     if (typeof o.stage === "string" && typeof o.message === "string" && o.message.trim()) {
       rows.push({ label: String(t("views.kbAsync.resultMeta.progress")), value: o.message.trim() });
@@ -199,6 +258,19 @@ export function summarizeJobResult(resultJson: string | null | undefined, t: Com
       return e.length > 80
         ? `${String(t("views.kbAsync.summarize.failPrefix"))}${e.slice(0, 80)}…`
         : `${String(t("views.kbAsync.summarize.failPrefix"))}${e}`;
+    }
+    if (typeof o.summary === "string" && o.summary.trim()) {
+      return o.summary.trim();
+    }
+    if (typeof o.indexedDocuments === "number") {
+      return String(
+        t("views.kbAsync.summarize.kbReindex", {
+          ok: o.indexedDocuments,
+          skip: typeof o.skippedDocuments === "number" ? o.skippedDocuments : 0,
+          fail: typeof o.failedDocuments === "number" ? o.failedDocuments : 0,
+          chunks: typeof o.chunkCount === "number" ? o.chunkCount : 0,
+        }),
+      );
     }
     if (typeof o.documentId === "number" && typeof o.chunkCount === "number") {
       return String(
@@ -242,7 +314,9 @@ export function ragDocumentDisplayStatusLabel(code: string | null | undefined, t
   const s = (code || "").toUpperCase();
   if (s === "PUBLISHED") return String(t("views.kbAsync.ragDocStatus.PUBLISHED"));
   if (s === "PARSING") return String(t("views.kbAsync.ragDocStatus.PARSING"));
+  if (s === "EMBEDDING") return String(t("views.kbAsync.ragDocStatus.EMBEDDING"));
   if (s === "PARSE_FAILED") return String(t("views.kbAsync.ragDocStatus.PARSE_FAILED"));
+  if (s === "INDEX_FAILED") return String(t("views.kbAsync.ragDocStatus.INDEX_FAILED"));
   return code?.trim() || String(t("common.dash"));
 }
 
@@ -255,4 +329,199 @@ export function parseResultSteps(resultJson: string | null | undefined): ResultS
     /* ignore */
   }
   return [];
+}
+
+/** 爬取进度弹窗：管理员可读的单次爬取结果（隐藏 runId、策略 JSON 等技术字段）。 */
+export type SiteCrawlOutcomeTone = "success" | "warning" | "danger" | "info";
+
+export type SiteCrawlFailureLine = { label: string; count: number };
+
+export type SiteCrawlRunDetailSlice = {
+  ok?: number;
+  skipped?: number;
+  fail?: number;
+  failedByCode?: Record<string, number>;
+  queueByStatus?: Record<string, number>;
+};
+
+export type SiteCrawlOutcomeView = {
+  headline: string;
+  tone: SiteCrawlOutcomeTone;
+  ok: number;
+  skipped: number;
+  fail: number;
+  discoveredNote?: string;
+  skippedNote?: string;
+  failures: SiteCrawlFailureLine[];
+  pendingNote?: string;
+  showResumePending: boolean;
+  showRetryFailed: boolean;
+  runId: number | null;
+};
+
+function parseIntRecord(raw: unknown): Record<string, number> {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === "number" && v > 0) {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
+function mergeFailMaps(...maps: Record<string, number>[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const m of maps) {
+    for (const [k, v] of Object.entries(m)) {
+      out[k] = (out[k] ?? 0) + v;
+    }
+  }
+  return out;
+}
+
+function humanizeCrawlFailCode(code: string, t: ComposerTranslation): string {
+  const key = `views.kbMatrix.crawlFailReason.${code}` as const;
+  const tr = t(key);
+  if (tr !== key) return String(tr);
+  if (code.startsWith("HTTP_")) {
+    return String(t("views.kbMatrix.crawlFailReason.HTTP", { code: code.slice(5) }));
+  }
+  return code;
+}
+
+function failureLinesFromMap(map: Record<string, number>, t: ComposerTranslation): SiteCrawlFailureLine[] {
+  return Object.entries(map)
+    .sort((a, b) => b[1] - a[1])
+    .map(([code, count]) => ({ label: humanizeCrawlFailCode(code, t), count }));
+}
+
+function buildHeadline(
+  ok: number,
+  skipped: number,
+  fail: number,
+  summary: string | undefined,
+  error: string | undefined,
+  progressMsg: string | undefined,
+  t: ComposerTranslation,
+): { headline: string; tone: SiteCrawlOutcomeTone } {
+  if (error?.trim()) {
+    return {
+      headline: String(t("views.kbMatrix.crawlOutcome.failWithError", { msg: error.trim() })),
+      tone: "danger",
+    };
+  }
+  if (progressMsg?.trim()) {
+    return { headline: progressMsg.trim(), tone: "info" };
+  }
+  if (summary?.trim()) {
+    const tone: SiteCrawlOutcomeTone =
+      fail > 0 && ok > 0 ? "warning" : fail > 0 && ok === 0 ? "danger" : "success";
+    return { headline: summary.trim(), tone };
+  }
+  if (ok === 0 && fail === 0 && skipped > 0) {
+    return {
+      headline: String(t("views.kbMatrix.crawlOutcome.allSkipped", { n: skipped })),
+      tone: "info",
+    };
+  }
+  if (fail > 0 && ok === 0) {
+    return {
+      headline: String(t("views.kbMatrix.crawlOutcome.allFailed", { fail })),
+      tone: "danger",
+    };
+  }
+  if (fail > 0) {
+    return {
+      headline: String(t("views.kbMatrix.crawlOutcome.partial", { ok, fail })),
+      tone: "warning",
+    };
+  }
+  if (ok > 0) {
+    return {
+      headline: String(t("views.kbMatrix.crawlOutcome.success", { ok, skipped })),
+      tone: "success",
+    };
+  }
+  return {
+    headline: String(t("views.kbMatrix.crawlOutcome.noArticles")),
+    tone: "info",
+  };
+}
+
+/** 将任务结果 JSON + 可选 Run 详情合并为面向业务的爬取结果视图。 */
+export function buildSiteCrawlOutcomeView(
+  resultJson: string | null | undefined,
+  runDetail: SiteCrawlRunDetailSlice | null | undefined,
+  t: ComposerTranslation,
+): SiteCrawlOutcomeView | null {
+  if (resultJson == null || !String(resultJson).trim()) {
+    return null;
+  }
+  let o: Record<string, unknown>;
+  try {
+    o = JSON.parse(resultJson) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+
+  let ok = typeof o.successCount === "number" ? o.successCount : 0;
+  let skipped = typeof o.skippedCount === "number" ? o.skippedCount : 0;
+  let fail = typeof o.failCount === "number" ? o.failCount : 0;
+  if (runDetail) {
+    if (typeof runDetail.ok === "number") ok = runDetail.ok;
+    if (typeof runDetail.skipped === "number") skipped = runDetail.skipped;
+    if (typeof runDetail.fail === "number") fail = runDetail.fail;
+  }
+
+  const summary = typeof o.summary === "string" ? o.summary : undefined;
+  const error = typeof o.error === "string" ? o.error : undefined;
+  const progressMsg =
+    typeof o.message === "string" && o.message.trim() ? o.message.trim() : undefined;
+  const runId = typeof o.runId === "number" ? o.runId : null;
+
+  const failedByCode = mergeFailMaps(
+    parseIntRecord(o.failedByCode),
+    runDetail?.failedByCode ?? {},
+  );
+  const failures = failureLinesFromMap(failedByCode, t);
+
+  const queue = runDetail?.queueByStatus ?? {};
+  const pending =
+    (queue.PENDING ?? 0) + (queue.IN_PROGRESS ?? 0) + (queue.EXPLORE ?? 0);
+
+  const { headline, tone } = buildHeadline(ok, skipped, fail, summary, error, progressMsg, t);
+
+  let discoveredNote: string | undefined;
+  const discovered = typeof o.discoveredUrls === "number" ? o.discoveredUrls : undefined;
+  const toCrawl = typeof o.toCrawlUrls === "number" ? o.toCrawlUrls : undefined;
+  if (discovered != null && toCrawl != null) {
+    discoveredNote = String(
+      t("views.kbMatrix.crawlOutcome.discovered", { discovered, toCrawl }),
+    );
+  } else if (discovered != null) {
+    discoveredNote = String(t("views.kbMatrix.crawlOutcome.discoveredOnly", { discovered }));
+  }
+
+  const skippedNote = skipped > 0 ? String(t("views.kbMatrix.crawlOutcome.skippedHint")) : undefined;
+
+  const pendingNote =
+    pending > 0
+      ? String(t("views.kbMatrix.crawlOutcome.pending", { n: pending }))
+      : undefined;
+
+  return {
+    headline,
+    tone,
+    ok,
+    skipped,
+    fail,
+    discoveredNote,
+    skippedNote,
+    failures,
+    pendingNote,
+    showResumePending: pending > 0 && runId != null,
+    showRetryFailed: (fail > 0 || (queue.FAILED ?? 0) > 0) && runId != null,
+    runId,
+  };
 }

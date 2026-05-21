@@ -33,6 +33,19 @@
 
 ---
 
+## 站点爬取（功能模块索引）
+
+**稳定边界**
+
+- **配置**：租户 **`SITE_CRAWL_PRESET`** / **`SITE_CRAWL_RUNTIME_JSON`**（Shell「外观与模型调用 → 站点爬取默认」）；单站 **`rag_web_crawl_site.extract_config`** 的 **`discovery`/`politeness`/`presetLock`** 仅允许加严。
+- **策略解析**：**`SiteCrawlPolicyResolver`** + **`SiteCrawlPresetTemplates`**（保守/平稳/激进 + CUSTOM）；发现策略白名单见 **`SiteCrawlStrategyIds`**。
+- **编排**：**`CrawlRunOrchestrator`** — 多策略发现 → **`crawl_url_queue`** upsert → **`CrawlExploreQueueConsumer`** 消费 EXPLORE → 按队列 **PENDING ARTICLE** 并发入库；**`resumePendingArticles`** / **`retryFailedArticles`** 同 run 续跑。
+- **抓取**：**`PolitenessGate`**（robots、per-host QPS、全局并发、Redis 日配额、429 降速）+ **`HttpFetcher`**（连接池、304、meta refresh）；**`CrawlPagePipeline`** 含 **`retryMax`** 指数退避。
+- **运维 API**：**`GET …/crawl-runs`** 列表、**`GET …/crawl-runs/{runId}`** 详情、**`POST …/resume-pending`**、**`POST …/retry-failed`**；任务 **`result_json`** 含 **`runId`/`ok`/`skipped`/`fail`/`failedByCode`/`discoveryByStrategy`**；进度 JSON **`detail.discoveryByStrategy`**。
+- **回归样例（手工）**：VSB 图文列表站、央广 **`/zhuanti/news/`** 图链、GBK + meta refresh 站。
+
+---
+
 ## 联网搜索（功能模块索引）
 
 **稳定边界（不写迭代清单）**
@@ -257,6 +270,31 @@ sequenceDiagram
 | **提交前自检** | 仓库根 **`.\scripts\check-project-changelog.ps1 -IncludeUntracked`**（校验：动代码须同集改 **`PROJECT.md`**，且顶节 **`###`** 与 **`pom.xml` `<version>`** 一致）。Agent 必读 **`AGENTS.md`**。 |
 
 ## 变更记录
+
+### 0.1.245-SNAPSHOT
+
+- **用户端对话思考区**：`ChatView.vue` 联网查询进度增加入场/底纹/跳动点动画；思考正文改 Markdown 渲染（`reasoningMdStreamingHtml`）；主回复开始后隐藏思考区流式光标与顶栏「思考中」态；联网行图标与文案垂直居中。
+- **猜你想问**：仅最后一条助手展示；发新问清除上一轮 chips；SSE 未完成时不推运营池占位（`ChatStarterFollowUpService#resolveForStreamEndImmediate`）；加载骨架独立容器 + 扫光/shimmer 与错落宽度（修复 `nth-of-type` 失效）。
+- **用户端对话耗时**：`formatReplyDurationMs` 全程一位小数（0.1 秒步进）；流式计时 tick 100ms，去掉满 10 秒变整数。
+- **猜你想问缓存**：`ChatStarterFollowUpCacheRepository#saveQuestions` 幂等 upsert，修复 SSE 后台写入与 `GET .../follow-up-prompts` 并发时的 `uk_csfuc_tenant_msg` 冲突。
+- **联网首字加速**：对话流式改 `ChatWebSearchGroundingService#groundForChatStream`（首轮注入后即开 LLM，其余轮并行/落库前合并）；RAG 可引用分片与注入片段并行检索。
+- **通用站点爬取框架（P0～P3）**：租户 **`SITE_CRAWL_PRESET`** / **`SITE_CRAWL_RUNTIME_JSON`**（Shell「外观与模型调用 → 站点爬取默认」）；**`SiteCrawlPolicyResolver`** / **`SiteCrawlPresetTemplates`** 三档（保守/平稳/激进）+ CUSTOM JSON 校验；单站 **`rag_web_crawl_site.extract_config`** 扩展 **`discovery`/`politeness`/`presetLock`**（仅可加严）。
+- **礼貌抓取与连接池**：**`PolitenessGate`**（robots 硬编码、per-host QPS、全局并发、日配额 Redis、抖动）；**`HttpFetcher`** 共享 **`HttpClient`**、条件请求 304、meta refresh；移除 **`RagLocalSiteCrawlOrchestrationService`** 内 **4 并发 + 500ms** 硬编码，编排迁至 **`CrawlRunOrchestrator`**。
+- **发现合并与持久化队列**：表 **`crawl_run`**、**`crawl_url_queue`**（**`migrate_0_1_245_crawl_framework.sql`**；**`uk_crawl_url_queue_run_norm` 使用 `url_norm(191)` 前缀** 避免 utf8mb4 索引超 767 字节；**已建库须手工执行 migrate**）；**`CrawlDiscoveryOrchestrator`** + 策略 **`sitemap`/`html_bfs`/`list_pagination`/`cms_vsb`/`article_heuristic`/`rss_atom`/`js_render_discovery`**（JS 受 **`onlyWhenLinkCountBelow`** 触发）；**`CrawlUrlQueueWriter`** upsert 合并；**`CrawlExploreQueueConsumer`** 续发现；**`CrawlPagePipeline`** 重试/429 **`onRateLimited`**；**`stats_json`** / job **`result_json`** 含 **`discoveryByStrategy`/`failedByCode`/`runId`**。
+- **Playwright 与运维**：**`pom.xml`** **`com.microsoft.playwright:playwright`**；**`CrawlQueueRetentionScheduledTask`**；**`CrawlRunAdminApplicationService`** + REST **`crawl-runs`**；**`RagHttpFetch`** 标记 **`@Deprecated`**，预览走 **`HttpFetcher`**；**`gw_api_endpoint_catalog_inserts.sql`** 已登记 crawl-runs / 档位模板 API。
+- **管理端**：**`SiteCrawlPresetPicker`** 切换档位自动拉模板 JSON；**`KbWebCrawlProgressDialog`** 展示失败码/策略计数与「仅重试失败项」；**`KbDocumentMatrixPanel`** 租户策略摘要提示。
+- **修复**：**`PolitenessGate`** robots 本地缓存改为双 `Map`，消除热更新后 **`RobotsCacheEntry` NoClassDefFoundError**；删除站点支持 **`purgeDocuments`**（向量+软删文档 / 仅删配置）。
+- **P0～P3 补齐（不含自动化回归）**：发现阶段统一 **`CrawlDiscoveryPageFetcher`**（**`PolitenessGate`+`HttpFetcher`**）；**`RagIngestOrchestrationService`** URL 入库改 **`HttpFetcher`**；**`HostLimiter`** 持锁至 **`release()`**；**`applySafetyClamp`** 将 JS **`maxPagesPerRun≤15`**；**`html_bfs` 时跳过 `list_pagination`**；JS 阈值用 **`countStaticArticleLinksOnEntry`**；robots **Redis** `crawl:robots:{host}`；**`CrawlRunExecutorConfig`** 专用线程池；**`maxArticlesPerRun`** 队列封顶；**`ok`/`skipped`/`fail`** 分计；**`GET crawl-runs`** 列表、**`POST resume-pending`**；进度 **`detail.discoveryByStrategy`**；管理端 run 详情与单站 **`extract_config`** 高级 JSON 编辑。
+- **爬取进度弹窗**：**`KbWebCrawlProgressDialog.vue`** — Tab 切换；行展开区 **`buildSiteCrawlOutcomeView`** 业务化展示；**点击整行**即可展开/收起详情（不必只点末列展开图标）。
+- **站点爬取上传人**：**`JobTaskExecutionService`** 执行任务时从 **`job_task.user_id`** 恢复 **`TenantContextHolder`**；**`enqueueSiteCrawlJobForSite`** 手动「立即爬取」写入触发人；**`RagIngestOrchestrationService`** URL 更新亦写入 **`uploaded_by_user_id`**；无用户时管理端展示「站点爬取（定时）」。
+- **RAG 文档状态与检索一致性**：**`RagDocumentDisplayStatus`** 增加 **`EMBEDDING`**、**`INDEX_FAILED`**；**`RagIngestOrchestrationService`** 正文与向量化分事务（**`REQUIRES_NEW`**），向量化失败保留文档并标 **`INDEX_FAILED`**、清理分片，管理端可删除；仅 Milvus/ES 成功后 **`PUBLISHED`**；**`MilvusVectorStore#upsertChunks`** 失败抛错；检索试跑诊断；**`KbDocumentMatrixPanel`** 非已发布状态均提供删除（含未完成索引确认文案）。
+- **全库索引重建（`RAG_INDEX`）**：**`RagIngestOrchestrationService#runKbReindex`** 遍历 **`listActiveByKbId`**，对有正文的文档清分片后复用 **`indexAfterBodyPersisted`**；**`JobTaskExecutionService`** 写入结构化 **`result_json`**（**`documentTotal`/`indexedDocuments`/`summary`** 等）并打 **`[RAG 全库索引]`** 日志；管理端 **`ragJobDisplay`** / **`KbWebCrawlProgressDialog`**「后台任务」Tab 展示索引与其它 RAG 任务；**`KbDocumentMatrixPanel`** 触发索引后打开进度弹窗；文档数 **≥50**（**≥200** 加强文案）时二次确认。
+- **知识库数据弹窗 UX**：**`KbDataPanelDialog`** 固定视口高度 + 表体滚动（**`useKbDataPanelTableHeight`**）；**`KbAsyncTasksDialog`** / **`KbWebCrawlProgressDialog`** 统一壳层、紧凑 **`small`** 表格、详情改 **`KbJobTaskDetailDrawer`** 侧滑；爬取进度去掉行内展开，后台任务前端分页（每页 15）。
+- **RAG 嵌入排障**：**`RagEmbeddingService`** 上游 4xx/5xx 日志增加 **`modelId`**、**`vectorBackend`**，便于核对火山方舟模型名与集成策略。
+- **百炼千问向量化**：**`LlmVectorBackend`** 新增 **`DASHSCOPE_COMPATIBLE`**（**`…/compatible-mode/v1/embeddings`**，**`text-embedding-v4`** 等）、**`DASHSCOPE_TEXT_EMBEDDING`**（DashScope 原生 **`…/services/embeddings/text-embedding/text-embedding`**）；**`VectorEmbeddingsUrl`** / **`RagEmbeddingHttpSupport`** / 管理端 **`llm-models/meta`** 与单测。
+- **嵌入维数对齐**：**`RagEmbeddingHttpSupport`** 向 OpenAI 兼容 / 百炼 / 方舟文本请求体写入 **`dimensions`**（或百炼原生 **`parameters.dimension`**），取值 **`ai.providers.milvus.vector-dimension`**，避免 **`text-embedding-v4`** 默认 1024 与 Milvus 2048 不一致。
+- **百炼多模态向量化**：**`LlmVectorBackend.DASHSCOPE_MULTIMODAL_EMBEDDING`** — **`POST …/services/embeddings/multimodal-embedding/multimodal-embedding`**；RAG 纯文本 **`input.contents:[{text}]`** + **`parameters.dimension`**；响应 **`output.embeddings`**（优先 **`type=text`**）；**`VectorEmbeddingsUrl`** / **`RagEmbeddingHttpSupport`** / **`llm-admin-meta_*`** / **`web/admin-web/src/api/models.ts`** 与单测。
+- **版本**：**`pom.xml`** bump **0.1.244 → 0.1.245-SNAPSHOT**。
 
 ### 0.1.244-SNAPSHOT
 

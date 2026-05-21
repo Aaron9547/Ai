@@ -319,6 +319,47 @@ CREATE TABLE IF NOT EXISTS rag_web_crawl_url_item (
   KEY idx_rag_wcui_url (tenant_id, url(191))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='网页爬取已入库 URL 子项';
 
+CREATE TABLE IF NOT EXISTS crawl_run (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  tenant_id BIGINT NOT NULL COMMENT '租户隔离键',
+  kb_id BIGINT NOT NULL COMMENT '知识库 id',
+  site_id BIGINT NULL COMMENT 'rag_web_crawl_site.id',
+  base_url VARCHAR(2048) NOT NULL COMMENT '站点入口 URL',
+  sync_mode VARCHAR(32) NOT NULL COMMENT '同步模式码',
+  preset VARCHAR(32) NOT NULL COMMENT '爬取档位快照',
+  policy_summary VARCHAR(512) NULL COMMENT '策略摘要',
+  status VARCHAR(32) NOT NULL DEFAULT 'RUNNING' COMMENT 'RUNNING/DONE/FAILED',
+  stats_json LONGTEXT NULL COMMENT '统计 JSON',
+  created_at DATETIME(3) NOT NULL COMMENT '创建时间 UTC',
+  updated_at DATETIME(3) NOT NULL COMMENT '更新时间 UTC',
+  PRIMARY KEY (id),
+  KEY idx_crawl_run_tenant_kb (tenant_id, kb_id),
+  KEY idx_crawl_run_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='站点爬取 run 元数据';
+
+CREATE TABLE IF NOT EXISTS crawl_url_queue (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  run_id BIGINT NOT NULL COMMENT 'crawl_run.id',
+  tenant_id BIGINT NOT NULL COMMENT '租户隔离键',
+  url VARCHAR(2048) NOT NULL COMMENT '原始 URL',
+  url_norm VARCHAR(2048) NOT NULL COMMENT '归一 URL',
+  queue_role VARCHAR(16) NOT NULL COMMENT 'EXPLORE/ARTICLE',
+  status VARCHAR(32) NOT NULL DEFAULT 'PENDING' COMMENT '队列状态',
+  score INT NOT NULL DEFAULT 0 COMMENT '合并评分',
+  sources_json VARCHAR(2048) NULL COMMENT '发现策略来源 JSON 数组',
+  error_code VARCHAR(64) NULL COMMENT '失败码',
+  retry_count INT NOT NULL DEFAULT 0 COMMENT '重试次数',
+  etag VARCHAR(256) NULL COMMENT '条件请求 ETag',
+  last_modified VARCHAR(128) NULL COMMENT '条件请求 Last-Modified',
+  document_id BIGINT NULL COMMENT '入库文档 id',
+  created_at DATETIME(3) NOT NULL COMMENT '创建时间 UTC',
+  updated_at DATETIME(3) NOT NULL COMMENT '更新时间 UTC',
+  PRIMARY KEY (id),
+  KEY idx_crawl_url_queue_run_status (run_id, status),
+  KEY idx_crawl_url_queue_tenant (tenant_id),
+  UNIQUE KEY uk_crawl_url_queue_run_norm (run_id, url_norm(191))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='站点爬取 URL 队列';
+
 CREATE TABLE IF NOT EXISTS ten_scheduled_task (
   id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
   tenant_id BIGINT NOT NULL COMMENT '租户隔离键',

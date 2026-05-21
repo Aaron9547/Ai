@@ -9,6 +9,7 @@ import com.aaron.cloud.rag.RagLocalSiteCrawlOrchestrationService;
 import com.aaron.cloud.common.task.LongRunningTaskProgress;
 import com.aaron.cloud.common.task.LongRunningTaskProgressReporter;
 import com.aaron.cloud.common.task.LongRunningTaskProgressSupport;
+import com.aaron.cloud.common.context.TenantContextHolder;
 import com.aaron.cloud.rag.RagVectorInfrastructure;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -33,6 +34,20 @@ public class JobTaskExecutionService {
             return;
         }
         JobTask task = taskOpt.get();
+        try {
+            TenantContextHolder.set(
+                    TenantContextHolder.TenantSnapshot.builder()
+                            .tenantId(tenantId)
+                            .userId(task.getUserId())
+                            .deviceId(task.getDeviceId())
+                            .build());
+            runTaskBody(jobTaskId, tenantId, task);
+        } finally {
+            TenantContextHolder.clear();
+        }
+    }
+
+    private void runTaskBody(long jobTaskId, long tenantId, JobTask task) {
         if (task.getTaskType() == JobTaskType.RAG_INDEX
                 || task.getTaskType() == JobTaskType.RAG_URL_IMPORT
                 || task.getTaskType() == JobTaskType.RAG_FILE_IMPORT
@@ -51,11 +66,7 @@ public class JobTaskExecutionService {
         try {
             String resultJson =
                     switch (task.getTaskType()) {
-                        case RAG_INDEX -> {
-                            progress.report("INDEX", "索引任务执行中", null, null, null);
-                            handleRagIndex(task);
-                            yield "{\"indexed\":true}";
-                        }
+                        case RAG_INDEX -> handleRagIndex(task, progress);
                         case RAG_URL_IMPORT -> handleRagUrlImport(task);
                         case RAG_FILE_IMPORT -> handleRagFileImport(task);
                         case RAG_SITE_CRAWL -> handleRagSiteCrawl(task, progress);
@@ -76,13 +87,19 @@ public class JobTaskExecutionService {
         }
     }
 
-    private void handleRagIndex(JobTask task) throws Exception {
+    private String handleRagIndex(JobTask task, LongRunningTaskProgressReporter progress)
+            throws Exception {
         JsonNode root = objectMapper.readTree(task.getPayloadJson() == null ? "{}" : task.getPayloadJson());
         if (!root.has("kbId")) {
             throw new IllegalArgumentException("kbId required");
         }
-        // 占位：真实流水线在后续迭代中接 Milvus / 解析
-        root.get("kbId").asLong();
+        long kbId = root.get("kbId").asLong();
+        log.info(
+                "RAG_INDEX start jobTaskId={} tenantId={} kbId={}",
+                task.getId(),
+                task.getTenantId(),
+                kbId);
+        return ragIngestOrchestrationService.runKbReindex(task.getTenantId(), kbId, progress);
     }
 
     private String handleRagUrlImport(JobTask task) throws Exception {
@@ -103,13 +120,14 @@ public class JobTaskExecutionService {
     }
 
     private LongRunningTaskProgressReporter progressReporter(long jobTaskId, long tenantId) {
-        return (stage, message, percent, current, total) ->
+        return (stage, message, percent, current, total, detail) ->
                 jobTaskRepository.updateProgress(
                         jobTaskId,
                         tenantId,
                         LongRunningTaskProgressSupport.toJson(
                                 objectMapper,
-                                new LongRunningTaskProgress(stage, message, percent, current, total)));
+                                new LongRunningTaskProgress(
+                                        stage, message, percent, current, total, detail)));
     }
 
     private String handleRagFileImport(JobTask task) throws Exception {

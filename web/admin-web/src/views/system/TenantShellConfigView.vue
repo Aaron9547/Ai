@@ -318,6 +318,21 @@
             </el-form-item>
           </div>
 
+          <div class="outbound-section-head">{{ t("admin.shell.siteCrawl.sectionTitle") }}</div>
+          <p class="field-hint web-cache-hint">{{ t("admin.shell.siteCrawl.sectionHint") }}</p>
+          <SiteCrawlPresetPicker v-model="siteCrawlPreset" />
+          <el-collapse class="site-crawl-advanced">
+            <el-collapse-item :title="t('admin.shell.siteCrawl.advancedTitle')" name="adv">
+              <el-input
+                v-model="siteCrawlRuntimeJson"
+                type="textarea"
+                :rows="10"
+                class="outbound-line-input"
+                @input="onSiteCrawlRuntimeEdit"
+              />
+            </el-collapse-item>
+          </el-collapse>
+
           <el-form-item class="outbound-footer-actions">
             <div class="outbound-footer-actions-inner">
               <el-button type="primary" :loading="savingModelCalling" @click="saveModelCalling">{{ t("admin.shell.saveModelCalling") }}</el-button>
@@ -601,7 +616,11 @@ import {
   WEB_SEARCH_CACHE_DEFAULT,
   parseWebSearchCacheJson,
   serializeWebSearchCacheJson,
+  normalizeSiteCrawlPreset,
+  parseSiteCrawlRuntimeJson,
+  type SiteCrawlPresetValue,
 } from "@/views/system/modelCallingRuntimeFormModel";
+import SiteCrawlPresetPicker from "@/views/system/components/SiteCrawlPresetPicker.vue";
 
 const { t, locale } = useI18n();
 
@@ -686,6 +705,25 @@ const inputGuardForm = reactive({ ...INPUT_GUARD_DEFAULT });
 const webSearchRounds = ref(3);
 const suffixSlots = ref<string[]>([""]);
 const webSearchCacheForm = reactive({ ...WEB_SEARCH_CACHE_DEFAULT });
+const siteCrawlPreset = ref<SiteCrawlPresetValue>("BALANCED");
+const siteCrawlRuntimeJson = ref("{}");
+const siteCrawlPresetApplying = ref(false);
+
+function onSiteCrawlRuntimeEdit() {
+  siteCrawlPreset.value = "CUSTOM";
+}
+
+watch(siteCrawlPreset, async (next, prev) => {
+  if (siteCrawlPresetApplying.value || next === prev || next === "CUSTOM") {
+    return;
+  }
+  try {
+    const json = await tenantShellApi.fetchSiteCrawlRuntimeTemplate(next);
+    siteCrawlRuntimeJson.value = json;
+  } catch {
+    ElMessage.warning(t("admin.shell.siteCrawl.templateLoadFailed"));
+  }
+});
 watch(webSearchRounds, (n) => {
   suffixSlots.value = resizeSuffixSlots([...suffixSlots.value], n);
 });
@@ -738,6 +776,10 @@ function applyModelCallingFromApi(mc: TenantShellModelCallingRuntime | undefined
     webSearchCacheForm,
     parseWebSearchCacheJson(mc.webSearchGroundingCacheJson ?? "{}"),
   );
+  siteCrawlPresetApplying.value = true;
+  siteCrawlPreset.value = normalizeSiteCrawlPreset(mc.siteCrawlPreset);
+  siteCrawlRuntimeJson.value = parseSiteCrawlRuntimeJson(mc.siteCrawlRuntimeJson);
+  siteCrawlPresetApplying.value = false;
 }
 
 async function reload() {
@@ -888,6 +930,8 @@ async function saveModelCalling() {
       webSearchGroundingMultiRoundCount: String(webSearchRounds.value),
       webSearchGroundingRoundSuffixesJson: serializeSuffixJson(suffixSlots.value, webSearchRounds.value),
       webSearchGroundingCacheJson: serializeWebSearchCacheJson(webSearchCacheForm),
+      siteCrawlPreset: siteCrawlPreset.value,
+      siteCrawlRuntimeJson: siteCrawlRuntimeJson.value.trim() || "{}",
     };
     const data = await tenantShellApi.putTenantShellModelCallingRuntime(body);
     applyModelCallingFromApi(data.modelCallingRuntime);

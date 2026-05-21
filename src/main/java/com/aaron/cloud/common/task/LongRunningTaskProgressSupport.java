@@ -19,6 +19,6 @@ public final class LongRunningTaskProgressSupport {
     }
 
     public static LongRunningTaskProgressReporter noop() {
-        return (stage, message, percent, current, total) -> {};
+        return (stage, message, percent, current, total, detail) -> {};
     }
 }

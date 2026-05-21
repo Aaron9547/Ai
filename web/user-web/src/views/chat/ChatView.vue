@@ -109,7 +109,7 @@
                   @click="onReasoningBarClick(m)"
                 >
                   <span class="reasoning-bar-title">{{ t("chat.reasoningTitle") }}</span>
-                  <span v-if="m.reasoningStreaming" class="reasoning-live">{{ intentReasoningLiveLabel(m) }}</span>
+                  <span v-if="showReasoningBarLiveLabel(m)" class="reasoning-live">{{ intentReasoningLiveLabel(m) }}</span>
                   <span v-else class="reasoning-meta">
                     {{ m.reasoningCollapsed ? t("chat.reasoningCollapsed") : t("chat.reasoningExpand") }}
                   </span>
@@ -125,28 +125,54 @@
                       class="reasoning-web-search"
                       :class="{ 'reasoning-web-search--live': m.webSearchPhase === 'searching' }"
                     >
-                      <el-icon
-                        v-if="m.webSearchPhase === 'searching'"
-                        class="wf-spin reasoning-web-search-ico"
-                        :size="15"
-                      />
-                      <span
-                        class="reasoning-web-search-text"
-                        :class="{ 'reasoning-web-search-count--tick': webSearchCountTickKey(m) }"
-                        :key="webSearchCountTickKey(m)"
-                      >
-                        {{ webSearchProgressText(m) }}
+                      <span class="reasoning-web-search-lead" aria-hidden="true">
+                        <el-icon
+                          v-if="m.webSearchPhase === 'searching'"
+                          class="wf-spin reasoning-web-search-ico"
+                          :size="15"
+                        >
+                          <Loading />
+                        </el-icon>
+                        <el-icon v-else class="reasoning-web-search-done-ico" :size="15">
+                          <CircleCheck />
+                        </el-icon>
                       </span>
+                      <span class="reasoning-web-search-main">
+                        <span
+                          class="reasoning-web-search-text"
+                          :class="{ 'reasoning-web-search-count--tick': webSearchCountTickKey(m) }"
+                          :key="webSearchCountTickKey(m)"
+                        >
+                          {{ webSearchProgressText(m) }}
+                        </span>
+                        <span
+                          v-if="m.webSearchPhase === 'searching'"
+                          class="reasoning-web-search-dots"
+                          aria-hidden="true"
+                        >
+                          <i /><i /><i />
+                        </span>
+                      </span>
+                      <span
+                        v-if="m.webSearchPhase === 'searching'"
+                        class="reasoning-web-search-pulse"
+                        aria-hidden="true"
+                      />
                     </p>
-                    <template v-if="m.reasoning && m.reasoning.length">
-                      {{ m.reasoning }}<span v-if="m.reasoningStreaming" class="cursor" />
-                    </template>
+                    <div
+                      v-if="m.reasoning && m.reasoning.length"
+                      class="reasoning-md bubble-md"
+                      v-html="reasoningMdStreamingHtml(m)"
+                    />
                     <p
                       v-else-if="reasoningIntentOrchestrationHint(m)"
                       class="reasoning-intent-hint"
                       v-html="t('chat.reasoningIntentHint')"
                     />
-                    <span v-else-if="m.reasoningStreaming && !showWebSearchProgressInBody(m)" class="cursor" />
+                    <span
+                      v-else-if="showReasoningStreamCursor(m) && !showWebSearchProgressInBody(m)"
+                      class="cursor"
+                    />
                   </div>
                 </div>
               </div>
@@ -161,17 +187,42 @@
                 <div class="reasoning-body-wrap">
                   <div class="reasoning-body">
                     <p
-                      class="reasoning-web-search reasoning-web-search--live"
+                      class="reasoning-web-search"
                       :class="{ 'reasoning-web-search--live': m.webSearchPhase === 'searching' }"
                     >
-                      <el-icon class="wf-spin reasoning-web-search-ico" :size="15" />
-                      <span
-                        class="reasoning-web-search-text"
-                        :class="{ 'reasoning-web-search-count--tick': webSearchCountTickKey(m) }"
-                        :key="webSearchCountTickKey(m)"
-                      >
-                        {{ webSearchProgressText(m) }}
+                      <span class="reasoning-web-search-lead" aria-hidden="true">
+                        <el-icon
+                          v-if="m.webSearchPhase === 'searching'"
+                          class="wf-spin reasoning-web-search-ico"
+                          :size="15"
+                        >
+                          <Loading />
+                        </el-icon>
+                        <el-icon v-else class="reasoning-web-search-done-ico" :size="15">
+                          <CircleCheck />
+                        </el-icon>
                       </span>
+                      <span class="reasoning-web-search-main">
+                        <span
+                          class="reasoning-web-search-text"
+                          :class="{ 'reasoning-web-search-count--tick': webSearchCountTickKey(m) }"
+                          :key="webSearchCountTickKey(m)"
+                        >
+                          {{ webSearchProgressText(m) }}
+                        </span>
+                        <span
+                          v-if="m.webSearchPhase === 'searching'"
+                          class="reasoning-web-search-dots"
+                          aria-hidden="true"
+                        >
+                          <i /><i /><i />
+                        </span>
+                      </span>
+                      <span
+                        v-if="m.webSearchPhase === 'searching'"
+                        class="reasoning-web-search-pulse"
+                        aria-hidden="true"
+                      />
                     </p>
                   </div>
                 </div>
@@ -354,15 +405,19 @@
                 :aria-busy="m.followUpLoading ? 'true' : 'false'"
               >
                 <span class="follow-up-prompts-label">{{ t("chat.followUpLabel") }}</span>
-                <template v-if="m.followUpLoading && !(m.followUpPrompts?.length)">
+                <div
+                  v-if="m.followUpLoading && !(m.followUpPrompts?.length)"
+                  class="follow-up-prompts-skeletons"
+                  aria-hidden="true"
+                >
                   <span
-                    v-for="(w, sk) in followUpSkeletonWidths"
-                    :key="`follow-up-sk-${sk}`"
+                    v-for="(spec, idx) in followUpSkeletonWidths"
+                    :key="`follow-up-sk-${idx}`"
                     class="follow-up-prompt-skeleton"
-                    :style="{ width: w }"
-                    aria-hidden="true"
+                    :class="`follow-up-prompt-skeleton--${idx}`"
+                    :style="{ width: spec.width, maxWidth: spec.maxWidth }"
                   />
-                </template>
+                </div>
                 <button
                   v-for="fp in m.followUpPrompts"
                   :key="fp.id ?? fp.text"
@@ -1213,7 +1268,7 @@ async function loadMessagesForConv(id: number) {
     ElMessage.error(t("chat.loadHistoryFail"));
   }
   await ensureEmptyStarterPromptsIfNeeded();
-  void loadFollowUpForAllAssistants();
+  loadFollowUpForLastAssistant();
   await scrollToBottom();
 }
 
@@ -1291,6 +1346,27 @@ function assistantMdStreamingHtml(m: Msg): string {
     return assistantMdHtml(m.content);
   }
   return renderStreamingMarkdownToSafeHtml(m.content, STREAM_CURSOR_HTML);
+}
+
+/** 思考分片仍在输出且主回复未开始时，展示思考区流式光标 */
+function showReasoningStreamCursor(m: Msg): boolean {
+  return !!(m.reasoningStreaming && !m.content.trim().length);
+}
+
+function reasoningMdStreamingHtml(m: Msg): string {
+  const text = m.reasoning ?? "";
+  if (!showReasoningStreamCursor(m)) {
+    return assistantMdHtml(text);
+  }
+  return renderStreamingMarkdownToSafeHtml(text, STREAM_CURSOR_HTML);
+}
+
+/** 顶栏「思考中 / 联网查询中」：主回复已出现后改为折叠提示 */
+function showReasoningBarLiveLabel(m: Msg): boolean {
+  if (m.content.trim().length > 0) {
+    return false;
+  }
+  return !!(m.reasoningStreaming || m.webSearchPhase === "searching");
 }
 
 function workflowSegmentStreamingHtml(seg: { status: string; text?: string | null }): string {
@@ -1377,12 +1453,12 @@ function intentReasoningLiveLabel(m: Msg): string {
   return t("chat.thinkingLive");
 }
 
+/** 流式/完成态统一：按 0.1 秒取整后始终显示一位小数（如 0.3 秒、9.8 秒、12.4 秒），避免 10 秒处突然去掉小数。 */
 function formatReplyDurationMs(ms: number): string {
-  if (ms < 1000) {
-    return t("chat.replyDurationSubSec", { ms: Math.max(1, Math.round(ms)) });
-  }
-  const sec = ms / 1000;
-  return sec >= 10 ? t("chat.replyDurationSec", { s: Math.round(sec) }) : t("chat.replyDurationSec", { s: sec.toFixed(1) });
+  const sec = Math.max(0, ms) / 1000;
+  const tenths = Math.round(sec * 10) / 10;
+  const label = (ms > 0 && tenths < 0.1 ? 0.1 : tenths).toFixed(1);
+  return t("chat.replyDurationSec", { s: label });
 }
 
 function assistantDurationLabel(m: Msg): string | null {
@@ -1458,7 +1534,7 @@ function ensureStreamElapsedTicker() {
         streamElapsedTimer = null;
       }
     }
-  }, 200);
+  }, 100);
 }
 
 /** 思考区展示意图说明（模型无 reasoning 分片、且已有流程步骤；流结束后仍展示） */
@@ -1752,17 +1828,42 @@ function isLastAssistantIndex(idx: number): boolean {
   return messages.value[idx]?.role === "assistant";
 }
 
-/** 猜你想问骨架条宽度（三条错落，贴近真实 chip） */
-const followUpSkeletonWidths = ["76px", "104px", "88px"] as const;
+/** 猜你想问骨架条宽度（三条长短错落，贴近真实 chip） */
+const followUpSkeletonWidths = [
+  { width: "72px", maxWidth: "38%" },
+  { width: "108px", maxWidth: "52%" },
+  { width: "84px", maxWidth: "44%" },
+] as const;
 
 function showFollowUpPromptsBlock(m: Msg, idx: number): boolean {
-  if (m.role !== "assistant" || m.streaming) {
+  if (m.role !== "assistant" || m.streaming || !isLastAssistantIndex(idx)) {
     return false;
   }
   if ((m.followUpPrompts?.length ?? 0) > 0) {
     return true;
   }
-  return !!(m.followUpLoading && isLastAssistantIndex(idx));
+  return !!m.followUpLoading;
+}
+
+/** 新一问发出时清掉上一轮助手的「猜你想问」，避免占位/旧 chips 残留 */
+function resetFollowUpOnPriorAssistants() {
+  for (const row of messages.value) {
+    if (row.role !== "assistant") {
+      continue;
+    }
+    row.followUpPrompts = undefined;
+    row.followUpLoading = false;
+  }
+}
+
+function loadFollowUpForLastAssistant() {
+  for (let i = messages.value.length - 1; i >= 0; i--) {
+    const m = messages.value[i];
+    if (m?.role === "assistant" && !m.streaming) {
+      void loadFollowUpForMessage(m);
+      return;
+    }
+  }
 }
 
 function beginFollowUpLoading(m: Msg) {
@@ -1971,14 +2072,6 @@ async function loadFollowUpForMessage(m: Msg) {
     m.followUpPrompts = [];
   } finally {
     finishFollowUpLoading(m);
-  }
-}
-
-async function loadFollowUpForAllAssistants() {
-  for (const m of messages.value) {
-    if (m.role === "assistant" && m.id != null && !m.streaming) {
-      await loadFollowUpForMessage(m);
-    }
   }
 }
 
@@ -2197,7 +2290,7 @@ async function retryAssistantAt(assistantIdx: number) {
     sending.value = false;
     if (syncHistory && convId.value) {
       await syncThreadAfterStream(convId.value);
-      await loadFollowUpForAllAssistants();
+      loadFollowUpForLastAssistant();
     }
     await scrollToBottom();
   }
@@ -2470,6 +2563,7 @@ async function send() {
     !!currentModel.value?.supportsThinking && thinkingEnabled.value;
   const useWeb = webSearchAllowed.value && webSearchEnabled.value;
 
+  resetFollowUpOnPriorAssistants();
   messages.value.push({
     role: "user",
     content: text,
@@ -2547,7 +2641,7 @@ async function send() {
         await syncThreadAfterStream(convId.value);
         const m = messages.value[assistantIdx];
         if (!m?.followUpPrompts?.length) {
-          await loadFollowUpForAllAssistants();
+          loadFollowUpForLastAssistant();
         }
       }
     }
@@ -2677,6 +2771,17 @@ async function send() {
   font-size: 12px;
   color: #19c37d;
   font-weight: 500;
+  animation: reasoning-live-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes reasoning-live-pulse {
+  0%,
+  100% {
+    opacity: 0.72;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 .reasoning-meta {
@@ -2704,11 +2809,16 @@ async function send() {
   font-size: 13px;
   color: #52525b;
   line-height: 1.55;
-  white-space: pre-wrap;
   word-break: break-word;
   overflow-wrap: anywhere;
   min-width: 0;
   max-width: 100%;
+}
+
+.reasoning-md {
+  font-size: 13px;
+  color: #52525b;
+  line-height: 1.55;
 }
 
 .reasoning-intent-hint {
@@ -2719,32 +2829,148 @@ async function send() {
 }
 
 .reasoning-web-search {
+  position: relative;
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
   margin: 0 0 10px;
-  padding: 0;
+  padding: 10px 12px;
   font-size: 13px;
   line-height: 1.5;
   color: #52525b;
+  border-radius: 8px;
+  border: 1px solid #e4e4e7;
+  background: #fafafa;
+  overflow: hidden;
+  animation: reasoning-web-search-enter 0.28s ease-out;
 }
 
 .reasoning-web-search--live {
   color: #3f3f46;
+  border-color: #d4d4d8;
+  background: linear-gradient(105deg, #fafafa 0%, #f0fdf4 42%, #fafafa 84%);
+  background-size: 220% 100%;
+  animation:
+    reasoning-web-search-enter 0.28s ease-out,
+    reasoning-web-search-shimmer 2.2s ease-in-out infinite;
+}
+
+.reasoning-web-search-lead {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  line-height: 0;
+}
+
+.reasoning-web-search-lead :deep(.el-icon) {
+  display: block;
 }
 
 .reasoning-web-search-ico {
-  flex-shrink: 0;
-  margin-top: 2px;
-  color: #71717a;
+  color: #19c37d;
+}
+
+.reasoning-web-search-done-ico {
+  color: #16a34a;
+}
+
+.reasoning-web-search-main {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+  line-height: 1.5;
 }
 
 .reasoning-web-search-text {
-  display: inline-block;
+  display: inline;
+  line-height: inherit;
+}
+
+.reasoning-web-search-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 1.5em;
+}
+
+.reasoning-web-search-dots i {
+  display: block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #19c37d;
+  opacity: 0.35;
+  animation: reasoning-web-search-dot 1.1s ease-in-out infinite;
+}
+
+.reasoning-web-search-dots i:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.reasoning-web-search-dots i:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+.reasoning-web-search-pulse {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 80% 120% at 0% 50%, rgba(25, 195, 125, 0.12), transparent 62%);
+  animation: reasoning-web-search-pulse 2s ease-in-out infinite;
 }
 
 .reasoning-web-search-count--tick {
   animation: web-search-count-tick 0.22s ease-out;
+}
+
+@keyframes reasoning-web-search-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes reasoning-web-search-shimmer {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+@keyframes reasoning-web-search-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes reasoning-web-search-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.85;
+  }
 }
 
 @keyframes web-search-count-tick {
@@ -3044,7 +3270,8 @@ async function send() {
 }
 
 /* 经 v-html 注入的流式光标无 Vue scoped 的 data-v-*，须 :deep；紧跟文末同一行 */
-.bubble-md :deep(.stream-md-cursor) {
+.bubble-md :deep(.stream-md-cursor),
+.reasoning-md :deep(.stream-md-cursor) {
   display: inline-block;
   width: 2px;
   min-width: 2px;
@@ -3156,32 +3383,87 @@ async function send() {
   flex-shrink: 0;
 }
 
+.follow-up-prompts-skeletons {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .follow-up-prompt-skeleton {
+  position: relative;
   display: inline-block;
+  flex-shrink: 0;
   height: 28px;
-  min-width: 64px;
+  min-width: 56px;
   border-radius: 999px;
   border: 1px solid #e4e4e7;
-  background: linear-gradient(90deg, #f4f4f5 0%, #e4e4e7 45%, #f4f4f5 90%);
-  background-size: 220% 100%;
-  animation: follow-up-prompt-shimmer 1.15s ease-in-out infinite;
+  background: #ececef;
+  overflow: hidden;
   box-sizing: border-box;
+  transform-origin: left center;
+  animation: follow-up-skeleton-enter 0.38s ease-out backwards;
 }
 
-.follow-up-prompt-skeleton:nth-of-type(2) {
-  animation-delay: 0.12s;
+.follow-up-prompt-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.15) 35%,
+    rgba(255, 255, 255, 0.72) 50%,
+    rgba(255, 255, 255, 0.15) 65%,
+    transparent 100%
+  );
+  transform: translateX(-120%);
+  animation: follow-up-skeleton-sweep 1.35s ease-in-out infinite;
+  will-change: transform;
 }
 
-.follow-up-prompt-skeleton:nth-of-type(3) {
-  animation-delay: 0.24s;
+.follow-up-prompt-skeleton--0 {
+  animation-delay: 0s;
 }
 
-@keyframes follow-up-prompt-shimmer {
+.follow-up-prompt-skeleton--0::after {
+  animation-delay: 0s;
+}
+
+.follow-up-prompt-skeleton--1 {
+  animation-delay: 0.1s;
+}
+
+.follow-up-prompt-skeleton--1::after {
+  animation-delay: 0.2s;
+}
+
+.follow-up-prompt-skeleton--2 {
+  animation-delay: 0.2s;
+}
+
+.follow-up-prompt-skeleton--2::after {
+  animation-delay: 0.4s;
+}
+
+@keyframes follow-up-skeleton-enter {
+  from {
+    opacity: 0;
+    transform: scaleX(0.82);
+  }
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+@keyframes follow-up-skeleton-sweep {
   0% {
-    background-position: 100% 0;
+    transform: translateX(-120%);
   }
   100% {
-    background-position: -100% 0;
+    transform: translateX(120%);
   }
 }
 
@@ -3806,8 +4088,25 @@ async function send() {
   }
 
   .follow-up-prompt-skeleton {
-    animation: none;
+    animation: follow-up-skeleton-enter 0.38s ease-out backwards;
     background: #ececef;
+  }
+
+  .follow-up-prompt-skeleton::after {
+    animation: follow-up-skeleton-pulse 1.8s ease-in-out infinite;
+    transform: none;
+    background: none;
+    background-color: rgba(255, 255, 255, 0.35);
+  }
+
+  @keyframes follow-up-skeleton-pulse {
+    0%,
+    100% {
+      opacity: 0.35;
+    }
+    50% {
+      opacity: 0.9;
+    }
   }
 }
 

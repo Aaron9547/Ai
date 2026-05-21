@@ -14,7 +14,9 @@ public final class VectorEmbeddingsUrl {
         return switch (b) {
             case VOLCENGINE_ARK -> suffixEmbeddingsOnly(openaiBaseUrl);
             case VOLCENGINE_ARK_MULTIMODAL -> volcArkMultimodalEmbeddings(openaiBaseUrl);
-            case OPENAI_COMPATIBLE -> openAiV1UnderServiceRoot(openaiBaseUrl);
+            case OPENAI_COMPATIBLE, DASHSCOPE_COMPATIBLE -> openAiV1UnderServiceRoot(openaiBaseUrl);
+            case DASHSCOPE_TEXT_EMBEDDING -> dashscopeTextEmbedding(openaiBaseUrl);
+            case DASHSCOPE_MULTIMODAL_EMBEDDING -> dashscopeMultimodalEmbedding(openaiBaseUrl);
         };
     }
 
@@ -62,6 +64,56 @@ public final class VectorEmbeddingsUrl {
             return s + "/multimodal";
         }
         return s + "/embeddings/multimodal";
+    }
+
+    /**
+     * 百炼 DashScope 原生文本向量：{@code …/api/v1/services/embeddings/text-embedding/text-embedding}；Base 填
+     * {@code https://dashscope.aliyuncs.com/api/v1}（新加坡地域用 {@code dashscope-intl.aliyuncs.com}）。
+     */
+    private static String dashscopeTextEmbedding(String openaiBaseUrl) {
+        String suffix = "/services/embeddings/text-embedding/text-embedding";
+        String s = normalizeBase(openaiBaseUrl);
+        if (s.isEmpty()) {
+            return "";
+        }
+        if (s.endsWith(suffix)) {
+            return s;
+        }
+        if (s.endsWith("/text-embedding")) {
+            return s;
+        }
+        if (s.endsWith("/embeddings/text-embedding")) {
+            return s + "/text-embedding";
+        }
+        if (s.endsWith("/services/embeddings")) {
+            return s + "/text-embedding/text-embedding";
+        }
+        return s + suffix;
+    }
+
+    /**
+     * 百炼多模态向量：{@code …/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding}；Base 填
+     * {@code https://dashscope.aliyuncs.com/api/v1}。
+     */
+    private static String dashscopeMultimodalEmbedding(String openaiBaseUrl) {
+        String suffix = "/services/embeddings/multimodal-embedding/multimodal-embedding";
+        String s = normalizeBase(openaiBaseUrl);
+        if (s.isEmpty()) {
+            return "";
+        }
+        if (s.endsWith(suffix)) {
+            return s;
+        }
+        if (s.endsWith("/multimodal-embedding")) {
+            return s;
+        }
+        if (s.endsWith("/embeddings/multimodal-embedding")) {
+            return s + "/multimodal-embedding";
+        }
+        if (s.endsWith("/services/embeddings")) {
+            return s + "/multimodal-embedding/multimodal-embedding";
+        }
+        return s + suffix;
     }
 
     private static String normalizeBase(String openaiBaseUrl) {

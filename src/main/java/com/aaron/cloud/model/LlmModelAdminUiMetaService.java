@@ -90,6 +90,9 @@ public class LlmModelAdminUiMetaService {
             case OPENAI_COMPATIBLE -> "llm.meta.vectorBackend.OPENAI_COMPATIBLE";
             case VOLCENGINE_ARK -> "llm.meta.vectorBackend.VOLCENGINE_ARK";
             case VOLCENGINE_ARK_MULTIMODAL -> "llm.meta.vectorBackend.VOLCENGINE_ARK_MULTIMODAL";
+            case DASHSCOPE_COMPATIBLE -> "llm.meta.vectorBackend.DASHSCOPE_COMPATIBLE";
+            case DASHSCOPE_TEXT_EMBEDDING -> "llm.meta.vectorBackend.DASHSCOPE_TEXT_EMBEDDING";
+            case DASHSCOPE_MULTIMODAL_EMBEDDING -> "llm.meta.vectorBackend.DASHSCOPE_MULTIMODAL_EMBEDDING";
         };
     }
 

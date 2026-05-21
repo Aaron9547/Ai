@@ -12,6 +12,7 @@ import com.aaron.cloud.chat.dto.ChatRegenerateRequest;
 import com.aaron.cloud.chat.dto.ChatSendPayload;
 import com.aaron.cloud.chat.websearch.ChatWebSearchGroundingService;
 import com.aaron.cloud.chat.websearch.WebGroundingBundle;
+import com.aaron.cloud.chat.websearch.WebSearchStreamGroundingSession;
 import com.aaron.cloud.chat.dto.ChatStarterPromptDtos;
 import com.aaron.cloud.chat.starter.ChatStarterFollowUpService;
 import com.aaron.cloud.chat.dto.WebSearchReferenceView;
@@ -80,6 +81,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -505,10 +508,19 @@ public class ChatApplicationService {
                     conversationId,
                     millisSince(openT0));
             long tCit = System.currentTimeMillis();
-            ragCitationHits =
-                    List.copyOf(
-                            ragQueryPort.searchCitationHitsAcrossKnowledgeBases(
-                                    snap.getTenantId(), chatRagKbIds, ragLexicalQuery, 3));
+            CompletableFuture<List<RagCitationHit>> citationFuture =
+                    CompletableFuture.supplyAsync(
+                            () ->
+                                    ragQueryPort.searchCitationHitsAcrossKnowledgeBases(
+                                            snap.getTenantId(), chatRagKbIds, ragLexicalQuery, 3),
+                            command -> Thread.startVirtualThread(command));
+            CompletableFuture<List<String>> snippetFuture =
+                    CompletableFuture.supplyAsync(
+                            () ->
+                                    ragQueryPort.searchSnippetsAcrossKnowledgeBases(
+                                            snap.getTenantId(), chatRagKbIds, ragLexicalQuery, 3),
+                            command -> Thread.startVirtualThread(command));
+            ragCitationHits = List.copyOf(citationFuture.join());
             log.info(
                     "[对话] ⑨ 「可引用分片」检索结束：命中 {} 条，本步 {}ms，累计 {}ms；租户 {}，会话 {}",
                     ragCitationHits.size(),
@@ -516,19 +528,11 @@ public class ChatApplicationService {
                     millisSince(openT0),
                     snap.getTenantId(),
                     conversationId);
-            log.info(
-                    "[对话] ⑩ 开始检索「注入提示词的片段」：租户 {}，会话 {}，累计耗时 {}ms",
-                    snap.getTenantId(),
-                    conversationId,
-                    millisSince(openT0));
             long tSnip = System.currentTimeMillis();
             ragSnippets =
-                    clampRagSnippetsForPrompt(
-                            snap.getTenantId(),
-                            ragQueryPort.searchSnippetsAcrossKnowledgeBases(
-                                    snap.getTenantId(), chatRagKbIds, ragLexicalQuery, 3));
+                    clampRagSnippetsForPrompt(snap.getTenantId(), snippetFuture.join());
             log.info(
-                    "[对话] ⑪ 「注入提示词的片段」检索结束：命中 {} 条，本步 {}ms，累计 {}ms；租户 {}，会话 {}",
+                    "[对话] ⑩～⑪ 注入片段检索结束：命中 {} 条，本步 {}ms，累计 {}ms；租户 {}，会话 {}",
                     ragSnippets.size(),
                     millisSince(tSnip),
                     millisSince(openT0),
@@ -672,6 +676,8 @@ public class ChatApplicationService {
         }
 
         final long openAssistantWallMs = openT0;
+        final AtomicReference<WebSearchStreamGroundingSession> webStreamSessionRef =
+                new AtomicReference<>();
         Runnable run =
                 () -> {
                     TenantContextHolder.set(snap);
@@ -690,22 +696,24 @@ public class ChatApplicationService {
                                     millisSince(openAssistantWallMs));
                             sendSseWebSearchStatus(emitter, seq, "searching");
                             long tWeb = System.currentTimeMillis();
-                            WebGroundingBundle wb =
-                                    chatWebSearchGroundingService.groundMultiRoundsWithRaw(
+                            WebSearchStreamGroundingSession webSession =
+                                    chatWebSearchGroundingService.groundForChatStream(
                                             snap,
                                             webSearchModelForStream,
                                             augmentedUserText,
                                             conversationId,
                                             cumulative ->
                                                     sendSseWebSearchRefFrames(emitter, seq, cumulative));
-                            sendSseWebSearchStatus(emitter, seq, "done");
+                            webStreamSessionRef.set(webSession);
+                            WebGroundingBundle wbInitial = webSession.initialBundle();
                             webSearchRefsForStream.clear();
-                            if (wb.references() != null) {
-                                webSearchRefsForStream.addAll(wb.references());
+                            if (wbInitial.references() != null) {
+                                webSearchRefsForStream.addAll(wbInitial.references());
                             }
-                            String webCtx = formatWebGroundingContent(wb, snap.getTenantId());
+                            sendSseWebSearchStatus(emitter, seq, "done");
+                            String webCtx = formatWebGroundingContent(wbInitial, snap.getTenantId());
                             log.info(
-                                    "[对话] ⑱ 联网搜索增强结束：引用 {} 条，{}注入模型提示词；本步 {}ms，距开放助手开始 {}ms；租户 {}，会话 {}",
+                                    "[对话] ⑱ 联网首轮结束：引用 {} 条，{}注入模型提示词；本步 {}ms，距开放助手开始 {}ms；其余轮次后台补全；租户 {}，会话 {}",
                                     webSearchRefsForStream.size(),
                                     webCtx != null && !webCtx.isBlank() ? "已" : "未",
                                     millisSince(tWeb),
@@ -743,6 +751,34 @@ public class ChatApplicationService {
                                         emitter.completeWithError(e);
                                     }
                                 });
+                        WebSearchStreamGroundingSession webSessionDone = webStreamSessionRef.get();
+                        if (webSessionDone != null) {
+                            try {
+                                WebGroundingBundle wbFinal =
+                                        webSessionDone.remainderFuture().get(45, TimeUnit.SECONDS);
+                                webSearchRefsForStream.clear();
+                                if (wbFinal.references() != null) {
+                                    webSearchRefsForStream.addAll(wbFinal.references());
+                                }
+                                log.info(
+                                        "[对话] 联网全轮次落库合并：引用 {} 条；租户 {}，会话 {}",
+                                        webSearchRefsForStream.size(),
+                                        snap.getTenantId(),
+                                        conversationId);
+                            } catch (TimeoutException te) {
+                                log.info(
+                                        "[对话] 联网后续轮次落库前未就绪，保留首轮引用 {} 条；租户 {}，会话 {}",
+                                        webSearchRefsForStream.size(),
+                                        snap.getTenantId(),
+                                        conversationId);
+                            } catch (Exception ex) {
+                                log.warn(
+                                        "[对话] 联网后续轮次合并失败：租户 {}，会话 {}",
+                                        snap.getTenantId(),
+                                        conversationId,
+                                        ex);
+                            }
+                        }
                         final String userQForFollowUp =
                                 payload.getContent() == null ? "" : payload.getContent().trim();
                         CompletableFuture<List<String>> followUpInflight =

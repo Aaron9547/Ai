@@ -11,11 +11,16 @@ import com.aaron.cloud.common.tenant.SysTenantRepository;
 import com.aaron.cloud.common.tenant.entity.SysTenant;
 import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService;
 import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService.PutItem;
+import com.aaron.cloud.rag.crawl.policy.SiteCrawlPolicyResolver;
+import com.aaron.cloud.rag.crawl.policy.SiteCrawlPreset;
+import com.aaron.cloud.rag.crawl.policy.SiteCrawlRuntimeValidator;
 import com.aaron.cloud.common.context.TenantContextHolder;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -39,6 +44,7 @@ public class TenantShellAdminApplicationService {
     private final TenantBrandLogoApplicationService tenantBrandLogoApplicationService;
     private final AiOutboundResilienceProperties baselineOutboundProps;
     private final ObjectMapper objectMapper;
+    private final SiteCrawlPolicyResolver siteCrawlPolicyResolver;
 
     public ShellConfigResponse load(long tenantId) {
         SysTenant t =
@@ -119,11 +125,18 @@ public class TenantShellAdminApplicationService {
                         : body.getWebSearchGroundingMultiRoundCount().trim();
         String suffixes = jsonArrayOrDefault(body.getWebSearchGroundingRoundSuffixesJson(), "[]");
         String cacheJson = jsonOrDefault(body.getWebSearchGroundingCacheJson(), "{}");
+        String crawlPreset =
+                body.getSiteCrawlPreset() == null || body.getSiteCrawlPreset().isBlank()
+                        ? SiteCrawlPreset.BALANCED.name()
+                        : SiteCrawlRuntimeValidator.normalizePresetStorage(body.getSiteCrawlPreset());
+        String crawlRuntimeJson = jsonOrDefault(body.getSiteCrawlRuntimeJson(), "{}");
+        SiteCrawlRuntimeValidator.parseObject(crawlRuntimeJson, objectMapper);
         if (limits.length() > RUNTIME_JSON_MAX_CHARS
                 || memPol.length() > RUNTIME_JSON_MAX_CHARS
                 || guard.length() > RUNTIME_JSON_MAX_CHARS
                 || suffixes.length() > RUNTIME_JSON_MAX_CHARS
-                || cacheJson.length() > RUNTIME_JSON_MAX_CHARS) {
+                || cacheJson.length() > RUNTIME_JSON_MAX_CHARS
+                || crawlRuntimeJson.length() > RUNTIME_JSON_MAX_CHARS) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "JSON 字段过长");
         }
         List<PutItem> items = new ArrayList<>();
@@ -135,6 +148,8 @@ public class TenantShellAdminApplicationService {
         items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT, rounds));
         items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON, suffixes));
         items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_CACHE_JSON, cacheJson));
+        items.add(item(TenantRuntimeSettingKey.SITE_CRAWL_PRESET, crawlPreset));
+        items.add(item(TenantRuntimeSettingKey.SITE_CRAWL_RUNTIME_JSON, crawlRuntimeJson));
         tenantRuntimeSettingApplicationService.replace(tenantId, items);
         return load(tenantId);
     }
@@ -205,7 +220,11 @@ public class TenantShellAdminApplicationService {
                 tenantRuntimeSettingApplicationService.getEffectiveValueText(
                         tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON),
                 tenantRuntimeSettingApplicationService.getEffectiveValueText(
-                        tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_CACHE_JSON));
+                        tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_CACHE_JSON),
+                tenantRuntimeSettingApplicationService.getEffectiveValueText(
+                        tenantId, TenantRuntimeSettingKey.SITE_CRAWL_PRESET),
+                tenantRuntimeSettingApplicationService.getEffectiveValueText(
+                        tenantId, TenantRuntimeSettingKey.SITE_CRAWL_RUNTIME_JSON));
     }
 
     private static ShellBrandingPutBody toBrandingBody(ShellPutBody body) {
@@ -261,7 +280,9 @@ public class TenantShellAdminApplicationService {
             String chatInputGuardJson,
             String webSearchGroundingMultiRoundCount,
             String webSearchGroundingRoundSuffixesJson,
-            String webSearchGroundingCacheJson) {}
+            String webSearchGroundingCacheJson,
+            String siteCrawlPreset,
+            String siteCrawlRuntimeJson) {}
 
     public record BrandingDto(
             String logoUrl, String portalTitle, String footerText, String portalTitleResolved) {}
@@ -287,6 +308,20 @@ public class TenantShellAdminApplicationService {
 
     public record ShellOutboundPutBody(String outboundResilienceJson) {}
 
+    /** 非 CUSTOM 档位对应的默认 {@code SITE_CRAWL_RUNTIME_JSON} 模板（供管理端切换档位时填充）。 */
+    public Map<String, String> siteCrawlRuntimeTemplate(String presetCode) {
+        SiteCrawlPreset preset;
+        try {
+            preset = SiteCrawlPreset.valueOf(presetCode == null ? "" : presetCode.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid site crawl preset");
+        }
+        if (preset == SiteCrawlPreset.CUSTOM) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "CUSTOM has no template");
+        }
+        return Map.of("json", siteCrawlPolicyResolver.defaultRuntimeJsonForPreset(preset));
+    }
+
     @Data
     public static class ShellModelCallingPutBody {
         private String memoryEmbeddingVectorModelId;
@@ -300,5 +335,9 @@ public class TenantShellAdminApplicationService {
         private String webSearchGroundingRoundSuffixesJson;
         /** {@link TenantRuntimeSettingKey#WEB_SEARCH_GROUNDING_CACHE_JSON}；{@code {}} 表示服务端内置默认 */
         private String webSearchGroundingCacheJson;
+        /** {@link TenantRuntimeSettingKey#SITE_CRAWL_PRESET} */
+        private String siteCrawlPreset;
+        /** {@link TenantRuntimeSettingKey#SITE_CRAWL_RUNTIME_JSON} */
+        private String siteCrawlRuntimeJson;
     }
 }

@@ -4,6 +4,7 @@ import com.aaron.cloud.common.web.rest.ApiV1ControllerBases;
 import com.aaron.cloud.rag.RagKbAdminApplicationService;
 import com.aaron.cloud.rag.RagWebCrawlAdminApplicationService;
 import com.aaron.cloud.rag.RagWebCrawlSiteAdminApplicationService;
+import com.aaron.cloud.rag.crawl.CrawlRunAdminApplicationService;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.CreateRagChunkRequest;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.CreateRagDocumentCategoryRequest;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.CreateRagKbRequest;
@@ -55,6 +56,7 @@ public class RagKbAdminRestController extends ApiV1ControllerBases.RagKbAdmin {
     private final RagKbAdminApplicationService ragKbAdminApplicationService;
     private final RagWebCrawlAdminApplicationService ragWebCrawlAdminApplicationService;
     private final RagWebCrawlSiteAdminApplicationService ragWebCrawlSiteAdminApplicationService;
+    private final CrawlRunAdminApplicationService crawlRunAdminApplicationService;
 
     private void requireTenantPath(String tenantCode) {
         ragKbAdminApplicationService.assertPathTenantCode(tenantCode);
@@ -345,10 +347,13 @@ public class RagKbAdminRestController extends ApiV1ControllerBases.RagKbAdmin {
 
     @DeleteMapping("/{id}/web-crawl/sites/{siteId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteWebCrawlSite(
-            @PathVariable("tenantCode") String tenantCode, @PathVariable long id, @PathVariable long siteId) {
+    public Map<String, Object> deleteWebCrawlSite(
+            @PathVariable("tenantCode") String tenantCode,
+            @PathVariable long id,
+            @PathVariable long siteId,
+            @RequestParam(defaultValue = "false") boolean purgeDocuments) {
         requireTenantPath(tenantCode);
-        ragWebCrawlSiteAdminApplicationService.delete(id, siteId);
+        return ragWebCrawlSiteAdminApplicationService.delete(id, siteId, purgeDocuments);
     }
 
     @PostMapping("/{id}/web-crawl/sites/{siteId}/run")
@@ -358,6 +363,43 @@ public class RagKbAdminRestController extends ApiV1ControllerBases.RagKbAdmin {
         requireTenantPath(tenantCode);
         ragWebCrawlSiteAdminApplicationService.runNow(id, siteId);
         return Map.of("started", true);
+    }
+
+    @GetMapping("/{id}/crawl-runs")
+    public List<CrawlRunAdminApplicationService.CrawlRunSummaryView> listCrawlRuns(
+            @PathVariable("tenantCode") String tenantCode,
+            @PathVariable long id,
+            @RequestParam(defaultValue = "20") int limit,
+            @RequestParam(required = false) Long siteId) {
+        requireTenantPath(tenantCode);
+        return crawlRunAdminApplicationService.listRuns(id, limit, siteId);
+    }
+
+    @GetMapping("/{id}/crawl-runs/{runId}")
+    public CrawlRunAdminApplicationService.CrawlRunDetailView getCrawlRun(
+            @PathVariable("tenantCode") String tenantCode,
+            @PathVariable long id,
+            @PathVariable long runId) {
+        requireTenantPath(tenantCode);
+        return crawlRunAdminApplicationService.getRun(id, runId);
+    }
+
+    @PostMapping("/{id}/crawl-runs/{runId}/resume-pending")
+    public Map<String, Object> resumeCrawlRunPending(
+            @PathVariable("tenantCode") String tenantCode,
+            @PathVariable long id,
+            @PathVariable long runId) {
+        requireTenantPath(tenantCode);
+        return crawlRunAdminApplicationService.resumePending(id, runId);
+    }
+
+    @PostMapping("/{id}/crawl-runs/{runId}/retry-failed")
+    public Map<String, Object> retryCrawlRunFailed(
+            @PathVariable("tenantCode") String tenantCode,
+            @PathVariable long id,
+            @PathVariable long runId) {
+        requireTenantPath(tenantCode);
+        return crawlRunAdminApplicationService.retryFailed(id, runId);
     }
 
     /** 本地规则一条龙网页爬取（一次性；周期爬站配置见 web-crawl/sites）。 */

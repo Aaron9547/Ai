@@ -119,6 +119,10 @@ export type RagRetrievalTestResult = {
   hitCount: number;
   hits: RagRetrievalTestHit[];
   snippets: string[];
+  milvusRecallCount?: number;
+  afterCosineThresholdCount?: number;
+  minCosineThreshold?: number;
+  diagnosticsHint?: string;
 };
 
 /** 与后端 {@code POST .../rag-kbs/{tenantCode}/{id}/retrieval-test} 对齐。 */
@@ -130,11 +134,32 @@ export async function testRagKbRetrieval(
   return data;
 }
 
+export type RagWebCrawlJsRenderOverride = {
+  enabled?: boolean;
+  maxPagesPerRun?: number;
+  onlyWhenLinkCountBelow?: number;
+};
+
+export type RagWebCrawlDiscoveryOverride = {
+  strategies?: string[];
+  maxDepth?: number;
+  jsRender?: RagWebCrawlJsRenderOverride;
+};
+
+export type RagWebCrawlPolitenessOverride = {
+  perHostQps?: number;
+  perHostConcurrency?: number;
+  globalConcurrency?: number;
+};
+
 export type RagWebCrawlExtractConfig = {
   extractor?: string;
   contentSelector?: string;
   excludeSelectors?: string[];
   titleSelector?: string;
+  presetLock?: string;
+  discovery?: RagWebCrawlDiscoveryOverride;
+  politeness?: RagWebCrawlPolitenessOverride;
 };
 
 export type ChunkPreviewRequestBody = {
@@ -429,10 +454,72 @@ export interface RagWebCrawlSiteMeta {
   syncModes: RagWebCrawlSyncModeOption[];
   schedulePresets: { code: string; label: string; intervalDays?: number }[];
   contentExtractors?: { code: string; label: string }[];
+  tenantSiteCrawlPreset?: string;
+  tenantSiteCrawlPolicySummary?: string;
+}
+
+export interface CrawlRunSummaryView {
+  runId: number;
+  kbId: number;
+  siteId?: number | null;
+  baseUrl: string;
+  syncMode: string;
+  status: string;
+  preset?: string | null;
+  createdAt?: string | null;
+}
+
+export interface CrawlRunDetailView {
+  runId: number;
+  kbId: number;
+  siteId?: number | null;
+  baseUrl: string;
+  syncMode: string;
+  status: string;
+  preset?: string | null;
+  policySummary?: string | null;
+  statsJson?: string | null;
+  queueByStatus: Record<string, number>;
+  failedByCode: Record<string, number>;
+  discoveryByStrategy: Record<string, number>;
+  ok: number;
+  skipped: number;
+  fail: number;
+}
+
+export async function fetchCrawlRuns(
+  kbId: number,
+  opts?: { limit?: number; siteId?: number },
+): Promise<CrawlRunSummaryView[]> {
+  const { data } = await http.get<CrawlRunSummaryView[]>(`${ragKbWithKbId(kbId)}/crawl-runs`, {
+    params: { limit: opts?.limit ?? 20, siteId: opts?.siteId },
+  });
+  return data;
 }
 
 export async function fetchWebCrawlSiteMeta(): Promise<RagWebCrawlSiteMeta> {
   const { data } = await http.get<RagWebCrawlSiteMeta>(`${ragKbBase()}/web-crawl/site-meta`);
+  return data;
+}
+
+export async function fetchCrawlRun(kbId: number, runId: number): Promise<CrawlRunDetailView> {
+  const { data } = await http.get<CrawlRunDetailView>(`${ragKbWithKbId(kbId)}/crawl-runs/${runId}`);
+  return data;
+}
+
+export async function resumeCrawlRunPending(
+  kbId: number,
+  runId: number,
+): Promise<{ runId: number; executed: boolean; ok: number; skipped: number; fail: number; summary: string }> {
+  const { data } = await http.post(`${ragKbWithKbId(kbId)}/crawl-runs/${runId}/resume-pending`);
+  return data;
+}
+
+export async function retryCrawlRunFailed(
+  kbId: number,
+  runId: number,
+): Promise<{ runId: number; executed: boolean; ok: number; skipped: number; fail: number; summary: string }> {
+  const { data } = await http.post(`${ragKbWithKbId(kbId)}/crawl-runs/${runId}/retry-failed`);
   return data;
 }
 
@@ -488,8 +575,15 @@ export async function updateWebCrawlSite(
   return data;
 }
 
-export async function deleteWebCrawlSite(kbId: number, siteId: number): Promise<void> {
-  await http.delete(`${ragKbWithKbId(kbId)}/web-crawl/sites/${siteId}`);
+export async function deleteWebCrawlSite(
+  kbId: number,
+  siteId: number,
+  purgeDocuments: boolean,
+): Promise<{ deleted: boolean; purgeDocuments: boolean; documentsPurged: number; crawlRunsRemoved: number }> {
+  const { data } = await http.delete(`${ragKbWithKbId(kbId)}/web-crawl/sites/${siteId}`, {
+    params: { purgeDocuments },
+  });
+  return data;
 }
 
 export async function runWebCrawlSiteNow(kbId: number, siteId: number): Promise<void> {

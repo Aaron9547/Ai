@@ -1,21 +1,17 @@
 <template>
-  <el-dialog
+  <KbDataPanelDialog
     :model-value="modelValue"
     :title="t('views.kbAsync.title', { name: kbName })"
-    width="920px"
-    destroy-on-close
-    class="kb-tasks-dlg"
+    :subtitle="t('views.kbAsync.sub')"
     @update:model-value="emit('update:modelValue', $event)"
     @closed="onClosed"
   >
-    <p class="sub">{{ t("views.kbAsync.sub") }}</p>
-
-    <div class="filters">
+    <template #toolbar>
       <el-select
         v-model="taskType"
         clearable
-        placeholder="全部类型"
-        style="width: 200px"
+        :placeholder="t('views.kbAsync.typePh')"
+        class="toolbar-select"
         @change="onFilterChange"
       >
         <el-option :label="t('views.kbAsync.typeRagIndex')" value="RAG_INDEX" />
@@ -23,139 +19,80 @@
         <el-option :label="t('views.kbAsync.typeFileImport')" value="RAG_FILE_IMPORT" />
         <el-option :label="t('views.kbAsync.typeSiteCrawl')" value="RAG_SITE_CRAWL" />
       </el-select>
-      <el-button type="primary" plain :loading="loading" @click="load">刷新</el-button>
-    </div>
+      <el-button type="primary" plain :loading="loading" @click="load">{{ t("views.kbMatrix.refresh") }}</el-button>
+    </template>
 
-    <el-table v-loading="loading" :data="rows" stripe border empty-text="暂无任务" highlight-current-row class="task-table">
-      <el-table-column label="任务类型" width="140" show-overflow-tooltip>
-        <template #default="{ row }">
-          {{ jobTaskTypeLabel(row.taskType, t) }}
-        </template>
-      </el-table-column>
-      <el-table-column label="状态" width="100" align="center">
-        <template #default="{ row }">
-          <el-tag :type="jobStatusMeta(row.status, t).tag" size="small">{{ jobStatusMeta(row.status, t).label }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="createdAt" label="创建时间" width="168">
-        <template #default="{ row }">
-          {{ formatTime(row.createdAt) }}
-        </template>
-      </el-table-column>
-      <el-table-column prop="updatedAt" label="更新时间" width="168">
-        <template #default="{ row }">
-          {{ formatTime(row.updatedAt) }}
-        </template>
-      </el-table-column>
-      <el-table-column label="结果摘要" min-width="180" show-overflow-tooltip>
-        <template #default="{ row }">
-          {{ summarizeJobResult(row.resultJson, t) }}
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="88" fixed="right" align="center">
-        <template #default="{ row }">
-          <el-button link type="primary" size="small" @click="openDetail(row)">详情</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+    <template #default="{ tableHeight }">
+      <el-table
+        v-loading="loading"
+        :data="rows"
+        :height="tableHeight"
+        class="kb-panel-table"
+        size="small"
+        highlight-current-row
+        :empty-text="t('views.kbAsync.empty')"
+        @row-click="onRowClick"
+      >
+        <el-table-column :label="t('views.kbMatrix.colJobType')" width="112" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="type-pill">{{ jobTaskTypeShort(row.taskType, t) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('views.kbMatrix.colJobStatus')" width="88" align="center">
+          <template #default="{ row }">
+            <el-tag :type="jobStatusMeta(row.status, t).tag" size="small" effect="light" round>
+              {{ jobStatusMeta(row.status, t).label }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('views.kbMatrix.colUpdated')" width="152">
+          <template #default="{ row }">{{ formatTime(row.updatedAt || row.createdAt) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('views.kbMatrix.resultSummary')" min-width="200" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="summary-cell">{{ summarizeJobResult(row.resultJson, t) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('views.kbMatrix.colActions')" width="72" fixed="right" align="center">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click.stop="openDetail(row)">
+              {{ t("views.kbAsync.detail") }}
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </template>
 
-    <div class="pager">
+    <template #footer>
       <el-pagination
         v-model:current-page="page"
         v-model:page-size="size"
         layout="total, sizes, prev, pager, next"
         :total="total"
-        :page-sizes="[10, 20, 50]"
+        :page-sizes="[15, 30, 50]"
+        small
         background
         @current-change="load"
         @size-change="onSizeChange"
       />
-    </div>
+    </template>
+  </KbDataPanelDialog>
 
-    <el-dialog v-model="detailOpen" title="任务详情" width="720px" append-to-body destroy-on-close>
-      <template v-if="detail">
-        <el-descriptions :column="1" border size="small">
-          <el-descriptions-item label="任务内部编号（排障）">{{ detail.id }}</el-descriptions-item>
-          <el-descriptions-item label="任务类型">{{ jobTaskTypeLabel(detail.taskType, t) }}</el-descriptions-item>
-          <el-descriptions-item label="状态">
-            <el-tag :type="jobStatusMeta(detail.status, t).tag" size="small">{{ jobStatusMeta(detail.status, t).label }}</el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item label="创建时间">{{ formatTime(detail.createdAt) }}</el-descriptions-item>
-          <el-descriptions-item label="更新时间">{{ formatTime(detail.updatedAt) }}</el-descriptions-item>
-        </el-descriptions>
-
-        <div v-if="detailResultMeta.length" class="kv-block">
-          <div class="section-title">执行结果摘要</div>
-          <el-descriptions :column="1" border size="small">
-            <el-descriptions-item v-for="(r, i) in detailResultMeta" :key="`rm-${i}`" :label="r.label">
-              {{ r.value }}
-            </el-descriptions-item>
-          </el-descriptions>
-        </div>
-
-        <div v-if="resultSteps.length" class="timeline-wrap">
-          <div class="section-title">执行阶段</div>
-          <el-timeline>
-            <el-timeline-item
-              v-for="(s, i) in resultSteps"
-              :key="i"
-              :timestamp="formatTime(s.at)"
-              placement="top"
-            >
-              <strong>{{ jobStepPhaseLabel(s.phase, t) }}</strong>
-              <span class="st"> · {{ jobStepStatusLabel(s.status, t) }}</span>
-              <div v-if="humanizeJobStepDetail(s.detail, t)" class="td">{{ humanizeJobStepDetail(s.detail, t) }}</div>
-            </el-timeline-item>
-          </el-timeline>
-        </div>
-
-        <div v-if="detailPayloadRows.length" class="kv-block">
-          <div class="section-title">任务入参</div>
-          <el-descriptions :column="1" border size="small">
-            <el-descriptions-item v-for="(r, i) in detailPayloadRows" :key="`pl-${i}`" :label="r.label">
-              {{ r.value }}
-            </el-descriptions-item>
-          </el-descriptions>
-        </div>
-
-        <div class="raw-tools">
-          <el-button size="small" type="primary" plain @click="copyResult">复制原始返回 JSON</el-button>
-        </div>
-        <el-collapse class="raw-collapse">
-          <el-collapse-item title="原始入参（技术支持 / 排障）" name="payload">
-            <el-scrollbar max-height="180px">
-              <pre class="json-pre">{{ prettyJson(detail.payloadJson) }}</pre>
-            </el-scrollbar>
-          </el-collapse-item>
-          <el-collapse-item title="原始返回（技术支持 / 排障）" name="result">
-            <el-scrollbar max-height="220px">
-              <pre class="json-pre">{{ prettyJson(detail.resultJson) }}</pre>
-            </el-scrollbar>
-          </el-collapse-item>
-        </el-collapse>
-      </template>
-    </el-dialog>
-  </el-dialog>
+  <KbJobTaskDetailDrawer v-model="detailOpen" :job="detail" @closed="detail = null" />
 </template>
 
 <script setup lang="ts">
-import { ElMessage } from "element-plus";
-import { computed, ref, watch } from "vue";
+import { ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import * as jobApi from "../../../api/jobAdmin";
-import type { JobTaskAdminRow } from "../../../types/admin";
+import * as jobApi from "@/api/jobAdmin";
+import type { JobTaskAdminRow } from "@/types/admin";
 import {
-  humanizeJobStepDetail,
   jobStatusMeta,
-  jobStepPhaseLabel,
-  jobStepStatusLabel,
-  jobTaskTypeLabel,
-  parseJobPayloadRows,
-  parseJobResultMetaRows,
-  parseResultSteps,
-  prettyJson,
+  jobTaskTypeShort,
   summarizeJobResult,
-} from "../../../utils/ragJobDisplay";
+} from "@/utils/ragJobDisplay";
+import KbDataPanelDialog from "./KbDataPanelDialog.vue";
+import KbJobTaskDetailDrawer from "./KbJobTaskDetailDrawer.vue";
 
 const { t } = useI18n();
 
@@ -173,23 +110,11 @@ const loading = ref(false);
 const rows = ref<JobTaskAdminRow[]>([]);
 const total = ref(0);
 const page = ref(1);
-const size = ref(20);
+const size = ref(15);
 const taskType = ref<string | undefined>(undefined);
 
 const detailOpen = ref(false);
 const detail = ref<JobTaskAdminRow | null>(null);
-const resultSteps = ref(parseResultSteps(undefined));
-
-const detailPayloadRows = computed(() => parseJobPayloadRows(detail.value?.payloadJson, t));
-const detailResultMeta = computed(() => parseJobResultMetaRows(detail.value?.resultJson, t));
-
-watch(
-  () => detail.value?.resultJson,
-  (rj) => {
-    resultSteps.value = parseResultSteps(rj);
-  },
-  { immediate: true },
-);
 
 watch(
   () => props.modelValue,
@@ -240,93 +165,52 @@ function onFilterChange() {
   void load();
 }
 
+function onRowClick(row: JobTaskAdminRow) {
+  openDetail(row);
+}
+
 function openDetail(row: JobTaskAdminRow) {
   detail.value = row;
   detailOpen.value = true;
 }
-
-async function copyResult() {
-  const t = prettyJson(detail.value?.resultJson);
-  if (t === "—") return;
-  try {
-    await navigator.clipboard.writeText(t);
-    ElMessage.success("已复制");
-  } catch {
-    ElMessage.warning("复制失败，请展开后在文本框内手动复制");
-  }
-}
 </script>
 
 <style scoped>
-.sub {
-  margin: 0 0 12px;
+.toolbar-select {
+  width: 200px;
+}
+
+.type-pill {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  font-weight: 500;
+  color: var(--el-text-color-regular);
 }
 
-.filters {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
+.summary-cell {
+  font-size: 12px;
+  color: var(--el-text-color-regular);
 }
 
-.task-table {
+:deep(.kb-panel-table) {
   width: 100%;
 }
 
-.pager {
-  margin-top: 16px;
-  display: flex;
-  justify-content: flex-end;
+:deep(.kb-panel-table .el-table__inner-wrapper::before) {
+  display: none;
 }
 
-.kv-block {
-  margin-top: 14px;
-}
-
-.section-title {
-  font-size: 13px;
+:deep(.kb-panel-table th.el-table__cell) {
+  background: var(--el-fill-color-light);
+  font-size: 12px;
   font-weight: 600;
-  color: var(--el-text-color-regular);
-  margin-bottom: 8px;
-}
-
-.raw-tools {
-  margin-top: 14px;
-  margin-bottom: 6px;
-}
-
-.raw-collapse {
-  margin-top: 0;
-}
-
-.json-pre {
-  margin: 0;
-  padding: 10px 12px;
-  background: var(--el-fill-color-darker);
-  color: var(--el-text-color-primary);
-  border-radius: 8px;
-  font-size: 12px;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
-.timeline-wrap {
-  margin: 16px 0;
-}
-
-.st {
   color: var(--el-text-color-secondary);
-  font-size: 13px;
 }
 
-.td {
-  font-size: 12px;
-  color: var(--el-text-color-regular);
-  margin-top: 4px;
-  word-break: break-all;
+:deep(.kb-panel-table .el-table__row) {
+  cursor: pointer;
+}
+
+:deep(.kb-panel-table .el-table__row:hover > td.el-table__cell) {
+  background-color: var(--el-fill-color-light) !important;
 }
 </style>

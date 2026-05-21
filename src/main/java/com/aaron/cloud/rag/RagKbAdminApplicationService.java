@@ -90,6 +90,7 @@ public class RagKbAdminApplicationService {
     private final RagVectorInfrastructure ragVectorInfrastructure;
     private final RagKbVectorModelGuard ragKbVectorModelGuard;
     private final RagQueryPort ragQueryPort;
+    private final RagQueryBridgeService ragQueryBridgeService;
     private final AiRagProperties aiRagProperties;
     private final SysTenantRepository sysTenantRepository;
     private final RagIngestPreviewApplicationService ragIngestPreviewApplicationService;
@@ -146,6 +147,8 @@ public class RagKbAdminApplicationService {
         if (topK > 20) {
             topK = 20;
         }
+        RagRetrievalTestDiagnostics diag =
+                ragQueryBridgeService.buildRetrievalTestDiagnostics(tenantId, kbId, query, topK);
         List<RagCitationHit> hits = ragQueryPort.searchCitationHits(tenantId, kbId, query, topK);
         List<String> snippets = ragQueryPort.searchSnippets(tenantId, kbId, query, topK);
         List<RagRetrievalTestHitView> hitViews =
@@ -165,7 +168,11 @@ public class RagKbAdminApplicationService {
                 topK,
                 hitViews.size(),
                 hitViews,
-                snippets);
+                snippets,
+                diag.milvusRecallCount(),
+                diag.afterCosineThresholdCount(),
+                diag.minCosineThreshold(),
+                diag.hint());
     }
 
     public RagKbAdminView create(CreateRagKbRequest req) {

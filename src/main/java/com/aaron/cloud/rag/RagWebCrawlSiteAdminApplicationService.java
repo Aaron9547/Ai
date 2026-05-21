@@ -9,6 +9,7 @@ import com.aaron.cloud.common.rag.RagWebCrawlSiteRepository;
 import com.aaron.cloud.common.rag.entity.RagKbDocumentCategory;
 import com.aaron.cloud.common.rag.entity.RagWebCrawlSite;
 import com.aaron.cloud.common.time.BeijingTime;
+import com.aaron.cloud.rag.crawl.policy.SiteCrawlPolicyResolver;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.RagWebCrawlSiteAdminView;
 import com.aaron.cloud.rag.dto.RagKbAdminDtos.RagWebCrawlSiteUpsertRequest;
 import java.time.LocalTime;
@@ -33,15 +34,21 @@ public class RagWebCrawlSiteAdminApplicationService {
     private final RagKbDocumentCategoryRepository categoryRepository;
     private final RagApplicationService ragApplicationService;
     private final RagWebCrawlExtractConfigSupport extractConfigSupport;
+    private final SiteCrawlPolicyResolver siteCrawlPolicyResolver;
+    private final RagSiteCrawlPurgeService siteCrawlPurgeService;
 
     public Map<String, Object> siteMeta() {
+        long tenantId = TenantContextHolder.require().getTenantId();
+        var policy = siteCrawlPolicyResolver.resolve(tenantId);
         return Map.of(
                 "syncModes", RagWebCrawlSyncMode.metaList(),
                 "schedulePresets", ScheduledTaskIntervalPreset.metaList(),
                 "contentExtractors",
                 List.of(
                         Map.of("code", "jsoup", "label", "Jsoup 规则"),
-                        Map.of("code", "readability", "label", "Readability")));
+                        Map.of("code", "readability", "label", "Readability")),
+                "tenantSiteCrawlPreset", policy.preset().name(),
+                "tenantSiteCrawlPolicySummary", policy.policySummaryLine());
     }
 
     public List<RagWebCrawlSiteAdminView> list(long kbId) {
@@ -72,12 +79,26 @@ public class RagWebCrawlSiteAdminApplicationService {
         return toView(siteRepository.findById(tenantId, kbId, siteId).orElseThrow());
     }
 
-    public void delete(long kbId, long siteId) {
+    /**
+     * @param purgeDocuments true 时同时软删本站点爬取产生的文档（向量库 + 分片 + rag_document）
+     */
+    public Map<String, Object> delete(long kbId, long siteId, boolean purgeDocuments) {
         long tenantId = TenantContextHolder.require().getTenantId();
+        requireKb(kbId, tenantId);
         if (siteRepository.findById(tenantId, kbId, siteId).isEmpty()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "site not found");
         }
+        int documentsPurged = 0;
+        if (purgeDocuments) {
+            documentsPurged = siteCrawlPurgeService.purgeDocumentsForSite(tenantId, kbId, siteId);
+        }
+        int runsRemoved = siteCrawlPurgeService.purgeCrawlRunsForSite(tenantId, kbId, siteId);
         siteRepository.delete(tenantId, kbId, siteId);
+        return Map.of(
+                "deleted", true,
+                "purgeDocuments", purgeDocuments,
+                "documentsPurged", documentsPurged,
+                "crawlRunsRemoved", runsRemoved);
     }
 
     public void runNow(long kbId, long siteId) throws Exception {
@@ -87,6 +108,7 @@ public class RagWebCrawlSiteAdminApplicationService {
                         .findById(tenantId, kbId, siteId)
                         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "site not found"));
         var mode = RagWebCrawlSiteSupport.resolveEffectiveSyncMode(site);
+        var snap = TenantContextHolder.require();
         ragApplicationService.enqueueSiteCrawlJobForSite(
                 tenantId,
                 site.getKbId(),
@@ -96,7 +118,8 @@ public class RagWebCrawlSiteAdminApplicationService {
                 site.getFilterCrawled() != null && site.getFilterCrawled() == 1,
                 site.getChunkStrategy(),
                 site.getCategoryId(),
-                site.getId());
+                site.getId(),
+                snap.getUserId());
         site.setLastCrawlAt(BeijingTime.nowLocal());
         siteRepository.updateById(site);
     }

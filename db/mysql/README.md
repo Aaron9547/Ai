@@ -31,3 +31,4 @@
 - **`migrate_0_1_241_chat_starter_scheduled_task.sql`**：为各租户种子 **`CHAT_STARTER_DAILY_HOT`** 定时任务（从旧 **`CHAT_STARTER_DAILY_HOT_*`** 运行时参数迁移 Cron/启停）；**0.1.241** 起热点由 **`ten_scheduled_task`** 调度，管理端在 **「定时任务」** 配置；**已建库**若未手工建该执行器任务则**须执行**。
 - **`migrate_0_1_242_scheduled_run.sql`**：表 **`ten_scheduled_run`**（定时任务异步执行 run + **`progress_json`**）；网关补 **`scheduled-tasks/*/run/active`**、**`runs/*`**、**`job-tasks/*`** GET；与 **`pom.xml` `0.1.242-SNAPSHOT`** 一致；**已建库须执行**。
 - **`migrate_0_1_243_web_search_grounding_cache.sql`**：种子 **`WEB_SEARCH_GROUNDING_CACHE_JSON`**（联网 Redis 缓存默认：语义近邻 + 6h/24h/48h + 会话复用）；**已建库须执行**；语义嵌入依赖 **`MEMORY_EMBEDDING_VECTOR_MODEL_ID`**（未配则退化为 hash 向量，近邻效果较弱）。
+- **`migrate_0_1_245_crawl_framework.sql`**：表 **`crawl_run`**、**`crawl_url_queue`**（站点爬取框架持久化队列）；与 **`pom.xml` `0.1.245-SNAPSHOT`** 一致；**已建库须手工执行**；新库以 **`schema_v1.sql`** 为准可跳过。Playwright 部署：安装 Chromium（见 **`PROJECT.md` `### 0.1.245-SNAPSHOT`**）。
