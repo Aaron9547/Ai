@@ -1,10 +1,10 @@
 /* 对话页主题令牌：挂在 .chat-app 上，子组件与全局覆盖共用 */
 .chat-app {
-  --chat-bg-app: #ffffff;
-  --chat-bg-main: #fafafa;
+  --chat-bg-app: #f8fafc;
+  --chat-bg-main: #f8fafc;
   --chat-bg-elevated: #ffffff;
   --chat-bg-muted: #f4f4f5;
-  --chat-bg-subtle: #f9f9f9;
+  --chat-bg-subtle: #f5f8fc;
   --chat-bg-bubble: #f4f4f4;
   --chat-bg-chip: #ececec;
   --chat-bg-input: #ffffff;
@@ -29,7 +29,7 @@
   --chat-text-strong: #18181b;
   --chat-hover: rgba(0, 0, 0, 0.04);
   --chat-hover-strong: rgba(0, 0, 0, 0.06);
-  --chat-accent: #19c37d;
+  --chat-accent: #5b9fd4;
   --chat-link: #2563eb;
   --chat-toggle-think-glow: rgba(99, 102, 241, 0.32);
   --chat-toggle-think-ring: rgba(99, 102, 241, 0.55);
@@ -111,6 +111,17 @@ html.dark .chat-app .attach-strip {
 html.dark .chat-app .thread-title,
 html.dark .chat-app .mobile-nav-title {
   color: var(--chat-text-primary) !important;
+}
+
+html.dark .chat-app .sidebar-collapse-tab {
+  background: var(--chat-bg-elevated) !important;
+  border-color: var(--chat-border) !important;
+  color: var(--chat-text-muted) !important;
+}
+
+html.dark .chat-app .sidebar-collapse-tab:hover {
+  background: var(--chat-hover-strong) !important;
+  color: var(--chat-text-secondary) !important;
 }
 
 html.dark .chat-app .thread-hint,
@@ -270,19 +281,8 @@ html.dark .el-select-dropdown.model-select-dropdown .el-select-dropdown__item.is
   font-weight: 600;
 }
 
-html.dark .chat-app .empty-welcome,
-html.dark .chat-app .quick-prompt-chip {
+html.dark .chat-app .empty-welcome {
   color: var(--chat-text-secondary) !important;
-}
-
-html.dark .chat-app .quick-prompt-chip {
-  background: var(--chat-bg-elevated) !important;
-  border-color: var(--chat-border-input) !important;
-}
-
-html.dark .chat-app .quick-prompt-chip:hover {
-  background: var(--chat-bg-muted) !important;
-  border-color: #52525b !important;
 }
 
 html.dark .chat-app .reasoning,

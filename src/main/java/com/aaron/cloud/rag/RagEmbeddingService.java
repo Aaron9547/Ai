@@ -18,6 +18,7 @@ import com.aaron.cloud.common.rag.entity.RagKnowledgeBase;
 import com.aaron.cloud.common.security.crypto.AesSecretCipher;
 import com.aaron.cloud.common.tenant.SysTenantRepository;
 import com.aaron.cloud.rag.remote.RagLocalEmbeddingFeignClient;
+import com.aaron.cloud.rag.runtime.TenantRagRuntimeResolver;
 import com.aaron.cloud.rag.remote.dto.LocalEmbeddingRpcRequest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -67,11 +68,11 @@ public class RagEmbeddingService implements RagEmbeddingPort {
     private final AesSecretCipher aesSecretCipher;
     private final ObjectMapper objectMapper;
     private final Environment environment;
+    private final TenantRagRuntimeResolver tenantRagRuntimeResolver;
 
     @Override
-    public int dimensions() {
-        int d = aiProvidersProperties.getMilvus().getVectorDimension();
-        return d > 0 ? d : RagQueryEmbeddingHasher.DEFAULT_DIM;
+    public int dimensions(long tenantId) {
+        return tenantRagRuntimeResolver.resolveVectorDimension(tenantId);
     }
 
     @Override
@@ -217,26 +218,26 @@ public class RagEmbeddingService implements RagEmbeddingPort {
                     HttpStatus.BAD_REQUEST, hint.isBlank() ? base : base + " 详情：" + hint.replace('\n', ' '));
         }
         List<Float> floats = RagLocalEmbeddingFeignSupport.parseFirstEmbeddingVector(raw, objectMapper);
-        return floatsToVector(floats);
+        return floatsToVector(tenantId, floats);
     }
 
-    private float[] floatsToVector(List<Float> floats) {
-        int dim = dimensions();
+    private float[] floatsToVector(long tenantId, List<Float> floats) {
+        int dim = dimensions(tenantId);
         if (floats.size() != dim) {
             log.error(
-                    "embedding 维数 {} 与 ai.providers.milvus.vector-dimension={} 不一致",
+                    "embedding 维数 {} 与租户生效向量维数={} 不一致 tenantId={}",
                     floats.size(),
-                    dim);
+                    dim,
+                    tenantId);
             throw new IllegalStateException(
                     "嵌入向量维数 "
                             + floats.size()
-                            + " 与 Milvus 配置 "
+                            + " 与租户 Milvus 维数 "
                             + dim
-                            + " 不一致。请将 application.yml 的 ai.providers.milvus.vector-dimension"
-                            + "（或环境变量 AI_MILVUS_VECTOR_DIM）改为 "
+                            + " 不一致。请在「外观与模型调用」将 RAG 向量维数改为 "
                             + floats.size()
-                            + " 后重启并全库重建索引；若模型支持 dimensions 参数（如百炼 text-embedding-v4），"
-                            + "请确认集成策略为百炼 OpenAI 兼容或百炼原生文本并已重启服务。");
+                            + "（仅可在首次入库前设定并锁定），或更换嵌入模型后全库重建索引；"
+                            + "若模型支持 dimensions 参数（如百炼 text-embedding-v4），请确认集成策略正确。");
         }
         float[] out = new float[dim];
         for (int i = 0; i < dim; i++) {
@@ -258,7 +259,7 @@ public class RagEmbeddingService implements RagEmbeddingPort {
         if (url.isBlank()) {
             throw new IllegalStateException("向量模型 Base URL 为空");
         }
-        int targetDim = dimensions();
+        int targetDim = dimensions(tenantId);
         String body =
                 RagEmbeddingHttpSupport.buildEmbeddingsRequestBody(
                         objectMapper, modelId, text, vectorBackend, targetDim);
@@ -325,7 +326,7 @@ public class RagEmbeddingService implements RagEmbeddingPort {
         }
         JsonNode root = objectMapper.readTree(resp.body());
         List<Float> floats = RagEmbeddingHttpSupport.parseEmbeddingsResponse(root, vectorBackend);
-        return floatsToVector(floats);
+        return floatsToVector(tenantId, floats);
     }
 
     /**
@@ -391,16 +392,16 @@ public class RagEmbeddingService implements RagEmbeddingPort {
     public float[] embedByVectorModelIdOrHash(long tenantId, Long vectorModelIdOrNull, String text) {
         String t = text == null ? "" : text;
         if (vectorModelIdOrNull == null) {
-            return RagQueryEmbeddingHasher.hashToVector(t, dimensions());
+            return RagQueryEmbeddingHasher.hashToVector(t, dimensions(tenantId));
         }
         SysLlmModel m = sysLlmModelRepository.findById(tenantId, vectorModelIdOrNull).orElse(null);
         if (m == null) {
             log.debug("memory embed fallback hash: model missing tenantId={} id={}", tenantId, vectorModelIdOrNull);
-            return RagQueryEmbeddingHasher.hashToVector(t, dimensions());
+            return RagQueryEmbeddingHasher.hashToVector(t, dimensions(tenantId));
         }
         LlmModelKind k = m.getModelKind() != null ? m.getModelKind() : LlmModelKind.LANGUAGE;
         if (k != LlmModelKind.VECTOR || m.getStatus() != LlmModelStatus.ACTIVE) {
-            return RagQueryEmbeddingHasher.hashToVector(t, dimensions());
+            return RagQueryEmbeddingHasher.hashToVector(t, dimensions(tenantId));
         }
         String apiKey = "";
         if (m.getApiKeyCipher() != null && !m.getApiKeyCipher().isBlank()) {
@@ -408,7 +409,7 @@ public class RagEmbeddingService implements RagEmbeddingPort {
                 apiKey = aesSecretCipher.decryptFromBase64(m.getApiKeyCipher());
             } catch (Exception e) {
                 log.warn("memory embed fallback hash: decrypt key failed llmModelId={}", m.getId(), e);
-                return RagQueryEmbeddingHasher.hashToVector(t, dimensions());
+                return RagQueryEmbeddingHasher.hashToVector(t, dimensions(tenantId));
             }
         }
         try {
@@ -435,7 +436,7 @@ public class RagEmbeddingService implements RagEmbeddingPort {
         } catch (Exception e) {
             outboundTenantUpstreamQuarantine.recordHardFailureIfSignal(tenantId, e);
             log.warn("memory embed fallback hash tenantId={} llmModelId={}", tenantId, m.getId(), e);
-            return RagQueryEmbeddingHasher.hashToVector(t, dimensions());
+            return RagQueryEmbeddingHasher.hashToVector(t, dimensions(tenantId));
         }
     }
 }

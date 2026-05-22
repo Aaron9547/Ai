@@ -31,6 +31,17 @@ import org.springframework.stereotype.Repository;
 public class RagChunkRepository {
 
     private final RagChunkMapper mapper;
+
+    /** 是否存在未删除分片（用于 RAG 向量维数首次锁定判断）。 */
+    public boolean tenantHasAnyChunks(long tenantId) {
+        Long cnt =
+                mapper.selectCount(
+                        Wrappers.<RagChunk>lambdaQuery()
+                                .eq(RagChunk::getTenantId, tenantId)
+                                .eq(RagChunk::getDeleted, 0)
+                                .last("LIMIT 1"));
+        return cnt != null && cnt > 0;
+    }
     private final LnkRagDocumentChunkRepository lnkRagDocumentChunkRepository;
     private final RagDocumentRepository ragDocumentRepository;
 

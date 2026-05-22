@@ -183,6 +183,22 @@ CREATE TABLE IF NOT EXISTS chat_starter_event (
   KEY idx_cse_prompt (prompt_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='推荐问题埋点';
 
+CREATE TABLE IF NOT EXISTS chat_user_daily_recommend (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  tenant_id BIGINT NOT NULL,
+  subject_key VARCHAR(96) NOT NULL COMMENT '画像主体 u:{userId} 或 d:{deviceId}',
+  recommend_date DATE NOT NULL COMMENT '北京自然日',
+  status VARCHAR(32) NOT NULL,
+  items_json MEDIUMTEXT NULL COMMENT '推荐卡片 JSON 数组',
+  error_message VARCHAR(512) NULL,
+  retry_used TINYINT NOT NULL DEFAULT 0 COMMENT '当日失败后是否已重试 0/1',
+  fetched_at DATETIME(3) NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_cudr_tenant_subject_date (tenant_id, subject_key, recommend_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户每日个性化资讯推荐';
+
 -- ---------------------------------------------------------------------------
 -- RAG：知识库 / 文档 / 分块及关联
 -- ---------------------------------------------------------------------------

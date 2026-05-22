@@ -1,10 +1,12 @@
 package com.aaron.cloud.common.tenant.runtime;
 
+import com.aaron.cloud.common.api.enums.RagRetrievalMode;
 import com.aaron.cloud.common.api.enums.TenantRuntimeSettingKey;
 import com.aaron.cloud.common.api.enums.TenantRuntimeSettingKey.SettingValueKind;
 import com.aaron.cloud.common.tenant.runtime.entity.TenRuntimeSetting;
 import com.aaron.cloud.rag.crawl.policy.SiteCrawlPreset;
 import com.aaron.cloud.rag.crawl.policy.SiteCrawlRuntimeValidator;
+import com.aaron.cloud.rag.runtime.TenantRagRuntimeResolver;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
@@ -386,6 +388,26 @@ public class TenantRuntimeSettingApplicationService {
                         HttpStatus.BAD_REQUEST, "WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON 非法 JSON");
             }
             return t;
+        }
+        if (key == TenantRuntimeSettingKey.RAG_VECTOR_DIMENSION) {
+            if (valueText == null || valueText.isBlank()) {
+                return "";
+            }
+            return String.valueOf(
+                    TenantRagRuntimeResolver.parseDimensionOrNull(valueText.trim()).orElseThrow());
+        }
+        if (key == TenantRuntimeSettingKey.RAG_RETRIEVAL_MODE) {
+            if (valueText == null || valueText.isBlank()) {
+                return "";
+            }
+            String t = valueText.trim().toLowerCase(Locale.ROOT);
+            for (RagRetrievalMode m : RagRetrievalMode.values()) {
+                if (m.getStorageValue().equals(t) || m.name().equalsIgnoreCase(t)) {
+                    return m.getStorageValue();
+                }
+            }
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "RAG_RETRIEVAL_MODE 须为 milvus 或 milvus_es_hybrid");
         }
         if (key == TenantRuntimeSettingKey.SITE_CRAWL_PRESET) {
             if (valueText == null || valueText.isBlank()) {

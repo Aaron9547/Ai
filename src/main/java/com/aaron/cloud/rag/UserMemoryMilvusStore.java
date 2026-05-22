@@ -3,6 +3,7 @@ package com.aaron.cloud.rag;
 import com.aaron.cloud.common.config.properties.AiMemoryProperties;
 import com.aaron.cloud.common.config.properties.AiProvidersProperties;
 import com.aaron.cloud.common.remoting.EurekaInfraAddress;
+import com.aaron.cloud.rag.runtime.TenantRagRuntimeResolver;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import io.milvus.v2.client.ConnectConfig;
@@ -46,14 +47,17 @@ public class UserMemoryMilvusStore {
     private final MilvusClientV2 client;
     private final AiProvidersProperties providersProperties;
     private final AiMemoryProperties memoryProperties;
+    private final TenantRagRuntimeResolver tenantRagRuntimeResolver;
     private final ConcurrentHashMap.KeySetView<String, Boolean> loadedCollections = ConcurrentHashMap.newKeySet();
 
     public UserMemoryMilvusStore(
             AiProvidersProperties providersProperties,
             AiMemoryProperties memoryProperties,
+            TenantRagRuntimeResolver tenantRagRuntimeResolver,
             ObjectProvider<DiscoveryClient> discoveryClient) {
         this.providersProperties = providersProperties;
         this.memoryProperties = memoryProperties;
+        this.tenantRagRuntimeResolver = tenantRagRuntimeResolver;
         var m = providersProperties.getMilvus();
         String uri = resolveUri(providersProperties, discoveryClient.getIfAvailable());
         var builder = ConnectConfig.builder().uri(uri).dbName(m.getDatabase());
@@ -62,17 +66,25 @@ public class UserMemoryMilvusStore {
         }
         builder.secure(m.isSecure());
         this.client = new MilvusClientV2(builder.build());
-        log.info("UserMemoryMilvusStore connected uri={} db={} collection={}", uri, m.getDatabase(), collectionName());
+        String baseColl =
+                memoryProperties.getMilvusCollection() == null || memoryProperties.getMilvusCollection().isBlank()
+                        ? "user_memory_chunk"
+                        : memoryProperties.getMilvusCollection().trim();
+        log.info(
+                "UserMemoryMilvusStore connected uri={} db={} collectionPerTenant={}_t<tenantId>",
+                uri,
+                m.getDatabase(),
+                baseColl);
     }
 
-    private String collectionName() {
+    private String collectionName(long tenantId) {
         String n = memoryProperties.getMilvusCollection();
-        return n == null || n.isBlank() ? "user_memory_chunk" : n.trim();
+        String base = n == null || n.isBlank() ? "user_memory_chunk" : n.trim();
+        return base + "_t" + tenantId;
     }
 
-    private int dim() {
-        int d = providersProperties.getMilvus().getVectorDimension();
-        return d > 0 ? d : RagQueryEmbeddingHasher.DEFAULT_DIM;
+    private int dim(long tenantId) {
+        return tenantRagRuntimeResolver.resolveVectorDimension(tenantId);
     }
 
     private static String resolveUri(AiProvidersProperties properties, DiscoveryClient discoveryClient) {
@@ -86,8 +98,8 @@ public class UserMemoryMilvusStore {
         return "http://" + m.getHost() + ":" + m.getPort();
     }
 
-    private void ensureCollectionLoaded() {
-        String name = collectionName();
+    private void ensureCollectionLoaded(long tenantId) {
+        String name = collectionName(tenantId);
         if (loadedCollections.contains(name)) {
             return;
         }
@@ -95,7 +107,7 @@ public class UserMemoryMilvusStore {
             if (loadedCollections.contains(name)) {
                 return;
             }
-            int d = dim();
+            int d = dim(tenantId);
             Boolean exists = client.hasCollection(HasCollectionReq.builder().collectionName(name).build());
             if (!Boolean.TRUE.equals(exists)) {
                 CreateCollectionReq.CollectionSchema schema = client.createSchema();
@@ -152,18 +164,19 @@ public class UserMemoryMilvusStore {
     }
 
     public void upsertVector(long tenantId, String subjectKey, long chunkId, float[] vector) {
-        if (vector == null || vector.length != dim()) {
+        int expectedDim = dim(tenantId);
+        if (vector == null || vector.length != expectedDim) {
             log.warn(
                     "user memory milvus upsert skip dimMismatch tenantId={} chunkId={} vecLen={} expected={}",
                     tenantId,
                     chunkId,
                     vector == null ? -1 : vector.length,
-                    dim());
+                    expectedDim);
             return;
         }
         try {
-            ensureCollectionLoaded();
-            String name = collectionName();
+            ensureCollectionLoaded(tenantId);
+            String name = collectionName(tenantId);
             String delExpr = FIELD_CHUNK_ID + " == " + chunkId + " && " + subjectFilter(tenantId, subjectKey);
             client.delete(DeleteReq.builder().collectionName(name).filter(delExpr).build());
             JsonObject row = new JsonObject();
@@ -184,12 +197,12 @@ public class UserMemoryMilvusStore {
     /** 按主体删除该租户下所有记忆向量（隐私删除、设备归并清理等）。 */
     public void deleteByTenantAndSubject(long tenantId, String subjectKey) {
         try {
-            String name = collectionName();
+            String name = collectionName(tenantId);
             if (!Boolean.TRUE.equals(
                     client.hasCollection(HasCollectionReq.builder().collectionName(name).build()))) {
                 return;
             }
-            ensureCollectionLoaded();
+            ensureCollectionLoaded(tenantId);
             String expr = subjectFilter(tenantId, subjectKey);
             client.delete(DeleteReq.builder().collectionName(name).filter(expr).build());
         } catch (Exception e) {
@@ -199,12 +212,12 @@ public class UserMemoryMilvusStore {
 
     /** 返回按向量相似度排序的 chunk 主键列表。 */
     public List<Long> searchChunkIds(long tenantId, String subjectKey, float[] queryVector, int topK) {
-        if (queryVector == null || queryVector.length != dim()) {
+        if (queryVector == null || queryVector.length != dim(tenantId)) {
             return List.of();
         }
         try {
-            ensureCollectionLoaded();
-            String name = collectionName();
+            ensureCollectionLoaded(tenantId);
+            String name = collectionName(tenantId);
             int k = (int) Math.min(Math.max(1, topK), 50L);
             SearchResp resp =
                     client.search(

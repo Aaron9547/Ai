@@ -271,6 +271,29 @@ sequenceDiagram
 
 ## 变更记录
 
+### 0.1.247-SNAPSHOT
+
+- **用户端对话侧栏账号区**：左下角用户名改为 **点击展开菜单**（设备与登录 / 退出，菜单项带图标对齐）；退出须二次确认；修复 `el-dropdown` 触发的页面横纵滚动条（`ChatSidebar` / `ChatView`）。
+- **用户端推荐侧栏**：移除 **「可能感兴趣」** 模式与 **`POST …/daily-recommend/by-topic`**（与猜你想问/对话联网重叠）；侧栏仅保留 **今日画像推荐**；推荐问句发送恢复与用户开关一致的对话联网（`useDailyRecommend` / `ChatUserDailyRecommendService` / `ChatWebSearchGroundingService`）。
+- **用户端对话壳交互**：空对话时 **`LocaleThemeToolbar`** 悬浮于主区右上（推荐栏左侧约 10px，随栏 300/40px 收起联动）；侧栏**展开**仍用原 **`sidebar-rail` / `rec-rail`** 整栏点击展开；**收起**为栏外贴附 **`SidebarCollapseTab`**（左缘/右缘与侧栏边框对齐，箭头图标）；侧栏宽度过渡 **0.28s** + 展开/收起内容交叉淡入淡出；有消息时语言与主题仍在 **`thread-head`**。
+- **用户端设备页**：`MeView` 移除画像与记忆的「导出 JSON」「删除画像与记忆」入口；`profile.ts` 删除对应前端 API 封装（Open **`GET /open/v1/profile/export`**、**`DELETE …/profile/data`** 仍保留供运维/合规，不在 C 端暴露）。
+- **用户端对话**：新建对话前若当前会话尚无用户消息，提示「您已经是新对话了」并跳过重复创建；侧栏收起态新建按钮置顶、与展开区 10px 间隔、浅蓝白底样式。
+- **用户端对话侧栏/快捷问**：左侧栏可收起（细条+悬浮新建）；`useDailyRecommend` 单例保存 `selectedStarterPrompt`（发送后清除）；会话按日期分组；快捷问透明胶囊居中。
+- **用户端对话页 UI 整合**：`ChatView` 主区 70% 居中 + 右侧 300px 推荐栏；欢迎区/胶囊快捷问（200ms 闪烁无选中态）/渐变发送钮/浅蓝极简主题；`ChatSidebar` 品牌区、会话时间、重命名删除；`DailyRecommendSidebar` 画像推荐列表；Open API **`PATCH/DELETE /open/v1/chat/conversations/{id}`**（归档 **`ConversationRecordStatus.ARCHIVED`**）；网关目录 **1055/1056**。
+- **今日画像推荐 · 登录与埋点**：登录成功后 **`POST …/daily-recommend/regenerate-on-login`** 强制按 **`u:{userId}`** 重新生成（覆盖访客 **`d:{deviceId}`** 缓存）；前端 **`authBump`** 清 localStorage 后拉取。点击卡片 **`POST …/daily-recommend/click`** 无感写入 **`ProfileTagCode.INTEREST_NEWS_JSON`** + 记忆片段 **`INTEREST_NEWS`**（失败仅服务端 warn）。网关目录补 **2110/2111**。
+- **用户端今日画像推荐侧栏 UI**：`DailyRecommendSidebar` 四层布局（50px 头 / 40px 画像标签 / 卡片滚动区 / 30px 底栏）、300px 宽、收起细条图标；骨架/空态/失败态同框架；字体与浅科技配色；当日 localStorage 命中不重复请求；刷新按钮失败可重试、成功提示已更新。
+- **对话页今日 AI 推荐**：**`ChatUserDailyRecommendService`** 按画像主体（**`u:{userId}`** / **`d:{deviceId}`**）+ 北京自然日去重；**`ChatWebSearchGroundingService`** 联网检索 + 默认 **LANGUAGE** 模型结构化 5～8 条资讯卡片；表 **`chat_user_daily_recommend`**（**`migrate_0_1_247_chat_user_daily_recommend.sql`**，**已建库须手工执行**）；Open API **`GET /open/v1/chat/daily-recommend`**、**`POST …/retry`**（当日失败仅可重试一次）。
+- **用户端**：**`web/user-web`** 对话页右侧 **`DailyRecommendSidebar`**（320px、可收起；骨架屏/空态/失败重试）；**`localStorage`** 按 **`cacheKey`+`recommendDate`** 缓存列表；租户未配置联网模型时不展示侧栏（与 **`webSearchAllowed`** 一致）。
+- **版本**：**`pom.xml`** bump **0.1.246 → 0.1.247-SNAPSHOT**。
+
+### 0.1.246-SNAPSHOT
+
+- **RAG 租户向量维数**：**`TenantRuntimeSettingKey.RAG_VECTOR_DIMENSION`** + **`TenantRagRuntimeResolver`**；管理端「外观与模型调用 → RAG 向量与检索」可选 512～4096（与嵌入/Milvus 对齐），**首次写入或已有 `rag_chunk` 后锁定**；未配置时回退 **`ai.providers.milvus.vector-dimension`**。**`RagEmbeddingService` / `MilvusVectorStore` / `UserMemoryMilvusStore`**（按租户 collection `{base}_t{tenantId}`）按租户维数运行。
+- **RAG 租户检索模式**：**`RAG_RETRIEVAL_MODE`**（`milvus` / `milvus_es_hybrid`），留空走进程 **`ai.rag.retrieval-mode`**；**`RagQueryBridgeService` / `RagIngestOrchestrationService` / `RagKbAdminApplicationService`** 按租户解析。
+- **配置分层**：**`application.yml`** 仅保留 Milvus/ES 连接与进程默认维数、默认检索模式注释；**`web/admin-web`** Shell 页与 **`tenantShellConfig.ts`** 类型扩展。
+- **管理端 Shell UX**：RAG 向量/检索去掉控件下说明，改 **placeholder**；站点爬取默认仅 **CUSTOM** 档位展示 **`SiteCrawlRuntimeFields`** 表单，保守/平稳/激进只选档位即可（**`siteCrawlRuntimeFormModel`** 序列化）。
+- **版本**：**`pom.xml`** bump **0.1.245 → 0.1.246-SNAPSHOT**。
+
 ### 0.1.245-SNAPSHOT
 
 - **用户端对话思考区**：`ChatView.vue` 联网查询进度增加入场/底纹/跳动点动画；思考正文改 Markdown 渲染（`reasoningMdStreamingHtml`）；主回复开始后隐藏思考区流式光标与顶栏「思考中」态；联网行图标与文案垂直居中。

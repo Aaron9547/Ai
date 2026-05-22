@@ -6,8 +6,8 @@ import com.aaron.cloud.common.api.enums.RagRetrievalMode;
 import com.aaron.cloud.common.api.ports.RagEmbeddingPort;
 import com.aaron.cloud.common.api.ports.RagQueryPort;
 import com.aaron.cloud.common.config.properties.AiProvidersProperties;
-import com.aaron.cloud.common.config.properties.AiRagProperties;
 import com.aaron.cloud.common.config.providers.VectorStoreProviderMode;
+import com.aaron.cloud.rag.runtime.TenantRagRuntimeResolver;
 import com.aaron.cloud.common.rag.RagChunkRepository;
 import com.aaron.cloud.common.rag.RagKnowledgeBaseRepository;
 import com.aaron.cloud.common.rag.entity.RagKnowledgeBase;
@@ -39,7 +39,7 @@ public class RagQueryBridgeService implements RagQueryPort {
     private static final Executor RAG_MULTI_KB_PARALLEL = Executors.newVirtualThreadPerTaskExecutor();
 
     private final AiProvidersProperties aiProvidersProperties;
-    private final AiRagProperties aiRagProperties;
+    private final TenantRagRuntimeResolver tenantRagRuntimeResolver;
     private final RagEmbeddingPort ragEmbeddingPort;
     private final RagChunkRepository ragChunkRepository;
     private final RagKnowledgeBaseRepository ragKnowledgeBaseRepository;
@@ -56,7 +56,7 @@ public class RagQueryBridgeService implements RagQueryPort {
         }
         long tid = tenantId == null ? 0L : tenantId;
         long kb = kbId == null ? 0L : kbId;
-        RagRetrievalMode mode = aiRagProperties.resolvedRetrievalMode();
+        RagRetrievalMode mode = tenantRagRuntimeResolver.resolveRetrievalMode(tid);
         List<String> out =
                 switch (mode) {
                     case MILVUS -> searchMilvusSnippets(tid, kb, query, topK);
@@ -80,7 +80,7 @@ public class RagQueryBridgeService implements RagQueryPort {
         }
         long tid = tenantId == null ? 0L : tenantId;
         long kb = kbId == null ? 0L : kbId;
-        RagRetrievalMode mode = aiRagProperties.resolvedRetrievalMode();
+        RagRetrievalMode mode = tenantRagRuntimeResolver.resolveRetrievalMode(tid);
         List<RagCitationHit> out =
                 switch (mode) {
                     case MILVUS -> searchMilvusCitations(tid, kb, query, topK);
@@ -107,7 +107,7 @@ public class RagQueryBridgeService implements RagQueryPort {
         if (aiProvidersProperties.resolvedVectorStore() != VectorStoreProviderMode.milvus) {
             return List.of();
         }
-        RagRetrievalMode mode = aiRagProperties.resolvedRetrievalMode();
+        RagRetrievalMode mode = tenantRagRuntimeResolver.resolveRetrievalMode(tid);
         List<String> out =
                 switch (mode) {
                     case MILVUS -> mergeSnippetListsInKbOrder(
@@ -137,7 +137,7 @@ public class RagQueryBridgeService implements RagQueryPort {
         if (aiProvidersProperties.resolvedVectorStore() != VectorStoreProviderMode.milvus) {
             return List.of();
         }
-        RagRetrievalMode mode = aiRagProperties.resolvedRetrievalMode();
+        RagRetrievalMode mode = tenantRagRuntimeResolver.resolveRetrievalMode(tid);
         List<RagCitationHit> out =
                 switch (mode) {
                     case MILVUS -> mergeCitationHitsInKbOrder(

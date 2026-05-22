@@ -69,19 +69,6 @@
             </el-button>
           </div>
         </section>
-
-        <section v-if="snapshot.userId != null" class="card">
-          <h2>{{ t("me.profileSection") }}</h2>
-          <p class="card-hint">{{ t("me.profileHint") }}</p>
-          <div class="me-actions">
-            <el-button size="small" type="primary" plain :loading="exporting" @click="downloadProfileExport">
-              {{ t("me.exportJson") }}
-            </el-button>
-            <el-button size="small" type="danger" plain :loading="purging" @click="confirmPurgeProfile">
-              {{ t("me.purge") }}
-            </el-button>
-          </div>
-        </section>
       </template>
     </div>
   </div>
@@ -89,11 +76,11 @@
 
 <script setup lang="ts">
 import { ArrowLeft } from "@element-plus/icons-vue";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElMessage } from "element-plus";
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
-import { exportProfileDataJson, mergeGuestDevice, purgeProfileData } from "../../api/profile";
+import { mergeGuestDevice } from "../../api/profile";
 import { http } from "../../plugins/http";
 import { copyTextToUserClipboard } from "../../utils/clipboard";
 import { apiRequestErrorMessage } from "../../utils/apiRequestErrorMessage";
@@ -163,8 +150,6 @@ const tenantDisplay = computed(() => {
 
 const loading = ref(true);
 const err = ref("");
-const exporting = ref(false);
-const purging = ref(false);
 const otherDeviceIdInput = ref("");
 const mergingOtherDevice = ref(false);
 
@@ -194,47 +179,6 @@ async function mergeOtherGuestDevice() {
     ElMessage.error(apiRequestErrorMessage(e, t("me.mergeFail")));
   } finally {
     mergingOtherDevice.value = false;
-  }
-}
-
-async function downloadProfileExport() {
-  exporting.value = true;
-  try {
-    const data = await exportProfileDataJson();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `ai-profile-export-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    ElMessage.success(t("me.exportStarted"));
-  } catch (e: unknown) {
-    ElMessage.error(apiRequestErrorMessage(e, t("me.exportFail")));
-  } finally {
-    exporting.value = false;
-  }
-}
-
-async function confirmPurgeProfile() {
-  try {
-    await ElMessageBox.confirm(t("me.purgeMsg"), t("me.purgeTitle"), {
-      type: "warning",
-      confirmButtonText: t("me.purgeConfirm"),
-      cancelButtonText: t("common.cancel"),
-    });
-  } catch {
-    return;
-  }
-  purging.value = true;
-  try {
-    await purgeProfileData();
-    ElMessage.success(t("me.purged"));
-    await load();
-  } catch (e: unknown) {
-    ElMessage.error(apiRequestErrorMessage(e, t("me.purgeFail")));
-  } finally {
-    purging.value = false;
   }
 }
 
@@ -368,13 +312,6 @@ onMounted(() => {
 .me-merge-input {
   flex: 1;
   min-width: 200px;
-}
-
-.me-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 12px;
 }
 
 html.dark .me-page {

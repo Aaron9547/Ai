@@ -5,7 +5,7 @@ import com.aaron.cloud.common.api.enums.RagChunkStrategy;
 import com.aaron.cloud.common.api.enums.RagDocumentDisplayStatus;
 import com.aaron.cloud.common.api.enums.RagDocumentSourceType;
 import com.aaron.cloud.common.api.enums.RagRetrievalMode;
-import com.aaron.cloud.common.config.properties.AiRagProperties;
+import com.aaron.cloud.rag.runtime.TenantRagRuntimeResolver;
 import com.aaron.cloud.common.context.TenantContextHolder;
 import com.aaron.cloud.common.rag.LnkRagDocumentChunkRepository;
 import com.aaron.cloud.common.rag.LnkRagKbDocumentRepository;
@@ -64,7 +64,7 @@ public class RagIngestOrchestrationService {
     private final HttpFetcher httpFetcher;
     private final PolitenessGate politenessGate;
     private final SiteCrawlPolicyResolver siteCrawlPolicyResolver;
-    private final AiRagProperties aiRagProperties;
+    private final TenantRagRuntimeResolver tenantRagRuntimeResolver;
     private final ObjectProvider<ElasticsearchRagSearchClient> elasticsearchRagSearchClient;
 
     /** @param root 任务 payload，须含 {@code kbId}、{@code url}，可选 {@code chunkStrategy} 覆盖知识库默认策略。 */
@@ -648,7 +648,7 @@ public class RagIngestOrchestrationService {
             long documentId,
             String documentTitle,
             List<ElasticsearchRagSearchClient.ChunkIndexRow> esRows) {
-        if (aiRagProperties.resolvedRetrievalMode() != RagRetrievalMode.MILVUS_ES_HYBRID
+        if (tenantRagRuntimeResolver.resolveRetrievalMode(tenantId) != RagRetrievalMode.MILVUS_ES_HYBRID
                 || esRows == null
                 || esRows.isEmpty()) {
             return;

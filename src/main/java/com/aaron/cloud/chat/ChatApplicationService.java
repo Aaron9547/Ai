@@ -45,7 +45,7 @@ import com.aaron.cloud.common.chat.entity.LnkChatConversationMessage;
 import com.aaron.cloud.common.tenant.runtime.ChatPromptLimitsRuntime;
 import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService;
 import com.aaron.cloud.common.config.properties.AiProvidersProperties;
-import com.aaron.cloud.common.config.properties.AiRagProperties;
+import com.aaron.cloud.rag.runtime.TenantRagRuntimeResolver;
 import com.aaron.cloud.common.config.providers.VectorStoreProviderMode;
 import com.aaron.cloud.common.context.TenantContextHolder;
 import com.aaron.cloud.common.tenant.SysTenantRepository;
@@ -114,7 +114,7 @@ public class ChatApplicationService {
     private final SysTenantRepository sysTenantRepository;
     private final SecUserAccountRepository secUserAccountRepository;
     private final SysTenantMemberRepository sysTenantMemberRepository;
-    private final AiRagProperties aiRagProperties;
+    private final TenantRagRuntimeResolver tenantRagRuntimeResolver;
     private final RagKnowledgeBaseRepository ragKnowledgeBaseRepository;
     private final AiProvidersProperties aiProvidersProperties;
     private final ChatIntentStreamRouter chatIntentStreamRouter;
@@ -160,6 +160,35 @@ public class ChatApplicationService {
         var snap = TenantContextHolder.require();
         return conversationRepository.listForSubject(
                 snap.getTenantId(), snap.getUserId(), snap.getDeviceId(), 50);
+    }
+
+    public ChatConversation renameConversation(long conversationId, String title) {
+        if (title == null || title.isBlank()) {
+            throw new IllegalArgumentException("title required");
+        }
+        var snap = TenantContextHolder.require();
+        var conv =
+                conversationRepository
+                        .findById(conversationId, snap.getTenantId())
+                        .orElseThrow(() -> new IllegalArgumentException("conversation not found"));
+        assertConversationAccess(conv);
+        if (conv.getStatus() != ConversationRecordStatus.ACTIVE) {
+            throw new IllegalArgumentException("conversation not active");
+        }
+        conversationRepository.updateTitle(conversationId, snap.getTenantId(), title);
+        return conversationRepository
+                .findById(conversationId, snap.getTenantId())
+                .orElseThrow();
+    }
+
+    public void archiveConversation(long conversationId) {
+        var snap = TenantContextHolder.require();
+        var conv =
+                conversationRepository
+                        .findById(conversationId, snap.getTenantId())
+                        .orElseThrow(() -> new IllegalArgumentException("conversation not found"));
+        assertConversationAccess(conv);
+        conversationRepository.archive(conversationId, snap.getTenantId());
     }
 
     public List<ChatMessageView> listConversationMessages(long conversationId) {
@@ -559,7 +588,8 @@ public class ChatApplicationService {
                 conversationId,
                 PipelineLogZh.intentRoute(intent),
                 PipelineLogZh.vectorStore(aiProvidersProperties.resolvedVectorStore()),
-                PipelineLogZh.retrievalMode(aiRagProperties.resolvedRetrievalMode()),
+                PipelineLogZh.retrievalMode(
+                        tenantRagRuntimeResolver.resolveRetrievalMode(snap.getTenantId())),
                 chatRagKbIds.size(),
                 payload.getContent() != null ? payload.getContent().length() : 0,
                 ragLexicalQuery.length(),

@@ -14,6 +14,7 @@ import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationServ
 import com.aaron.cloud.rag.crawl.policy.SiteCrawlPolicyResolver;
 import com.aaron.cloud.rag.crawl.policy.SiteCrawlPreset;
 import com.aaron.cloud.rag.crawl.policy.SiteCrawlRuntimeValidator;
+import com.aaron.cloud.rag.runtime.TenantRagRuntimeResolver;
 import com.aaron.cloud.common.context.TenantContextHolder;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -45,6 +46,7 @@ public class TenantShellAdminApplicationService {
     private final AiOutboundResilienceProperties baselineOutboundProps;
     private final ObjectMapper objectMapper;
     private final SiteCrawlPolicyResolver siteCrawlPolicyResolver;
+    private final TenantRagRuntimeResolver tenantRagRuntimeResolver;
 
     public ShellConfigResponse load(long tenantId) {
         SysTenant t =
@@ -131,6 +133,11 @@ public class TenantShellAdminApplicationService {
                         : SiteCrawlRuntimeValidator.normalizePresetStorage(body.getSiteCrawlPreset());
         String crawlRuntimeJson = jsonOrDefault(body.getSiteCrawlRuntimeJson(), "{}");
         SiteCrawlRuntimeValidator.parseObject(crawlRuntimeJson, objectMapper);
+        String ragDimPersist =
+                tenantRagRuntimeResolver.normalizeVectorDimensionForPersist(
+                        tenantId, body.getRagVectorDimension());
+        String ragRetrieval =
+                tenantRagRuntimeResolver.normalizeRetrievalModeForPersist(body.getRagRetrievalMode());
         if (limits.length() > RUNTIME_JSON_MAX_CHARS
                 || memPol.length() > RUNTIME_JSON_MAX_CHARS
                 || guard.length() > RUNTIME_JSON_MAX_CHARS
@@ -150,6 +157,10 @@ public class TenantShellAdminApplicationService {
         items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_CACHE_JSON, cacheJson));
         items.add(item(TenantRuntimeSettingKey.SITE_CRAWL_PRESET, crawlPreset));
         items.add(item(TenantRuntimeSettingKey.SITE_CRAWL_RUNTIME_JSON, crawlRuntimeJson));
+        if (ragDimPersist != null) {
+            items.add(item(TenantRuntimeSettingKey.RAG_VECTOR_DIMENSION, ragDimPersist));
+        }
+        items.add(item(TenantRuntimeSettingKey.RAG_RETRIEVAL_MODE, ragRetrieval));
         tenantRuntimeSettingApplicationService.replace(tenantId, items);
         return load(tenantId);
     }
@@ -204,6 +215,10 @@ public class TenantShellAdminApplicationService {
     }
 
     private ModelCallingRuntimeDto readModelCallingRuntime(long tenantId) {
+        String ragDimStored = tenantRagRuntimeResolver.storedVectorDimensionRaw(tenantId);
+        int ragDimEffective = tenantRagRuntimeResolver.resolveVectorDimension(tenantId);
+        String ragRetStored = tenantRagRuntimeResolver.storedRetrievalModeRaw(tenantId);
+        String ragRetEffective = tenantRagRuntimeResolver.resolveRetrievalModeStorage(tenantId);
         return new ModelCallingRuntimeDto(
                 tenantRuntimeSettingApplicationService.getEffectiveValueText(
                         tenantId, TenantRuntimeSettingKey.MEMORY_EMBEDDING_VECTOR_MODEL_ID),
@@ -224,7 +239,13 @@ public class TenantShellAdminApplicationService {
                 tenantRuntimeSettingApplicationService.getEffectiveValueText(
                         tenantId, TenantRuntimeSettingKey.SITE_CRAWL_PRESET),
                 tenantRuntimeSettingApplicationService.getEffectiveValueText(
-                        tenantId, TenantRuntimeSettingKey.SITE_CRAWL_RUNTIME_JSON));
+                        tenantId, TenantRuntimeSettingKey.SITE_CRAWL_RUNTIME_JSON),
+                ragDimStored,
+                ragDimEffective,
+                tenantRagRuntimeResolver.isVectorDimensionLocked(tenantId),
+                ragRetStored,
+                ragRetEffective,
+                tenantRagRuntimeResolver.processDefaultVectorDimension());
     }
 
     private static ShellBrandingPutBody toBrandingBody(ShellPutBody body) {
@@ -282,7 +303,13 @@ public class TenantShellAdminApplicationService {
             String webSearchGroundingRoundSuffixesJson,
             String webSearchGroundingCacheJson,
             String siteCrawlPreset,
-            String siteCrawlRuntimeJson) {}
+            String siteCrawlRuntimeJson,
+            String ragVectorDimension,
+            int ragVectorDimensionEffective,
+            boolean ragVectorDimensionLocked,
+            String ragRetrievalMode,
+            String ragRetrievalModeEffective,
+            int processDefaultVectorDimension) {}
 
     public record BrandingDto(
             String logoUrl, String portalTitle, String footerText, String portalTitleResolved) {}
@@ -339,5 +366,9 @@ public class TenantShellAdminApplicationService {
         private String siteCrawlPreset;
         /** {@link TenantRuntimeSettingKey#SITE_CRAWL_RUNTIME_JSON} */
         private String siteCrawlRuntimeJson;
+        /** {@link TenantRuntimeSettingKey#RAG_VECTOR_DIMENSION}；空表示尚未锁定、走进程默认 */
+        private String ragVectorDimension;
+        /** {@link TenantRuntimeSettingKey#RAG_RETRIEVAL_MODE}；空表示走 {@code ai.rag.retrieval-mode} */
+        private String ragRetrievalMode;
     }
 }

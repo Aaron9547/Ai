@@ -8,14 +8,16 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    ChatBrandRail: typeof import('./components/chat/ChatBrandRail.vue')['default']
+    ChatQuickPromptBar: typeof import('./components/chat/ChatQuickPromptBar.vue')['default']
     ChatShareCaptureCard: typeof import('./components/chat/ChatShareCaptureCard.vue')['default']
     ChatShareDialog: typeof import('./components/chat/ChatShareDialog.vue')['default']
     ChatSidebar: typeof import('./components/chat/ChatSidebar.vue')['default']
+    DailyRecommendCard: typeof import('./components/chat/DailyRecommendCard.vue')['default']
+    DailyRecommendSidebar: typeof import('./components/chat/DailyRecommendSidebar.vue')['default']
+    DailyRecommendSkeleton: typeof import('./components/chat/DailyRecommendSkeleton.vue')['default']
     ElAlert: typeof import('element-plus/es')['ElAlert']
     ElButton: typeof import('element-plus/es')['ElButton']
-    ElCheckbox: typeof import('element-plus/es')['ElCheckbox']
-    ElCheckboxButton: typeof import('element-plus/es')['ElCheckboxButton']
-    ElCheckboxGroup: typeof import('element-plus/es')['ElCheckboxGroup']
     ElConfigProvider: typeof import('element-plus/es')['ElConfigProvider']
     ElDialog: typeof import('element-plus/es')['ElDialog']
     ElDropdown: typeof import('element-plus/es')['ElDropdown']
@@ -33,8 +35,10 @@ declare module 'vue' {
     ElTabs: typeof import('element-plus/es')['ElTabs']
     ElUpload: typeof import('element-plus/es')['ElUpload']
     LocaleThemeToolbar: typeof import('./components/LocaleThemeToolbar.vue')['default']
+    QuickPromptChip: typeof import('./components/chat/QuickPromptChip.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    SidebarCollapseTab: typeof import('./components/chat/SidebarCollapseTab.vue')['default']
     UserAuthDialog: typeof import('./components/UserAuthDialog.vue')['default']
   }
 }

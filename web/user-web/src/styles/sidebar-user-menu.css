@@ -1,0 +1,20 @@
+/* Teleported popper — scoped 样式无法命中 */
+.sidebar-user-menu-popper .foot-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-user-menu-popper .foot-menu-item .el-icon {
+  flex-shrink: 0;
+  margin: 0;
+}
+
+.sidebar-user-menu-popper .foot-menu-item--danger:not(.is-disabled) {
+  color: #c45656;
+}
+
+.sidebar-user-menu-popper .foot-menu-item--danger:not(.is-disabled):hover {
+  color: #c45656;
+  background-color: #fef2f2;
+}

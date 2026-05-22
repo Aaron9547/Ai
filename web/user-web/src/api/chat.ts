@@ -19,9 +19,26 @@ export async function createConversation(title?: string) {
   return data as { id: number };
 }
 
+export type ConversationListItem = {
+  id: number;
+  title: string;
+  updatedAt?: string | null;
+};
+
 export async function listConversations() {
   const { data } = await http.get("/open/v1/chat/conversations");
-  return data as { id: number; title: string }[];
+  return data as ConversationListItem[];
+}
+
+export async function renameConversation(id: number, title: string) {
+  const { data } = await http.patch<ConversationListItem>(`/open/v1/chat/conversations/${id}`, {
+    title,
+  });
+  return data;
+}
+
+export async function archiveConversation(id: number) {
+  await http.delete(`/open/v1/chat/conversations/${id}`);
 }
 
 /** 与后端 {@code priorVersions} 数组项一致，重新生成前的助手快照 */

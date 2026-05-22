@@ -3,7 +3,7 @@ package com.aaron.cloud.rag;
 import com.aaron.cloud.common.api.dto.RagCitationHit;
 import com.aaron.cloud.common.api.ports.RagEmbeddingPort;
 import com.aaron.cloud.common.api.ports.RagQueryPort;
-import com.aaron.cloud.common.config.properties.AiRagProperties;
+import com.aaron.cloud.rag.runtime.TenantRagRuntimeResolver;
 import com.aaron.cloud.common.api.enums.LlmModelKind;
 import com.aaron.cloud.common.api.enums.LlmModelStatus;
 import com.aaron.cloud.common.api.enums.ToggleState;
@@ -91,7 +91,7 @@ public class RagKbAdminApplicationService {
     private final RagKbVectorModelGuard ragKbVectorModelGuard;
     private final RagQueryPort ragQueryPort;
     private final RagQueryBridgeService ragQueryBridgeService;
-    private final AiRagProperties aiRagProperties;
+    private final TenantRagRuntimeResolver tenantRagRuntimeResolver;
     private final SysTenantRepository sysTenantRepository;
     private final RagIngestPreviewApplicationService ragIngestPreviewApplicationService;
     private final RagDocumentChunkPurgeService ragDocumentChunkPurgeService;
@@ -163,7 +163,7 @@ public class RagKbAdminApplicationService {
                                                 h.contentPreview()))
                         .toList();
         return new RagRetrievalTestView(
-                aiRagProperties.resolvedRetrievalMode().getStorageValue(),
+                tenantRagRuntimeResolver.resolveRetrievalModeStorage(tenantId),
                 query,
                 topK,
                 hitViews.size(),

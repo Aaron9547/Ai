@@ -1204,7 +1204,7 @@ export default {
     retrievalTestBtn: "Retrieval test",
     retrievalTestDlgTitle: "Retrieval test",
     retrievalTestDlgHint:
-      "Runs the same retrieval path as chat RAG for this KB; mode follows server ai.rag.retrieval-mode.",
+      "Runs the same retrieval path as chat RAG for this KB; mode follows tenant shell RAG retrieval setting or process default.",
     retrievalQueryLabel: "Query",
     retrievalQueryPh: "Question or keywords to search",
     retrievalQueryRequired: "Enter a query",

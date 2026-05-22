@@ -1,26 +1,32 @@
 <template>
   <div
     class="locale-theme-toolbar"
-    :class="{ 'locale-theme-toolbar--compact': compact }"
+    :class="{
+      'locale-theme-toolbar--compact': compact,
+      'locale-theme-toolbar--floating': floating,
+      'locale-theme-toolbar--theme-only': themeOnly,
+    }"
     role="toolbar"
     :aria-label="t('ui.toolbarAria')"
   >
     <div class="lt-group">
-      <el-dropdown trigger="click" teleported popper-class="lt-dropdown-popper" @command="onLocale">
-        <button type="button" class="lt-trigger" :title="t('ui.language')">
-          <span class="lt-locale-mark" aria-hidden="true">{{ localeMark }}</span>
-          <span v-if="!compact" class="lt-value">{{ localeLabel(store.locale) }}</span>
-          <el-icon v-if="!compact" class="lt-caret" aria-hidden="true"><ArrowDown /></el-icon>
-        </button>
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item command="zh-CN">{{ t("ui.zh") }}</el-dropdown-item>
-            <el-dropdown-item command="en-US">{{ t("ui.en") }}</el-dropdown-item>
-          </el-dropdown-menu>
-        </template>
-      </el-dropdown>
+      <template v-if="!themeOnly">
+        <el-dropdown trigger="click" teleported popper-class="lt-dropdown-popper" @command="onLocale">
+          <button type="button" class="lt-trigger" :title="t('ui.language')">
+            <span class="lt-locale-mark" aria-hidden="true">{{ localeMark }}</span>
+            <span v-if="!compact" class="lt-value">{{ localeLabel(store.locale) }}</span>
+            <el-icon v-if="!compact" class="lt-caret" aria-hidden="true"><ArrowDown /></el-icon>
+          </button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="zh-CN">{{ t("ui.zh") }}</el-dropdown-item>
+              <el-dropdown-item command="en-US">{{ t("ui.en") }}</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
 
-      <span class="lt-divider" aria-hidden="true" />
+        <span class="lt-divider" aria-hidden="true" />
+      </template>
 
       <el-dropdown trigger="click" teleported popper-class="lt-dropdown-popper" @command="onColorMode">
         <button type="button" class="lt-trigger" :title="t('ui.theme')">
@@ -52,8 +58,12 @@ withDefaults(
   defineProps<{
     /** 顶栏紧凑模式：仅图标，适合对话区标题旁 */
     compact?: boolean;
+    /** 右下角悬浮样式（空对话欢迎页） */
+    floating?: boolean;
+    /** 仅展示主题切换（悬浮时常用） */
+    themeOnly?: boolean;
   }>(),
-  { compact: false },
+  { compact: false, floating: false, themeOnly: false },
 );
 
 const { t } = useI18n();
@@ -191,6 +201,31 @@ html.dark .lt-group {
 .locale-theme-toolbar--compact .lt-divider {
   min-height: 32px;
   margin: 4px 0;
+}
+
+.locale-theme-toolbar--floating .lt-group {
+  border-radius: 999px;
+  box-shadow:
+    0 4px 16px rgba(15, 23, 42, 0.1),
+    0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+.locale-theme-toolbar--floating.locale-theme-toolbar--theme-only .lt-trigger {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 999px;
+}
+
+.locale-theme-toolbar--floating.locale-theme-toolbar--theme-only .lt-icon-wrap {
+  font-size: 20px;
+}
+
+html.dark .locale-theme-toolbar--floating .lt-group {
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.45),
+    0 1px 3px rgba(0, 0, 0, 0.3);
 }
 </style>
 

@@ -102,6 +102,54 @@
             </el-form-item>
           </div>
 
+          <div class="outbound-section-head">{{ t("admin.shell.modelCalling.sectionRagVector") }}</div>
+          <div class="outbound-fields-grid">
+            <el-form-item>
+              <template #label>
+                <ShellFieldLabel
+                  :label="t('admin.shell.modelCalling.ragVectorDimension')"
+                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.ragVectorDimension"
+                />
+              </template>
+              <el-select
+                v-model="ragVectorDimension"
+                class="outbound-line-input"
+                :disabled="ragVectorDimensionLocked"
+                :placeholder="ragVectorDimensionPlaceholder"
+              >
+                <el-option
+                  v-for="d in ragVectorDimensionOptions"
+                  :key="d"
+                  :label="String(d)"
+                  :value="String(d)"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item>
+              <template #label>
+                <ShellFieldLabel
+                  :label="t('admin.shell.modelCalling.ragRetrievalMode')"
+                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.ragRetrievalMode"
+                />
+              </template>
+              <el-select
+                v-model="ragRetrievalMode"
+                class="outbound-line-input"
+                clearable
+                :placeholder="ragRetrievalModePlaceholder"
+              >
+                <el-option
+                  :label="t('admin.shell.modelCalling.ragRetrievalMilvus')"
+                  value="milvus"
+                />
+                <el-option
+                  :label="t('admin.shell.modelCalling.ragRetrievalHybrid')"
+                  value="milvus_es_hybrid"
+                />
+              </el-select>
+            </el-form-item>
+          </div>
+
           <div class="outbound-section-head">{{ t("admin.shell.modelCalling.sectionChatPrompt") }}</div>
           <div class="outbound-fields-grid">
             <el-form-item><template #label><ShellFieldLabel :label="t('admin.shell.modelCalling.fields.ragSnippetMaxChars')" tooltip-i18n-key="admin.shell.modelCalling.tooltips.ragSnippetMaxChars" /></template><el-input-number v-model="promptLimitsForm.ragSnippetMaxChars" :min="120" :max="16000" :step="10" controls-position="right" class="num-wide" /></el-form-item>
@@ -318,20 +366,17 @@
             </el-form-item>
           </div>
 
-          <div class="outbound-section-head">{{ t("admin.shell.siteCrawl.sectionTitle") }}</div>
-          <p class="field-hint web-cache-hint">{{ t("admin.shell.siteCrawl.sectionHint") }}</p>
-          <SiteCrawlPresetPicker v-model="siteCrawlPreset" />
-          <el-collapse class="site-crawl-advanced">
-            <el-collapse-item :title="t('admin.shell.siteCrawl.advancedTitle')" name="adv">
-              <el-input
-                v-model="siteCrawlRuntimeJson"
-                type="textarea"
-                :rows="10"
-                class="outbound-line-input"
-                @input="onSiteCrawlRuntimeEdit"
-              />
-            </el-collapse-item>
-          </el-collapse>
+          <div class="site-crawl-block">
+            <div class="outbound-section-head">{{ t("admin.shell.siteCrawl.sectionTitle") }}</div>
+            <SiteCrawlPresetPicker v-model="siteCrawlPreset" />
+            <p v-if="siteCrawlPreset !== 'CUSTOM'" class="site-crawl-preset-hint">
+              {{ siteCrawlPresetSummary }}
+            </p>
+            <template v-if="siteCrawlPreset === 'CUSTOM'">
+              <div class="outbound-section-head">{{ t("admin.shell.siteCrawl.customFieldsTitle") }}</div>
+              <SiteCrawlRuntimeFields v-model="siteCrawlForm" />
+            </template>
+          </div>
 
           <el-form-item class="outbound-footer-actions">
             <div class="outbound-footer-actions-inner">
@@ -617,10 +662,16 @@ import {
   parseWebSearchCacheJson,
   serializeWebSearchCacheJson,
   normalizeSiteCrawlPreset,
-  parseSiteCrawlRuntimeJson,
   type SiteCrawlPresetValue,
 } from "@/views/system/modelCallingRuntimeFormModel";
 import SiteCrawlPresetPicker from "@/views/system/components/SiteCrawlPresetPicker.vue";
+import SiteCrawlRuntimeFields from "@/views/system/components/SiteCrawlRuntimeFields.vue";
+import {
+  parseSiteCrawlRuntimeForm,
+  serializeSiteCrawlRuntimeJson,
+  SITE_CRAWL_RUNTIME_DEFAULT,
+  type SiteCrawlRuntimeForm,
+} from "@/views/system/siteCrawlRuntimeFormModel";
 
 const { t, locale } = useI18n();
 
@@ -633,11 +684,42 @@ const form = reactive({
 const outboundForm = reactive<OutboundResilienceForm>(readOutboundFormFromEffective({}));
 
 const memoryEmbeddingModelId = ref<number | undefined>(undefined);
+const ragVectorDimension = ref("");
+const ragVectorDimensionEffective = ref(2048);
+const ragVectorDimensionLocked = ref(false);
+const processDefaultVectorDimension = ref(2048);
+const ragVectorDimensionOptions = [512, 768, 1024, 1536, 2048, 3072, 4096];
+const ragRetrievalMode = ref("");
+const ragRetrievalModeEffective = ref("milvus_es_hybrid");
 const webSearchGroundingModelId = ref<number | undefined>(undefined);
 const vectorModelsForMemory = ref<LlmModelAdminView[]>([]);
 const webSearchModelsForBinding = ref<LlmModelAdminView[]>([]);
 const loadingVectorModels = ref(false);
 const loadingWebSearchModels = ref(false);
+
+const ragRetrievalModeEffectiveLabel = computed(() => {
+  const m = ragRetrievalModeEffective.value;
+  if (m === "milvus") return t("admin.shell.modelCalling.ragRetrievalMilvus");
+  if (m === "milvus_es_hybrid") return t("admin.shell.modelCalling.ragRetrievalHybrid");
+  return m;
+});
+
+const ragVectorDimensionPlaceholder = computed(() => {
+  if (ragVectorDimensionLocked.value) {
+    return t("admin.shell.modelCalling.ragVectorDimensionPlaceholderLocked", {
+      dim: ragVectorDimensionEffective.value,
+    });
+  }
+  return t("admin.shell.modelCalling.ragVectorDimensionPlaceholderOpen", {
+    default: processDefaultVectorDimension.value,
+  });
+});
+
+const ragRetrievalModePlaceholder = computed(() =>
+  t("admin.shell.modelCalling.ragRetrievalModePlaceholder", {
+    mode: ragRetrievalModeEffectiveLabel.value,
+  }),
+);
 
 const memoryEmbeddingSelectOptions = computed(() => {
   void locale.value;
@@ -706,23 +788,45 @@ const webSearchRounds = ref(3);
 const suffixSlots = ref<string[]>([""]);
 const webSearchCacheForm = reactive({ ...WEB_SEARCH_CACHE_DEFAULT });
 const siteCrawlPreset = ref<SiteCrawlPresetValue>("BALANCED");
-const siteCrawlRuntimeJson = ref("{}");
+const siteCrawlForm = reactive<SiteCrawlRuntimeForm>({ ...SITE_CRAWL_RUNTIME_DEFAULT });
 const siteCrawlPresetApplying = ref(false);
 
-function onSiteCrawlRuntimeEdit() {
-  siteCrawlPreset.value = "CUSTOM";
+async function applySiteCrawlRuntimeJson(rawJson: string, preset: SiteCrawlPresetValue) {
+  let json = String(rawJson ?? "").trim() || "{}";
+  if (json === "{}") {
+    try {
+      const templatePreset = preset === "CUSTOM" ? "BALANCED" : preset;
+      json = await tenantShellApi.fetchSiteCrawlRuntimeTemplate(templatePreset);
+    } catch {
+      ElMessage.warning(t("admin.shell.siteCrawl.templateLoadFailed"));
+    }
+  }
+  Object.assign(siteCrawlForm, parseSiteCrawlRuntimeForm(json));
 }
 
 watch(siteCrawlPreset, async (next, prev) => {
-  if (siteCrawlPresetApplying.value || next === prev || next === "CUSTOM") {
+  if (siteCrawlPresetApplying.value || next === prev || next !== "CUSTOM" || prev === "CUSTOM") {
     return;
   }
+  siteCrawlPresetApplying.value = true;
   try {
-    const json = await tenantShellApi.fetchSiteCrawlRuntimeTemplate(next);
-    siteCrawlRuntimeJson.value = json;
+    const json = await tenantShellApi.fetchSiteCrawlRuntimeTemplate("BALANCED");
+    Object.assign(siteCrawlForm, parseSiteCrawlRuntimeForm(json));
   } catch {
     ElMessage.warning(t("admin.shell.siteCrawl.templateLoadFailed"));
+  } finally {
+    siteCrawlPresetApplying.value = false;
   }
+});
+
+const siteCrawlPresetSummary = computed(() => {
+  const key =
+    siteCrawlPreset.value === "CONSERVATIVE"
+      ? "presetConservativeDesc"
+      : siteCrawlPreset.value === "AGGRESSIVE"
+        ? "presetAggressiveDesc"
+        : "presetBalancedDesc";
+  return t(`admin.shell.siteCrawl.${key}`);
 });
 watch(webSearchRounds, (n) => {
   suffixSlots.value = resizeSuffixSlots([...suffixSlots.value], n);
@@ -757,7 +861,7 @@ const circuitBreakerRows = computed(() => {
   return buildCircuitBreakerBaselineRows(baselineOutboundRef.value, (k) => t(k), zh);
 });
 
-function applyModelCallingFromApi(mc: TenantShellModelCallingRuntime | undefined) {
+async function applyModelCallingFromApi(mc: TenantShellModelCallingRuntime | undefined) {
   if (!mc) {
     return;
   }
@@ -777,9 +881,19 @@ function applyModelCallingFromApi(mc: TenantShellModelCallingRuntime | undefined
     parseWebSearchCacheJson(mc.webSearchGroundingCacheJson ?? "{}"),
   );
   siteCrawlPresetApplying.value = true;
-  siteCrawlPreset.value = normalizeSiteCrawlPreset(mc.siteCrawlPreset);
-  siteCrawlRuntimeJson.value = parseSiteCrawlRuntimeJson(mc.siteCrawlRuntimeJson);
+  const preset = normalizeSiteCrawlPreset(mc.siteCrawlPreset);
+  siteCrawlPreset.value = preset;
+  await applySiteCrawlRuntimeJson(mc.siteCrawlRuntimeJson ?? "{}", preset);
   siteCrawlPresetApplying.value = false;
+  ragVectorDimension.value = mc.ragVectorDimension?.trim() ?? "";
+  ragVectorDimensionEffective.value = mc.ragVectorDimensionEffective ?? processDefaultVectorDimension.value;
+  ragVectorDimensionLocked.value = mc.ragVectorDimensionLocked ?? false;
+  processDefaultVectorDimension.value = mc.processDefaultVectorDimension ?? 2048;
+  if (!ragVectorDimension.value && !ragVectorDimensionLocked.value) {
+    ragVectorDimension.value = String(ragVectorDimensionEffective.value);
+  }
+  ragRetrievalMode.value = mc.ragRetrievalMode?.trim() ?? "";
+  ragRetrievalModeEffective.value = mc.ragRetrievalModeEffective?.trim() || "milvus_es_hybrid";
 }
 
 async function reload() {
@@ -816,7 +930,7 @@ async function reload() {
       data.branding.portalTitleResolved ?? data.branding.portalTitle ?? t("admin.brandTitle");
     baselineOutboundRef.value = data.outbound.baselineJson ?? {};
     Object.assign(outboundForm, readOutboundFormFromEffective(data.outbound.effectiveMerged));
-    applyModelCallingFromApi(data.modelCallingRuntime);
+    await applyModelCallingFromApi(data.modelCallingRuntime);
   } finally {
     loadingVectorModels.value = false;
     loadingWebSearchModels.value = false;
@@ -931,10 +1045,13 @@ async function saveModelCalling() {
       webSearchGroundingRoundSuffixesJson: serializeSuffixJson(suffixSlots.value, webSearchRounds.value),
       webSearchGroundingCacheJson: serializeWebSearchCacheJson(webSearchCacheForm),
       siteCrawlPreset: siteCrawlPreset.value,
-      siteCrawlRuntimeJson: siteCrawlRuntimeJson.value.trim() || "{}",
+      siteCrawlRuntimeJson:
+        siteCrawlPreset.value === "CUSTOM" ? serializeSiteCrawlRuntimeJson(siteCrawlForm) : "{}",
+      ragVectorDimension: ragVectorDimension.value.trim(),
+      ragRetrievalMode: ragRetrievalMode.value.trim(),
     };
     const data = await tenantShellApi.putTenantShellModelCallingRuntime(body);
-    applyModelCallingFromApi(data.modelCallingRuntime);
+    await applyModelCallingFromApi(data.modelCallingRuntime);
     ElMessage.success(t("admin.shell.saveModelCallingOk"));
     window.dispatchEvent(new Event(AI_ADMIN_TENANT_SHELL_CHANGED_EVENT));
   } catch (e: unknown) {
@@ -1277,6 +1394,39 @@ onMounted(() => {
 }
 
 .model-calling-fields-form .outbound-fields-grid :deep(.el-form-item) {
+  max-width: none;
+  width: 100%;
+}
+
+.site-crawl-block {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.site-crawl-block .outbound-section-head:first-child {
+  margin-top: 4px;
+}
+
+.site-crawl-block :deep(.site-crawl-preset-cards) {
+  margin-bottom: 12px;
+}
+
+.site-crawl-preset-hint {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color-light);
+  border-radius: 8px;
+  border: 1px solid var(--el-border-color-lighter);
+}
+
+.model-calling-fields-form .site-crawl-custom-fields .outbound-fields-grid {
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+}
+
+.model-calling-fields-form .site-crawl-custom-fields .outbound-fields-grid :deep(.el-form-item) {
   max-width: none;
   width: 100%;
 }

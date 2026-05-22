@@ -17,14 +17,3 @@ export async function mergeGuestDevice(deviceId: string): Promise<ProfileMergeGu
   });
   return data;
 }
-
-/** 已登录：导出画像标签 + 分层记忆 JSON（须 Bearer）。 */
-export async function exportProfileDataJson(): Promise<unknown> {
-  const { data } = await http.get<unknown>("/open/v1/profile/export");
-  return data;
-}
-
-/** 已登录：删除本租户下画像标签、抽象/具体记忆与设备绑定记录（须 Bearer）。 */
-export async function purgeProfileData(): Promise<void> {
-  await http.delete("/open/v1/profile/data");
-}

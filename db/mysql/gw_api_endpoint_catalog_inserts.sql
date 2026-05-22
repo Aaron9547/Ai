@@ -27,6 +27,8 @@ INSERT IGNORE INTO gw_api_endpoint (path_pattern, http_method, display_name, rem
 ('/open/v1/chat/web-search-availability', 'GET', '联网检索是否可用', 'C 端开关', 1, 1035, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/conversations', 'GET', '开放会话列表', NULL, 1, 1040, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/conversations', 'POST', '创建会话', NULL, 1, 1050, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/open/v1/chat/conversations/*', 'PATCH', '重命名会话', NULL, 1, 1055, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/open/v1/chat/conversations/*', 'DELETE', '归档删除会话', NULL, 1, 1056, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/conversations/*/messages', 'GET', '开放消息列表', NULL, 1, 1060, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/conversations/*/messages', 'POST', '流式发消息 SSE', NULL, 1, 1070, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/conversations/*/messages/*/feedback', 'POST', '助手消息赞踩', NULL, 1, 1080, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
@@ -35,6 +37,10 @@ INSERT IGNORE INTO gw_api_endpoint (path_pattern, http_method, display_name, rem
 ('/open/v1/chat/starter-prompts', 'GET', 'C端推荐问题抽样', NULL, 1, 2105, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/starter-prompts/events', 'POST', 'C端推荐问题埋点', NULL, 1, 2106, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/conversations/*/messages/*/follow-up-prompts', 'GET', 'C端助手消息后追问推荐', NULL, 1, 2107, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/open/v1/chat/daily-recommend', 'GET', 'C端今日个性化资讯推荐', NULL, 1, 2108, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/open/v1/chat/daily-recommend/retry', 'POST', 'C端今日推荐失败重试', NULL, 1, 2109, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/open/v1/chat/daily-recommend/regenerate-on-login', 'POST', 'C端登录后刷新画像推荐', NULL, 1, 2110, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/open/v1/chat/daily-recommend/click', 'POST', 'C端画像推荐资讯点击埋点', NULL, 1, 2111, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 -- ---------- API：/api/v1/auth（须 JWT）----------
 ('/api/v1/auth/admin-context', 'POST', '管理端切换工作区 JWT', 'jwt-local', 1, 2000, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 -- ---------- API：/api/v1/admin/me ----------

@@ -1,5 +1,6 @@
 package com.aaron.cloud.common.chat;
 
+import com.aaron.cloud.common.api.enums.ConversationRecordStatus;
 import com.aaron.cloud.common.chat.entity.ChatConversation;
 import com.aaron.cloud.common.time.BeijingTime;
 import com.aaron.cloud.common.chat.mapper.ChatConversationMapper;
@@ -72,7 +73,19 @@ public class ChatConversationRepository {
             q.isNull(ChatConversation::getUserId).eq(ChatConversation::getDeviceId, deviceId);
         }
         return mapper.selectList(
-                q.orderByDesc(ChatConversation::getUpdatedAt).last("LIMIT " + limit));
+                q.eq(ChatConversation::getStatus, ConversationRecordStatus.ACTIVE)
+                        .orderByDesc(ChatConversation::getUpdatedAt)
+                        .last("LIMIT " + limit));
+    }
+
+    public int archive(long id, long tenantId) {
+        return mapper.update(
+                null,
+                new LambdaUpdateWrapper<ChatConversation>()
+                        .eq(ChatConversation::getId, id)
+                        .eq(ChatConversation::getTenantId, tenantId)
+                        .set(ChatConversation::getStatus, ConversationRecordStatus.ARCHIVED)
+                        .set(ChatConversation::getUpdatedAt, BeijingTime.nowLocal()));
     }
 
     public void touchUpdatedAt(long id, long tenantId) {

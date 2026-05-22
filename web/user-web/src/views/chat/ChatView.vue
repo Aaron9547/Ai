@@ -13,14 +13,27 @@
       :conv-id="convId"
       :logged-in-username="loggedInUsername"
       :me-page-path="mePagePath"
+      :brand-label="t('chat.emptyBrand')"
+      :collapsible="!isMobile"
+      :default-collapsed="isTablet"
       :drawer-open="isMobile && sidebarOpen"
       @select="selectConv"
       @new-conv="newConv"
+      @rename="onRenameConv"
+      @delete="onDeleteConv"
       @logout="logoutUser"
       @login="authOpen = true"
     />
     <UserAuthDialog v-model="authOpen" @done="onAuthDone" />
 
+    <div class="chat-body">
+      <div
+        v-if="!isMobile && messages.length === 0"
+        class="chat-float-tools"
+        :class="{ 'chat-float-tools--rec-collapsed': recPanelCollapsed }"
+      >
+        <LocaleThemeToolbar compact floating />
+      </div>
     <section class="main">
       <header v-if="isMobile" class="mobile-nav">
         <button
@@ -42,7 +55,7 @@
           <el-icon :size="22"><Plus /></el-icon>
         </button>
       </header>
-      <header class="thread-head">
+      <header v-if="messages.length > 0" class="thread-head">
         <div class="thread-head-row">
           <h1 v-if="!isMobile" class="thread-title">{{ activeTitle }}</h1>
           <LocaleThemeToolbar v-if="!isMobile" compact class="thread-head-tools" />
@@ -53,31 +66,30 @@
         <p v-if="sessionTokenTotal > 0" class="thread-tokens" v-html="t('chat.tokenLine', { n: sessionTokenTotal })" />
       </header>
 
+      <div v-if="messages.length === 0" class="chat-hero">
+        <div class="empty-brand">{{ t("chat.emptyBrand") }}</div>
+        <p class="empty-welcome">{{ t("chat.emptyWelcome") }}</p>
+        <div class="quick-prompts" role="list">
+          <QuickPromptChip
+            v-for="q in emptyStarterPrompts"
+            :key="q.id ?? q.text"
+            @click="applyStarterPrompt(q, 'EMPTY')"
+          >
+            {{ q.text }}
+          </QuickPromptChip>
+          <QuickPromptChip
+            dashed
+            :disabled="emptyPromptsLoading"
+            @click="refreshEmptyStarterPrompts"
+          >
+            {{ t("chat.starterRefresh") }}
+          </QuickPromptChip>
+        </div>
+      </div>
+
       <el-scrollbar ref="scrollAreaRef" class="messages-scroll" tag="div">
         <div class="messages-scroll-inner">
-        <div v-if="messages.length === 0" class="empty">
-          <div class="empty-brand">{{ t("chat.emptyBrand") }}</div>
-          <p class="empty-welcome">{{ t("chat.emptyWelcome") }}</p>
-          <div class="quick-prompts" role="list">
-            <button
-              v-for="q in emptyStarterPrompts"
-              :key="q.id ?? q.text"
-              type="button"
-              class="quick-prompt-chip"
-              @click="applyStarterPrompt(q, 'EMPTY')"
-            >
-              {{ q.text }}
-            </button>
-            <button
-              type="button"
-              class="quick-prompt-chip quick-prompt-chip--refresh"
-              :disabled="emptyPromptsLoading"
-              @click="refreshEmptyStarterPrompts"
-            >
-              {{ t("chat.starterRefresh") }}
-            </button>
-          </div>
-        </div>
+        <div v-if="messages.length === 0" class="empty-spacer" aria-hidden="true" />
         <div v-else class="messages">
           <div
             v-for="(m, idx) in messages"
@@ -418,15 +430,14 @@
                     :style="{ width: spec.width, maxWidth: spec.maxWidth }"
                   />
                 </div>
-                <button
+                <QuickPromptChip
                   v-for="fp in m.followUpPrompts"
                   :key="fp.id ?? fp.text"
-                  type="button"
-                  class="quick-prompt-chip quick-prompt-chip--compact"
+                  compact
                   @click="applyStarterPrompt(fp, 'FOLLOW_UP')"
                 >
                   {{ fp.text }}
-                </button>
+                </QuickPromptChip>
               </div>
               <div
                 v-if="m.role === 'assistant' && (m.modelAlias || showAssistantMainBubble(m))"
@@ -725,23 +736,34 @@
                 </div>
               </div>
             </div>
-            <el-button
+            <button
+              type="button"
               class="send-fab"
-              type="primary"
-              circle
-              :loading="false"
-              :disabled="sending ? false : !canSend"
+              :class="{
+                'send-fab--active': canSend || sending,
+                'send-fab--loading': sending,
+              }"
+              :disabled="!sending && !canSend"
               :aria-label="sending ? t('chat.ariaStop') : t('chat.ariaSend')"
               @click="sending ? stopGenerating() : send()"
             >
-              <el-icon v-if="sending"><VideoPause /></el-icon>
+              <el-icon v-if="sending" class="send-fab-spin"><Loading /></el-icon>
               <el-icon v-else><Promotion /></el-icon>
-            </el-button>
+            </button>
           </div>
         </div>
         <p class="composer-note">{{ t("chat.composerNote") }}</p>
       </footer>
     </section>
+
+    <DailyRecommendSidebar
+      v-if="!isMobile"
+      v-model:collapsed="recPanelCollapsed"
+      :me-page-path="mePagePath"
+      :default-collapsed="isTablet"
+      :auth-bump="authBump"
+    />
+    </div>
 
     <ChatShareDialog
       v-model="shareOpen"
@@ -756,6 +778,7 @@
 
 <script setup lang="ts">
 import type { UploadFile } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import {
   ArrowDown,
   ArrowLeft,
@@ -771,7 +794,6 @@ import {
   Paperclip,
   Plus,
   Promotion,
-  VideoPause,
   RefreshRight,
   Share,
   Star,
@@ -783,6 +805,9 @@ import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
 import { useWindowBreakpoints } from "../../composables/useWindowBreakpoints";
 import ChatSidebar from "../../components/chat/ChatSidebar.vue";
+import DailyRecommendSidebar from "../../components/chat/DailyRecommendSidebar.vue";
+import QuickPromptChip from "../../components/chat/QuickPromptChip.vue";
+import { useDailyRecommend } from "../../composables/useDailyRecommend";
 import ChatShareDialog from "../../components/chat/ChatShareDialog.vue";
 import LocaleThemeToolbar from "../../components/LocaleThemeToolbar.vue";
 import UserAuthDialog from "../../components/UserAuthDialog.vue";
@@ -802,6 +827,8 @@ const uiPrefs = useUiPreferencesStore();
 const chatResponseLocale = computed(() => toChatResponseLocale(uiPrefs.locale));
 const { isMobile, isTablet } = useWindowBreakpoints();
 const sidebarOpen = ref(false);
+/** 右侧推荐栏收起态，用于空对话悬浮工具栏定位 */
+const recPanelCollapsed = ref(false);
 
 /** 每次发起新的助手流式回复自增；丢弃代数已过期的 SSE 分帧，避免上一轮 {@code ragDoc} 写入本轮气泡。 */
 let assistantStreamGeneration = 0;
@@ -1944,7 +1971,12 @@ function onAssistantMore(cmd: string, idx: number) {
   }
 }
 
-const convs = ref<{ id: number; title: string }[]>([]);
+const convs = ref<chatApi.ConversationListItem[]>([]);
+const {
+  setSelectedStarterPrompt,
+  takeSentStarterPrompt,
+  syncForConversation: syncRecommendForConversation,
+} = useDailyRecommend();
 const convId = ref<number | null>(null);
 const input = ref("");
 const messages = ref<Msg[]>([]);
@@ -2030,19 +2062,16 @@ async function ensureEmptyStarterPromptsIfNeeded() {
   await loadEmptyStarterPrompts(false);
 }
 
-/** 点击推荐问句时默认开启联网（租户已配置联网模型时）。 */
-function enableWebSearchForStarterPrompt() {
-  if (webSearchAllowed.value) {
-    webSearchEnabled.value = true;
-  }
-}
-
 async function applyStarterPrompt(
   q: chatApi.StarterPromptItem,
   scene: "EMPTY" | "FOLLOW_UP",
 ) {
-  enableWebSearchForStarterPrompt();
   input.value = q.text;
+  setSelectedStarterPrompt({
+    text: q.text,
+    promptId: q.id,
+    scene,
+  });
   if (q.id != null) {
     try {
       await chatApi.recordStarterPromptEvent({
@@ -2345,7 +2374,54 @@ function selectConv(id: number) {
   if (isMobile.value) {
     sidebarOpen.value = false;
   }
+  syncRecommendForConversation();
   void loadMessagesForConv(id);
+}
+
+async function onRenameConv(id: number) {
+  const c = convs.value.find((x) => x.id === id);
+  if (!c) return;
+  try {
+    const { value } = await ElMessageBox.prompt(t("chat.renameConvPrompt"), t("chat.renameConv"), {
+      confirmButtonText: t("common.save"),
+      cancelButtonText: t("common.cancel"),
+      inputValue: c.title,
+      inputPattern: /\S+/,
+      inputErrorMessage: t("chat.renameConvRequired"),
+    });
+    const title = value?.trim();
+    if (!title) return;
+    await chatApi.renameConversation(id, title);
+    await refresh();
+    ElMessage.success(t("chat.renameConvOk"));
+  } catch {
+    /* cancel */
+  }
+}
+
+async function onDeleteConv(id: number) {
+  try {
+    await ElMessageBox.confirm(t("chat.deleteConvConfirm"), t("chat.deleteConv"), {
+      type: "warning",
+      confirmButtonText: t("chat.deleteConv"),
+      cancelButtonText: t("common.cancel"),
+    });
+  } catch {
+    return;
+  }
+  if (sending.value && convId.value === id) {
+    cancelActiveStream();
+    sending.value = false;
+  }
+  await chatApi.archiveConversation(id);
+  if (convId.value === id) {
+    convId.value = null;
+    clearThread();
+    await ensureEmptyStarterPromptsIfNeeded();
+    syncRecommendForConversation();
+  }
+  await refresh();
+  ElMessage.success(t("chat.deleteConvOk"));
 }
 
 async function onMobileNewConv() {
@@ -2359,6 +2435,7 @@ function applyDefaultModelAlias() {
 }
 
 const authOpen = ref(false);
+const authBump = ref(0);
 const loggedInUsername = ref<string | null>(null);
 
 /** 避免与 onMounted 首屏加载重复执行 */
@@ -2413,9 +2490,19 @@ function refreshAuthLabel() {
 async function onAuthDone() {
   refreshAuthLabel();
   await loadChatShellForCurrentTenant();
+  authBump.value += 1;
 }
 
-function logoutUser() {
+async function logoutUser() {
+  try {
+    await ElMessageBox.confirm(t("chat.logoutConfirm"), t("chat.logout"), {
+      type: "warning",
+      confirmButtonText: t("chat.logout"),
+      cancelButtonText: t("common.cancel"),
+    });
+  } catch {
+    return;
+  }
   clearUserSession();
   refreshAuthLabel();
   webSearchEnabled.value = false;
@@ -2494,7 +2581,22 @@ watch(modelAlias, () => {
   pendingFiles.value = pendingFiles.value.slice(0, maxAttachmentsLimit.value);
 });
 
+/** 当前会话已创建但用户尚未发送任何消息（含附件未提交）。 */
+function isCurrentConvUnspoken(): boolean {
+  return convId.value != null && messages.value.length === 0 && !sending.value;
+}
+
 async function newConv() {
+  if (isCurrentConvUnspoken()) {
+    ElMessage.info(t("chat.alreadyNewConv"));
+    webSearchEnabled.value = false;
+    if (isMobile.value) {
+      sidebarOpen.value = false;
+    }
+    await ensureEmptyStarterPromptsIfNeeded();
+    return;
+  }
+
   const dateLoc = locale.value.startsWith("en") ? "en-US" : "zh-CN";
   const c = await chatApi.createConversation(
     `${t("chat.newConvPrefix")} ${new Date().toLocaleString(dateLoc, { hour12: false })}`,
@@ -2506,6 +2608,7 @@ async function newConv() {
   }
   await refresh();
   clearThread();
+  syncRecommendForConversation();
   await ensureEmptyStarterPromptsIfNeeded();
   ElMessage.success(t("chat.convCreated"));
 }
@@ -2561,6 +2664,7 @@ async function send() {
 
   const think =
     !!currentModel.value?.supportsThinking && thinkingEnabled.value;
+  takeSentStarterPrompt(text);
   const useWeb = webSearchAllowed.value && webSearchEnabled.value;
 
   resetFollowUpOnPriorAssistants();
@@ -2653,10 +2757,35 @@ async function send() {
 <style scoped>
 .chat-app {
   display: flex;
+  width: 100%;
   height: 100vh;
   min-height: 100vh;
   max-height: 100vh;
-  background: var(--chat-bg-app, #fff);
+  overflow: hidden;
+  background: var(--chat-bg-app, #f8fafc);
+}
+
+.chat-body {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: stretch;
+  background: var(--chat-bg-main, #f8fafc);
+}
+
+.chat-float-tools {
+  position: absolute;
+  top: max(14px, env(safe-area-inset-top, 0px));
+  right: calc(300px + 10px);
+  z-index: 25;
+  transition: right 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chat-float-tools--rec-collapsed {
+  right: calc(40px + 10px);
 }
 
 .main {
@@ -2664,17 +2793,38 @@ async function send() {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--chat-bg-main, #fafafa);
+  align-items: center;
+  background: var(--chat-bg-main, #f8fafc);
+}
+
+.main > .thread-head,
+.main > .chat-hero,
+.main > .messages-scroll,
+.main > .composer {
+  width: 70%;
+  max-width: 70%;
+  box-sizing: border-box;
+}
+
+.chat-hero {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 24px 24px 12px;
+  gap: 0;
+}
+
+.empty-spacer {
+  min-height: 48px;
 }
 
 .thread-head {
-  /* 与 .messages / .composer-surface 同宽居中，避免侧栏存在时标题贴左、对话区视觉上「整体偏右」 */
-  max-width: 58rem;
-  margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
   padding: 14px 24px 12px;
-  border-bottom: 1px solid var(--chat-border, #ececec);
+  border-bottom: 1px solid var(--chat-border, #e8edf2);
   flex-shrink: 0;
   background: var(--chat-bg-main, #fafafa);
 }
@@ -3302,35 +3452,26 @@ async function send() {
   box-sizing: border-box;
 }
 
-.empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 220px;
-  padding: 40px 24px 56px;
-  text-align: center;
-}
-
 .empty-brand {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  background: #202020;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #5b9fd4 0%, #3d7ab8 100%);
   color: #fff;
   font-weight: 700;
-  font-size: 16px;
+  font-size: 17px;
   display: flex;
   align-items: center;
   justify-content: center;
   margin-bottom: 16px;
+  box-shadow: 0 8px 20px rgba(61, 122, 184, 0.18);
 }
 
 .empty-welcome {
   margin: 0 0 20px;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.65;
-  color: #3f3f46;
+  color: #4a6578;
   max-width: 34rem;
 }
 
@@ -3339,33 +3480,10 @@ async function send() {
   flex-wrap: wrap;
   gap: 10px;
   justify-content: center;
-  max-width: 52rem;
-}
-
-.quick-prompt-chip {
-  padding: 8px 14px;
-  border-radius: 8px;
-  border: 1px solid #e5e5e5;
-  background: #fff;
-  color: #3f3f46;
-  font-size: 13px;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-}
-
-.quick-prompt-chip:hover {
-  border-color: #d0d0d0;
-  background: #f7f7f7;
-}
-
-.quick-prompt-chip--refresh {
-  border-style: dashed;
-  color: #52525b;
-}
-
-.quick-prompt-chip--compact {
-  padding: 5px 10px;
-  font-size: 12px;
+  align-items: center;
+  width: 100%;
+  max-width: 40rem;
+  margin: 0 auto;
 }
 
 .follow-up-prompts {
@@ -3469,7 +3587,6 @@ async function send() {
 
 .messages {
   width: 100%;
-  max-width: 58rem;
   min-width: 0;
   margin: 0 auto;
   padding: 0 24px;
@@ -3822,19 +3939,22 @@ async function send() {
 }
 
 .composer-surface {
-  max-width: 58rem;
+  width: 100%;
+  max-width: 100%;
   margin: 0 auto;
-  border-radius: 22px;
-  border: 1px solid var(--chat-border-subtle, #e3e3e3);
+  border-radius: 16px;
+  border: 1px solid var(--chat-border-subtle, #e4e8ed);
   background: var(--chat-bg-elevated, #fff);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 1px 4px rgba(61, 122, 184, 0.06);
   overflow: hidden;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
 }
 
 .composer-surface:focus-within {
-  border-color: #c8c8c8;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+  border-color: #9ec5e8;
+  box-shadow: 0 0 0 3px rgba(91, 159, 212, 0.14);
 }
 
 .composer-surface--drag {
@@ -3905,8 +4025,9 @@ async function send() {
 }
 
 .footer-icon-btn:hover:not(:disabled) {
-  background: #ececec;
-  color: #202020;
+  background: rgba(91, 159, 212, 0.1);
+  color: #3d6f94;
+  transform: translateY(-1px) scale(1.03);
 }
 
 .footer-icon-btn:disabled {
@@ -3959,11 +4080,11 @@ async function send() {
 /* 宽度由 :style 绑定；默认无框，悬停/聚焦才显形 */
 .model-pill-select :deep(.el-select__wrapper),
 .model-pill-select :deep(.el-input__wrapper) {
-  border-radius: 10px !important;
+  border-radius: 12px !important;
   box-shadow: none !important;
-  background: transparent !important;
-  border: 1px solid transparent !important;
-  padding: 2px 8px !important;
+  background: #f0f3f6 !important;
+  border: 1px solid #e4e8ed !important;
+  padding: 2px 10px !important;
   min-height: 32px;
   transition: background 0.12s, border-color 0.12s, box-shadow 0.12s !important;
 }
@@ -4000,26 +4121,31 @@ async function send() {
 }
 
 .deep-think-toggle {
-  --toggle-glow: rgba(32, 32, 32, 0.12);
-  --toggle-ring: rgba(32, 32, 32, 0.35);
+  --toggle-glow: rgba(91, 159, 212, 0.2);
+  --toggle-ring: rgba(61, 122, 184, 0.45);
   display: inline-flex;
   align-items: center;
   gap: 5px;
   margin: 0;
   padding: 6px 12px;
-  border: 1px solid #e4e4e7;
-  border-radius: 999px;
+  border: 1px solid #dce4ec;
+  border-radius: 20px;
   font-size: 13px;
   font-weight: 500;
   font-family: inherit;
   line-height: 1.35;
-  color: #71717a;
-  background: #fafafa;
+  color: #7a8794;
+  background: #fff;
   cursor: pointer;
   transition:
     color 0.18s ease,
     background 0.18s ease,
-    border-color 0.18s ease;
+    border-color 0.18s ease,
+    transform 0.15s ease;
+}
+
+.deep-think-toggle:hover {
+  transform: translateY(-1px);
 }
 
 .deep-think-toggle-dot {
@@ -4409,24 +4535,44 @@ async function send() {
 }
 
 .send-fab {
-  width: 40px !important;
-  height: 40px !important;
-  min-width: 40px !important;
-  padding: 0 !important;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  padding: 0;
   flex-shrink: 0;
-  background: #202020 !important;
-  border-color: #202020 !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  color: #fff;
+  background: linear-gradient(145deg, rgba(91, 159, 212, 0.5) 0%, rgba(61, 122, 184, 0.5) 100%);
+  opacity: 0.5;
+  transition:
+    opacity 0.18s,
+    transform 0.18s,
+    box-shadow 0.18s,
+    background 0.18s;
+}
+
+.send-fab--active {
+  opacity: 1;
+  background: linear-gradient(145deg, #6eb0e0 0%, #3d7ab8 100%);
+  box-shadow: 0 4px 14px rgba(61, 122, 184, 0.28);
 }
 
 .send-fab:hover:not(:disabled) {
-  background: #000 !important;
-  border-color: #000 !important;
+  transform: translateY(-2px) scale(1.04);
 }
 
-.send-fab.is-disabled {
-  background: #e4e4e4 !important;
-  border-color: #e4e4e4 !important;
-  color: #a1a1aa !important;
+.send-fab:disabled {
+  cursor: not-allowed;
+  transform: none;
+}
+
+.send-fab-spin {
+  animation: wf-spin 0.9s linear infinite;
 }
 
 .attach-strip {
@@ -4509,12 +4655,17 @@ async function send() {
 .composer-input :deep(.el-textarea__inner) {
   box-shadow: none !important;
   border: none !important;
-  padding: 6px 52px 10px 4px;
-  min-height: 72px;
+  padding: 8px 52px 8px 12px;
+  min-height: 48px;
   font-size: 15px;
-  line-height: 1.65;
+  line-height: 1.5;
   background: transparent;
-  color: #202020;
+  color: #2c3e50;
+  border-radius: 12px;
+}
+
+.composer-input-wrap:focus-within :deep(.el-textarea__inner) {
+  outline: none;
 }
 
 .composer-input :deep(.el-textarea__inner::placeholder) {
@@ -4522,18 +4673,22 @@ async function send() {
 }
 
 .composer-note {
-  max-width: 58rem;
-  margin: 10px auto 0;
-  padding: 0 24px;
+  width: 100%;
+  margin: 8px auto 0;
+  padding: 0 16px;
   box-sizing: border-box;
   font-size: 11px;
-  color: #9b9b9b;
+  color: #a0adb8;
   text-align: center;
 }
 
 /* —— 响应式：平板收窄侧栏；手机侧栏抽屉 + 顶栏 + 安全区 + 100dvh —— */
-.chat-app--tablet :deep(.sidebar) {
+.chat-app--tablet :deep(.sidebar:not(.sidebar--collapsed)) {
   width: 216px;
+}
+
+.chat-app--tablet :deep(.sidebar.sidebar--collapsed) {
+  width: 40px;
 }
 
 .chat-app--tablet .messages {
@@ -4672,6 +4827,23 @@ async function send() {
 .chat-app--mobile .user-msg-copy-btn {
   width: 26px;
   height: 26px;
+}
+
+.chat-app--mobile .chat-body {
+  flex-direction: column;
+}
+
+.chat-app--mobile .main {
+  width: 100%;
+  max-width: none;
+}
+
+.chat-app--mobile .main > .thread-head,
+.chat-app--mobile .main > .chat-hero,
+.chat-app--mobile .main > .messages-scroll,
+.chat-app--mobile .main > .composer {
+  width: 100%;
+  max-width: none;
 }
 
 .chat-app--mobile .messages {

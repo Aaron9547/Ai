@@ -28,6 +28,14 @@ export type TenantShellModelCallingRuntime = {
   webSearchGroundingCacheJson: string;
   siteCrawlPreset: string;
   siteCrawlRuntimeJson: string;
+  /** RAG_VECTOR_DIMENSION；空=未锁定、走进程默认 */
+  ragVectorDimension: string;
+  ragVectorDimensionEffective: number;
+  ragVectorDimensionLocked: boolean;
+  /** RAG_RETRIEVAL_MODE；空=走 ai.rag.retrieval-mode */
+  ragRetrievalMode: string;
+  ragRetrievalModeEffective: string;
+  processDefaultVectorDimension: number;
 };
 
 export type TenantShellConfig = {
@@ -53,7 +61,21 @@ export type TenantShellOutboundPutBody = {
   outboundResilienceJson: string;
 };
 
-export type TenantShellModelCallingPutBody = TenantShellModelCallingRuntime;
+export type TenantShellModelCallingPutBody = Pick<
+  TenantShellModelCallingRuntime,
+  | "memoryEmbeddingVectorModelId"
+  | "webSearchGroundingModelId"
+  | "chatPromptLimitsJson"
+  | "memoryPolicyJson"
+  | "chatInputGuardJson"
+  | "webSearchGroundingMultiRoundCount"
+  | "webSearchGroundingRoundSuffixesJson"
+  | "webSearchGroundingCacheJson"
+  | "siteCrawlPreset"
+  | "siteCrawlRuntimeJson"
+  | "ragVectorDimension"
+  | "ragRetrievalMode"
+>;
 
 export async function fetchSiteCrawlRuntimeTemplate(
   preset: "CONSERVATIVE" | "BALANCED" | "AGGRESSIVE",

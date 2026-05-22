@@ -3,6 +3,7 @@ package com.aaron.cloud.rag;
 import com.aaron.cloud.common.api.dto.RagVectorRecallHit;
 import com.aaron.cloud.common.config.properties.AiProvidersProperties;
 import com.aaron.cloud.common.remoting.EurekaInfraAddress;
+import com.aaron.cloud.rag.runtime.TenantRagRuntimeResolver;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import io.milvus.v2.client.ConnectConfig;
@@ -45,11 +46,16 @@ public class MilvusVectorStore implements VectorStorePort {
 
     private final MilvusClientV2 client;
     private final AiProvidersProperties properties;
+    private final TenantRagRuntimeResolver tenantRagRuntimeResolver;
     /** 已创建并已 load 的 collection 名。 */
     private final ConcurrentHashMap.KeySetView<String, Boolean> loadedCollections = ConcurrentHashMap.newKeySet();
 
-    public MilvusVectorStore(AiProvidersProperties properties, ObjectProvider<DiscoveryClient> discoveryClient) {
+    public MilvusVectorStore(
+            AiProvidersProperties properties,
+            TenantRagRuntimeResolver tenantRagRuntimeResolver,
+            ObjectProvider<DiscoveryClient> discoveryClient) {
         this.properties = properties;
+        this.tenantRagRuntimeResolver = tenantRagRuntimeResolver;
         var m = properties.getMilvus();
         String uri = resolveUri(properties, discoveryClient.getIfAvailable());
         var builder = ConnectConfig.builder().uri(uri).dbName(m.getDatabase());
@@ -78,12 +84,11 @@ public class MilvusVectorStore implements VectorStorePort {
         return "http://" + m.getHost() + ":" + m.getPort();
     }
 
-    private int dim() {
-        int d = properties.getMilvus().getVectorDimension();
-        return d > 0 ? d : RagQueryEmbeddingHasher.DEFAULT_DIM;
+    private int dim(long tenantId) {
+        return tenantRagRuntimeResolver.resolveVectorDimension(tenantId);
     }
 
-    private void ensureCollectionLoaded(String collectionName) {
+    private void ensureCollectionLoaded(String collectionName, long tenantId) {
         if (loadedCollections.contains(collectionName)) {
             return;
         }
@@ -91,7 +96,7 @@ public class MilvusVectorStore implements VectorStorePort {
             if (loadedCollections.contains(collectionName)) {
                 return;
             }
-            int d = dim();
+            int d = dim(tenantId);
             Boolean exists = client.hasCollection(HasCollectionReq.builder().collectionName(collectionName).build());
             if (!Boolean.TRUE.equals(exists)) {
                 CreateCollectionReq.CollectionSchema schema = client.createSchema();
@@ -143,13 +148,14 @@ public class MilvusVectorStore implements VectorStorePort {
             return;
         }
         try {
-            ensureCollectionLoaded(collection);
+            ensureCollectionLoaded(collection, tenantId);
             deleteChunkVectors(tenantId, collection, chunkRefs);
+            int expectedDim = dim(tenantId);
             List<JsonObject> rows = new ArrayList<>();
             for (int i = 0; i < chunkRefs.size(); i++) {
                 String ref = chunkRefs.get(i);
                 float[] vec = vectors.get(i);
-                if (ref == null || ref.isBlank() || vec == null || vec.length != dim()) {
+                if (ref == null || ref.isBlank() || vec == null || vec.length != expectedDim) {
                     log.warn("Milvus upsertChunks skip invalid row refBlank={} vecLen={}", ref == null, vec == null ? -1 : vec.length);
                     continue;
                 }
@@ -180,16 +186,18 @@ public class MilvusVectorStore implements VectorStorePort {
         if (queryVector == null || queryVector.length == 0) {
             return List.of();
         }
-        if (queryVector.length != dim()) {
+        int expectedDim = dim(tenantId);
+        if (queryVector.length != expectedDim) {
             log.warn(
-                    "Milvus searchVectors skipped dimMismatch collection={} queryDim={} expected={}",
+                    "Milvus searchVectors skipped dimMismatch collection={} queryDim={} expected={} tenantId={}",
                     collection,
                     queryVector.length,
-                    dim());
+                    expectedDim,
+                    tenantId);
             return List.of();
         }
         try {
-            ensureCollectionLoaded(collection);
+            ensureCollectionLoaded(collection, tenantId);
             int k = (int) Math.min(Math.max(1, topK), 50L);
             SearchResp resp =
                     client.search(

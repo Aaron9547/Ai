@@ -122,7 +122,7 @@ ai:
       token: ${AI_MILVUS_TOKEN:}
       database: ${AI_MILVUS_DATABASE:default}
       secure: ${AI_MILVUS_SECURE:false}
-      # 须与向量模型输出维数、库表 llm_model 配置一致
+      # 进程默认维数（新租户未在「外观与模型调用」锁定前）；租户覆盖见 ten_runtime_setting.RAG_VECTOR_DIMENSION
       vector-dimension: ${AI_MILVUS_VECTOR_DIM:2048}
     minio:
       service-id: ${AI_MINIO_EUREKA_SERVICE_ID:minio}
@@ -131,7 +131,7 @@ ai:
       secret-key: ${MINIO_SECRET_KEY:minioadmin}
       region: ${MINIO_REGION:}
   rag:
-    # retrieval-mode：milvus / milvus_es_hybrid；ES 见 elasticsearch 段
+    # 进程默认检索模式；租户覆盖见 ten_runtime_setting.RAG_RETRIEVAL_MODE（外观与模型调用）
     retrieval-mode: ${AI_RAG_RETRIEVAL_MODE:milvus_es_hybrid}
     # 向量化：模型在库表 llm_model（VECTOR）。local_deploy=true 时走本地嵌入 Feign：关 Eureka 时必须配直连 base-url（见下行）。
     local-embed-feign:

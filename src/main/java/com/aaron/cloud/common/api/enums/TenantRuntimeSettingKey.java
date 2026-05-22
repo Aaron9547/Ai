@@ -104,6 +104,25 @@ public enum TenantRuntimeSettingKey {
             "{}",
             false),
     /**
+     * RAG / Milvus 向量维数（十进制整数，如 2048）：与嵌入模型 {@code dimensions}、Milvus FloatVector 一致。
+     * 仅在租户 Shell「外观与模型调用」配置；首次写入或租户已有 {@code rag_chunk} 后不可修改。
+     */
+    RAG_VECTOR_DIMENSION(
+            "RAG_VECTOR_DIMENSION",
+            "RAG 向量维数（锁定后不可改）",
+            SettingValueKind.STRING,
+            "",
+            false),
+    /**
+     * RAG 检索模式：{@code milvus} / {@code milvus_es_hybrid}；留空则使用进程 {@code ai.rag.retrieval-mode}。
+     */
+    RAG_RETRIEVAL_MODE(
+            "RAG_RETRIEVAL_MODE",
+            "RAG 检索模式",
+            SettingValueKind.STRING,
+            "",
+            false),
+    /**
      * 知识库站点爬取快捷档位：{@code CONSERVATIVE} / {@code BALANCED}（默认）/ {@code AGGRESSIVE} / {@code CUSTOM}；
      * 仅在租户 Shell「外观与模型调用」配置。
      */
@@ -166,6 +185,8 @@ public enum TenantRuntimeSettingKey {
     public boolean excludedFromAdminRuntimeList() {
         return switch (this) {
             case OUTBOUND_RESILIENCE_JSON,
+                    RAG_VECTOR_DIMENSION,
+                    RAG_RETRIEVAL_MODE,
                     MEMORY_EMBEDDING_VECTOR_MODEL_ID,
                     WEB_SEARCH_GROUNDING_MODEL_ID,
                     CHAT_PROMPT_LIMITS_JSON,

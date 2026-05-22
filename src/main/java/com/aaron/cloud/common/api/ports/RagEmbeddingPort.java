@@ -14,6 +14,9 @@ public interface RagEmbeddingPort {
      */
     float[] embed(long tenantId, long kbId, String text);
 
-    /** 与 {@code ai.providers.milvus.vector-dimension} 及 Milvus collection 一致（各 KB 所用嵌入模型产出维数须与此对齐）。 */
-    int dimensions();
+    /**
+     * 租户生效向量维数：{@code ten_runtime_setting.RAG_VECTOR_DIMENSION} 优先，否则进程
+     * {@code ai.providers.milvus.vector-dimension}。
+     */
+    int dimensions(long tenantId);
 }

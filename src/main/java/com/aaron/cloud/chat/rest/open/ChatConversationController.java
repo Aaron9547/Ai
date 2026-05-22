@@ -13,7 +13,9 @@ import java.util.List;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -51,6 +53,17 @@ public class ChatConversationController extends OpenV1ControllerBases.Chat {
         return chatApplicationService.listConversationMessages(id);
     }
 
+    @PatchMapping("/conversations/{id}")
+    public com.aaron.cloud.common.chat.entity.ChatConversation rename(
+            @PathVariable("id") long id, @Valid @RequestBody RenameConversationBody body) {
+        return chatApplicationService.renameConversation(id, body.getTitle());
+    }
+
+    @DeleteMapping("/conversations/{id}")
+    public void archive(@PathVariable("id") long id) {
+        chatApplicationService.archiveConversation(id);
+    }
+
     @PostMapping(value = "/conversations/{id}/messages", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter send(@PathVariable("id") long id, @Valid @RequestBody ChatSendPayload body) {
         return chatApplicationService.streamUserMessage(id, body);
@@ -77,6 +90,11 @@ public class ChatConversationController extends OpenV1ControllerBases.Chat {
 
     @Data
     public static class CreateConversationBody {
+        private String title;
+    }
+
+    @Data
+    public static class RenameConversationBody {
         private String title;
     }
 }

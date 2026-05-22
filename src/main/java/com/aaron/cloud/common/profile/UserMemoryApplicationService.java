@@ -51,6 +51,21 @@ public class UserMemoryApplicationService {
                 snap, assistantText, conversationIdOrNull, MemoryChunkRoles.ASSISTANT, modelAliasOrNull, "assistant");
     }
 
+    /** 用户点击画像推荐资讯；失败仅打日志，不抛出。 */
+    public void afterInterestNewsClick(TenantSnapshot snap, String title, String tag, String url) {
+        StringBuilder sb = new StringBuilder();
+        if (tag != null && !tag.isBlank()) {
+            sb.append('[').append(tag.trim()).append("] ");
+        }
+        if (title != null && !title.isBlank()) {
+            sb.append(title.trim());
+        }
+        if (url != null && !url.isBlank()) {
+            sb.append(" ").append(url.trim());
+        }
+        insertUtteranceChunk(snap, sb.toString(), null, MemoryChunkRoles.INTEREST_NEWS, null, "interest_news");
+    }
+
     private void insertUtteranceChunk(
             TenantSnapshot snap,
             String text,

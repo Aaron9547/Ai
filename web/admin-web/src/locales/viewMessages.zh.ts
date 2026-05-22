@@ -1192,7 +1192,7 @@ export default {
     retrievalTestBtn: "向量检索测试",
     retrievalTestDlgTitle: "向量检索测试",
     retrievalTestDlgHint:
-      "使用与对话 RAG 相同的检索路径试跑当前知识库；检索模式由服务端 ai.rag.retrieval-mode 决定。",
+      "使用与对话 RAG 相同的检索路径试跑当前知识库；检索模式由租户「外观与模型调用 → RAG 检索模式」或进程默认决定。",
     retrievalQueryLabel: "查询",
     retrievalQueryPh: "输入要检索的问题或关键词",
     retrievalQueryRequired: "请填写查询内容",
