@@ -32,6 +32,10 @@ spring:
       port: ${SPRING_DATA_REDIS_PORT:16377}
       password: "${SPRING_DATA_REDIS_PASSWORD:Ly@!37621040}"
       timeout: ${SPRING_DATA_REDIS_TIMEOUT:20000ms}
+  autoconfigure:
+    # 注册验证码走租户 SMTP（OpenRegistrationVerificationSender），不用 spring.mail 全局 Bean，避免 MailHealthIndicator 无密码 WARN
+    exclude:
+      - org.springframework.boot.autoconfigure.mail.MailSenderAutoConfiguration
   cloud:
     openfeign:
       circuitbreaker:
@@ -161,10 +165,13 @@ ai:
       preview-max-chunks: ${AI_RAG_SITE_CRAWL_PREVIEW_MAX_CHUNKS:20}
       preview-max-body-bytes: ${AI_RAG_SITE_CRAWL_PREVIEW_MAX_BODY_BYTES:512000}
       preview-site-sample-urls: ${AI_RAG_SITE_CRAWL_PREVIEW_SITE_SAMPLE_URLS:3}
-  # jwt-local 签名密钥；须足够长，勿提交生产明文。
+  # jwt-local 签名密钥；须足够长，勿提交生产明文。email 为注册验证码进程级默认（租户可覆盖见 AUTH_REGISTER_VERIFICATION_JSON）。
   auth:
     jwt-local:
       secret: ${AI_AUTH_JWT_LOCAL_SECRET:change-me-please-use-32bytes-minimum!!}
+    email:
+      code-ttl-seconds: ${AI_AUTH_EMAIL_CODE_TTL:600}
+      send-cooldown-seconds: ${AI_AUTH_EMAIL_SEND_COOLDOWN:60}
   tenant:
     # 访客或未解析租户时的默认 tenantId（与业务种子一致即可）
     default-id: ${AI_DEFAULT_TENANT_ID:1}
@@ -184,6 +191,9 @@ management:
     web:
       exposure:
         include: health,info
+  health:
+    mail:
+      enabled: false
 
 resilience4j:
   circuitbreaker:

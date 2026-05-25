@@ -41,6 +41,13 @@ public final class ErrorCodes {
 
     public static final String LOGIN_NAME_CONFLICT = "LOGIN_NAME_CONFLICT";
 
+    /** 开放注册：邮箱格式无效 */
+    public static final String REGISTER_EMAIL_INVALID = "REGISTER_EMAIL_INVALID";
+    /** 开放注册：验证码错误或已失效 */
+    public static final String REGISTER_CODE_INVALID = "REGISTER_CODE_INVALID";
+    /** 开放注册：密码强度不足 */
+    public static final String REGISTER_PASSWORD_WEAK = "REGISTER_PASSWORD_WEAK";
+
     /** 模型共用 token 等配额已用尽 */
     public static final String QUOTA_EXCEEDED = "QUOTA_EXCEEDED";
 }

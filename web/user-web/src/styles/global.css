@@ -134,3 +134,12 @@ html.dark .md-code-copy-btn:hover {
   background: #52525b;
   border-color: #71717a;
 }
+
+/* Toast / 确认框须高于全屏自定义弹层（如 UserAuthDialog 毛玻璃 2200） */
+.el-message {
+  z-index: 5000 !important;
+}
+
+.el-message-box__wrapper {
+  z-index: 5000 !important;
+}

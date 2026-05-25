@@ -31,11 +31,11 @@ public class OpenRegistrationApplicationService {
     public LoginResponse register(long tenantId, RegisterRequest req, String deviceIdHeaderOrNull)
             throws Exception {
         var u = new SecUserAccount();
-        String loginName = trimLoginName(req);
+        String loginName = resolveLoginName(req);
         u.setLoginName(loginName);
         u.setDisplayName(
                 req.getDisplayName() == null || req.getDisplayName().isBlank()
-                        ? loginName
+                        ? defaultDisplayName(loginName)
                         : req.getDisplayName().trim());
         u.setPasswordHash(passwordEncoder.encode(req.getPassword() == null ? "" : req.getPassword()));
         u.setStatus(UserAccountStatus.ACTIVE);
@@ -54,7 +54,18 @@ public class OpenRegistrationApplicationService {
         return jwtLocalAdminTokenService.buildLoginResponse(u, active, tenantId);
     }
 
-    private static String trimLoginName(RegisterRequest req) {
+    private static String defaultDisplayName(String loginName) {
+        int at = loginName.indexOf('@');
+        if (at > 0) {
+            return loginName.substring(0, at);
+        }
+        return loginName;
+    }
+
+    private static String resolveLoginName(RegisterRequest req) {
+        if (req.getEmail() != null && !req.getEmail().isBlank()) {
+            return req.getEmail().trim().toLowerCase();
+        }
         if (req.getLoginName() == null) {
             return "";
         }

@@ -33,14 +33,14 @@ export type DailyRecommendClickPayload = {
 
 export async function fetchDailyRecommend(): Promise<DailyRecommendResponse> {
   const { data } = await http.get<DailyRecommendResponse>("/open/v1/chat/daily-recommend", {
-    timeout: 15000,
+    timeout: 30000,
   });
   return data;
 }
 
 export async function retryDailyRecommend(): Promise<DailyRecommendResponse> {
   const { data } = await http.post<DailyRecommendResponse>("/open/v1/chat/daily-recommend/retry", null, {
-    timeout: 15000,
+    timeout: 30000,
   });
   return data;
 }
@@ -50,7 +50,7 @@ export async function regenerateDailyRecommendOnLogin(): Promise<DailyRecommendR
   const { data } = await http.post<DailyRecommendResponse>(
     "/open/v1/chat/daily-recommend/regenerate-on-login",
     null,
-    { timeout: 15000 },
+    { timeout: 30000 },
   );
   return data;
 }

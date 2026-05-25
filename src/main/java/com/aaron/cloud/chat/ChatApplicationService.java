@@ -124,6 +124,7 @@ public class ChatApplicationService {
     private final ChatWebSearchGroundingService chatWebSearchGroundingService;
     private final ChatTurnDigestApplicationService chatTurnDigestApplicationService;
     private final ChatStarterFollowUpService chatStarterFollowUpService;
+    private final ChatSendIdempotencyGuard chatSendIdempotencyGuard;
 
     public ChatConversation createConversation(String title) {
         var snap = TenantContextHolder.require();
@@ -394,6 +395,15 @@ public class ChatApplicationService {
             throw new IllegalArgumentException("附件不存在或不属于当前会话");
         }
 
+        String clientSendKey =
+                payload.getClientSendKey() == null ? null : payload.getClientSendKey().trim();
+        if (clientSendKey != null && !clientSendKey.isEmpty()) {
+            if (!chatSendIdempotencyGuard.tryAcquire(snap.getTenantId(), conversationId, clientSendKey)) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT, "该消息已提交，请勿重复发送");
+            }
+        }
+
         String augmentedUserText = buildUserMessageWithAttachments(payload.getContent(), attachments);
 
         log.info(
@@ -410,8 +420,15 @@ public class ChatApplicationService {
         userMsg.setRole(ChatMessageRole.USER);
         userMsg.setContent(payload.getContent());
         userMsg.setMetaJson(buildUserMetaJson(payload, attIds));
-        messageRepository.insert(userMsg);
-        linkMessage(conversationId, userMsg.getId(), snap.getTenantId());
+        try {
+            messageRepository.insert(userMsg);
+            linkMessage(conversationId, userMsg.getId(), snap.getTenantId());
+        } catch (RuntimeException ex) {
+            if (clientSendKey != null && !clientSendKey.isEmpty()) {
+                chatSendIdempotencyGuard.release(snap.getTenantId(), conversationId, clientSendKey);
+            }
+            throw ex;
+        }
         maybeSyncConversationTitleFromFirstUserUtterance(
                 snap.getTenantId(), conversationId, payload.getContent());
 
@@ -567,7 +584,7 @@ public class ChatApplicationService {
                     millisSince(openT0),
                     snap.getTenantId(),
                     conversationId);
-            // 向量阈值过滤或 ES 未命中后可能两侧皆空：本回合按纯对话编排，避免落库/展示无实质检索的「挂名引用」。
+            // 向量阈值（各库 chat_vector_min_cosine_score）或 ES 未命中后可能两侧皆空：本回合按纯对话编排。
             if (ragCitationHits.isEmpty() && ragSnippets.isEmpty()) {
                 routeIntent = IntentRoute.CHAT_ONLY;
             }
@@ -628,7 +645,11 @@ public class ChatApplicationService {
             sys.append("\n");
         }
         if (intent == IntentRoute.RAG) {
-            sys.append("可参考知识片段：");
+            sys.append("可参考知识片段");
+            if (payload.isWebSearchEnabled()) {
+                sys.append("（若与当前问题无关请忽略，并优先依据联网检索结果作答）");
+            }
+            sys.append("：");
             for (String s : ragSnippets) {
                 sys.append("\n- ").append(s);
             }

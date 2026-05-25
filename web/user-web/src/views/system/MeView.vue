@@ -219,6 +219,10 @@ onMounted(() => {
 <style scoped>
 .me-page {
   min-height: 100dvh;
+  max-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: #fafafa;
   padding-bottom: env(safe-area-inset-bottom, 0);
 }
@@ -256,9 +260,16 @@ onMounted(() => {
 }
 
 .me-body {
+  flex: 1;
+  min-height: 0;
   max-width: 720px;
+  width: 100%;
   margin: 0 auto;
-  padding: 20px max(20px, env(safe-area-inset-right)) 32px max(20px, env(safe-area-inset-left));
+  padding: 20px max(20px, env(safe-area-inset-right)) max(32px, env(safe-area-inset-bottom))
+    max(20px, env(safe-area-inset-left));
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 .me-lead {

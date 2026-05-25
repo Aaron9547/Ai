@@ -44,18 +44,25 @@
         >
           <el-icon :size="22"><Menu /></el-icon>
         </button>
-        <span class="mobile-nav-title">{{ activeTitle }}</span>
-        <LocaleThemeToolbar v-if="isMobile" compact class="thread-head-tools" />
-        <button
-          type="button"
-          class="mobile-nav-btn mobile-nav-btn--accent"
-          :aria-label="t('chat.ariaNewChat')"
-          @click="onMobileNewConv"
-        >
-          <el-icon :size="22"><Plus /></el-icon>
-        </button>
+        <span
+          v-if="convId != null"
+          class="mobile-nav-title"
+          :title="activeTitle"
+        >{{ activeTitle }}</span>
+        <span v-else class="mobile-nav-brand">{{ t("chat.emptyBrand") }}</span>
+        <div class="mobile-nav-end">
+          <LocaleThemeToolbar compact class="thread-head-tools" />
+          <button
+            type="button"
+            class="mobile-nav-btn mobile-nav-btn--accent"
+            :aria-label="t('chat.ariaNewChat')"
+            @click="onMobileNewConv"
+          >
+            <el-icon :size="22"><Plus /></el-icon>
+          </button>
+        </div>
       </header>
-      <header v-if="messages.length > 0" class="thread-head">
+      <header v-if="messages.length > 0 && !isMobile" class="thread-head">
         <div class="thread-head-row">
           <h1 v-if="!isMobile" class="thread-title">{{ activeTitle }}</h1>
           <LocaleThemeToolbar v-if="!isMobile" compact class="thread-head-tools" />
@@ -812,6 +819,7 @@ import ChatShareDialog from "../../components/chat/ChatShareDialog.vue";
 import LocaleThemeToolbar from "../../components/LocaleThemeToolbar.vue";
 import UserAuthDialog from "../../components/UserAuthDialog.vue";
 import * as chatApi from "../../api/chat";
+import { ChatStreamHttpError } from "../../api/chat";
 import { AI_USER_ACCESS_TOKEN_KEY, clearUserSession } from "../../plugins/http";
 import { TENANT_CODE_PATH_RE } from "../../utils/outboundTenant";
 import { copyTextToUserClipboard } from "../../utils/clipboard";
@@ -1989,6 +1997,10 @@ function newClientRowKey(): string {
   return `k-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 }
 
+function newClientSendKey(): string {
+  return newClientRowKey();
+}
+
 function messageRowKey(m: Msg, idx: number): string {
   const cid = convId.value ?? "n";
   if (m.clientRowKey) {
@@ -2009,6 +2021,13 @@ const modelAlias = ref("");
 const thinkingEnabled = ref(true);
 const webSearchAllowed = ref(false);
 const webSearchEnabled = ref(false);
+
+/** 点击空会话推荐 / 猜你想问时，租户允许联网则默认打开联网开关（见 PROJECT.md 0.1.242）。 */
+function enableWebSearchForStarterPrompt() {
+  if (webSearchAllowed.value) {
+    webSearchEnabled.value = true;
+  }
+}
 const feedbackSendingId = ref<number | null>(null);
 const pendingFiles = ref<File[]>([]);
 const dragDepth = ref(0);
@@ -2066,6 +2085,7 @@ async function applyStarterPrompt(
   q: chatApi.StarterPromptItem,
   scene: "EMPTY" | "FOLLOW_UP",
 ) {
+  enableWebSearchForStarterPrompt();
   input.value = q.text;
   setSelectedStarterPrompt({
     text: q.text,
@@ -2586,7 +2606,20 @@ function isCurrentConvUnspoken(): boolean {
   return convId.value != null && messages.value.length === 0 && !sending.value;
 }
 
+let newConvInFlight: Promise<void> | null = null;
+
 async function newConv() {
+  if (newConvInFlight) {
+    await newConvInFlight;
+    return;
+  }
+  newConvInFlight = newConvInner().finally(() => {
+    newConvInFlight = null;
+  });
+  await newConvInFlight;
+}
+
+async function newConvInner() {
   if (isCurrentConvUnspoken()) {
     ElMessage.info(t("chat.alreadyNewConv"));
     webSearchEnabled.value = false;
@@ -2628,122 +2661,137 @@ async function send() {
     return;
   }
 
-  if (!convId.value) {
-    await newConv();
-  }
-  if (!convId.value) return;
-
-  let intentFlowTicket: string | undefined;
-  for (let i = messages.value.length - 1; i >= 0; i--) {
-    const row = messages.value[i]!;
-    if (row.role !== "user" && row.role !== "assistant") continue;
-    const t = row.intentTurnHit?.intentFlowTicket;
-    if (t) {
-      intentFlowTicket = t;
-      break;
-    }
-  }
-
-  let attachmentIds: number[] = [];
-  let uploadedAttachmentViews: chatApi.ChatAttachmentMessage[] = [];
-  if (pendingFiles.value.length) {
-    try {
-      const ups = await chatApi.uploadChatAttachments(convId.value, pendingFiles.value);
-      attachmentIds = ups.map((u) => u.id);
-      uploadedAttachmentViews = ups.map((u) => ({
-        id: u.id,
-        fileName: u.fileName,
-        charLength: u.charLength ?? null,
-      }));
-      pendingFiles.value = [];
-    } catch (e: unknown) {
-      ElMessage.error(apiRequestErrorMessage(e, t("chat.uploadFail")));
-      return;
-    }
-  }
-
-  const think =
-    !!currentModel.value?.supportsThinking && thinkingEnabled.value;
-  takeSentStarterPrompt(text);
-  const useWeb = webSearchAllowed.value && webSearchEnabled.value;
-
-  resetFollowUpOnPriorAssistants();
-  messages.value.push({
-    role: "user",
-    content: text,
-    clientRowKey: newClientRowKey(),
-    ...(uploadedAttachmentViews.length ? { attachments: uploadedAttachmentViews } : {}),
-  });
-  input.value = "";
-  const assistantRow: Msg = {
-    role: "assistant",
-    clientRowKey: newClientRowKey(),
-    content: "",
-    ragRetrievalTitles: [],
-    workflowSegments: [],
-    streaming: true,
-    reasoning: undefined,
-    reasoningStreaming: false,
-    modelAlias: modelAlias.value,
-  };
-  beginAssistantStreamTiming(assistantRow, useWeb);
-  messages.value.push(assistantRow);
-  const assistantIdx = messages.value.length - 1;
   sending.value = true;
-  await scrollToBottom();
-
-  const { signal: streamSignal, generation: sendGen } = beginActiveStream();
+  let assistantIdx = -1;
   let syncHistory = true;
+  let streamStarted = false;
+  const clientSendKey = newClientSendKey();
+
   try {
-    await chatApi.streamAssistantReply(
-      convId.value,
-      {
-        content: text,
-        modelAlias: modelAlias.value,
-        thinkingEnabled: think,
-        webSearchEnabled: useWeb,
-        attachmentIds,
-        ...(intentFlowTicket ? { intentFlowTicket } : {}),
-        responseLocale: chatResponseLocale.value,
-      },
-      (part) => {
-        if (sendGen !== assistantStreamGeneration) {
-          return;
-        }
-        const m = messages.value[assistantIdx];
-        if (!m) {
-          return;
-        }
-        applyAssistantStreamPart(m, part, null);
-        scheduleScrollToBottom();
-      },
-      { signal: streamSignal },
-    );
-    const m = messages.value[assistantIdx];
-    if (m?.streaming) {
-      finishAssistantStreamState(m);
+    if (!convId.value) {
+      await newConv();
     }
-  } catch (e: unknown) {
-    if (isAbortError(e)) {
-      syncHistory = false;
-    } else {
-      const m = messages.value[assistantIdx];
-      if (m) {
-        m.content = m.content || t("chat.replyFailed");
-        if (m.streaming) {
-          finishAssistantStreamState(m);
-        }
+    if (!convId.value) return;
+
+    let intentFlowTicket: string | undefined;
+    for (let i = messages.value.length - 1; i >= 0; i--) {
+      const row = messages.value[i]!;
+      if (row.role !== "user" && row.role !== "assistant") continue;
+      const ticket = row.intentTurnHit?.intentFlowTicket;
+      if (ticket) {
+        intentFlowTicket = ticket;
+        break;
       }
-      ElMessage.error(apiRequestErrorMessage(e, t("chat.sendFail")));
+    }
+
+    let attachmentIds: number[] = [];
+    let uploadedAttachmentViews: chatApi.ChatAttachmentMessage[] = [];
+    if (pendingFiles.value.length) {
+      try {
+        const ups = await chatApi.uploadChatAttachments(convId.value, pendingFiles.value);
+        attachmentIds = ups.map((u) => u.id);
+        uploadedAttachmentViews = ups.map((u) => ({
+          id: u.id,
+          fileName: u.fileName,
+          charLength: u.charLength ?? null,
+        }));
+        pendingFiles.value = [];
+      } catch (e: unknown) {
+        ElMessage.error(apiRequestErrorMessage(e, t("chat.uploadFail")));
+        return;
+      }
+    }
+
+    const think =
+      !!currentModel.value?.supportsThinking && thinkingEnabled.value;
+    takeSentStarterPrompt(text);
+    const useWeb = webSearchAllowed.value && webSearchEnabled.value;
+
+    resetFollowUpOnPriorAssistants();
+    messages.value.push({
+      role: "user",
+      content: text,
+      clientRowKey: newClientRowKey(),
+      ...(uploadedAttachmentViews.length ? { attachments: uploadedAttachmentViews } : {}),
+    });
+    input.value = "";
+    const assistantRow: Msg = {
+      role: "assistant",
+      clientRowKey: newClientRowKey(),
+      content: "",
+      ragRetrievalTitles: [],
+      workflowSegments: [],
+      streaming: true,
+      reasoning: undefined,
+      reasoningStreaming: false,
+      modelAlias: modelAlias.value,
+    };
+    beginAssistantStreamTiming(assistantRow, useWeb);
+    messages.value.push(assistantRow);
+    assistantIdx = messages.value.length - 1;
+    await scrollToBottom();
+
+    const { signal: streamSignal, generation: sendGen } = beginActiveStream();
+    streamStarted = true;
+    try {
+      await chatApi.streamAssistantReply(
+        convId.value,
+        {
+          content: text,
+          modelAlias: modelAlias.value,
+          thinkingEnabled: think,
+          webSearchEnabled: useWeb,
+          attachmentIds,
+          clientSendKey,
+          ...(intentFlowTicket ? { intentFlowTicket } : {}),
+          responseLocale: chatResponseLocale.value,
+        },
+        (part) => {
+          if (sendGen !== assistantStreamGeneration) {
+            return;
+          }
+          const m = messages.value[assistantIdx];
+          if (!m) {
+            return;
+          }
+          applyAssistantStreamPart(m, part, null);
+          scheduleScrollToBottom();
+        },
+        { signal: streamSignal },
+      );
+      const m = messages.value[assistantIdx];
+      if (m?.streaming) {
+        finishAssistantStreamState(m);
+      }
+    } catch (e: unknown) {
+      if (isAbortError(e)) {
+        syncHistory = false;
+      } else if (e instanceof ChatStreamHttpError && e.status === 409) {
+        syncHistory = true;
+        if (assistantIdx >= 1) {
+          messages.value.splice(assistantIdx - 1, 2);
+        }
+        ElMessage.warning(e.message || t("chat.sendDuplicate"));
+      } else {
+        const m = messages.value[assistantIdx];
+        if (m) {
+          m.content = m.content || t("chat.replyFailed");
+          if (m.streaming) {
+            finishAssistantStreamState(m);
+          }
+        }
+        ElMessage.error(apiRequestErrorMessage(e, t("chat.sendFail")));
+      }
+    } finally {
+      activeStreamAbort = null;
     }
   } finally {
-    activeStreamAbort = null;
     sending.value = false;
-    if (syncHistory) {
+    if (streamStarted && syncHistory) {
       await refresh();
       if (convId.value) {
         await syncThreadAfterStream(convId.value);
-        const m = messages.value[assistantIdx];
+        const m = assistantIdx >= 0 ? messages.value[assistantIdx] : undefined;
         if (!m?.followUpPrompts?.length) {
           loadFollowUpForLastAssistant();
         }
@@ -4752,6 +4800,10 @@ async function send() {
   display: flex;
   align-items: center;
   gap: 6px;
+  width: 100%;
+  max-width: 100%;
+  align-self: stretch;
+  box-sizing: border-box;
   padding: 8px 10px;
   padding-left: max(10px, env(safe-area-inset-left));
   padding-right: max(10px, env(safe-area-inset-right));
@@ -4759,13 +4811,24 @@ async function send() {
   border-bottom: 1px solid var(--chat-border, #ececec);
   background: var(--chat-bg-main, #fafafa);
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+.mobile-nav-end {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  min-width: 0;
 }
 
 .chat-app--mobile .mobile-nav .thread-head-tools {
-  margin-left: auto;
+  flex-shrink: 0;
 }
 
-.mobile-nav-title {
+.mobile-nav-title,
+.mobile-nav-brand {
   flex: 1;
   min-width: 0;
   font-size: 15px;
@@ -4774,6 +4837,12 @@ async function send() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.mobile-nav-brand {
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .mobile-nav-btn {
@@ -4830,20 +4899,52 @@ async function send() {
 }
 
 .chat-app--mobile .chat-body {
+  flex: 1;
+  min-height: 0;
   flex-direction: column;
 }
 
 .chat-app--mobile .main {
+  flex: 1;
+  min-height: 0;
   width: 100%;
   max-width: none;
+  overflow: hidden;
+  align-items: stretch;
 }
 
+.chat-app--mobile .main > .mobile-nav,
 .chat-app--mobile .main > .thread-head,
 .chat-app--mobile .main > .chat-hero,
 .chat-app--mobile .main > .messages-scroll,
 .chat-app--mobile .main > .composer {
   width: 100%;
   max-width: none;
+}
+
+.chat-app--mobile .messages-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  touch-action: pan-y;
+}
+
+.chat-app--mobile .messages-scroll :deep(.el-scrollbar__wrap) {
+  overflow-x: hidden;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.chat-app--mobile .messages-scroll :deep(.el-scrollbar__bar) {
+  display: none;
+}
+
+.chat-app--mobile .chat-hero {
+  flex-shrink: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .chat-app--mobile .messages {
@@ -4861,9 +4962,14 @@ async function send() {
 }
 
 .chat-app--mobile .composer {
+  flex-shrink: 0;
   padding: 6px 10px max(12px, env(safe-area-inset-bottom));
   padding-left: max(10px, env(safe-area-inset-left));
   padding-right: max(10px, env(safe-area-inset-right));
+}
+
+.chat-app--mobile .composer-note {
+  margin-bottom: 0;
 }
 
 .chat-app--mobile .composer-surface {

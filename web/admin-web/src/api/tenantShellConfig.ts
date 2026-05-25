@@ -38,9 +38,36 @@ export type TenantShellModelCallingRuntime = {
   processDefaultVectorDimension: number;
 };
 
+export type TenantShellAuthRegisterRuntime = {
+  openRegistration: boolean;
+  /** 后端判定 SMTP 主机、发件人、用户名是否已配齐 */
+  emailDeliveryReady: boolean;
+  codeLength: number;
+  codeTtlSeconds: number;
+  sendCooldownSeconds: number;
+  emailSmtpHost: string;
+  emailSmtpPort: number;
+  emailUsername: string;
+  /** 保存时可传；读取时不回显，见 emailPasswordConfigured */
+  emailPassword?: string;
+  emailPasswordConfigured: boolean;
+  emailFrom: string;
+  emailSsl: boolean;
+  emailSubjectTemplate: string;
+  emailBodyTemplate: string;
+};
+
+export type TenantShellAuthRegisterPutBody = Omit<
+  TenantShellAuthRegisterRuntime,
+  "emailDeliveryReady" | "emailPasswordConfigured"
+> & {
+  emailPassword?: string;
+};
+
 export type TenantShellConfig = {
   branding: TenantShellBranding;
   modelCallingRuntime: TenantShellModelCallingRuntime;
+  authRegister: TenantShellAuthRegisterRuntime;
   outbound: TenantShellOutbound;
 };
 
@@ -101,6 +128,14 @@ export async function putTenantShellBranding(body: TenantShellBrandingPutBody): 
 /** 仅保存大模型调用策略覆盖 JSON。 */
 export async function putTenantShellOutbound(body: TenantShellOutboundPutBody): Promise<TenantShellConfig> {
   const { data } = await http.put<TenantShellConfig>("/api/v1/admin/tenant-shell-config/outbound", body);
+  return data;
+}
+
+/** 保存开放注册与验证码发送（邮件 SMTP、标题/正文模板）。 */
+export async function putTenantShellAuthRegister(
+  body: TenantShellAuthRegisterPutBody,
+): Promise<TenantShellConfig> {
+  const { data } = await http.put<TenantShellConfig>("/api/v1/admin/tenant-shell-config/auth-register", body);
   return data;
 }
 

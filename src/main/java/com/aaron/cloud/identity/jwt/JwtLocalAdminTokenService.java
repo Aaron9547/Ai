@@ -1,6 +1,7 @@
 package com.aaron.cloud.identity.jwt;
 
 import com.aaron.cloud.common.api.enums.TenantMemberRole;
+import com.aaron.cloud.common.context.LoginUser;
 import com.aaron.cloud.common.security.entity.SecUserAccount;
 import com.aaron.cloud.common.security.entity.SysTenantMember;
 import com.aaron.cloud.common.tenant.SysTenantRepository;
@@ -70,7 +71,7 @@ public class JwtLocalAdminTokenService {
     }
 
     /** 签发明确租户与角色的管理端令牌（须经调用方校验 {@code memberships}）。 */
-    public LoginResponse mintExplicitContext(SecUserAccount user, List<SysTenantMember> active, long tid, TenantMemberRole tmr)
+    public LoginResponse mintExplicitContext(LoginUser user, List<SysTenantMember> active, long tid, TenantMemberRole tmr)
             throws Exception {
         ArrayNode tmsArr = objectMapper.createArrayNode();
         for (SysTenantMember m : active) {
@@ -80,10 +81,20 @@ public class JwtLocalAdminTokenService {
             tmsArr.add(o);
         }
         String tmsJson = objectMapper.writeValueAsString(tmsArr);
-        return encode(user, active, tid, tmr, tmsJson);
+        return encodeLoginUser(user, active, tid, tmr, tmsJson);
     }
 
     private LoginResponse encode(SecUserAccount user, List<SysTenantMember> active, long tid, TenantMemberRole tmr, String tmsJson)
+            throws Exception {
+        LoginUser loginUser = LoginUser.fromAccount(user);
+        if (loginUser == null) {
+            throw new IllegalArgumentException("user required");
+        }
+        return encodeLoginUser(loginUser, active, tid, tmr, tmsJson);
+    }
+
+    private LoginResponse encodeLoginUser(
+            LoginUser user, List<SysTenantMember> active, long tid, TenantMemberRole tmr, String tmsJson)
             throws Exception {
         List<LoginResponse.MembershipEntry> membershipDtos = new ArrayList<>();
         for (SysTenantMember m : active) {
@@ -95,7 +106,6 @@ public class JwtLocalAdminTokenService {
         }
 
         Instant now = Instant.now();
-        long jseq = user.getJwtSeq() == null ? 0L : user.getJwtSeq();
         JwtClaimsSet claims =
                 JwtClaimsSet.builder()
                         .issuer("ai-local")
@@ -104,7 +114,7 @@ public class JwtLocalAdminTokenService {
                         .subject(user.getLoginName())
                         .claim("tid", tid)
                         .claim("uid", user.getId())
-                        .claim("jseq", jseq)
+                        .claim("jseq", user.jwtSeqOrZero())
                         .claim("tmr", tmr.name())
                         .claim("tms", tmsJson)
                         .build();

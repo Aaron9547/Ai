@@ -25,6 +25,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -56,6 +57,7 @@ public class ChatUserDailyRecommendService {
     private final ChatDailyRecommendProfileIngest profileIngest;
 
     private final ConcurrentHashMap<String, Object> generationLocks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Boolean> generationInflight = new ConcurrentHashMap<>();
 
     public DailyRecommendResponse getOrGenerateForCurrentSubject() {
         return getOrGenerate(false, false);
@@ -104,25 +106,32 @@ public class ChatUserDailyRecommendService {
         String lockKey = tenantId + ":" + subjectKey + ":" + today;
 
         Object lock = generationLocks.computeIfAbsent(lockKey, k -> new Object());
+        boolean scheduleGeneration = false;
         synchronized (lock) {
             var existing = recommendRepository.findByTenantSubjectAndDate(tenantId, subjectKey, today);
             if (forceRegenerate && existing.isPresent()) {
                 recommendRepository.deleteByTenantSubjectAndDate(tenantId, subjectKey, today);
+                generationInflight.remove(lockKey);
                 existing = java.util.Optional.empty();
             }
             if (existing.isPresent()) {
                 ChatUserDailyRecommend row = existing.get();
                 if (!forceRetry && !forceRegenerate) {
-                    return toResponse(row);
+                    if (row.getStatus() != ChatStarterDailyBatchStatus.PENDING
+                            || generationInflight.containsKey(lockKey)) {
+                        return toResponse(row);
+                    }
+                } else {
+                    if (row.getStatus() != ChatStarterDailyBatchStatus.FAILED) {
+                        return toResponse(row);
+                    }
+                    if (row.getRetryUsed() != null && row.getRetryUsed() == 1) {
+                        return toResponse(row);
+                    }
+                    row.setRetryUsed(1);
+                    resetBatchToPending(row);
+                    existing = recommendRepository.findByTenantSubjectAndDate(tenantId, subjectKey, today);
                 }
-                if (row.getStatus() != ChatStarterDailyBatchStatus.FAILED) {
-                    return toResponse(row);
-                }
-                if (row.getRetryUsed() != null && row.getRetryUsed() == 1) {
-                    return toResponse(row);
-                }
-                row.setRetryUsed(1);
-                recommendRepository.updateById(row);
             }
 
             ChatUserDailyRecommend batch =
@@ -132,19 +141,67 @@ public class ChatUserDailyRecommendService {
                 return toResponse(batch);
             }
             if (!forceRetry
+                    && !forceRegenerate
                     && batch.getStatus() == ChatStarterDailyBatchStatus.FAILED
                     && batch.getRetryUsed() != null
                     && batch.getRetryUsed() == 1) {
                 return toResponse(batch);
             }
 
-            generateAndPersist(snap, subjectKey, batch);
-            var refreshed =
-                    recommendRepository
-                            .findByTenantSubjectAndDate(tenantId, subjectKey, today)
-                            .orElse(batch);
-            return toResponse(refreshed);
+            if (batch.getStatus() == ChatStarterDailyBatchStatus.FAILED) {
+                resetBatchToPending(batch);
+            }
+
+            scheduleGeneration = generationInflight.putIfAbsent(lockKey, Boolean.TRUE) == null;
         }
+
+        if (scheduleGeneration) {
+            scheduleGenerationJob(lockKey, snap, subjectKey, tenantId, today);
+        }
+
+        return recommendRepository
+                .findByTenantSubjectAndDate(tenantId, subjectKey, today)
+                .map(this::toResponse)
+                .orElseGet(
+                        () ->
+                                emptyResponse(
+                                        subjectKey, today.toString(), "LOADING", null));
+    }
+
+    private void resetBatchToPending(ChatUserDailyRecommend batch) {
+        batch.setStatus(ChatStarterDailyBatchStatus.PENDING);
+        batch.setErrorMessage(null);
+        batch.setItemsJson(null);
+        recommendRepository.updateById(batch);
+    }
+
+    /** 异步联网+结构化，HTTP 立即返回 {@code LOADING}，供前端轮询。 */
+    private void scheduleGenerationJob(
+            String lockKey,
+            TenantSnapshot snap,
+            String subjectKey,
+            long tenantId,
+            LocalDate today) {
+        CompletableFuture.runAsync(
+                () -> {
+                    try {
+                        TenantContextHolder.set(snap);
+                        ChatUserDailyRecommend batch =
+                                recommendRepository
+                                        .findByTenantSubjectAndDate(tenantId, subjectKey, today)
+                                        .orElse(null);
+                        if (batch == null || batch.getStatus() != ChatStarterDailyBatchStatus.PENDING) {
+                            return;
+                        }
+                        generateAndPersist(snap, subjectKey, batch);
+                    } catch (Exception ex) {
+                        log.warn("[今日推荐] 异步生成异常 lockKey={}", lockKey, ex);
+                    } finally {
+                        TenantContextHolder.clear();
+                        generationInflight.remove(lockKey);
+                    }
+                },
+                Thread::startVirtualThread);
     }
 
     private ChatUserDailyRecommend insertPending(long tenantId, String subjectKey, LocalDate today) {

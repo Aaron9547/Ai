@@ -1,11 +1,16 @@
 <template>
   <div class="tenant-shell-page">
     <div class="page-header">
-      <h2 class="page-title">{{ t("admin.shell.pageTitle") }}</h2>
+      <div class="page-header-text">
+        <h2 class="page-title">{{ t("admin.shell.pageTitle") }}</h2>
+        <p class="page-desc">{{ t("admin.shell.pageDesc") }}</p>
+      </div>
       <el-button @click="reload">{{ t("common.refresh") }}</el-button>
     </div>
 
-    <el-card class="block" shadow="never">
+    <el-tabs v-model="activeTab" class="shell-tabs">
+      <el-tab-pane :label="t('admin.shell.tabs.branding')" name="branding">
+    <el-card class="block tab-pane-card" shadow="never">
       <template #header>
         <span>{{ t("admin.shell.brandingBlock") }}</span>
       </template>
@@ -63,8 +68,14 @@
         </el-form-item>
       </el-form>
     </el-card>
+      </el-tab-pane>
 
-    <el-card class="block outbound-policy-card model-calling-policy-card" shadow="never">
+      <el-tab-pane :label="t('admin.shell.tabs.registration')" name="registration">
+    <AuthRegisterShellBlock />
+      </el-tab-pane>
+
+      <el-tab-pane :label="t('admin.shell.tabs.modelCalling')" name="modelCalling">
+    <el-card class="block outbound-policy-card model-calling-policy-card tab-pane-card" shadow="never">
       <template #header>
         <div class="outbound-card-header">
           <span class="outbound-card-title">{{ t("admin.shell.modelCallingBlock") }}</span>
@@ -386,7 +397,10 @@
         </el-form>
       </div>
     </el-card>
-    <el-card class="block outbound-policy-card" shadow="never">
+      </el-tab-pane>
+
+      <el-tab-pane :label="t('admin.shell.tabs.outbound')" name="outbound">
+    <el-card class="block outbound-policy-card tab-pane-card" shadow="never">
       <template #header>
         <div class="outbound-card-header">
           <span class="outbound-card-title">{{ t("admin.shell.outboundBlock") }}</span>
@@ -602,7 +616,7 @@
       </div>
     </el-card>
 
-    <el-card class="block outbound-policy-card cb-readonly-card" shadow="never">
+    <el-card class="block outbound-policy-card cb-readonly-card tab-pane-card" shadow="never">
       <template #header>
         <div class="outbound-card-header">
           <span class="outbound-card-title">{{ t("admin.shell.circuitBreakerReadonly.title") }}</span>
@@ -619,12 +633,15 @@
         </div>
       </div>
     </el-card>
+      </el-tab-pane>
+    </el-tabs>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import type { UploadRequestOptions } from "element-plus";
 import * as tenantShellApi from "@/api/tenantShellConfig";
@@ -666,6 +683,7 @@ import {
 } from "@/views/system/modelCallingRuntimeFormModel";
 import SiteCrawlPresetPicker from "@/views/system/components/SiteCrawlPresetPicker.vue";
 import SiteCrawlRuntimeFields from "@/views/system/components/SiteCrawlRuntimeFields.vue";
+import AuthRegisterShellBlock from "@/components/system/AuthRegisterShellBlock.vue";
 import {
   parseSiteCrawlRuntimeForm,
   serializeSiteCrawlRuntimeJson,
@@ -674,6 +692,34 @@ import {
 } from "@/views/system/siteCrawlRuntimeFormModel";
 
 const { t, locale } = useI18n();
+
+const SHELL_TAB_NAMES = ["branding", "registration", "modelCalling", "outbound"] as const;
+type ShellTabName = (typeof SHELL_TAB_NAMES)[number];
+
+const route = useRoute();
+const router = useRouter();
+const activeTab = ref<ShellTabName>("branding");
+
+function syncShellTabFromQuery(): void {
+  const q = route.query.tab;
+  if (typeof q === "string" && (SHELL_TAB_NAMES as readonly string[]).includes(q)) {
+    activeTab.value = q as ShellTabName;
+  }
+}
+
+watch(activeTab, (tab) => {
+  if (route.query.tab === tab) {
+    return;
+  }
+  void router.replace({ query: { ...route.query, tab } });
+});
+
+watch(
+  () => route.query.tab,
+  () => {
+    syncShellTabFromQuery();
+  },
+);
 
 const form = reactive({
   logoUrl: "",
@@ -1063,6 +1109,7 @@ async function saveModelCalling() {
 }
 
 onMounted(() => {
+  syncShellTabFromQuery();
   void reload().catch(() => {
     ElMessage.error(t("common.loadFailed"));
   });
@@ -1079,11 +1126,39 @@ onMounted(() => {
 
 .page-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
+}
+
+.page-header-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.page-desc {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
+}
+
+.shell-tabs {
+  margin-top: 4px;
+}
+
+.shell-tabs :deep(.el-tabs__content) {
+  overflow: visible;
+}
+
+.shell-tabs .tab-pane-card {
+  margin-top: 0;
+}
+
+.shell-tabs .tab-pane-card + .tab-pane-card {
+  margin-top: 16px;
 }
 
 .page-header :deep(.el-button) {

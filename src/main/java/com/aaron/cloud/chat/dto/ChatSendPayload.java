@@ -32,6 +32,13 @@ public class ChatSendPayload {
     private List<Long> attachmentIds;
 
     /**
+     * 客户端发送幂等键（建议 UUID）；同会话同键在短时窗内重复 POST 将被拒绝，避免连点/重试双写用户消息。
+     */
+    @Size(max = 64)
+    @Pattern(regexp = "^[A-Za-z0-9_-]*$", message = "clientSendKey 仅允许字母数字、下划线与连字符")
+    private String clientSendKey;
+
+    /**
      * 多轮意图流票据（服务端签发的不透明 flowId）；后续轮次用户消息可回传以绑定同一会话流。
      */
     @Size(max = 64)

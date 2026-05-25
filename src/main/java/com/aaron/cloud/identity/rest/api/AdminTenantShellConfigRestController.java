@@ -62,6 +62,13 @@ public class AdminTenantShellConfigRestController extends ApiV1ControllerBases.A
                 TenantContextHolder.require().getTenantId(), body);
     }
 
+    @PutMapping("/auth-register")
+    public TenantShellAdminApplicationService.ShellConfigResponse putAuthRegister(
+            @RequestBody TenantShellAdminApplicationService.ShellAuthRegisterPutBody body) {
+        return tenantShellAdminApplicationService.saveAuthRegister(
+                TenantContextHolder.require().getTenantId(), body);
+    }
+
     @PostMapping(value = "/logo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public TenantShellAdminApplicationService.LogoUploadResponse uploadLogo(@RequestPart("file") MultipartFile file)
             throws Exception {

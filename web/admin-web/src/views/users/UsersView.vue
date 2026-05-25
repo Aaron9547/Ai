@@ -247,9 +247,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { AI_ADMIN_ACCESS_TOKEN_KEY } from "@/plugins/http";
+import { AI_ADMIN_WORKSPACE_CHANGED_EVENT } from "@/constants/adminWorkspace";
 import * as tenantsApi from "@/api/tenants";
 import * as usersApi from "@/api/users";
 import { readJwtTid, readJwtTmr, readJwtUid } from "@/utils/jwtSubject";
@@ -322,6 +323,36 @@ function canEditUserRole(row: usersApi.UserRow): boolean {
   const self = readJwtUid(localStorage.getItem(AI_ADMIN_ACCESS_TOKEN_KEY));
   if (self != null && row.id === self) return false;
   return true;
+}
+
+function founderMemberTenantOpts(row: usersApi.TenantMemberRow): { tenantId: number } | undefined {
+  return isFounder.value ? { tenantId: row.tenantId } : undefined;
+}
+
+function founderInviteTenantId(): number | undefined {
+  if (tenantFilter.value != null) {
+    return tenantFilter.value;
+  }
+  const jwtTid = readJwtTid(localStorage.getItem(AI_ADMIN_ACCESS_TOKEN_KEY));
+  const n = jwtTid ? Number.parseInt(jwtTid, 10) : NaN;
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function syncTenantFilterFromWorkspace() {
+  if (!isFounder.value) {
+    return;
+  }
+  const jwtTid = readJwtTid(localStorage.getItem(AI_ADMIN_ACCESS_TOKEN_KEY));
+  const n = jwtTid ? Number.parseInt(jwtTid, 10) : NaN;
+  if (Number.isFinite(n) && tenantOptions.value.some((t) => t.id === n)) {
+    tenantFilter.value = n;
+  }
+}
+
+function onWorkspaceChanged() {
+  syncTenantFilterFromWorkspace();
+  void loadMembers();
+  void loadUsers();
 }
 
 function statusLabel(s: usersApi.UserRow["status"]): string {
@@ -410,9 +441,7 @@ async function loadUsers() {
 async function onMemberRoleChange(row: usersApi.TenantMemberRow, role: usersApi.TenantMemberRole) {
   if (row.role === role) return;
   try {
-    const opts =
-      isFounder.value && tenantFilter.value != null ? { tenantId: tenantFilter.value } : undefined;
-    await usersApi.updateTenantMemberRole(row.userId, role, opts);
+    await usersApi.updateTenantMemberRole(row.userId, role, founderMemberTenantOpts(row));
     row.role = role;
     ElMessage.success(t("views.users.roleUpdated"));
   } catch (e: unknown) {
@@ -455,8 +484,11 @@ async function submitInvite() {
       loginName: name,
       role: inviteRole.value,
     };
-    if (isFounder.value && tenantFilter.value != null) {
-      body.tenantId = tenantFilter.value;
+    if (isFounder.value) {
+      const tid = founderInviteTenantId();
+      if (tid != null) {
+        body.tenantId = tid;
+      }
     }
     await usersApi.inviteTenantMember(body);
     inviteVisible.value = false;
@@ -481,9 +513,7 @@ async function onRemoveMember(row: usersApi.TenantMemberRow) {
     return;
   }
   try {
-    const opts =
-      isFounder.value && tenantFilter.value != null ? { tenantId: tenantFilter.value } : undefined;
-    await usersApi.removeTenantMember(row.userId, opts);
+    await usersApi.removeTenantMember(row.userId, founderMemberTenantOpts(row));
     ElMessage.success(t("views.users.removed"));
     await loadMembers();
     await loadUsers();
@@ -576,18 +606,20 @@ onMounted(async () => {
   if (isFounder.value) {
     try {
       tenantOptions.value = await tenantsApi.listTenants();
-      const jwtTid = readJwtTid(localStorage.getItem(AI_ADMIN_ACCESS_TOKEN_KEY));
-      const n = jwtTid ? Number.parseInt(jwtTid, 10) : NaN;
-      if (Number.isFinite(n) && tenantOptions.value.some((t) => t.id === n)) {
-        tenantFilter.value = n;
-      } else if (tenantOptions.value.length > 0) {
+      syncTenantFilterFromWorkspace();
+      if (tenantFilter.value == null && tenantOptions.value.length > 0) {
         tenantFilter.value = tenantOptions.value[0]!.id;
       }
     } catch {
       tenantOptions.value = [];
     }
   }
+  window.addEventListener(AI_ADMIN_WORKSPACE_CHANGED_EVENT, onWorkspaceChanged);
   await Promise.all([loadMembers(), loadUsers()]);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener(AI_ADMIN_WORKSPACE_CHANGED_EVENT, onWorkspaceChanged);
 });
 </script>
 

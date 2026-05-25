@@ -271,10 +271,27 @@ sequenceDiagram
 
 ## 变更记录
 
+### 0.1.248-SNAPSHOT
+
+- **对话 RAG 与联网**：RAG 注入仍仅按各库 **`chat_vector_min_cosine_score`**（`RagQueryBridgeService`）过滤；用户开启联网时与 RAG 并行编排，system 提示「片段无关可忽略、优先联网结果」。
+- **用户端推荐问题**：`ChatView` 点击空会话推荐或「猜你想问」时，租户允许联网则自动打开输入区联网开关（`enableWebSearchForStarterPrompt`）。
+- **用户端对话 · 移动端**：顶栏铺满宽（`align-items: stretch` + `mobile-nav` 全宽）；未建会话时居中品牌名、右侧工具与新建成组；有消息时隐藏 `thread-head` 避免顶栏重复；消息区启用触摸滚动；输入区贴安全区。设备页 `MeView` 主体可滚动。
+- **对话发送幂等**：`ChatSendPayload.clientSendKey` + Redis 键 `ai:chat:send:dedupe:*`（`ChatSendIdempotencyGuard`）；前端 `send()` 全程 `sending` 锁、`newConv` 并发合并、每轮 `clientSendKey`；409 时回滚乐观消息并刷新线程。
+- **C 端邮箱注册**：**`POST /open/v1/auth/register/send-code`** 发送验证码（Redis TTL + 发送冷却）；**`POST /open/v1/auth/register`** 须 **`email` + `verificationCode` + 密码**；**`OpenRegistrationVerificationSender`** 按租户 **`AUTH_REGISTER_VERIFICATION_JSON`** 发邮件（**`ai.auth.email.*`** 为进程默认）；注册成功与登录同样 **`recordLastLogin`** 写入 **`last_login_at/ip/region`**。
+- **管理端注册验证码配置**：**「租户能力与外观 → 开放注册」**（开放注册开关、SMTP、邮件标题/正文模板）；**`PUT /api/v1/admin/tenant-shell-config/auth-register`**；**`TenantAuthRegisterVerificationResolver`** / **`AuthRegisterVerificationConfig`**（仅邮件，无短信通道）；移除 **「仅写日志不发信」**；**SMTP 主机 + 发件人 + 用户名 + 密码** 配齐后方可开启自助注册（**`AuthRegisterEmailSupport`**）；**`AUTH_OPEN_REGISTRATION`** 枚举默认改为 **false**；排除 **`MailSenderAutoConfiguration`** / 关闭 **`management.health.mail`**，避免与租户 SMTP 无关的 Actuator WARN；保存时 SMTP 密码留空则保留库内原值，读取不回显（**`emailPasswordConfigured`**）。
+- **用户端认证弹窗**：**`UserAuthDialog`** 修复注册表单溢出（可滚动内容区 + `v-show` 切换）；登录/注册 Tab 切换保留轻量 3D 过渡；**`z-index`** 降至 **2200** + **`global.css`** 提升 **`ElMessage`** 层级，避免「验证码已发送」等 Toast 被毛玻璃遮住；登录/注册提交钮去掉重复 **`@click`**，避免校验 Toast 连弹两次。
+- **管理端用户页**：创始人跨租户改成员角色时 **`PUT …/tenant-role`** 始终带成员行 **`tenantId`**（不再依赖顶部筛选是否清空）；切换工作区后同步租户筛选并刷新列表，避免「用户不在当前租户」。
+- **管理端工作区切换**：全屏 Loading → 刷新 **`/admin/me`** 与侧栏菜单 → **`RouterView`** 按工作区 **`key`** 重挂载拉数；无当前页权限时跳转首个可访问页（默认 **`/dashboard`**）；路由守卫 **`adminRouteAccess`** 同步拦截深链。
+- **管理端 Shell 页 Tab 化**：**`TenantShellConfigView`** 拆为 **管理端外观 / 开放注册 / 对话 AI 能力 / 调用容错** 四 Tab（URL **`?tab=`** 同步）；侧栏与面包屑菜单文案梳理为见字知义（**`zh-CN` / `en-US` / `adminMenuCodes`**）。
+- **管理端开放注册 SMTP 密码**：已保存密码在表单以 **`********`** 占位展示并标「已设置」；保存时留空或占位不覆盖库内密码；后端 **`resolveEmailPassword`** 忽略掩码占位误提交（无额外说明文案）。
+- **登录用户上下文**：**`LoginUser` / `LoginUserContextHolder`**；**`JwtSessionGateFilter`** 校验后写入、**`TenantContextFilter`** 同 uid 复用避免二次 **`findById`**；**`SystemController#me`**、**`AdminMeApplicationService`**、**`AdminAuthContextRestController`** 改读 **`LoginContextUtils`**；业务层 **`getUserId()` / `getUser()`** 一键取当前用户；管理端 **`loginContext.ts`** 缓存 **`/admin/me`**。
+- **网关目录**：**`gw_api_endpoint_catalog_inserts.sql`** 补 **`/open/v1/auth/register/send-code`**（sort **1011**）；**`schema_v1.sql`** 限流种子补注册验证码行。
+- **版本**：**`pom.xml`** bump **0.1.247 → 0.1.248-SNAPSHOT**。
+
 ### 0.1.247-SNAPSHOT
 
 - **用户端对话侧栏账号区**：左下角用户名改为 **点击展开菜单**（设备与登录 / 退出，菜单项带图标对齐）；退出须二次确认；修复 `el-dropdown` 触发的页面横纵滚动条（`ChatSidebar` / `ChatView`）。
-- **用户端推荐侧栏**：移除 **「可能感兴趣」** 模式与 **`POST …/daily-recommend/by-topic`**（与猜你想问/对话联网重叠）；侧栏仅保留 **今日画像推荐**；推荐问句发送恢复与用户开关一致的对话联网（`useDailyRecommend` / `ChatUserDailyRecommendService` / `ChatWebSearchGroundingService`）。
+- **用户端文案**：注册弹窗、设备与登录页、登录错误提示等去除 **X-Tenant-Id / localStorage / UUID** 等技术说明，改为用户可理解的语义文案（`zh-CN` / `en-US` / `openAuthHttpErrors`）。
 - **用户端对话壳交互**：空对话时 **`LocaleThemeToolbar`** 悬浮于主区右上（推荐栏左侧约 10px，随栏 300/40px 收起联动）；侧栏**展开**仍用原 **`sidebar-rail` / `rec-rail`** 整栏点击展开；**收起**为栏外贴附 **`SidebarCollapseTab`**（左缘/右缘与侧栏边框对齐，箭头图标）；侧栏宽度过渡 **0.28s** + 展开/收起内容交叉淡入淡出；有消息时语言与主题仍在 **`thread-head`**。
 - **用户端设备页**：`MeView` 移除画像与记忆的「导出 JSON」「删除画像与记忆」入口；`profile.ts` 删除对应前端 API 封装（Open **`GET /open/v1/profile/export`**、**`DELETE …/profile/data`** 仍保留供运维/合规，不在 C 端暴露）。
 - **用户端对话**：新建对话前若当前会话尚无用户消息，提示「您已经是新对话了」并跳过重复创建；侧栏收起态新建按钮置顶、与展开区 10px 间隔、浅蓝白底样式。

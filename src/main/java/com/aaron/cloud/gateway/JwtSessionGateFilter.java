@@ -1,6 +1,7 @@
 package com.aaron.cloud.gateway;
 
 import com.aaron.cloud.common.api.enums.UserAccountStatus;
+import com.aaron.cloud.common.context.LoginUserContextHolder;
 import com.aaron.cloud.common.security.SecUserAccountRepository;
 import com.aaron.cloud.common.security.entity.SecUserAccount;
 import jakarta.servlet.FilterChain;
@@ -58,6 +59,7 @@ public final class JwtSessionGateFilter extends OncePerRequestFilter {
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "session revoked");
             return;
         }
+        LoginUserContextHolder.bindFromAccount(user);
         chain.doFilter(request, response);
     }
 

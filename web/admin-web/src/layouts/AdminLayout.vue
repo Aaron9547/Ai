@@ -222,7 +222,7 @@
       <el-main class="admin-main">
         <el-scrollbar class="admin-main-scrollbar" height="100%">
           <div class="admin-main-scrollbar-inner">
-            <RouterView />
+            <RouterView :key="workspaceContentKey" />
           </div>
         </el-scrollbar>
       </el-main>
@@ -259,7 +259,7 @@ import {
   UserFilled,
   Warning,
 } from "@element-plus/icons-vue";
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { ElLoading, ElMessage, ElMessageBox } from "element-plus";
@@ -276,6 +276,9 @@ import {
 } from "@/plugins/http";
 import { readJwtSubject, readJwtTid, readJwtTmr, readJwtTms } from "@/utils/jwtSubject";
 import { formatTenantNameCode } from "@/utils/adminListDisplay";
+import { setAdminMenuSession } from "@/utils/adminMenuSession";
+import { clearLoginUser, setLoginUser } from "@/utils/loginContext";
+import { resolvePathAfterWorkspaceSwitch } from "@/utils/adminRouteAccess";
 
 const router = useRouter();
 const route = useRoute();
@@ -350,6 +353,14 @@ const brandLogoSrc = computed(() => resolvePublicAssetUrl(shellBranding.value?.l
 const meSnapshot = ref<AdminMeView | null>(null);
 
 const allowedMenuCodes = ref<string[] | null>(null);
+
+/** 工作区切换后递增，强制主内容区 remount 以重新拉取页面数据。 */
+const workspaceContentKey = ref(0);
+
+function syncMenuSession(codes: string[] | null) {
+  allowedMenuCodes.value = codes;
+  setAdminMenuSession(codes);
+}
 
 type WorkspacePickRow = {
   tenantId: number;
@@ -493,15 +504,27 @@ async function applyWorkspaceSwitch(tenantId: number, role: string) {
     }
     const fresh = await fetchAdminMe().catch(() => null);
     meSnapshot.value = fresh;
-    allowedMenuCodes.value = fresh?.allowedMenuCodes ?? [];
+    setLoginUser(fresh);
+    const menuCodes = fresh?.allowedMenuCodes ?? [];
+    syncMenuSession(menuCodes);
     if (readJwtTmr(data.accessToken) === "FOUNDER") {
-      void tenantsApi.listTenants().then((r) => {
-        tenantOptions.value = r;
-      });
+      try {
+        tenantOptions.value = await tenantsApi.listTenants();
+      } catch {
+        tenantOptions.value = [];
+      }
     }
+    await reloadShellBranding();
+    const founder = readJwtTmr(data.accessToken) === "FOUNDER";
+    const targetPath = resolvePathAfterWorkspaceSwitch(route.path, menuCodes, founder);
+    if (targetPath !== route.path) {
+      await router.replace(targetPath);
+      ElMessage.info(t("common.workspaceRedirect"));
+    }
+    workspaceContentKey.value += 1;
+    await nextTick();
     ElMessage.success(t("common.workspaceSwitched"));
     window.dispatchEvent(new Event(AI_ADMIN_WORKSPACE_CHANGED_EVENT));
-    void reloadShellBranding();
   } catch (e: unknown) {
     console.warn("[workspace switch]", e);
     ElMessage.error(t("common.workspaceSwitchFailed"));
@@ -551,10 +574,12 @@ onMounted(() => {
     void fetchAdminMe()
       .then((me) => {
         meSnapshot.value = me;
-        allowedMenuCodes.value = me.allowedMenuCodes ?? [];
+        setLoginUser(me);
+        syncMenuSession(me.allowedMenuCodes ?? []);
       })
       .catch(() => {
-        allowedMenuCodes.value = [];
+        setLoginUser(null);
+        syncMenuSession([]);
       });
     void reloadShellBranding();
   }
@@ -592,11 +617,13 @@ function onUserMenuCommand(cmd: string) {
     localStorage.removeItem(AI_ADMIN_ACCESS_TOKEN_KEY);
     localStorage.removeItem(AI_ADMIN_EFFECTIVE_TENANT_KEY);
     localStorage.removeItem(AI_ADMIN_MEMBERSHIPS_KEY);
+    clearLoginUser();
     void router.replace({ path: "/login", query: { redirect: route.fullPath } });
   } else if (cmd === "logout") {
     localStorage.removeItem(AI_ADMIN_ACCESS_TOKEN_KEY);
     localStorage.removeItem(AI_ADMIN_EFFECTIVE_TENANT_KEY);
     localStorage.removeItem(AI_ADMIN_MEMBERSHIPS_KEY);
+    clearLoginUser();
     void router.replace("/login");
   }
 }

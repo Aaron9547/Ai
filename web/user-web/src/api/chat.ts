@@ -211,6 +211,8 @@ export interface ChatSendPayload {
   content: string;
   modelAlias: string;
   thinkingEnabled: boolean;
+  /** 客户端幂等键，避免连点/重试重复落库 */
+  clientSendKey?: string;
   /** 主模型前是否执行联网检索（须租户已配置联网搜索模型） */
   webSearchEnabled?: boolean;
   attachmentIds: number[];
@@ -396,13 +398,37 @@ export type ChatStreamOptions = {
   signal?: AbortSignal;
 };
 
+export class ChatStreamHttpError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ChatStreamHttpError";
+    this.status = status;
+  }
+}
+
 async function readSseStream(
   res: Response,
   onPart: (p: StreamPart) => void,
   signal?: AbortSignal,
 ): Promise<void> {
   if (!res.ok || !res.body) {
-    throw new Error("stream request failed: " + res.status);
+    let detail = "";
+    try {
+      detail = (await res.text()).trim();
+      if (detail) {
+        const parsed = JSON.parse(detail) as { message?: string };
+        if (typeof parsed?.message === "string" && parsed.message.trim()) {
+          throw new ChatStreamHttpError(res.status, parsed.message.trim());
+        }
+      }
+    } catch (e) {
+      if (e instanceof ChatStreamHttpError) {
+        throw e;
+      }
+    }
+    throw new ChatStreamHttpError(res.status, `stream request failed: ${res.status}${detail ? ` ${detail}` : ""}`);
   }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();

@@ -2,10 +2,10 @@ package com.aaron.cloud.identity.admin;
 
 import com.aaron.cloud.common.api.enums.TenantMemberRole;
 import com.aaron.cloud.common.api.enums.UserAccountStatus;
+import com.aaron.cloud.common.context.LoginContextUtils;
+import com.aaron.cloud.common.context.LoginUser;
 import com.aaron.cloud.common.context.TenantContextHolder;
-import com.aaron.cloud.common.security.SecUserAccountRepository;
 import com.aaron.cloud.common.security.SysTenantMemberRepository;
-import com.aaron.cloud.common.security.entity.SecUserAccount;
 import com.aaron.cloud.common.tenant.SysTenantRepository;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -17,7 +17,6 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class AdminMeApplicationService {
 
-    private final SecUserAccountRepository userAccountRepository;
     private final SysTenantMemberRepository tenantMemberRepository;
     private final SysTenantRepository tenantRepository;
     private final AdminMenuAuthorizationService adminMenuAuthorizationService;
@@ -60,9 +59,8 @@ public class AdminMeApplicationService {
 
     private String resolveLoginName(Long uid) {
         if (uid != null) {
-            return userAccountRepository
-                    .findById(uid)
-                    .map(SecUserAccount::getLoginName)
+            return LoginContextUtils.findUser()
+                    .map(u -> u.getLoginName() == null ? "" : u.getLoginName())
                     .orElse("");
         }
         var auth = SecurityContextHolder.getContext().getAuthentication();
@@ -77,10 +75,12 @@ public class AdminMeApplicationService {
         if (uid == null) {
             return "";
         }
-        return userAccountRepository
-                .findById(uid)
-                .map(SecUserAccount::getDisplayName)
-                .filter(s -> s != null && !s.isBlank())
+        return LoginContextUtils.findUser()
+                .map(
+                        u -> {
+                            String dn = u.getDisplayName();
+                            return dn != null && !dn.isBlank() ? dn.trim() : "";
+                        })
                 .orElse("");
     }
 

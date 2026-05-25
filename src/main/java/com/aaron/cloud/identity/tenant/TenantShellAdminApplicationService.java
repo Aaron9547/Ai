@@ -11,6 +11,9 @@ import com.aaron.cloud.common.tenant.SysTenantRepository;
 import com.aaron.cloud.common.tenant.entity.SysTenant;
 import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService;
 import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService.PutItem;
+import com.aaron.cloud.identity.open.AuthRegisterEmailSupport;
+import com.aaron.cloud.identity.open.AuthRegisterVerificationConfig;
+import com.aaron.cloud.identity.open.TenantAuthRegisterVerificationResolver;
 import com.aaron.cloud.rag.crawl.policy.SiteCrawlPolicyResolver;
 import com.aaron.cloud.rag.crawl.policy.SiteCrawlPreset;
 import com.aaron.cloud.rag.crawl.policy.SiteCrawlRuntimeValidator;
@@ -47,6 +50,7 @@ public class TenantShellAdminApplicationService {
     private final ObjectMapper objectMapper;
     private final SiteCrawlPolicyResolver siteCrawlPolicyResolver;
     private final TenantRagRuntimeResolver tenantRagRuntimeResolver;
+    private final TenantAuthRegisterVerificationResolver authRegisterVerificationResolver;
 
     public ShellConfigResponse load(long tenantId) {
         SysTenant t =
@@ -66,8 +70,9 @@ public class TenantShellAdminApplicationService {
         JsonNode effectiveMerged =
                 objectMapper.valueToTree(tenantOutboundResilienceRuntime.effective(tenantId));
         ModelCallingRuntimeDto modelCalling = readModelCallingRuntime(tenantId);
+        AuthRegisterRuntimeDto authRegister = readAuthRegisterRuntime(tenantId);
         return new ShellConfigResponse(
-                branding, modelCalling, new OutboundSectionDto(tenantJson, baselineJson, effectiveMerged));
+                branding, modelCalling, authRegister, new OutboundSectionDto(tenantJson, baselineJson, effectiveMerged));
     }
 
     /** 兼容旧客户端：一次写入外观与出站。 */
@@ -163,6 +168,109 @@ public class TenantShellAdminApplicationService {
         items.add(item(TenantRuntimeSettingKey.RAG_RETRIEVAL_MODE, ragRetrieval));
         tenantRuntimeSettingApplicationService.replace(tenantId, items);
         return load(tenantId);
+    }
+
+    /** 开放注册开关 + 注册验证码邮件（SMTP 与模板）。 */
+    public ShellConfigResponse saveAuthRegister(long tenantId, ShellAuthRegisterPutBody body) {
+        if (body == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "body required");
+        }
+        AuthRegisterVerificationConfig.EmailChannel em = new AuthRegisterVerificationConfig.EmailChannel();
+        em.setSmtpHost(trimOrEmpty(body.getEmailSmtpHost()));
+        em.setSmtpPort(body.getEmailSmtpPort() <= 0 ? 465 : body.getEmailSmtpPort());
+        em.setUsername(trimOrEmpty(body.getEmailUsername()));
+        em.setPassword(resolveEmailPassword(tenantId, body.getEmailPassword()));
+        em.setFrom(trimOrEmpty(body.getEmailFrom()));
+        em.setSsl(body.isEmailSsl());
+        em.setSubjectTemplate(trimOrEmpty(body.getEmailSubjectTemplate()));
+        em.setBodyTemplate(body.getEmailBodyTemplate() == null ? "" : body.getEmailBodyTemplate());
+
+        boolean emailReady = AuthRegisterEmailSupport.isDeliveryReady(em);
+        if (body.isOpenRegistration() && !emailReady) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "开启自助注册须先配置 SMTP 主机、发件人地址、SMTP 用户名与 SMTP 密码（QQ 邮箱须填授权码）");
+        }
+        boolean persistOpen = body.isOpenRegistration() && emailReady;
+
+        AuthRegisterVerificationConfig cfg = new AuthRegisterVerificationConfig();
+        cfg.setCodeLength(body.getCodeLength() <= 0 ? 6 : body.getCodeLength());
+        cfg.setCodeTtlSeconds(body.getCodeTtlSeconds() <= 0 ? 600 : body.getCodeTtlSeconds());
+        cfg.setSendCooldownSeconds(body.getSendCooldownSeconds() <= 0 ? 60 : body.getSendCooldownSeconds());
+        cfg.setEmail(em);
+
+        List<PutItem> items = new ArrayList<>();
+        PutItem openReg = new PutItem();
+        openReg.setKey(TenantRuntimeSettingKey.AUTH_OPEN_REGISTRATION.getStorage());
+        openReg.setValueText(persistOpen ? "true" : "false");
+        items.add(openReg);
+
+        String json = authRegisterVerificationResolver.toJson(cfg);
+        if (json.length() > RUNTIME_JSON_MAX_CHARS) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "验证码配置 JSON 过长");
+        }
+        items.add(item(TenantRuntimeSettingKey.AUTH_REGISTER_VERIFICATION_JSON, json));
+        tenantRuntimeSettingApplicationService.replace(tenantId, items);
+        return load(tenantId);
+    }
+
+    private AuthRegisterRuntimeDto readAuthRegisterRuntime(long tenantId) {
+        boolean storedOpen =
+                tenantRuntimeSettingApplicationService.isAuthOpenRegistrationEnabled(tenantId);
+        AuthRegisterVerificationConfig cfg = authRegisterVerificationResolver.resolve(tenantId);
+        AuthRegisterVerificationConfig.EmailChannel em = cfg.getEmail();
+        boolean emailReady = AuthRegisterEmailSupport.isDeliveryReady(em);
+        return new AuthRegisterRuntimeDto(
+                storedOpen && emailReady,
+                emailReady,
+                cfg.getCodeLength(),
+                cfg.getCodeTtlSeconds(),
+                cfg.getSendCooldownSeconds(),
+                em.getSmtpHost(),
+                em.getSmtpPort(),
+                em.getUsername(),
+                isPasswordConfigured(em.getPassword()),
+                em.getFrom(),
+                em.isSsl(),
+                em.getSubjectTemplate(),
+                em.getBodyTemplate());
+    }
+
+    private String resolveEmailPassword(long tenantId, String incoming) {
+        if (incoming != null && !incoming.isBlank()) {
+            String t = incoming.trim();
+            if (isAdminPasswordMaskSentinel(t)) {
+                return readStoredEmailPassword(tenantId);
+            }
+            return t;
+        }
+        return readStoredEmailPassword(tenantId);
+    }
+
+    private String readStoredEmailPassword(long tenantId) {
+        AuthRegisterVerificationConfig existing = authRegisterVerificationResolver.resolve(tenantId);
+        String stored = existing.getEmail().getPassword();
+        return stored == null ? "" : stored;
+    }
+
+    /** 管理端「已配置」占位符误提交时保留库内原密码。 */
+    private static boolean isAdminPasswordMaskSentinel(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        String t = value.trim();
+        if ("********".equals(t) || "••••••••".equals(t)) {
+            return true;
+        }
+        return t.chars().allMatch(ch -> ch == '*' || ch == '•');
+    }
+
+    private static boolean isPasswordConfigured(String password) {
+        return password != null && !password.isBlank();
+    }
+
+    private static String trimOrEmpty(String s) {
+        return s == null ? "" : s.trim();
     }
 
     private static PutItem item(TenantRuntimeSettingKey key, String valueText) {
@@ -291,7 +399,25 @@ public class TenantShellAdminApplicationService {
     }
 
     public record ShellConfigResponse(
-            BrandingDto branding, ModelCallingRuntimeDto modelCallingRuntime, OutboundSectionDto outbound) {}
+            BrandingDto branding,
+            ModelCallingRuntimeDto modelCallingRuntime,
+            AuthRegisterRuntimeDto authRegister,
+            OutboundSectionDto outbound) {}
+
+    public record AuthRegisterRuntimeDto(
+            boolean openRegistration,
+            boolean emailDeliveryReady,
+            int codeLength,
+            int codeTtlSeconds,
+            int sendCooldownSeconds,
+            String emailSmtpHost,
+            int emailSmtpPort,
+            String emailUsername,
+            boolean emailPasswordConfigured,
+            String emailFrom,
+            boolean emailSsl,
+            String emailSubjectTemplate,
+            String emailBodyTemplate) {}
 
     public record ModelCallingRuntimeDto(
             String memoryEmbeddingVectorModelId,
@@ -370,5 +496,21 @@ public class TenantShellAdminApplicationService {
         private String ragVectorDimension;
         /** {@link TenantRuntimeSettingKey#RAG_RETRIEVAL_MODE}；空表示走 {@code ai.rag.retrieval-mode} */
         private String ragRetrievalMode;
+    }
+
+    @Data
+    public static class ShellAuthRegisterPutBody {
+        private boolean openRegistration;
+        private int codeLength;
+        private int codeTtlSeconds;
+        private int sendCooldownSeconds;
+        private String emailSmtpHost;
+        private int emailSmtpPort;
+        private String emailUsername;
+        private String emailPassword;
+        private String emailFrom;
+        private boolean emailSsl;
+        private String emailSubjectTemplate;
+        private String emailBodyTemplate;
     }
 }

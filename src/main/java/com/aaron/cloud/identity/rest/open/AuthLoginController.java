@@ -16,6 +16,11 @@ import com.aaron.cloud.common.web.LoginRegionResolver;
 import com.aaron.cloud.common.web.ApiErrorResponse;
 import com.aaron.cloud.common.web.rest.OpenV1ControllerBases;
 import com.aaron.cloud.identity.jwt.JwtLocalAdminTokenService;
+import com.aaron.cloud.identity.open.AuthRegisterEmailSupport;
+import com.aaron.cloud.identity.open.OpenRegistrationEmailSupport;
+import com.aaron.cloud.identity.open.OpenRegistrationEmailVerificationService;
+import com.aaron.cloud.identity.open.OpenRegistrationVerificationSender;
+import com.aaron.cloud.identity.open.TenantAuthRegisterVerificationResolver;
 import com.aaron.cloud.identity.service.OpenRegistrationApplicationService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
@@ -45,6 +50,9 @@ public class AuthLoginController extends OpenV1ControllerBases.Auth {
     private final JwtLocalAdminTokenService jwtLocalAdminTokenService;
     private final TenantRuntimeSettingApplicationService tenantRuntimeSettingApplicationService;
     private final OpenRegistrationApplicationService openRegistrationApplicationService;
+    private final OpenRegistrationEmailVerificationService emailVerificationService;
+    private final OpenRegistrationVerificationSender registrationVerificationSender;
+    private final TenantAuthRegisterVerificationResolver authRegisterVerificationResolver;
     private final ProfileDeviceMergeApplicationService profileDeviceMergeApplicationService;
 
     @Value("${ai.tenant.default-id:1}")
@@ -52,7 +60,7 @@ public class AuthLoginController extends OpenV1ControllerBases.Auth {
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginRequest req, HttpServletRequest request) throws Exception {
-        String loginName = trimLoginName(req);
+        String loginName = normalizeLoginIdentifier(req);
         if (loginName.isEmpty()) {
             return ResponseEntity.status(401).build();
         }
@@ -120,9 +128,7 @@ public class AuthLoginController extends OpenV1ControllerBases.Auth {
             }
         }
         try {
-            String ip = HttpClientIp.resolve(request);
-            String region = LoginRegionResolver.resolve(request);
-            userAccountRepository.updateLastLogin(user.getId(), BeijingTime.nowLocal(), ip, region);
+            recordLastLogin(user.getId(), request);
         } catch (Exception ex) {
             log.warn("update last_login failed userId={}", user.getId(), ex);
         }
@@ -132,32 +138,104 @@ public class AuthLoginController extends OpenV1ControllerBases.Auth {
     /**
      * C 端自助注册：在指定租户下创建 {@link TenantMemberRole#MEMBER} 账号并签发与登录相同的 JWT。
      */
-    @PostMapping("/register")
-    public ResponseEntity<LoginResponse> register(@RequestBody RegisterRequest req, HttpServletRequest request)
-            throws Exception {
-        String loginName = trimLoginName(req);
-        String password = req.getPassword() == null ? "" : req.getPassword();
-        if (loginName.length() < 3 || loginName.length() > 64) {
-            return ResponseEntity.badRequest().build();
-        }
-        if (password.length() < 6) {
-            return ResponseEntity.badRequest().build();
-        }
-        if (userAccountRepository.existsLoginName(loginName, null)) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+    /** 发送注册邮箱验证码（须租户开放注册）。 */
+    @PostMapping("/register/send-code")
+    public ResponseEntity<?> sendRegisterCode(
+            @RequestBody SendRegisterCodeRequest req, HttpServletRequest request) {
+        String email = OpenRegistrationEmailSupport.normalize(req.getEmail());
+        if (!OpenRegistrationEmailSupport.isValid(email)) {
+            return badRegisterError(HttpStatus.BAD_REQUEST, ErrorCodes.REGISTER_EMAIL_INVALID, "invalid email");
         }
         long tenantId = resolveSignupTenantId(request);
         if (tenantRepository.findById(tenantId).isEmpty()) {
             return ResponseEntity.badRequest().build();
         }
-        if (!tenantRuntimeSettingApplicationService.isAuthOpenRegistrationEnabled(tenantId)) {
+        if (!isOpenRegistrationAvailable(tenantId)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
+        if (userAccountRepository.existsLoginName(email, null)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(
+                            ApiErrorResponse.builder()
+                                    .code(ErrorCodes.LOGIN_NAME_CONFLICT)
+                                    .message("email already registered")
+                                    .build());
+        }
+        long cooldown = emailVerificationService.remainingCooldownSeconds(tenantId, email);
+        if (cooldown > 0) {
+            return ResponseEntity.ok(new SendRegisterCodeResponse(false, cooldown));
+        }
+        String code = emailVerificationService.issueCode(tenantId, email);
+        String tenantName =
+                tenantRepository.findById(tenantId).map(t -> t.getName()).orElse("");
+        registrationVerificationSender.sendRegisterCode(
+                tenantId, tenantName, email, code, emailVerificationService.getCodeTtlMinutes(tenantId));
+        return ResponseEntity.ok(
+                new SendRegisterCodeResponse(true, emailVerificationService.getSendCooldownSeconds(tenantId)));
+    }
 
+    @PostMapping("/register")
+    public ResponseEntity<?> register(@RequestBody RegisterRequest req, HttpServletRequest request)
+            throws Exception {
+        String email = OpenRegistrationEmailSupport.normalize(req.getEmail());
+        String password = req.getPassword() == null ? "" : req.getPassword();
+        if (!OpenRegistrationEmailSupport.isValid(email)) {
+            return badRegisterError(HttpStatus.BAD_REQUEST, ErrorCodes.REGISTER_EMAIL_INVALID, "invalid email");
+        }
+        if (!OpenRegistrationEmailSupport.isStrongEnoughPassword(password)) {
+            return badRegisterError(HttpStatus.BAD_REQUEST, ErrorCodes.REGISTER_PASSWORD_WEAK, "weak password");
+        }
+        long tenantId = resolveSignupTenantId(request);
+        if (tenantRepository.findById(tenantId).isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+        if (!isOpenRegistrationAvailable(tenantId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        if (userAccountRepository.existsLoginName(email, null)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(
+                            ApiErrorResponse.builder()
+                                    .code(ErrorCodes.LOGIN_NAME_CONFLICT)
+                                    .message("email already registered")
+                                    .build());
+        }
+        if (!emailVerificationService.verifyAndConsume(tenantId, email, req.getVerificationCode())) {
+            HttpStatus status =
+                    emailVerificationService.hasPendingCode(tenantId, email)
+                            ? HttpStatus.BAD_REQUEST
+                            : HttpStatus.GONE;
+            return badRegisterError(status, ErrorCodes.REGISTER_CODE_INVALID, "invalid verification code");
+        }
+
+        req.setEmail(email);
         String deviceId = request.getHeader("X-Device-Id");
-        LoginResponse body =
-                openRegistrationApplicationService.register(tenantId, req, deviceId);
+        LoginResponse body = openRegistrationApplicationService.register(tenantId, req, deviceId);
+        userAccountRepository.findByLoginName(email).ifPresent(u -> {
+            try {
+                recordLastLogin(u.getId(), request);
+            } catch (Exception ex) {
+                log.warn("update last_login failed userId={}", u.getId(), ex);
+            }
+        });
         return ResponseEntity.status(HttpStatus.CREATED).body(body);
+    }
+
+    private static ResponseEntity<ApiErrorResponse> badRegisterError(
+            HttpStatus status, String code, String message) {
+        return ResponseEntity.status(status)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(ApiErrorResponse.builder().code(code).message(message).build());
+    }
+
+    private static String normalizeLoginIdentifier(LoginRequest req) {
+        String raw = req.getLoginName() == null ? "" : req.getLoginName().trim();
+        if (raw.contains("@")) {
+            return OpenRegistrationEmailSupport.normalize(raw);
+        }
+        return raw;
     }
 
     private static String trimLoginName(LoginRequest req) {
@@ -167,11 +245,19 @@ public class AuthLoginController extends OpenV1ControllerBases.Auth {
         return req.getLoginName().trim();
     }
 
-    private static String trimLoginName(RegisterRequest req) {
-        if (req.getLoginName() == null) {
-            return "";
+    private boolean isOpenRegistrationAvailable(long tenantId) {
+        if (!tenantRuntimeSettingApplicationService.isAuthOpenRegistrationEnabled(tenantId)) {
+            return false;
         }
-        return req.getLoginName().trim();
+        return AuthRegisterEmailSupport.isDeliveryReady(
+                authRegisterVerificationResolver.resolve(tenantId).getEmail());
+    }
+
+    /** 登录/注册成功后写入 {@code sec_user_account.last_login_*}（管理端成员列表与数据概览埋点）。 */
+    private void recordLastLogin(long userId, HttpServletRequest request) {
+        String ip = HttpClientIp.resolve(request);
+        String region = LoginRegionResolver.resolve(request);
+        userAccountRepository.updateLastLogin(userId, BeijingTime.nowLocal(), ip, region);
     }
 
     private long resolveSignupTenantId(HttpServletRequest request) {
@@ -201,10 +287,21 @@ public class AuthLoginController extends OpenV1ControllerBases.Auth {
     }
 
     @Data
+    public static class SendRegisterCodeRequest {
+        private String email;
+    }
+
+    public record SendRegisterCodeResponse(boolean sent, long cooldownSeconds) {}
+
+    @Data
     public static class RegisterRequest {
+        /** 注册邮箱（规范化后作为 {@code login_name}）。 */
+        private String email;
+        /** 兼容旧客户端；新注册请传 {@link #email}。 */
         private String loginName;
         private String password;
         private String displayName;
+        private String verificationCode;
     }
 
     public record LoginResponse(

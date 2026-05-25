@@ -27,8 +27,10 @@ public class TenantFilterConfiguration {
 
     @Bean
     public FilterRegistrationBean<TenantContextFilter> tenantContextFilterRegistration(
-            SysTenantRepository tenantRepository, @Value("${ai.tenant.default-id:1}") long defaultTenantId) {
-        var filter = new TenantContextFilter(tenantRepository, defaultTenantId);
+            SysTenantRepository tenantRepository,
+            SecUserAccountRepository userAccountRepository,
+            @Value("${ai.tenant.default-id:1}") long defaultTenantId) {
+        var filter = new TenantContextFilter(tenantRepository, userAccountRepository, defaultTenantId);
         var reg = new FilterRegistrationBean<TenantContextFilter>();
         reg.setFilter(filter);
         reg.addUrlPatterns("/*");

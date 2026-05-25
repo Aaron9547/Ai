@@ -1,7 +1,8 @@
 package com.aaron.cloud.identity.rest.open;
 
+import com.aaron.cloud.common.context.LoginContextUtils;
+import com.aaron.cloud.common.context.LoginUser;
 import com.aaron.cloud.common.context.TenantContextHolder;
-import com.aaron.cloud.common.security.SecUserAccountRepository;
 import com.aaron.cloud.common.tenant.SysTenantRepository;
 import com.aaron.cloud.common.web.rest.OpenV1ControllerBases;
 import java.util.LinkedHashMap;
@@ -15,14 +16,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class SystemController extends OpenV1ControllerBases.OpenSystem {
 
     private final SysTenantRepository sysTenantRepository;
-    private final SecUserAccountRepository secUserAccountRepository;
 
     /**
      * 当前租户上下文快照；访客 {@code userId} 可能为 {@code null}，不可用 {@link Map#of}（禁止 null 值）。
      *
      * <p>若存在 {@code tenantId}，附带 {@code tenantName}、{@code tenantCode}（库中无记录时为 {@code null}），供 C 端展示「名称（代码）」。
      *
-     * <p>已登录且存在 {@code userId} 时附带 {@code loginName}、{@code displayName}（来自 {@code sec_user_account}），不在此接口返回数字型用户主键以外的敏感字段。
+     * <p>已登录且存在 {@code userId} 时附带 {@code loginName}、{@code displayName}（来自线程内 {@link LoginUser} 快照），不在此接口返回数字型用户主键以外的敏感字段。
      */
     @GetMapping("/me")
     public Map<String, Object> me() {
@@ -41,19 +41,10 @@ public class SystemController extends OpenV1ControllerBases.OpenSystem {
         out.put("tenantId", snap.getTenantId());
         out.put("userId", snap.getUserId());
         out.put("deviceId", snap.getDeviceId());
-        Long uid = snap.getUserId();
-        if (uid != null) {
-            secUserAccountRepository
-                    .findById(uid)
-                    .ifPresentOrElse(
-                            u -> {
-                                out.put("loginName", u.getLoginName());
-                                out.put("displayName", u.getDisplayName());
-                            },
-                            () -> {
-                                out.put("loginName", null);
-                                out.put("displayName", null);
-                            });
+        LoginUser user = LoginContextUtils.getUser();
+        if (user != null) {
+            out.put("loginName", user.getLoginName());
+            out.put("displayName", user.getDisplayName());
         } else {
             out.put("loginName", null);
             out.put("displayName", null);

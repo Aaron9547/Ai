@@ -12,7 +12,7 @@ const LS_PREFIX = "daily-recommend-";
 const LS_META_KEY = "daily-recommend-meta";
 
 const PROFILE_POLL_INTERVAL_MS = 2000;
-const PROFILE_POLL_MAX_ATTEMPTS = 20;
+const PROFILE_POLL_MAX_ATTEMPTS = 60;
 
 type CachedPayload = {
   cacheKey: string;

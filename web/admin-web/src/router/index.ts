@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from "vue-router";
 import AdminLayout from "@/layouts/AdminLayout.vue";
 import { AI_ADMIN_ACCESS_TOKEN_KEY } from "@/plugins/http";
 import { readJwtTmr } from "@/utils/jwtSubject";
+import { guardAdminRoutePath } from "@/utils/adminRouteAccess";
 
 function authSkip(): boolean {
   return import.meta.env.VITE_ADMIN_AUTH_SKIP === "true";
@@ -147,6 +148,12 @@ router.beforeEach((to) => {
     if (readJwtTmr(token) !== "FOUNDER") {
       return { path: "/dashboard" };
     }
+  }
+  const token = localStorage.getItem(AI_ADMIN_ACCESS_TOKEN_KEY);
+  const isFounder = readJwtTmr(token) === "FOUNDER";
+  const redirect = guardAdminRoutePath(to.path, isFounder);
+  if (redirect) {
+    return { path: redirect };
   }
 });
 

@@ -5,9 +5,9 @@ import com.aaron.cloud.common.api.enums.TenantMemberRole;
 import com.aaron.cloud.common.api.enums.UserAccountStatus;
 import com.aaron.cloud.common.audit.SysAuditEventRepository;
 import com.aaron.cloud.common.audit.entity.SysAuditEvent;
-import com.aaron.cloud.common.security.SecUserAccountRepository;
+import com.aaron.cloud.common.context.LoginContextUtils;
+import com.aaron.cloud.common.context.LoginUser;
 import com.aaron.cloud.common.security.SysTenantMemberRepository;
-import com.aaron.cloud.common.security.entity.SecUserAccount;
 import com.aaron.cloud.common.security.entity.SysTenantMember;
 import com.aaron.cloud.common.tenant.SysTenantRepository;
 import com.aaron.cloud.common.web.ApiErrorResponse;
@@ -22,8 +22,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -42,7 +40,6 @@ import java.util.List;
 @ConditionalOnProperty(name = "ai.providers.auth", havingValue = "jwt-local")
 public class AdminAuthContextRestController extends ApiV1ControllerBases.Auth {
 
-    private final SecUserAccountRepository userAccountRepository;
     private final SysTenantMemberRepository tenantMemberRepository;
     private final SysTenantRepository tenantRepository;
     private final JwtLocalAdminTokenService jwtLocalAdminTokenService;
@@ -63,13 +60,10 @@ public class AdminAuthContextRestController extends ApiV1ControllerBases.Auth {
                     .body(ApiErrorResponse.builder().code(ErrorCodes.VALIDATION).message("tenantId invalid").build());
         }
 
-        Long uidClaim = resolveUidFromJwt();
-        if (uidClaim == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-
-        SecUserAccount user = userAccountRepository.findById(uidClaim).orElse(null);
-        if (user == null) {
+        LoginUser user;
+        try {
+            user = LoginContextUtils.requireUser();
+        } catch (IllegalStateException ex) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
         if (user.getStatus() != UserAccountStatus.ACTIVE) {
@@ -144,24 +138,6 @@ public class AdminAuthContextRestController extends ApiV1ControllerBases.Auth {
                                 .code(ErrorCodes.ADMIN_CONTEXT_DENIED)
                                 .message("no membership for tenant and role")
                                 .build());
-    }
-
-    private static Long resolveUidFromJwt() {
-        var auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth instanceof JwtAuthenticationToken jwtAuth) {
-            Object raw = jwtAuth.getToken().getClaim("uid");
-            if (raw instanceof Number n) {
-                return n.longValue();
-            }
-            if (raw instanceof String s) {
-                try {
-                    return Long.parseLong(s.trim());
-                } catch (NumberFormatException ignored) {
-                    return null;
-                }
-            }
-        }
-        return null;
     }
 
     @Data

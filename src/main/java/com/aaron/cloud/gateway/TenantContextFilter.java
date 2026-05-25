@@ -1,7 +1,10 @@
 package com.aaron.cloud.gateway;
 
 import com.aaron.cloud.common.api.enums.TenantMemberRole;
+import com.aaron.cloud.common.context.LoginUser;
+import com.aaron.cloud.common.context.LoginUserContextHolder;
 import com.aaron.cloud.common.context.TenantContextHolder;
+import com.aaron.cloud.common.security.SecUserAccountRepository;
 import com.aaron.cloud.common.security.TenantJwtTmsParser;
 import com.aaron.cloud.common.tenant.SysTenantRepository;
 import jakarta.servlet.FilterChain;
@@ -28,6 +31,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class TenantContextFilter extends OncePerRequestFilter {
 
     private final SysTenantRepository tenantRepository;
+    private final SecUserAccountRepository userAccountRepository;
     private final long defaultTenantId;
 
     @Override
@@ -124,13 +128,15 @@ public class TenantContextFilter extends OncePerRequestFilter {
             if (deviceId != null) {
                 MDC.put("deviceId", deviceId);
             }
-            TenantContextHolder.set(
+            var snap =
                     TenantContextHolder.TenantSnapshot.builder()
                             .tenantId(tenantId)
                             .userId(userId)
                             .deviceId(deviceId)
                             .memberRole(memberRole)
-                            .build());
+                            .build();
+            LoginUser loginUser = resolveLoginUser(userId);
+            TenantContextHolder.set(snap, loginUser);
             filterChain.doFilter(request, response);
         } finally {
             TenantContextHolder.clear();
@@ -200,5 +206,17 @@ public class TenantContextFilter extends OncePerRequestFilter {
             return n.longValue();
         }
         return Long.parseLong(claim.toString());
+    }
+
+    /** {@link JwtSessionGateFilter} 已加载且 uid 一致时复用，避免同请求二次查库。 */
+    private LoginUser resolveLoginUser(Long userId) {
+        if (userId == null) {
+            return null;
+        }
+        LoginUser cached = LoginUserContextHolder.getOrNull();
+        if (cached != null && cached.getId() == userId) {
+            return cached;
+        }
+        return userAccountRepository.findById(userId).map(LoginUser::fromAccount).orElse(null);
     }
 }

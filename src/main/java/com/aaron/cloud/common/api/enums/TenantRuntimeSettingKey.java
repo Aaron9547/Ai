@@ -12,12 +12,19 @@ import lombok.RequiredArgsConstructor;
 @Getter
 @RequiredArgsConstructor
 public enum TenantRuntimeSettingKey {
+    /** C 端注册验证码发送（邮件 SMTP、标题/正文模板等 JSON；管理端「外观与模型调用」配置） */
+    AUTH_REGISTER_VERIFICATION_JSON(
+            "AUTH_REGISTER_VERIFICATION_JSON",
+            "注册验证码发送（JSON）",
+            SettingValueKind.STRING,
+            "{}",
+            true),
     /** C 端 {@code POST /open/v1/auth/register} 是否允许（按注册目标租户判断） */
     AUTH_OPEN_REGISTRATION(
             "AUTH_OPEN_REGISTRATION",
             "自助注册",
             SettingValueKind.BOOLEAN,
-            "true",
+            "false",
             false),
     /**
      * 用户分层记忆写入 Milvus 时使用的嵌入模型：值为 {@code sys_llm_model.id}（须为 VECTOR、启用）；留空则退化为哈希占位向量。
@@ -198,7 +205,8 @@ public enum TenantRuntimeSettingKey {
                     SITE_CRAWL_PRESET,
                     SITE_CRAWL_RUNTIME_JSON,
                     CHAT_STARTER_DAILY_HOT_ENABLED,
-                    CHAT_STARTER_DAILY_HOT_CRON -> true;
+                    CHAT_STARTER_DAILY_HOT_CRON,
+                    AUTH_REGISTER_VERIFICATION_JSON -> true;
             default -> false;
         };
     }

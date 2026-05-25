@@ -700,3 +700,4 @@ const convGroups = computed<ConvGroup[]>(() => {
   white-space: nowrap;
   line-height: 1.2;
 }
+</style>
