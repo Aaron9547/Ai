@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 @ConditionalOnProperty(prefix = "ai.rocketmq", name = "enabled", havingValue = "true")
-public class JobPublisher {
+public class JobPublisher implements JobPublisherPort {
 
     private final RocketMQTemplate rocketMQTemplate;
 

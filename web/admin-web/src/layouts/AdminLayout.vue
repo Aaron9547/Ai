@@ -101,6 +101,10 @@
             <el-icon><Monitor /></el-icon>
             <span>{{ t("admin.menu.gateway") }}</span>
           </template>
+          <el-menu-item v-if="menuAllowed('GATEWAY_API')" index="/gateway/access-parties">
+            <el-icon><Promotion /></el-icon>
+            <span>{{ t("admin.menu.accessParties") }}</span>
+          </el-menu-item>
           <el-menu-item v-if="menuAllowed('GATEWAY_API')" index="/gateway/api-rate-limits">
             <el-icon><Setting /></el-icon>
             <span>{{ t("admin.menu.apiRateLimits") }}</span>

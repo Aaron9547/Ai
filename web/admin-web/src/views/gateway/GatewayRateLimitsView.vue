@@ -12,6 +12,7 @@
         <el-tab-pane :label="t('views.gateway.tabEndpoints')" name="endpoints">
           <div class="tab-toolbar">
             <el-button type="primary" @click="openEndpointCreate">{{ t("views.gateway.newEndpoint") }}</el-button>
+            <el-button :loading="syncLoading" @click="onSyncOpenApiSpec">{{ t("views.gateway.syncOpenApiSpec") }}</el-button>
             <el-button text type="primary" :loading="epLoading" @click="loadEndpoints">{{ t("views.gateway.refresh") }}</el-button>
           </div>
           <el-table v-loading="epLoading" :data="epRows" stripe border :empty-text="t('views.gateway.emptyEndpoints')">
@@ -142,8 +143,15 @@
         <el-form-item :label="t('views.gateway.labelRemark')">
           <el-input v-model="epForm.remark" type="textarea" :rows="2" />
         </el-form-item>
+        <el-form-item :label="t('views.gateway.labelRequestSpec')">
+          <el-input v-model="epForm.requestSpecJson" type="textarea" :rows="4" :placeholder="t('views.gateway.requestSpecPh')" />
+        </el-form-item>
+        <el-form-item :label="t('views.gateway.labelResponseSpec')">
+          <el-input v-model="epForm.responseSpecJson" type="textarea" :rows="4" :placeholder="t('views.gateway.responseSpecPh')" />
+        </el-form-item>
       </el-form>
       <template #footer>
+        <el-button v-if="epEditId" :loading="syncOneLoading" @click="onSyncOpenApiSpecOne">{{ t("views.gateway.syncOpenApiSpecOne") }}</el-button>
         <el-button @click="epDlg = false">{{ t("views.gateway.cancel") }}</el-button>
         <el-button type="primary" :loading="epSaving" @click="submitEndpoint">{{ t("views.gateway.save") }}</el-button>
       </template>
@@ -248,6 +256,8 @@ const epSize = ref(20);
 const epDlg = ref(false);
 const epEditId = ref<number | null>(null);
 const epSaving = ref(false);
+const syncLoading = ref(false);
+const syncOneLoading = ref(false);
 const epForm = reactive({
   displayName: "",
   pathPattern: "",
@@ -255,6 +265,8 @@ const epForm = reactive({
   sortOrder: 0,
   enabledOn: true,
   remark: "",
+  requestSpecJson: "",
+  responseSpecJson: "",
 });
 
 const rlLoading = ref(false);
@@ -321,6 +333,46 @@ function onEpSizeChange() {
   void loadEndpoints();
 }
 
+async function onSyncOpenApiSpec() {
+  try {
+    await ElMessageBox.confirm(t("views.gateway.syncOpenApiSpecConfirm"), { type: "info" });
+  } catch {
+    return;
+  }
+  syncLoading.value = true;
+  try {
+    const result = await epApi.syncOpenApiSpec(true);
+    ElMessage.success(
+      t("views.gateway.syncOpenApiSpecDone", {
+        updated: result.updated,
+        skipped: result.skipped,
+        unmatched: result.unmatched,
+      }),
+    );
+    await loadEndpoints();
+    await loadPicker();
+  } catch (e: unknown) {
+    ElMessage.error(apiRequestErrorMessage(e, t("views.gateway.syncOpenApiSpecFailed")));
+  } finally {
+    syncLoading.value = false;
+  }
+}
+
+async function onSyncOpenApiSpecOne() {
+  if (!epEditId.value) return;
+  syncOneLoading.value = true;
+  try {
+    const row = await epApi.syncOpenApiSpecOne(epEditId.value, true);
+    epForm.requestSpecJson = row.requestSpecJson ?? "";
+    epForm.responseSpecJson = row.responseSpecJson ?? "";
+    ElMessage.success(t("views.gateway.syncOpenApiSpecOneDone"));
+  } catch (e: unknown) {
+    ElMessage.error(apiRequestErrorMessage(e, t("views.gateway.syncOpenApiSpecFailed")));
+  } finally {
+    syncOneLoading.value = false;
+  }
+}
+
 async function loadPicker() {
   try {
     pickerEndpoints.value = await epApi.listApiEndpointPicker();
@@ -378,6 +430,8 @@ function openEndpointCreate() {
   epForm.sortOrder = 0;
   epForm.enabledOn = true;
   epForm.remark = "";
+  epForm.requestSpecJson = "";
+  epForm.responseSpecJson = "";
   epDlg.value = true;
 }
 
@@ -389,7 +443,24 @@ function openEndpointEdit(row: epApi.ApiEndpointRow) {
   epForm.sortOrder = row.sortOrder ?? 0;
   epForm.enabledOn = row.enabled === "ON";
   epForm.remark = row.remark ?? "";
+  epForm.requestSpecJson = row.requestSpecJson ?? "";
+  epForm.responseSpecJson = row.responseSpecJson ?? "";
   epDlg.value = true;
+}
+
+function parseSpecJson(raw: string, label: string): string | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    throw new Error(label);
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error(label);
+  }
+  return trimmed;
 }
 
 function resetEpDlg() {
@@ -399,6 +470,15 @@ function resetEpDlg() {
 async function submitEndpoint() {
   epSaving.value = true;
   try {
+    let requestSpecJson: string | undefined;
+    let responseSpecJson: string | undefined;
+    try {
+      requestSpecJson = parseSpecJson(epForm.requestSpecJson, "request");
+      responseSpecJson = parseSpecJson(epForm.responseSpecJson, "response");
+    } catch {
+      ElMessage.warning(t("views.gateway.specJsonInvalid"));
+      return;
+    }
     if (epEditId.value == null) {
       await epApi.createApiEndpoint({
         displayName: epForm.displayName.trim(),
@@ -407,6 +487,8 @@ async function submitEndpoint() {
         sortOrder: epForm.sortOrder,
         enabled: epForm.enabledOn ? "ON" : "OFF",
         remark: epForm.remark || undefined,
+        requestSpecJson,
+        responseSpecJson,
       });
       ElMessage.success(t("views.gateway.created"));
     } else {
@@ -417,6 +499,8 @@ async function submitEndpoint() {
         sortOrder: epForm.sortOrder,
         enabled: epForm.enabledOn ? "ON" : "OFF",
         remark: epForm.remark,
+        requestSpecJson,
+        responseSpecJson,
       });
       ElMessage.success(t("views.gateway.saved"));
     }

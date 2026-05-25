@@ -8,6 +8,8 @@ export type ApiEndpointRow = {
   remark?: string | null;
   enabled: "ON" | "OFF";
   sortOrder?: number | null;
+  requestSpecJson?: string | null;
+  responseSpecJson?: string | null;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -36,6 +38,8 @@ export async function createApiEndpoint(body: {
   remark?: string;
   enabled?: "ON" | "OFF";
   sortOrder?: number;
+  requestSpecJson?: string;
+  responseSpecJson?: string;
 }): Promise<ApiEndpointRow> {
   const { data } = await http.post<ApiEndpointRow>("/api/v1/admin/gateway-api-endpoints", body);
   return data;
@@ -50,9 +54,36 @@ export async function updateApiEndpoint(
     remark?: string;
     enabled?: "ON" | "OFF";
     sortOrder?: number;
+    requestSpecJson?: string;
+    responseSpecJson?: string;
   },
 ): Promise<ApiEndpointRow> {
   const { data } = await http.put<ApiEndpointRow>(`/api/v1/admin/gateway-api-endpoints/${id}`, body);
+  return data;
+}
+
+export type OpenApiSpecSyncResult = {
+  updated: number;
+  skipped: number;
+  unmatched: number;
+  unmatchedSamples: string[];
+};
+
+export async function syncOpenApiSpec(emptyOnly = true): Promise<OpenApiSpecSyncResult> {
+  const { data } = await http.post<OpenApiSpecSyncResult>(
+    "/api/v1/admin/gateway-api-endpoints/sync-openapi-spec",
+    null,
+    { params: { emptyOnly } },
+  );
+  return data;
+}
+
+export async function syncOpenApiSpecOne(id: number, emptyOnly = true): Promise<ApiEndpointRow> {
+  const { data } = await http.post<ApiEndpointRow>(
+    `/api/v1/admin/gateway-api-endpoints/${id}/sync-openapi-spec`,
+    null,
+    { params: { emptyOnly } },
+  );
   return data;
 }
 

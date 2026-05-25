@@ -32,7 +32,7 @@ export function requiredMenuForAdminPath(path: string): AdminRouteRequirement | 
   if (p.startsWith("/users")) return "USERS";
   if (p.startsWith("/tenant/tenants")) return "FOUNDER_ONLY";
   if (p.startsWith("/system/menu-items")) return "FOUNDER_ONLY";
-  if (p.startsWith("/gateway/api-rate-limits") || p.startsWith("/gateway/cors-origins")) return "GATEWAY_API";
+  if (p.startsWith("/gateway/api-rate-limits") || p.startsWith("/gateway/cors-origins") || p.startsWith("/gateway/access-parties")) return "GATEWAY_API";
   if (p.startsWith("/gateway/access-logs")) return "ACCESS_LOGS";
   if (p.startsWith("/audit/events")) return "AUDIT_EVENTS";
   if (p.startsWith("/billing/metering")) return "METERING";

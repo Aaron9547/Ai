@@ -20,11 +20,11 @@
 
 以下任一路径有改动（**含未跟踪新文件**）即触发：
 
-- **`src/main/java/**`**、**`src/test/java/**`**
+- **`modules/**/src/main/java/**`**、**`modules/**/src/test/java/**`**（Maven 子模块源码；历史单模块路径 **`src/main/java/**`** 若仍存在亦触发）
 - **`web/user-web/**`**、**`web/admin-web/**`**
 - **`db/mysql/**`**（含 **`schema_v1.sql`**、**`migrate_*.sql`**、**`gw_api_endpoint_catalog_inserts.sql`**）
-- **`pom.xml`**（含 **`<version>`** 与生产依赖）
-- **`src/main/resources/application*.yml`**（及等价 **`bootstrap*.yml`**）
+- **`pom.xml`**（含根 parent 与 **`modules/*/pom.xml`** 的 **`<version>`** 与生产依赖）
+- **`modules/ai-bootstrap/src/main/resources/application*.yml`**（及等价 **`bootstrap*.yml`**）
 
 **未触及**上列、仅改 **`.cursorrules` / `PROJECT.md` / 其它说明性 `.md`**：按 **§0.4「仅文档」**处理，**不 bump**（可在当前 **`###`** 下记「文档修订」）。
 
@@ -267,6 +267,7 @@
 - **ORM 与 SQL 载体（写死）**：**所有**数据库访问基于 **MyBatis-Plus** 与 **MyBatis-Join**（含分页、条件构造、多表关联等）；在 **Java 代码** 中通过 Wrapper、Join API、类型安全的 Lambda 条件等**拼接与组装**，**禁止**使用 **MyBatis XML Mapper**（包括但不限于 `src/main/resources/mapper/**/*.xml`、`classpath*:mapper/**/*.xml` 等）承载或维护业务 SQL；**禁止**在业务路径上以手写 JDBC、字符串拼接裸 SQL 或大量 `@Select`/`@Update` 注解替代上述约定（框架回调、一次性数据迁移脚本等须在 CR/ADR 中显式说明且不得成为常态）。
 - **MySQL 物理建模（仓库约定）**：**禁止**在 DDL 与线上库使用 **`FOREIGN KEY` 物理外键**（不依赖 InnoDB 级联删除/引用检查）。表间关系一律用**业务 id 列**与**显式中间表**表达：**多对多**须用关联表（如 `sec_role_permission`、`mcp_tenant_server`、`sys_tenant_member`）；**一对多**中需在库侧独立维护的从属关系（如会话↔消息、知识库↔文档、文档↔分块）使用约定前缀 **`lnk_*`** 的中间表，**禁止**用物理外键替代该语义。孤儿行清理、级联语义在**应用服务或受控批任务**中完成，关键删除须 **`common.audit`** 可追溯。索引与 **`tenant_id` 行级隔离**仍须在 DDL 中显式声明；`db/mysql` 下脚本与本条对齐。
 - **业务码值：枚举优先，禁止写死（写死禁止）**：凡在代码路径中承载**业务语义**且取值为**有限集合**的概念——包括但不限于 **状态、类型、阶段、级别、来源、结果、渠道、扫描结论、规则种类**等——无论出现在**数据库列**、**实体/DTO**、**OpenAPI 出入参**还是 **MQ 消息 JSON** 字段中，在 Java 侧**应尽量**定义为 **`com.aaron.cloud.common.api.enums`**（默认）或经 **ADR** 备案的 **`common` 子包内唯一**集中位置下的**枚举**；持久化字段用 **`@EnumValue`**（推荐）或项目统一 **TypeHandler** 与 DDL 存储值一致。**禁止**在 `chat`/`rag`/`common` 等各包的业务、编排与持久化代码中，用**魔法数字、裸字符串**表达上述语义的分支、比较或赋值（含 `Wrapper.eq("status", 1)`、`Wrapper.in("type", Arrays.asList("a","b"))`、对业务码的 `if (x == 0)` / `switch ("PENDING")` 等）；**禁止**仅靠注释或口头约定维护码表。**库列**为 TINYINT/SMALLINT/VARCHAR 等时，枚举与 **DDL** 注释及列定义须一一对应。例外：**纯技术常量**（如 HTTP 状态码、框架枚举）、**一次性数据迁移脚本**（须在 CR/ADR 中标注且不得扩散为常态业务写法）可不受本条约束。
+- **枚举子包（`common.api.enums.*`，写死）**：上述枚举须按域放入 **`com.aaron.cloud.common.api.enums.{域}`** 子包（`chat`、`rag`、`llm`、`tenant`、`job`、`scheduled`、`gateway`、`profile`、`guardrail`、`identity`、`metering`、`mcp`、`eval`、`intent`、`notify`、`file`、`infra`）；**禁止**在 `chat`/`rag`/`model` 等业务顶层包定义会被 **`common` 持久化层或其它域跨包引用**的枚举（例：`CrawlQueueStatus`、`SiteCrawlPreset` 须在 `enums.rag`）。**进程选路类**（`AuthProviderMode`、`VectorStoreProviderMode`、`OutboundKind` 等）统一在 **`enums.infra`**。**扩展注册表**（`TenantRuntimeSettingKey`、`TenantScheduledExecutorCode`、`JobTaskType`、`ChatIntentHandlerKind`、`AdminMenuCode` 等）新增能力时**先补枚举项**再写 Handler/REST。**插件私有**参数 schema（实现 `IntentHandlerParamSpec`、仅单 Handler 使用）可留在业务包。**新增枚举 checklist**：① 放入正确子包 ② 注册表/实体/DTO 同步 ③ 全仓禁止对应业务字面量 ④ 有库表码表变更则同集更新 `schema_v1.sql`/migrate 注释。
 - 租户字段、索引与防跨租户查询策略在 **common 持久化层**统一体现（拦截器、Filter、显式 WHERE 等）。
 - **MySQL 物理表名与索引命名（写死）**：
   - **一律**小写 **`snake_case`**；**禁止**驼峰、混合大小写、无意义缩写堆砌。

@@ -48,6 +48,14 @@ const router = createRouter({
           component: () => import("../views/system/MenuItemsView.vue"),
         },
         {
+          path: "gateway/access-parties",
+          component: () => import("../views/gateway/AccessPartyHubView.vue"),
+        },
+        {
+          path: "gateway/access-parties/:partyId/grant",
+          component: () => import("../views/gateway/AccessPartyGrantWizardView.vue"),
+        },
+        {
           path: "gateway/api-rate-limits",
           component: () => import("../views/gateway/GatewayRateLimitsView.vue"),
         },

@@ -20,7 +20,7 @@ export function requireLoginUser(): AdminMeView {
   return loginUserCache;
 }
 
-export function getLoginUserId(): number | null {
+export function getLoginUserId(): string | null {
   return readJwtUid(localStorage.getItem(AI_ADMIN_ACCESS_TOKEN_KEY));
 }
 

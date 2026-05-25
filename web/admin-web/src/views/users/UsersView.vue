@@ -20,7 +20,7 @@
               filterable
               :placeholder="t('views.users.placeholderTenant')"
               clearable
-              @change="loadMembers"
+              @change="onTenantFilterChange"
             >
               <el-option v-for="tenant in tenantOptions" :key="tenant.id" :label="tenantOptionLabel(tenant)" :value="tenant.id" />
             </el-select>
@@ -53,7 +53,17 @@
         </div>
       </template>
       <el-table v-loading="loadingMembers" :data="members" stripe border :empty-text="t('views.users.empty')">
+        <el-table-column prop="accountNo" :label="t('views.users.colAccountNo')" min-width="148" show-overflow-tooltip />
         <el-table-column prop="loginName" :label="t('views.users.colLoginName')" min-width="120" />
+        <el-table-column prop="email" :label="t('views.users.colEmail')" min-width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.email || t('common.dash') }}</template>
+        </el-table-column>
+        <el-table-column prop="phone" :label="t('views.users.colPhone')" width="120">
+          <template #default="{ row }">{{ row.phone || t('common.dash') }}</template>
+        </el-table-column>
+        <el-table-column :label="t('views.users.colRegChannel')" width="100">
+          <template #default="{ row }">{{ registrationChannelLabel(row.registrationChannel) }}</template>
+        </el-table-column>
         <el-table-column prop="displayName" :label="t('views.users.colNickname')" min-width="120" />
         <el-table-column :label="t('views.users.colAccountStatus')" width="100" align="center">
           <template #default="{ row }">
@@ -130,7 +140,17 @@
         </div>
       </template>
       <el-table v-loading="loadingUsers" :data="users" stripe border style="width: 100%" :empty-text="t('views.users.empty')">
+        <el-table-column prop="accountNo" :label="t('views.users.colAccountNo')" min-width="148" show-overflow-tooltip />
         <el-table-column prop="loginName" :label="t('views.users.colLoginName')" min-width="120" />
+        <el-table-column prop="email" :label="t('views.users.colEmail')" min-width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.email || t('common.dash') }}</template>
+        </el-table-column>
+        <el-table-column prop="phone" :label="t('views.users.colPhone')" width="120">
+          <template #default="{ row }">{{ row.phone || t('common.dash') }}</template>
+        </el-table-column>
+        <el-table-column :label="t('views.users.colRegChannel')" width="100">
+          <template #default="{ row }">{{ registrationChannelLabel(row.registrationChannel) }}</template>
+        </el-table-column>
         <el-table-column prop="displayName" :label="t('views.users.colNickname')" min-width="120" />
         <el-table-column :label="t('views.users.colTenantRole')" min-width="200">
           <template #default="{ row }">
@@ -176,7 +196,7 @@
         <el-table-column :label="t('views.users.colActions')" width="360" fixed="right">
           <template #default="{ row }">
             <el-button
-              v-if="row.sessionOnline"
+              v-if="row.sessionOnline && canManageAccountRow(row)"
               link
               type="warning"
               size="small"
@@ -184,9 +204,33 @@
             >
               {{ t("views.users.kick") }}
             </el-button>
-            <el-button link type="danger" size="small" @click="banUser(row)">{{ t("views.users.ban") }}</el-button>
-            <el-button link type="primary" size="small" @click="toggleStatus(row)">{{ t("views.users.toggle") }}</el-button>
-            <el-button link type="danger" size="small" @click="removeUser(row)">{{ t("views.users.delete") }}</el-button>
+            <el-button
+              v-if="canManageAccountRow(row)"
+              link
+              type="danger"
+              size="small"
+              @click="banUser(row)"
+            >
+              {{ t("views.users.ban") }}
+            </el-button>
+            <el-button
+              v-if="canToggleAccountRow(row)"
+              link
+              type="primary"
+              size="small"
+              @click="toggleStatus(row)"
+            >
+              {{ t("views.users.toggle") }}
+            </el-button>
+            <el-button
+              v-if="canManageAccountRow(row)"
+              link
+              type="danger"
+              size="small"
+              @click="removeUser(row)"
+            >
+              {{ t("views.users.delete") }}
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -223,6 +267,12 @@
         <el-form-item :label="t('views.users.dlgCreateLogin')" required>
           <el-input v-model="form.loginName" autocomplete="off" clearable />
         </el-form-item>
+        <el-form-item :label="t('views.users.dlgCreateEmail')">
+          <el-input v-model="form.email" type="email" autocomplete="off" clearable :placeholder="t('views.users.dlgCreateOptionalPh')" />
+        </el-form-item>
+        <el-form-item :label="t('views.users.dlgCreatePhone')">
+          <el-input v-model="form.phone" autocomplete="off" clearable :placeholder="t('views.users.dlgCreateOptionalPh')" />
+        </el-form-item>
         <el-form-item :label="t('views.users.dlgCreatePassword')" required>
           <el-input v-model="form.password" type="password" show-password autocomplete="new-password" />
         </el-form-item>
@@ -253,7 +303,8 @@ import { AI_ADMIN_ACCESS_TOKEN_KEY } from "@/plugins/http";
 import { AI_ADMIN_WORKSPACE_CHANGED_EVENT } from "@/constants/adminWorkspace";
 import * as tenantsApi from "@/api/tenants";
 import * as usersApi from "@/api/users";
-import { readJwtTid, readJwtTmr, readJwtUid } from "@/utils/jwtSubject";
+import { sameLoginName } from "@/utils/accountPrincipal";
+import { readJwtSubject, readJwtTid, readJwtTmr } from "@/utils/jwtSubject";
 import { apiRequestErrorMessage } from "@/utils/apiRequestErrorMessage";
 
 const { t, locale } = useI18n();
@@ -292,10 +343,12 @@ const isOwnerOrFounder = computed(() => {
 
 const canMutateMembership = computed(() => isOwnerOrFounder.value);
 
-const selfUserId = computed(() => readJwtUid(localStorage.getItem(AI_ADMIN_ACCESS_TOKEN_KEY)));
+const selfLoginName = computed(() => readJwtSubject(localStorage.getItem(AI_ADMIN_ACCESS_TOKEN_KEY)));
 
 const form = reactive({
   loginName: "",
+  email: "",
+  phone: "",
   password: "",
   displayName: "",
   role: "MEMBER" as usersApi.TenantMemberRole,
@@ -305,28 +358,55 @@ function tenantOptionLabel(t: tenantsApi.TenantRow): string {
   return `${t.name}（${t.code}）`;
 }
 
+function isSelfUser(loginName: string): boolean {
+  return sameLoginName(loginName, selfLoginName.value);
+}
+
+function effectiveTenantId(): number | undefined {
+  if (isFounder.value && tenantFilter.value != null) {
+    return tenantFilter.value;
+  }
+  const jwtTid = readJwtTid(localStorage.getItem(AI_ADMIN_ACCESS_TOKEN_KEY));
+  const n = jwtTid ? Number.parseInt(jwtTid, 10) : NaN;
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function roleChangeTenantOpts(row?: usersApi.TenantMemberRow): { tenantId?: number } | undefined {
+  if (row != null && isFounder.value) {
+    return { tenantId: row.tenantId };
+  }
+  if (isFounder.value) {
+    const tid = effectiveTenantId();
+    return tid != null ? { tenantId: tid } : undefined;
+  }
+  return undefined;
+}
+
+function canManageAccountRow(row: usersApi.UserRow): boolean {
+  return !isSelfUser(row.loginName);
+}
+
+function canToggleAccountRow(row: usersApi.UserRow): boolean {
+  return canManageAccountRow(row);
+}
+
 function canEditMemberRow(row: usersApi.TenantMemberRow): boolean {
   if (!canMutateMembership.value) return false;
   if (row.memberStatus !== "ACTIVE") return false;
-  if (selfUserId.value != null && row.userId === selfUserId.value) return false;
+  if (isSelfUser(row.loginName)) return false;
   return true;
 }
 
 function canRemoveMemberRow(row: usersApi.TenantMemberRow): boolean {
-  if (selfUserId.value != null && row.userId === selfUserId.value) return false;
+  if (isSelfUser(row.loginName)) return false;
   return true;
 }
 
 function canEditUserRole(row: usersApi.UserRow): boolean {
   if (!canMutateMembership.value) return false;
   if (row.tenantRole == null) return false;
-  const self = readJwtUid(localStorage.getItem(AI_ADMIN_ACCESS_TOKEN_KEY));
-  if (self != null && row.id === self) return false;
+  if (isSelfUser(row.loginName)) return false;
   return true;
-}
-
-function founderMemberTenantOpts(row: usersApi.TenantMemberRow): { tenantId: number } | undefined {
-  return isFounder.value ? { tenantId: row.tenantId } : undefined;
 }
 
 function founderInviteTenantId(): number | undefined {
@@ -357,6 +437,12 @@ function onWorkspaceChanged() {
 
 function statusLabel(s: usersApi.UserRow["status"]): string {
   return s === "ACTIVE" ? t("views.users.statusEnabled") : t("views.users.statusDisabled");
+}
+
+function registrationChannelLabel(ch: usersApi.UserRegistrationChannel): string {
+  const key = `views.users.regChannel.${ch}` as const;
+  const msg = t(key);
+  return msg === key ? ch : msg;
 }
 
 function formatLastLoginAt(raw: string | null | undefined): string {
@@ -395,6 +481,8 @@ function openCreateDialog() {
 
 function resetCreateForm() {
   form.loginName = "";
+  form.email = "";
+  form.phone = "";
   form.password = "";
   form.displayName = "";
   form.role = "MEMBER";
@@ -430,9 +518,14 @@ async function loadMembers() {
 async function loadUsers() {
   loadingUsers.value = true;
   try {
-    users.value = await usersApi.listUsers();
+    const tid = effectiveTenantId();
+    users.value = await usersApi.listUsers(
+      1,
+      50,
+      isFounder.value && tid != null ? { tenantId: tid } : undefined,
+    );
   } catch (e: unknown) {
-    ElMessage.error(apiRequestErrorMessage(e, t("views.users.loadUsersFailed")));
+    ElMessage.error(apiRequestErrorMessage(e, t("views.users.loadUsersFailed"), locale.value));
   } finally {
     loadingUsers.value = false;
   }
@@ -441,11 +534,11 @@ async function loadUsers() {
 async function onMemberRoleChange(row: usersApi.TenantMemberRow, role: usersApi.TenantMemberRole) {
   if (row.role === role) return;
   try {
-    await usersApi.updateTenantMemberRole(row.userId, role, founderMemberTenantOpts(row));
+    await usersApi.updateTenantMemberRole(row, role, roleChangeTenantOpts(row));
     row.role = role;
     ElMessage.success(t("views.users.roleUpdated"));
   } catch (e: unknown) {
-    ElMessage.error(apiRequestErrorMessage(e, t("views.users.updateFailed")));
+    ElMessage.error(apiRequestErrorMessage(e, t("views.users.updateFailed"), locale.value));
     await loadMembers();
   }
 }
@@ -453,11 +546,11 @@ async function onMemberRoleChange(row: usersApi.TenantMemberRow, role: usersApi.
 async function onUserRoleChange(row: usersApi.UserRow, role: usersApi.TenantMemberRole) {
   if (row.tenantRole === role) return;
   try {
-    await usersApi.updateTenantMemberRole(row.id, role);
+    await usersApi.updateTenantMemberRole(row, role, roleChangeTenantOpts());
     row.tenantRole = role;
     ElMessage.success(t("views.users.roleUpdated"));
   } catch (e: unknown) {
-    ElMessage.error(apiRequestErrorMessage(e, t("views.users.updateFailed")));
+    ElMessage.error(apiRequestErrorMessage(e, t("views.users.updateFailed"), locale.value));
     await loadUsers();
   }
 }
@@ -496,10 +589,22 @@ async function submitInvite() {
     await loadMembers();
     await loadUsers();
   } catch (e: unknown) {
-    ElMessage.error(apiRequestErrorMessage(e, t("views.users.opFailed")));
+    ElMessage.error(apiRequestErrorMessage(e, t("views.users.opFailed"), locale.value));
   } finally {
     inviteSubmitting.value = false;
   }
+}
+
+function messageBoxButtons() {
+  return {
+    confirmButtonText: t("common.confirm"),
+    cancelButtonText: t("common.cancel"),
+  };
+}
+
+function onTenantFilterChange() {
+  void loadMembers();
+  void loadUsers();
 }
 
 async function onRemoveMember(row: usersApi.TenantMemberRow) {
@@ -507,18 +612,18 @@ async function onRemoveMember(row: usersApi.TenantMemberRow) {
     await ElMessageBox.confirm(
       t("views.users.confirmRemoveMember", { name: row.loginName }),
       t("common.confirmTitle"),
-      { type: "warning" },
+      { type: "warning", ...messageBoxButtons() },
     );
   } catch {
     return;
   }
   try {
-    await usersApi.removeTenantMember(row.userId, founderMemberTenantOpts(row));
+    await usersApi.removeTenantMember(row, roleChangeTenantOpts(row));
     ElMessage.success(t("views.users.removed"));
     await loadMembers();
     await loadUsers();
   } catch (e: unknown) {
-    ElMessage.error(apiRequestErrorMessage(e, t("views.users.opFailed")));
+    ElMessage.error(apiRequestErrorMessage(e, t("views.users.opFailed"), locale.value));
   }
 }
 
@@ -526,9 +631,11 @@ async function onCreate() {
   createSubmitting.value = true;
   try {
     await usersApi.createUser({
-      loginName: form.loginName,
+      loginName: form.loginName.trim(),
+      email: form.email.trim() || undefined,
+      phone: form.phone.trim() || undefined,
       password: form.password,
-      displayName: form.displayName || undefined,
+      displayName: form.displayName.trim() || undefined,
       role: form.role,
     });
     createVisible.value = false;
@@ -537,69 +644,102 @@ async function onCreate() {
     await loadMembers();
     ElMessage.success(t("views.users.created"));
   } catch (e: unknown) {
-    ElMessage.error(apiRequestErrorMessage(e, t("views.users.createFailed")));
+    ElMessage.error(apiRequestErrorMessage(e, t("views.users.createFailed"), locale.value));
   } finally {
     createSubmitting.value = false;
   }
 }
 
 async function toggleStatus(u: usersApi.UserRow) {
+  if (!canToggleAccountRow(u)) {
+    ElMessage.warning(t("views.users.cannotOperateSelf"));
+    return;
+  }
   const next = u.status === "ACTIVE" ? "DISABLED" : "ACTIVE";
-  await usersApi.updateUser(u.id, { status: next });
-  await loadUsers();
-  await loadMembers();
-  ElMessage.success(t("views.users.statusUpdated"));
+  const action =
+    next === "ACTIVE" ? t("views.users.toggleEnable") : t("views.users.toggleDisable");
+  try {
+    await ElMessageBox.confirm(
+      t("views.users.toggleConfirm", { name: u.loginName, action }),
+      t("common.confirmTitle"),
+      { type: "warning", ...messageBoxButtons() },
+    );
+  } catch {
+    return;
+  }
+  try {
+    await usersApi.updateUser(u, { status: next });
+    await loadUsers();
+    await loadMembers();
+    ElMessage.success(t("views.users.statusUpdated"));
+  } catch (e: unknown) {
+    ElMessage.error(apiRequestErrorMessage(e, t("views.users.opFailed"), locale.value));
+  }
 }
 
 async function kickUser(u: usersApi.UserRow) {
-  if (!u.sessionOnline) {
+  if (!u.sessionOnline || !canManageAccountRow(u)) {
     return;
   }
   try {
     await ElMessageBox.confirm(t("views.users.kickConfirm", { name: u.loginName }), t("common.confirmTitle"), {
       type: "warning",
+      ...messageBoxButtons(),
     });
-    await usersApi.kickUserSession(u.id);
+    await usersApi.kickUserSession(u);
     ElMessage.success(t("views.users.kicked"));
     await loadUsers();
   } catch (e: unknown) {
     if (e !== "cancel") {
-      ElMessage.error(apiRequestErrorMessage(e, t("views.users.opFailed")));
+      ElMessage.error(apiRequestErrorMessage(e, t("views.users.opFailed"), locale.value));
     }
   }
 }
 
 async function banUser(u: usersApi.UserRow) {
+  if (!canManageAccountRow(u)) {
+    ElMessage.warning(t("views.users.cannotOperateSelf"));
+    return;
+  }
   try {
     await ElMessageBox.confirm(t("views.users.banConfirm", { name: u.loginName }), t("common.confirmTitle"), {
       type: "warning",
       confirmButtonText: t("views.users.banOk"),
+      cancelButtonText: t("common.cancel"),
     });
-    await usersApi.banUser(u.id);
+    await usersApi.banUser(u);
     await loadUsers();
     await loadMembers();
     ElMessage.success(t("views.users.banned"));
   } catch (e: unknown) {
     if (e !== "cancel") {
-      ElMessage.error(apiRequestErrorMessage(e, t("views.users.opFailed")));
+      ElMessage.error(apiRequestErrorMessage(e, t("views.users.opFailed"), locale.value));
     }
   }
 }
 
 async function removeUser(u: usersApi.UserRow) {
+  if (!canManageAccountRow(u)) {
+    ElMessage.warning(t("views.users.cannotOperateSelf"));
+    return;
+  }
   try {
     await ElMessageBox.confirm(t("views.users.deleteConfirm", { name: u.loginName }), t("common.confirmTitle"), {
       type: "warning",
       confirmButtonText: t("views.users.delete"),
-      cancelButtonText: t("views.users.cancel"),
+      cancelButtonText: t("common.cancel"),
     });
   } catch {
     return;
   }
-  await usersApi.deleteUser(u.id);
-  await loadUsers();
-  await loadMembers();
-  ElMessage.success(t("views.users.deleted"));
+  try {
+    await usersApi.deleteUser(u);
+    await loadUsers();
+    await loadMembers();
+    ElMessage.success(t("views.users.deleted"));
+  } catch (e: unknown) {
+    ElMessage.error(apiRequestErrorMessage(e, t("views.users.opFailed"), locale.value));
+  }
 }
 
 onMounted(async () => {

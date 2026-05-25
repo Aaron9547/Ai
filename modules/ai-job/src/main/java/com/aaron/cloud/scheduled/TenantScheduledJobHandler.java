@@ -1,0 +1,13 @@
+package com.aaron.cloud.scheduled;
+
+import com.aaron.cloud.common.api.enums.scheduled.TenantScheduledExecutorCode;
+import com.aaron.cloud.common.scheduled.entity.TenantScheduledTask;
+import com.aaron.cloud.scheduled.run.TenantScheduledRunContext;
+
+/** 定时任务执行器：由调度层在到点时调用，内部自行扫业务表/入队。 */
+public interface TenantScheduledJobHandler {
+
+    TenantScheduledExecutorCode executorCode();
+
+    void execute(TenantScheduledTask registration, TenantScheduledRunContext runContext) throws Exception;
+}

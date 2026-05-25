@@ -593,9 +593,14 @@ CREATE TABLE IF NOT EXISTS eval_pipeline_run (
 -- 安全：用户账号与租户成员
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS sec_user_account (
-  id BIGINT NOT NULL COMMENT '自然人账号主键（雪花 Long，由应用 ASSIGN_ID 写入，非库自增）',
-  login_name VARCHAR(128) NOT NULL COMMENT '登录名全局唯一，与昵称展示语义分离',
-  display_name VARCHAR(255) NOT NULL DEFAULT '' COMMENT '昵称/展示名；可与登录名不同；空串时前端可回退登录名',
+  id BIGINT NOT NULL COMMENT '自然人主键（雪花 Long，库内/FK 用，不对外 API 暴露）',
+  account_no VARCHAR(32) NOT NULL COMMENT '对外账号编号（如 U12AB34CD56EF），全局唯一；管理端路径推荐 ac:',
+  login_name VARCHAR(128) NOT NULL COMMENT '密码登录凭证，全局唯一；可与邮箱/手机相同或独立用户名',
+  email VARCHAR(191) NULL COMMENT '绑定邮箱（小写规范化），唯一，可空；191 兼容 utf8mb4 UNIQUE 767 字节上限',
+  phone VARCHAR(32) NULL COMMENT '绑定手机号（规范化），唯一，可空',
+  registration_channel VARCHAR(32) NOT NULL COMMENT 'UserRegistrationChannel：ADMIN/EMAIL/PHONE/USERNAME/OAUTH',
+  registered_at DATETIME(3) NOT NULL COMMENT '注册完成时间 UTC',
+  display_name VARCHAR(255) NOT NULL DEFAULT '' COMMENT '昵称/展示名；空串时前端可回退账号编号或登录名',
   password_hash VARCHAR(255) NOT NULL COMMENT 'BCrypt 等密码哈希',
   status TINYINT NOT NULL DEFAULT 1 COMMENT 'UserAccountStatus：0=DISABLED 1=ACTIVE',
   jwt_seq BIGINT NOT NULL DEFAULT 0 COMMENT 'JWT 代际；递增使此前签发的 access token 失效（踢下线/封禁）',
@@ -605,9 +610,12 @@ CREATE TABLE IF NOT EXISTS sec_user_account (
   created_at DATETIME(3) NOT NULL COMMENT '创建时间 UTC',
   updated_at DATETIME(3) NOT NULL COMMENT '更新时间 UTC',
   PRIMARY KEY (id),
+  UNIQUE KEY uk_sec_user_account_no (account_no),
   UNIQUE KEY uk_sec_user_login_name (login_name),
+  UNIQUE KEY uk_sec_user_email (email),
+  UNIQUE KEY uk_sec_user_phone (phone),
   KEY idx_sec_user_status (status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='自然人登录账号';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='自然人账号（正式编号+登录凭证+联系方式+注册途径）';
 
 CREATE TABLE IF NOT EXISTS sys_tenant_member (
   id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
@@ -692,12 +700,98 @@ CREATE TABLE IF NOT EXISTS gw_api_endpoint (
   remark VARCHAR(512) NULL COMMENT '补充说明',
   enabled TINYINT NOT NULL DEFAULT 1 COMMENT 'ToggleState：0=OFF 不在快捷选择中展示 1=ON',
   sort_order INT NOT NULL DEFAULT 0 COMMENT '排序，小在前',
+  module_id BIGINT NULL COMMENT '主归属模块 gw_api_module.id',
+  global_rpm_cap INT NOT NULL DEFAULT 0 COMMENT '接口全局 RPM 池；0=不限制',
+  interface_kind VARCHAR(32) NOT NULL DEFAULT 'OTHER' COMMENT 'GwApiInterfaceKind',
+  request_spec_json LONGTEXT NULL COMMENT '入参 JSON 数组',
+  response_spec_json LONGTEXT NULL COMMENT '出参 JSON 数组',
   created_at DATETIME(3) NOT NULL COMMENT '创建时间 UTC',
   updated_at DATETIME(3) NOT NULL COMMENT '更新时间 UTC',
   PRIMARY KEY (id),
   UNIQUE KEY uk_gw_api_endpoint_pm (path_pattern(191), http_method),
-  KEY idx_gw_api_endpoint_enabled_sort (enabled, sort_order)
+  KEY idx_gw_api_endpoint_enabled_sort (enabled, sort_order),
+  KEY idx_gw_api_endpoint_module (module_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='HTTP 接口目录（限流快捷选择）';
+
+CREATE TABLE IF NOT EXISTS gw_api_module (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  code VARCHAR(64) NOT NULL COMMENT '模块编码',
+  display_name VARCHAR(128) NOT NULL COMMENT '展示名',
+  sort_order INT NOT NULL DEFAULT 0 COMMENT '排序',
+  enabled TINYINT NOT NULL DEFAULT 1 COMMENT 'ToggleState',
+  remark VARCHAR(512) NULL COMMENT '备注',
+  created_at DATETIME(3) NOT NULL COMMENT 'UTC',
+  updated_at DATETIME(3) NOT NULL COMMENT 'UTC',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_gw_api_module_code (code),
+  KEY idx_gw_api_module_enabled_sort (enabled, sort_order)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='网关接口模块';
+
+CREATE TABLE IF NOT EXISTS lnk_gw_module_endpoint (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  module_id BIGINT NOT NULL COMMENT 'gw_api_module.id',
+  endpoint_id BIGINT NOT NULL COMMENT 'gw_api_endpoint.id',
+  created_at DATETIME(3) NOT NULL COMMENT 'UTC',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_lnk_gw_module_endpoint (module_id, endpoint_id),
+  KEY idx_lnk_gw_module_ep_endpoint (endpoint_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='模块与接口关联';
+
+CREATE TABLE IF NOT EXISTS gw_access_party (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  tenant_id BIGINT NOT NULL COMMENT '归属租户',
+  app_id VARCHAR(64) NOT NULL COMMENT '对外 AppId',
+  secret_cipher MEDIUMTEXT NOT NULL COMMENT 'Secret AES-GCM 密文',
+  display_name VARCHAR(128) NOT NULL COMMENT '接入方名称',
+  status TINYINT NOT NULL DEFAULT 1 COMMENT 'ToggleState',
+  total_rpm_cap INT NOT NULL DEFAULT 0 COMMENT '总授权 RPM 上限',
+  remark VARCHAR(512) NULL COMMENT '备注',
+  last_rotated_at DATETIME(3) NULL COMMENT 'Secret 轮换时间 UTC',
+  created_at DATETIME(3) NOT NULL COMMENT 'UTC',
+  updated_at DATETIME(3) NOT NULL COMMENT 'UTC',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_gw_access_party_app_id (app_id),
+  KEY idx_gw_access_party_tenant (tenant_id, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='外部接入方';
+
+CREATE TABLE IF NOT EXISTS gw_access_party_grant (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  access_party_id BIGINT NOT NULL COMMENT 'gw_access_party.id',
+  endpoint_id BIGINT NOT NULL COMMENT 'gw_api_endpoint.id',
+  module_id BIGINT NULL COMMENT '授权模块快照',
+  granted_rpm INT NOT NULL DEFAULT 0 COMMENT '单接口 RPM；0=禁止',
+  enabled TINYINT NOT NULL DEFAULT 1 COMMENT 'ToggleState',
+  created_at DATETIME(3) NOT NULL COMMENT 'UTC',
+  updated_at DATETIME(3) NOT NULL COMMENT 'UTC',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_gw_ap_grant_party_ep (access_party_id, endpoint_id),
+  KEY idx_gw_ap_grant_endpoint (endpoint_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='接入方接口授权与配额';
+
+CREATE TABLE IF NOT EXISTS gw_access_party_call_log (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  tenant_id BIGINT NOT NULL COMMENT '租户',
+  access_party_id BIGINT NOT NULL COMMENT '接入方',
+  endpoint_id BIGINT NULL COMMENT '接口目录 id',
+  method VARCHAR(16) NOT NULL COMMENT 'HTTP 方法',
+  path_pattern VARCHAR(512) NOT NULL COMMENT '请求路径',
+  http_status INT NOT NULL COMMENT 'HTTP 状态',
+  duration_ms BIGINT NOT NULL DEFAULT 0 COMMENT '耗时毫秒',
+  client_ip VARCHAR(64) NULL COMMENT '客户端 IP',
+  tokens_consumed BIGINT NOT NULL DEFAULT 0 COMMENT 'LLM tokens',
+  interface_kind VARCHAR(32) NULL COMMENT 'GwApiInterfaceKind',
+  error_code VARCHAR(64) NULL COMMENT '错误码',
+  trace_id VARCHAR(64) NULL COMMENT '链路 id',
+  created_at DATETIME(3) NOT NULL COMMENT 'UTC',
+  PRIMARY KEY (id),
+  KEY idx_gw_ap_log_tenant_party_time (tenant_id, access_party_id, created_at),
+  KEY idx_gw_ap_log_endpoint_time (endpoint_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='接入方调用审计';
+
+INSERT IGNORE INTO gw_api_module (code, display_name, sort_order, enabled, remark, created_at, updated_at) VALUES
+('MODEL', '模型接口', 10, 1, NULL, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('ABILITY', '能力接口', 20, 1, NULL, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('KNOWLEDGE', '知识接口', 30, 1, NULL, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
 
 INSERT IGNORE INTO gw_api_endpoint (path_pattern, http_method, display_name, remark, enabled, sort_order, created_at, updated_at) VALUES
 ('/open/v1/auth/login', 'POST', '开放登录', '访客/用户登录', 1, 10, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),

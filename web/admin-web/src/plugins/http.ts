@@ -1,6 +1,7 @@
 import axios, { AxiosHeaders } from "axios";
 import { unref } from "vue";
 import { AI_ADMIN_LOCALE_LS_KEY, useUiPreferencesStore } from "@/stores/uiPreferences";
+import { parseApiJson } from "@/utils/jsonSafeLongIds";
 import { readJwtTid } from "@/utils/jwtSubject";
 
 function resolveAcceptLanguageHeader(): string {
@@ -28,6 +29,25 @@ export const AI_ADMIN_MEMBERSHIPS_KEY = "ai_admin_memberships_json";
 export const http = axios.create({
   baseURL: import.meta.env.VITE_API_BASE || "",
   timeout: 60000,
+  transformResponse: [
+    (data: unknown, headers) => {
+      if (typeof data !== "string" || data.length === 0) {
+        return data;
+      }
+      const ct =
+        (typeof headers.get === "function"
+          ? headers.get("content-type")
+          : (headers as Record<string, string>)["content-type"]) ?? "";
+      if (!String(ct).toLowerCase().includes("application/json")) {
+        return data;
+      }
+      try {
+        return parseApiJson(data);
+      } catch {
+        return data;
+      }
+    },
+  ],
 });
 
 function resolveRequestTenantId(token: string | null): string {

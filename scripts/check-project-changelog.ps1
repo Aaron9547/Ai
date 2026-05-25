@@ -17,11 +17,11 @@ Set-Location $repoRoot
 $prefixes = @(
     'src/main/java/',
     'src/test/java/',
+    'modules/',
     'web/user-web/',
     'web/admin-web/',
     'db/mysql/',
-    'pom.xml',
-    'src/main/resources/application'
+    'pom.xml'
 )
 
 function Invoke-GitNames {

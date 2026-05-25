@@ -1,3 +1,5 @@
+import { parseApiJson } from "@/utils/jsonSafeLongIds";
+
 /** 解析 JWT payload 中的 subject（本地登录为登录名 login_name），失败返回 null。 */
 /** JWT 中管理端成员角色（tmr），如 FOUNDER / OWNER / ADMIN / MEMBER */
 
@@ -67,22 +69,32 @@ export function readJwtTmr(accessToken: string | null | undefined): string | nul
   }
 }
 
-/** JWT {@code uid}：账号主键，失败返回 null。 */
-export function readJwtUid(accessToken: string | null | undefined): number | null {
-  if (!accessToken || typeof accessToken !== "string") return null;
+function decodeJwtPayloadJson(accessToken: string): string | null {
   const parts = accessToken.split(".");
   if (parts.length < 2) return null;
   try {
     const payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
     const pad = payload.length % 4;
     const padded = pad ? payload + "=".repeat(4 - pad) : payload;
-    const json = atob(padded);
-    const o = JSON.parse(json) as { uid?: unknown };
-    if (typeof o.uid === "number" && Number.isFinite(o.uid)) return o.uid as number;
-    if (typeof o.uid === "string" && /^\d+$/.test(o.uid)) return Number.parseInt(o.uid, 10);
-    return null;
+    return atob(padded);
   } catch {
     return null;
+  }
+}
+
+/** JWT {@code uid}：账号主键（字符串，避免雪花 id 精度丢失），失败返回 null。 */
+export function readJwtUid(accessToken: string | null | undefined): string | null {
+  if (!accessToken || typeof accessToken !== "string") return null;
+  const json = decodeJwtPayloadJson(accessToken);
+  if (!json) return null;
+  try {
+    const o = parseApiJson(json) as { uid?: unknown };
+    if (typeof o.uid === "string" && /^\d+$/.test(o.uid)) return o.uid;
+    if (typeof o.uid === "number" && Number.isFinite(o.uid)) return String(o.uid);
+    return null;
+  } catch {
+    const m = json.match(/"uid"\s*:\s*"?(\d+)"?/);
+    return m?.[1] ?? null;
   }
 }
 

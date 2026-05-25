@@ -13,7 +13,7 @@
 
 ## 运行时配置
 
-**进程启动、环境变量与中间件接入**仍以 **`src/main/resources/application.yml`** 及键旁注释为协作真源（与 **`AiEnvironmentBridgePostProcessor`** 的派生键关系见该类 Javadoc）。**按租户动态可调、不要求随应用重启才生效的参数**（如 **`WEB_SEARCH_GROUNDING_*`**、开放注册、出差报销 Coze、记忆嵌入模型 id 等）权威存储为 **`ten_runtime_setting`**（枚举 **`TenantRuntimeSettingKey`**）；**yml 与运行参数表的分层原则**见仓库根目录 **`.cursorrules` §3.8**。**Redis** 无 `ai.redis.enabled` 之类总闸：须配置 **`spring.data.redis.*`** 并成功建连，否则应用启动失败。本文档不重复展开全表。
+**进程启动、环境变量与中间件接入**仍以 **`modules/ai-bootstrap/src/main/resources/application.yml`** 及键旁注释为协作真源（与 **`AiEnvironmentBridgePostProcessor`** 的派生键关系见该类 Javadoc）。**按租户动态可调、不要求随应用重启才生效的参数**（如 **`WEB_SEARCH_GROUNDING_*`**、开放注册、出差报销 Coze、记忆嵌入模型 id 等）权威存储为 **`ten_runtime_setting`**（枚举 **`TenantRuntimeSettingKey`**）；**yml 与运行参数表的分层原则**见仓库根目录 **`.cursorrules` §3.8**。**Redis** 无 `ai.redis.enabled` 之类总闸：须配置 **`spring.data.redis.*`** 并成功建连，否则应用启动失败。本文档不重复展开全表。
 
 ---
 
@@ -270,6 +270,56 @@ sequenceDiagram
 | **提交前自检** | 仓库根 **`.\scripts\check-project-changelog.ps1 -IncludeUntracked`**（校验：动代码须同集改 **`PROJECT.md`**，且顶节 **`###`** 与 **`pom.xml` `<version>`** 一致）。Agent 必读 **`AGENTS.md`**。 |
 
 ## 变更记录
+
+### 0.1.253-SNAPSHOT
+
+- **gw_api_endpoint 入参/出参**：**`request_spec_json`**、**`response_spec_json`**（JSON 数组）；**`GwApiEndpointSpecSupport`** 渲染 Markdown 表格；**`AccessPartyIntegrationDocBuilder`** 新增 **§5 接口明细（入参/出参）**；**已建库须手工执行** **`db/mysql/migrate_0_1_253_gw_api_endpoint_spec.sql`**。
+- **接入方授权向导**：**`GET …/gateway-access-parties/{id}/grant-wizard`** + **`GatewayAccessPartyGrantWizardApplicationService`**；管理端 **「授权绑定」** 独立页 **`AccessPartyGrantWizardView`**（按 API 模块分步、步骤条过渡、最后一步提交）；Hub 页移除 **「配额与授权」** Tab。
+- **admin-web**：**`GatewayRateLimitsView`** 接口表单可编辑入参/出参 JSON；**`gatewayApiEndpoints.ts`** CRUD 扩展 spec 字段；路由 **`/gateway/access-parties/:partyId/grant`**；i18n **`bindGrant`** / **`grantWizard*`**；**`AccessPartyGrantWizardView`** 授权页 UI 简化为 **`el-card` + `el-steps` + 列表式接口勾选**。
+- **OpenAPI spec 自动化**：**`GwApiOpenApiSpecExtractor`** + **`GwApiOpenApiCatalogService`**（SpringDoc **`OpenAPIService.build` / `getCachedOpenAPI`**）；导出对接文档 **DB spec 优先、OpenAPI fallback**（方案 A）；**`POST …/gateway-api-endpoints/sync-openapi-spec`** / **`…/{id}/sync-openapi-spec`** 一键同步（方案 B，默认仅补空）；管理端 **「从 OpenAPI 同步」**。
+- **版本**：**`pom.xml`** bump **0.1.252 → 0.1.253-SNAPSHOT**；**`gw_api_endpoint_catalog_inserts.sql`** 补 **`grant-wizard`** 目录行。
+
+### 0.1.252-SNAPSHOT
+
+- **用户账号档案（`sec_user_account`）**：新增 **`account_no`**（对外正式账号编号，管理端路径推荐 **`ac:`**）、**`email`**（**`VARCHAR(191)`**，避免 utf8mb4 唯一索引 **Error 1071**）、**`phone`**、**`registration_channel`**（**`UserRegistrationChannel`**：ADMIN/EMAIL/PHONE/USERNAME/OAUTH）、**`registered_at`**；库内仍用雪花 **`id`** 做 FK。**已建库须手工执行** **`db/mysql/migrate_0_1_252_sec_user_account_profile.sql`**；若索引已失败则 **`migrate_0_1_252_sec_user_account_email_index_fix.sql`**。
+- **账号主体**：**`AccountPrincipalKind`** 扩展 **ACCOUNT_NO / EMAIL / PHONE**；**`AccountPrincipalResolver`**、开放登录 **`findByLoginIdentifier`**（邮箱/手机/账号编号/登录名）；C 端注册写入 **`email`** 列；管理端创建可填 **`email`/`phone`**。
+- **管理端 API**：**`UserView`** / **`TenantMemberRow`** 返回 **`accountNo`**、联系方式与注册途径；路径仍用 **`/{account}`**（**`ac:`** 优先）。
+- **版本**：**`pom.xml`** bump **0.1.251 → 0.1.252-SNAPSHOT**；各 **`modules/*/pom.xml`** 父版本与根 POM 对齐（修复 IDEA/Maven 无法解析父 POM、**`AiApplication`** 未编译）。
+- **ai-gateway**：**`AccessPartyFilterConfiguration`** 补 **`GwAccessPartyRepository`/`GwApiEndpointRepository`** import（修复全量编译失败）。
+- **接入方管理端 403**：**`AdminHttpMenuRoutes`** 补 **`gateway-access-parties`** / **`gateway-api-modules`** / **`gateway-access-party-grants`** / **`gateway-access-party-audit`** → **`GATEWAY_API`**（**`AdminMenuAuthorizationFilter`** 未映射路径一律 403）。
+- **admin-web 接入方页**：状态/启用列由原始 **`ON`/`OFF`** 改为与 API 限流页一致的 **是/否** 标签；新建/编辑弹窗增加启用开关。
+- **admin-web 接入方 Phase 2**：新建后 **Secret 专用弹窗**（须确认已保存）；**API 模块** CRUD + **绑定接口**；**配额与授权**（按模块授权、添加授权向导、RPM  inline 编辑、启用开关、移除）；审计 Tab 增加接入方筛选与分页。
+- **接入方对接文档导出**：**`GET …/gateway-access-parties/{id}/integration-doc`** + **`AccessPartyIntegrationDocBuilder`**（Markdown：HMAC、已授权接口、curl/Java 示例）；管理端 **「导出对接文档」** 下载 `.md`；**`gw_api_endpoint_catalog_inserts.sql`** 补目录行。
+
+### 0.1.251-SNAPSHOT
+
+- **接入方底层限流与授权（多模块）**：**`ai-common`** 新增 **`gw_access_party`**、**`gw_api_module`**、**`lnk_gw_module_endpoint`**、**`gw_access_party_grant`**、**`gw_access_party_call_log`** 表/Entity/Repository；扩展 **`gw_api_endpoint`**（**`module_id`**、**`global_rpm_cap`**、**`interface_kind`** / **`GwApiInterfaceKind`**）；**`AccessPartySnapshot`**、**`AccessPartyContextHolder`**、**`AccessPartyHttpHeaders`**；**`AbstractPartnerV1Controller`**（**`/partner/v1`**）；错误码 **`ACCESS_PARTY_*`**。**已建库须手工执行** **`db/mysql/migrate_0_1_251_gw_access_party.sql`**。
+- **ai-gateway Filter 链**：**`AccessPartyFilterSkipPolicy`**（**`/api/**`**、无签名 **`/open/**`**、JWT 等 skip）；**`AccessPartyAuthFilter`**（HMAC-SHA256 + Redis nonce）、**`AccessPartyAuthzFilter`**、**`AccessPartyRateLimitFilter`**（Redis RPM 单接口/总桶）、**`AccessPartyCallLogFilter`**；**`/partner/v1/**`** 强制接入方链；**`ApiRateLimitFilter`** 跳过 **`/partner/v1/**`**。**`GET /partner/v1/health`** 联调探针。
+- **管理端 API**：**`AdminGwAccessPartyRestController`**、**`AdminGwApiModuleRestController`**、**`AdminGwAccessPartyGrantRestController`**（Σ **`granted_rpm`** ≤ **`total_rpm_cap`** / **`global_rpm_cap`**）、**`AdminGwAccessPartyAuditRestController`**；**`gw_api_endpoint_catalog_inserts.sql`** 追加目录行。
+- **ai-remoting**：**`FeignTenantContextInterceptor`** 透传 **`X-Access-Party-Id`**、**`X-Access-Party-App-Id`**。
+- **ai-chat**：**`PartnerChatProbeRestController`** **`GET /partner/v1/chat/probe`**。
+- **ai-identity**：**`/partner/**`** permitAll（验签在 gateway Filter）。
+- **admin-web**：**`/gateway/access-parties`**（**`AccessPartyHubView`** 四 Tab：接入方/配额/模块/审计）；**`gatewayAccessParty.ts`**；i18n **`views.gatewayAccessParty.*`**。
+- **配置**：**`ai.access-party.enforcement=edge-only`**（默认，**`application.yml`**）。
+- **版本**：**`pom.xml`** bump **0.1.250 → 0.1.251-SNAPSHOT**。
+
+### 0.1.250-SNAPSHOT
+
+- **管理端账号主体**：管理端用户/成员写操作路径改为 **`/api/v1/admin/users/{account}`**、**`DELETE .../tenant-members/{account}`**，其中 **`account`** 为 **`ln:登录名`**（预留 **`ph:手机号`**）；响应含 **`account: { kind, value }`**，不再向前端暴露雪花 **`id`**。本人校验改比 **JWT `sub` 登录名**。涉及 **`AccountPrincipalKind`**、**`AccountPrincipalPaths`**、**`AccountPrincipalResolver`**、**`UsersView`** / **`api/users.ts`**。
+- **管理端雪花 id**：**`sec_user_account.id`** 等为 64 位雪花 Long，超过 JS **`Number.MAX_SAFE_INTEGER`**；**`admin-web`** 在 axios **`transformResponse`** 中将 **`id`/`userId` 等 16 位以上数字解析为 **string**，JWT **`uid`** 同步按字符串读取，修复改角色等 API 路径 id 精度丢失（表现为「用户不在目标租户」）。
+- **管理端用户/成员**：**`PUT /api/v1/admin/users/{id}`** 启停账号禁止操作本人；**`cannot_operate_on_self`** 经 **`GlobalExceptionHandler`** 返回中文「不能对本人执行此操作」；**`GET /api/v1/admin/users`** 创始人可选 **`tenantId`** 与成员列表筛选一致；改角色时创始人带 **`tenantId`** 校验目标租户成员行。**`UsersView`**：本人隐藏启停/封禁/踢下线/删除；启停增加确认框；**`MessageBox`** 按钮文案走 i18n；**`apiRequestErrorMessage`** 按 **`code`** 映射中文错误。
+- **Maven 多模块骨架**：根 **`pom.xml`** 改为 parent（**`packaging=pom`**），子模块置于 **`modules/`**（**`ai-common`**、**`ai-remoting`**、**`ai-gateway`**、**`ai-identity`**、**`ai-model`**、**`ai-file`**、**`ai-rag`**、**`ai-job`**（含 **`scheduled`**）、**`ai-chat`**、**`ai-mcp`**、**`ai-notification`**、**`ai-eval`**、**`ai-bootstrap`**）；启动类与 **`application.yml`** 在 **`modules/ai-bootstrap`**；本地编译 **`mvn -pl :ai-bootstrap -am compile`**（须 **JDK 25** **`JAVA_HOME`**；亦可用路径 **`modules/ai-bootstrap`**）。
+- **chat↔rag 端口化**：**`RagQueryPort`** / **`RagEmbeddingPort`** / **`TenantRagRuntimePort`** / **`SiteCrawlRuntimePort`** + **`LocalRagQueryAdapter`**、**`LocalRagEmbeddingAdapter`**、**`LocalTenantRagRuntimeAdapter`**；Remote 模式 **`RemoteRagQueryAdapter`**、**`RemoteRagEmbeddingAdapter`**（**`ai-chat`** Feign）与 **`/internal/v1/rag/*`**（**`RagInternalRestController`**）；**`ai-chat`** **禁止** compile 依赖 **`ai-rag`**（enforcer + **`ArchitectureTest`**）。
+- **异步与 common 解耦**：**`JobPublisherPort`** / **`JobTaskExecutionPort`**、**`JobDispatchMessage`** 迁至 **`common.api`**；**`SiteCrawlRuntimeValidator`**、**`RagVectorDimensionSupport`** 迁至 **`common`**；**`UserMemoryVectorPort`** 替代 **`UserMemoryMilvusStore`** 直引。
+- **RAG fail-fast**：**`ChatApplicationService#requireRagQueryPort`**；**`RagModuleDeploymentVerifier`**（local 聚合缺 **`RagQueryPort`** 启动失败）。
+- **版本**：**`pom.xml`** bump **0.1.249 → 0.1.250-SNAPSHOT**。
+- **目录收拢**：全部 **`ai-*`** Maven 子模块迁入 **`modules/`**，根目录仅保留 **`db/`**、**`web/`**、**`docker/`**、**`scripts/`** 等横切资产；删除遗留空目录 **`org/`**、根级 **`target/`**。
+
+### 0.1.249-SNAPSHOT
+
+- **common 枚举分层（P0–P3）**：`common.api.enums` 按域分子包（`chat`/`rag`/`llm`/`tenant`/`job`/`scheduled`/`gateway`/`profile`/`guardrail`/`identity`/`metering`/`mcp`/`eval`/`intent`/`notify`/`file`/`infra`）；自 `rag.crawl` 迁入 **`CrawlQueueRole`**、**`CrawlQueueStatus`**、**`SiteCrawlPreset`**；**`SiteCrawlStrategyIds`** 改为 **`RagSiteCrawlDiscoveryStrategy`**；**`WebSearchCacheTier`** → `enums.chat`；**`OutboundKind`** 与 **`AuthProviderMode`** 等 provider 模式 → `enums.infra`；删除 `common.config.providers` 与旧 flat 枚举路径；全仓 import 同步；脚本 **`scripts/migrate-enums.ps1`** / **`scripts/finish-enum-migration.ps1`** 可复现搬迁。
+- **文档**：**`.cursorrules` §4.1.3** 枚举子包与扩展 checklist；**`AGENTS.md`** 枚举词汇表速查。
+- **版本**：**`pom.xml`** bump **0.1.248 → 0.1.249-SNAPSHOT**。
 
 ### 0.1.248-SNAPSHOT
 

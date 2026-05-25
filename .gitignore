@@ -98,6 +98,7 @@ web/**/*.tsbuildinfo
 ### 本地数据落盘（勿提交）---
 # 会话附件二进制根目录：默认 `${user.dir}/data/chat-attachment-bin`（见 `application.yml` `ai.chat.attachment.bin-dir`、`AiChatAttachmentProperties`）
 /data/
+/var/
 # AI Log Plugin 推荐忽略项
 .specstory/
 .ailog/
