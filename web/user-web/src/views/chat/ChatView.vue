@@ -94,7 +94,12 @@
         </div>
       </div>
 
-      <el-scrollbar ref="scrollAreaRef" class="messages-scroll" tag="div">
+      <el-scrollbar
+        ref="scrollAreaRef"
+        class="messages-scroll"
+        :class="{ 'messages-scroll--empty': messages.length === 0 }"
+        tag="div"
+      >
         <div class="messages-scroll-inner">
         <div v-if="messages.length === 0" class="empty-spacer" aria-hidden="true" />
         <div v-else class="messages">
@@ -748,14 +753,34 @@
               class="send-fab"
               :class="{
                 'send-fab--active': canSend || sending,
-                'send-fab--loading': sending,
+                'send-fab--stop': sending,
               }"
               :disabled="!sending && !canSend"
               :aria-label="sending ? t('chat.ariaStop') : t('chat.ariaSend')"
               @click="sending ? stopGenerating() : send()"
             >
-              <el-icon v-if="sending" class="send-fab-spin"><Loading /></el-icon>
-              <el-icon v-else><Promotion /></el-icon>
+              <span class="send-fab__icon" aria-hidden="true">
+                <svg
+                  v-if="sending"
+                  class="send-fab__svg"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                >
+                  <rect x="7" y="7" width="10" height="10" rx="2" />
+                </svg>
+                <svg
+                  v-else
+                  class="send-fab__svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.25"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 5v14M12 5l-5.5 5.5M12 5l5.5 5.5" />
+                </svg>
+              </span>
             </button>
           </div>
         </div>
@@ -800,7 +825,6 @@ import {
   More,
   Paperclip,
   Plus,
-  Promotion,
   RefreshRight,
   Share,
   Star,
@@ -815,6 +839,7 @@ import ChatSidebar from "../../components/chat/ChatSidebar.vue";
 import DailyRecommendSidebar from "../../components/chat/DailyRecommendSidebar.vue";
 import QuickPromptChip from "../../components/chat/QuickPromptChip.vue";
 import { useDailyRecommend } from "../../composables/useDailyRecommend";
+import { bumpKnowledgePlanetPulse } from "../../composables/useKnowledgePlanetPulse";
 import ChatShareDialog from "../../components/chat/ChatShareDialog.vue";
 import LocaleThemeToolbar from "../../components/LocaleThemeToolbar.vue";
 import UserAuthDialog from "../../components/UserAuthDialog.vue";
@@ -2662,6 +2687,7 @@ async function send() {
   }
 
   sending.value = true;
+  bumpKnowledgePlanetPulse();
   let assistantIdx = -1;
   let syncHistory = true;
   let streamStarted = false;
@@ -2829,7 +2855,6 @@ async function send() {
   top: max(14px, env(safe-area-inset-top, 0px));
   right: calc(300px + 10px);
   z-index: 25;
-  transition: right 0.28s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .chat-float-tools--rec-collapsed {
@@ -4088,7 +4113,7 @@ async function send() {
   height: 18px;
   margin: 0 8px 0 4px;
   flex-shrink: 0;
-  background: #e8e8e8;
+  background: var(--chat-border-subtle, #e8e8e8);
 }
 
 .model-pill-select {
@@ -4130,8 +4155,8 @@ async function send() {
 .model-pill-select :deep(.el-input__wrapper) {
   border-radius: 12px !important;
   box-shadow: none !important;
-  background: #f0f3f6 !important;
-  border: 1px solid #e4e8ed !important;
+  background: var(--chat-model-select-bg, #f0f3f6) !important;
+  border: 1px solid var(--chat-model-select-border, #e4e8ed) !important;
   padding: 2px 10px !important;
   min-height: 32px;
   transition: background 0.12s, border-color 0.12s, box-shadow 0.12s !important;
@@ -4583,44 +4608,84 @@ async function send() {
 }
 
 .send-fab {
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
+  --send-fab-size: 38px;
+  width: var(--send-fab-size);
+  height: var(--send-fab-size);
+  min-width: var(--send-fab-size);
   padding: 0;
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: none;
-  border-radius: 50%;
+  border: 1px solid var(--chat-send-border, var(--chat-model-select-border, #e4e8ed));
+  border-radius: 12px;
   cursor: pointer;
-  color: #fff;
-  background: linear-gradient(145deg, rgba(91, 159, 212, 0.5) 0%, rgba(61, 122, 184, 0.5) 100%);
-  opacity: 0.5;
+  color: var(--chat-send-icon-idle, var(--chat-text-muted, #71717a));
+  background: var(--chat-send-bg-idle, var(--chat-model-select-bg, #f0f3f6));
+  box-shadow: none;
   transition:
-    opacity 0.18s,
-    transform 0.18s,
-    box-shadow 0.18s,
-    background 0.18s;
+    color 0.16s ease,
+    background 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.14s ease;
+}
+
+.send-fab__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+}
+
+.send-fab__svg {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .send-fab--active {
-  opacity: 1;
-  background: linear-gradient(145deg, #6eb0e0 0%, #3d7ab8 100%);
-  box-shadow: 0 4px 14px rgba(61, 122, 184, 0.28);
+  color: var(--chat-send-icon-active, #ffffff);
+  background: var(--chat-send-bg-active, var(--chat-text-primary, #202020));
+  border-color: var(--chat-send-bg-active, var(--chat-text-primary, #202020));
+  box-shadow: var(--chat-send-shadow-active, 0 1px 2px rgba(0, 0, 0, 0.06));
 }
 
-.send-fab:hover:not(:disabled) {
-  transform: translateY(-2px) scale(1.04);
+.send-fab--active.send-fab--stop {
+  color: var(--chat-send-icon-stop, var(--chat-text-primary, #202020));
+  background: var(--chat-send-bg-stop, var(--chat-bg-elevated, #ffffff));
+  border: 1.5px solid var(--chat-send-border-stop, var(--chat-text-primary, #202020));
+  box-shadow: none;
+}
+
+.send-fab--active:hover:not(:disabled):not(.send-fab--stop) {
+  background: var(--chat-send-bg-active-hover, #333333);
+  border-color: var(--chat-send-bg-active-hover, #333333);
+}
+
+.send-fab--active.send-fab--stop:hover:not(:disabled) {
+  background: var(--chat-hover, rgba(0, 0, 0, 0.04));
+}
+
+.send-fab:active:not(:disabled) {
+  transform: translateY(0) scale(0.96);
+}
+
+.send-fab:focus-visible {
+  outline: 2px solid var(--chat-border-subtle, #d4d4d8);
+  outline-offset: 2px;
+}
+
+.send-fab--active:focus-visible {
+  outline-color: var(--chat-text-muted, #71717a);
 }
 
 .send-fab:disabled {
   cursor: not-allowed;
+  opacity: 0.55;
   transform: none;
-}
-
-.send-fab-spin {
-  animation: wf-spin 0.9s linear infinite;
+  box-shadow: none;
 }
 
 .attach-strip {
@@ -4732,10 +4797,12 @@ async function send() {
 
 /* —— 响应式：平板收窄侧栏；手机侧栏抽屉 + 顶栏 + 安全区 + 100dvh —— */
 .chat-app--tablet :deep(.sidebar:not(.sidebar--collapsed)) {
+  flex-basis: 216px;
   width: 216px;
 }
 
 .chat-app--tablet :deep(.sidebar.sidebar--collapsed) {
+  flex-basis: 40px;
   width: 40px;
 }
 
@@ -4763,6 +4830,16 @@ async function send() {
   z-index: 150;
   background: rgba(15, 23, 42, 0.42);
   touch-action: none;
+  animation: scrim-in var(--chat-shell-duration, 0.34s) var(--chat-shell-ease, ease) both;
+}
+
+@keyframes scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .mobile-nav {
@@ -4787,7 +4864,7 @@ async function send() {
   width: min(300px, 88vw);
   z-index: 160;
   transform: translateX(-105%);
-  transition: transform 0.22s ease;
+  transition: transform var(--chat-shell-duration, 0.34s) var(--chat-shell-ease, ease);
   box-shadow: 4px 0 28px rgba(0, 0, 0, 0.14);
   border-right: 1px solid #e5e5e5;
 }
@@ -4941,10 +5018,17 @@ async function send() {
 }
 
 .chat-app--mobile .chat-hero {
-  flex-shrink: 1;
-  min-height: 0;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.chat-app--mobile .messages-scroll--empty {
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+
+.chat-app--mobile .messages-scroll--empty :deep(.el-scrollbar__wrap) {
+  overflow-y: hidden !important;
 }
 
 .chat-app--mobile .messages {
@@ -5017,8 +5101,7 @@ async function send() {
 }
 
 .chat-app--mobile .send-fab {
-  width: 48px !important;
-  height: 48px !important;
+  --send-fab-size: 44px;
 }
 
 .chat-app--mobile .footer-icon-btn {

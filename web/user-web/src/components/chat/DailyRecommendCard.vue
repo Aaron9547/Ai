@@ -78,8 +78,8 @@ function onCardClick(ev: MouseEvent): void {
   display: block;
   padding: 14px 14px 12px;
   border-radius: 12px;
-  background: #ffffff;
-  border: 1px solid #e9edf2;
+  background: var(--rec-card-bg, #ffffff);
+  border: 1px solid var(--rec-card-border, #e9edf2);
   text-decoration: none;
   color: inherit;
   transition:
@@ -89,7 +89,7 @@ function onCardClick(ev: MouseEvent): void {
 }
 
 .rec-card:hover {
-  border-color: #c5d9eb;
+  border-color: var(--rec-card-hover-border, #c5d9eb);
   box-shadow: 0 8px 20px rgba(61, 122, 184, 0.12);
   transform: translateY(-3px);
 }
@@ -130,14 +130,14 @@ function onCardClick(ev: MouseEvent): void {
   font-size: 14px;
   font-weight: 700;
   line-height: 1.45;
-  color: #2c3e50;
+  color: var(--rec-card-title, #2c3e50);
 }
 
 .rec-card-summary {
   margin: 0 0 10px;
   font-size: 13px;
   line-height: 1.55;
-  color: #7a8794;
+  color: var(--rec-card-summary, #7a8794);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -149,7 +149,7 @@ function onCardClick(ev: MouseEvent): void {
   margin: 0;
   font-size: 12px;
   line-height: 1.4;
-  color: #a0adb8;
+  color: var(--rec-card-foot, #a0adb8);
 }
 
 .rec-card-badge {
@@ -158,8 +158,8 @@ function onCardClick(ev: MouseEvent): void {
   right: 10px;
   font-size: 10px;
   font-weight: 600;
-  color: #6b8aa8;
-  background: #f0f6fb;
+  color: var(--rec-card-badge-text, #6b8aa8);
+  background: var(--rec-card-badge-bg, #f0f6fb);
   padding: 2px 6px;
   border-radius: 3px;
   letter-spacing: 0.02em;

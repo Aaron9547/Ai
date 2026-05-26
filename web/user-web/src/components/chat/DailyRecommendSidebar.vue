@@ -1,42 +1,44 @@
 <template>
   <aside
     class="rec-panel"
-    :class="{ 'rec-panel--collapsed': collapsed }"
+    :class="{
+      'rec-panel--collapsed': collapsed,
+      'rec-panel--planet': planetSummary?.enabled,
+    }"
     :aria-label="t('dailyRecommend.panelAria')"
   >
-    <div class="rec-pane rec-pane--narrow" :aria-hidden="!collapsed">
-      <button
-        type="button"
-        class="rec-rail"
-        :aria-label="t('dailyRecommend.expand')"
-        @click="collapsed = false"
-      >
-        <el-icon :size="20"><Reading /></el-icon>
-      </button>
-    </div>
+    <div class="rec-clip">
+      <div class="rec-inner">
+      <div class="rec-body" :aria-hidden="collapsed">
+      <!-- 思维核心：固定星球视窗 -->
+      <KnowledgePlanetCard
+        v-if="planetSummary?.enabled"
+        :summary="planetSummary"
+        @open="openPlanet"
+      />
 
-    <div class="rec-pane rec-pane--wide" :aria-hidden="collapsed">
-      <header class="rec-header">
-        <div class="rec-header-text">
-          <h2 class="rec-header-title">{{ t("dailyRecommend.title") }}</h2>
-          <span class="rec-header-sub">{{ t("dailyRecommend.oncePerDay") }}</span>
-        </div>
-        <div class="rec-header-actions">
-          <button
-            type="button"
-            class="rec-icon-btn"
-            :disabled="refreshing || status === 'loading'"
-            :title="refreshTitle"
-            :aria-label="t('dailyRecommend.refresh')"
-            @click="onRefresh"
-          >
-            <el-icon :size="16" :class="{ 'rec-spin': refreshing }"><Refresh /></el-icon>
-          </button>
-        </div>
-      </header>
+      <!-- 外界感知：可滚动画像推荐 -->
+      <div class="rec-recommend-body">
+        <header class="rec-recommend-head">
+          <div class="rec-header-text">
+            <h2 class="rec-header-title">{{ t("dailyRecommend.title") }}</h2>
+            <span class="rec-header-sub">{{ t("dailyRecommend.oncePerDay") }}</span>
+          </div>
+          <div class="rec-header-actions">
+            <button
+              type="button"
+              class="rec-icon-btn"
+              :disabled="refreshing || status === 'loading'"
+              :title="refreshTitle"
+              :aria-label="t('dailyRecommend.refresh')"
+              @click="onRefresh"
+            >
+              <el-icon :size="16" :class="{ 'rec-spin': refreshing }"><Refresh /></el-icon>
+            </button>
+          </div>
+        </header>
 
-      <div class="rec-main">
-        <div class="rec-main-scroll">
+        <div class="rec-recommend-scroll">
           <DailyRecommendSkeleton v-if="status === 'loading'" :count="3" />
 
           <div v-else-if="status === 'error'" class="rec-center-state">
@@ -69,6 +71,21 @@
       </div>
 
       <footer class="rec-footer">{{ t("dailyRecommend.footerHint") }}</footer>
+      </div>
+
+      <div class="rec-rail-layer" :aria-hidden="!collapsed">
+        <div class="rec-collapsed">
+          <button
+            type="button"
+            class="rec-rail"
+            :aria-label="t('dailyRecommend.expand')"
+            @click="collapsed = false"
+          >
+            <el-icon :size="20"><Reading /></el-icon>
+          </button>
+        </div>
+      </div>
+    </div>
     </div>
 
     <SidebarCollapseTab
@@ -76,6 +93,14 @@
       side="right"
       :label="t('dailyRecommend.collapse')"
       @click="collapsed = true"
+    />
+
+    <KnowledgePlanetOverlay
+      :visible="planetOpen"
+      :universe="planetUniverse"
+      :weekly="planetWeekly"
+      :origin-rect="planetOriginRect"
+      @close="planetOpen = false"
     />
   </aside>
 </template>
@@ -89,6 +114,17 @@ import { useI18n } from "vue-i18n";
 import { useDailyRecommend } from "../../composables/useDailyRecommend";
 import DailyRecommendCard from "./DailyRecommendCard.vue";
 import DailyRecommendSkeleton from "./DailyRecommendSkeleton.vue";
+import KnowledgePlanetCard from "./KnowledgePlanetCard.vue";
+import KnowledgePlanetOverlay from "./KnowledgePlanetOverlay.vue";
+import {
+  fetchKnowledgePlanetSummary,
+  fetchKnowledgePlanetUniverse,
+  fetchKnowledgePlanetWeeklyLatest,
+  type KnowledgePlanetSummary,
+  type KnowledgePlanetUniverse,
+  type KnowledgePlanetWeeklyLatest,
+  type KnowledgePlanetWarpOrigin,
+} from "../../api/knowledgePlanet";
 
 const props = withDefaults(
   defineProps<{
@@ -103,6 +139,11 @@ const collapsed = defineModel<boolean>("collapsed", { default: false });
 
 const { t } = useI18n();
 const refreshing = ref(false);
+const planetSummary = ref<KnowledgePlanetSummary | null>(null);
+const planetOpen = ref(false);
+const planetOriginRect = ref<KnowledgePlanetWarpOrigin | null>(null);
+const planetUniverse = ref<KnowledgePlanetUniverse | null>(null);
+const planetWeekly = ref<KnowledgePlanetWeeklyLatest | null>(null);
 
 const {
   status,
@@ -147,9 +188,39 @@ watch(
   (n, prev) => {
     if (n > 0 && n !== prev) {
       void reloadAfterLogin();
+      void loadPlanetSummary();
     }
   },
 );
+
+async function loadPlanetSummary(): Promise<void> {
+  try {
+    planetSummary.value = await fetchKnowledgePlanetSummary();
+  } catch {
+    planetSummary.value = null;
+  }
+}
+
+async function openPlanet(origin: KnowledgePlanetWarpOrigin): Promise<void> {
+  planetOriginRect.value = origin;
+  planetOpen.value = true;
+  try {
+    const [u, w] = await Promise.all([
+      fetchKnowledgePlanetUniverse(),
+      fetchKnowledgePlanetWeeklyLatest().catch(() => ({
+        weekStart: null,
+        status: null,
+        plan: null,
+      })),
+    ]);
+    planetUniverse.value = u;
+    planetWeekly.value = w;
+  } catch {
+    planetUniverse.value = { planets: [], nodes: [], links: [] };
+  }
+}
+
+void loadPlanetSummary();
 
 </script>
 
@@ -157,76 +228,105 @@ watch(
 .rec-panel {
   --rec-width-expanded: 300px;
   --rec-width-collapsed: 40px;
-  --rec-ease: cubic-bezier(0.4, 0, 0.2, 1);
-  --rec-duration: 0.28s;
-
   position: relative;
-  flex-shrink: 0;
+  flex: 0 0 var(--rec-width-expanded);
   width: var(--rec-width-expanded);
+  min-width: 0;
+  flex-shrink: 0;
   height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: #fafbfc;
-  border-left: 1px solid #e8ecef;
+  background: var(--rec-bg-panel, #fcfdfe);
+  border-left: 1px solid var(--rec-border, #e8ecef);
   box-sizing: border-box;
   overflow: visible;
-  transition: width var(--rec-duration) var(--rec-ease);
+  transition:
+    width var(--chat-shell-duration, 0.42s) var(--chat-shell-ease, cubic-bezier(0.32, 0.72, 0, 1)),
+    flex-basis var(--chat-shell-duration, 0.42s) var(--chat-shell-ease, cubic-bezier(0.32, 0.72, 0, 1)),
+    background-color var(--chat-shell-duration, 0.42s) var(--chat-shell-ease, cubic-bezier(0.32, 0.72, 0, 1)),
+    border-color var(--chat-shell-duration, 0.42s) var(--chat-shell-ease, cubic-bezier(0.32, 0.72, 0, 1));
+}
+
+.rec-clip {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.rec-panel--planet:not(.rec-panel--collapsed) {
+  --rec-width-expanded: 320px;
+  background: var(--rec-bg-panel-planet, #f4f7fa);
+  border-left-color: var(--rec-border, #dde3ea);
 }
 
 .rec-panel--collapsed {
+  flex-basis: var(--rec-width-collapsed);
   width: var(--rec-width-collapsed);
-  background: #f5f8fc;
+  background: var(--rec-bg-collapsed, #f5f8fc);
 }
 
-.rec-pane {
-  position: absolute;
-  inset: 0;
+.rec-inner {
+  position: relative;
+  width: var(--rec-width-expanded);
+  height: 100%;
+  min-height: 0;
+  flex: 1;
+}
+
+.rec-body {
   display: flex;
   flex-direction: column;
+  height: 100%;
   min-height: 0;
-  overflow: hidden;
+  opacity: 1;
+  transition: opacity 0.32s var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1)) 0.12s;
+}
+
+.rec-panel--collapsed .rec-body {
   opacity: 0;
-  visibility: hidden;
   pointer-events: none;
-  transition:
-    opacity 0.22s var(--rec-ease),
-    visibility 0.22s var(--rec-ease);
+  transition-delay: 0s;
 }
 
-.rec-pane--wide {
-  width: var(--rec-width-expanded);
-}
-
-.rec-pane--narrow {
+.rec-rail-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
   width: var(--rec-width-collapsed);
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.32s var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1)) 0.06s;
 }
 
-.rec-panel:not(.rec-panel--collapsed) .rec-pane--wide {
+.rec-panel--collapsed .rec-rail-layer {
   opacity: 1;
-  visibility: visible;
   pointer-events: auto;
 }
 
-.rec-panel--collapsed .rec-pane--narrow {
-  opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .rec-panel,
-  .rec-pane {
-    transition: none;
-  }
+.rec-collapsed {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 12px 0 10px;
+  box-sizing: border-box;
 }
 
 .rec-rail {
   flex: 1;
   width: 100%;
+  min-height: 44px;
   border: none;
   background: transparent;
-  color: #5a7a94;
+  color: var(--rec-rail-color, #5a7a94);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -235,11 +335,27 @@ watch(
 }
 
 .rec-rail:hover {
-  background: #eef4fa;
-  color: #3d6f94;
+  background: var(--rec-hover-bg, #eef4fa);
+  color: var(--rec-text-link, #3d6f94);
 }
 
-.rec-header {
+.rec-recommend-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--rec-bg-body, rgba(252, 253, 254, 0.92));
+  backdrop-filter: blur(8px);
+  border-top: 1px solid var(--rec-border, #e8ecef);
+}
+
+.rec-panel--planet .rec-recommend-body {
+  margin-top: 4px;
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.04);
+}
+
+.rec-recommend-head {
   flex-shrink: 0;
   min-height: 50px;
   box-sizing: border-box;
@@ -247,9 +363,8 @@ watch(
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 10px 12px;
-  border-bottom: 1px solid #e8ecef;
-  background: #fafbfc;
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid var(--rec-border-subtle, #eef1f4);
 }
 
 .rec-header-text {
@@ -261,10 +376,10 @@ watch(
 
 .rec-header-title {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
   line-height: 1.2;
-  color: #2c3e50;
+  color: var(--rec-text-title, #2c3e50);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -273,7 +388,7 @@ watch(
 .rec-header-sub {
   font-size: 11px;
   line-height: 1.2;
-  color: #a0adb8;
+  color: var(--rec-text-muted, #a0adb8);
 }
 
 .rec-header-actions {
@@ -292,14 +407,14 @@ watch(
   border: none;
   border-radius: 8px;
   background: transparent;
-  color: #6b7c8a;
+  color: var(--rec-icon, #6b7c8a);
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
 
 .rec-icon-btn:hover:not(:disabled) {
-  background: #eef4fa;
-  color: #3d6f94;
+  background: var(--rec-hover-bg, #eef4fa);
+  color: var(--rec-text-link, #3d6f94);
 }
 
 .rec-icon-btn:disabled {
@@ -317,43 +432,36 @@ watch(
   }
 }
 
-.rec-main {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.rec-main-scroll {
+.rec-recommend-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: thin;
-  scrollbar-color: #d0d8e0 #fafbfc;
+  scrollbar-color: var(--rec-scrollbar, #d0d8e0) transparent;
 }
 
-.rec-main-scroll::-webkit-scrollbar {
+.rec-recommend-scroll::-webkit-scrollbar {
   width: 5px;
 }
 
-.rec-main-scroll::-webkit-scrollbar-thumb {
-  background: #d0d8e0;
+.rec-recommend-scroll::-webkit-scrollbar-thumb {
+  background: var(--rec-scrollbar, #d0d8e0);
   border-radius: 3px;
 }
 
 .rec-list {
   list-style: none;
   margin: 0;
-  padding: 12px 14px 10px;
+  padding: 10px 14px 12px;
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
 .rec-center-state {
-  min-height: 200px;
-  padding: 28px 16px;
+  min-height: 160px;
+  padding: 24px 16px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -366,21 +474,21 @@ watch(
   margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: #2c3e50;
+  color: var(--rec-text-title, #2c3e50);
 }
 
 .rec-center-msg {
   margin: 0;
   font-size: 13px;
   line-height: 1.55;
-  color: #7a8794;
+  color: var(--rec-text-body, #7a8794);
   max-width: 220px;
 }
 
 .rec-center-link {
   margin-top: 4px;
   font-size: 12px;
-  color: #3d6f94;
+  color: var(--rec-text-link, #3d6f94);
   text-decoration: none;
 }
 
@@ -391,16 +499,16 @@ watch(
 .rec-retry-btn {
   margin-top: 6px;
   padding: 6px 16px;
-  border: 1px solid #c5d9eb;
+  border: 1px solid var(--rec-btn-border, #c5d9eb);
   border-radius: 8px;
-  background: #fff;
-  color: #3d6f94;
+  background: var(--rec-btn-bg, #fff);
+  color: var(--rec-text-link, #3d6f94);
   font-size: 13px;
   cursor: pointer;
 }
 
 .rec-retry-btn:hover:not(:disabled) {
-  background: #f0f6fb;
+  background: var(--rec-hover-bg, #f0f6fb);
 }
 
 .rec-retry-btn:disabled {
@@ -417,8 +525,8 @@ watch(
   justify-content: center;
   padding: 0 10px;
   font-size: 11px;
-  color: #b0bcc6;
-  border-top: 1px solid #eef1f4;
-  background: #fafbfc;
+  color: var(--rec-text-hint, #b0bcc6);
+  border-top: 1px solid var(--rec-border-subtle, #eef1f4);
+  background: var(--rec-bg-footer, #fafbfc);
 }
 </style>

@@ -306,6 +306,7 @@ import * as usersApi from "@/api/users";
 import { sameLoginName } from "@/utils/accountPrincipal";
 import { readJwtSubject, readJwtTid, readJwtTmr } from "@/utils/jwtSubject";
 import { apiRequestErrorMessage } from "@/utils/apiRequestErrorMessage";
+import { messageBoxButtons } from "@/utils/messageBoxI18n";
 
 const { t, locale } = useI18n();
 
@@ -595,13 +596,6 @@ async function submitInvite() {
   }
 }
 
-function messageBoxButtons() {
-  return {
-    confirmButtonText: t("common.confirm"),
-    cancelButtonText: t("common.cancel"),
-  };
-}
-
 function onTenantFilterChange() {
   void loadMembers();
   void loadUsers();
@@ -612,7 +606,7 @@ async function onRemoveMember(row: usersApi.TenantMemberRow) {
     await ElMessageBox.confirm(
       t("views.users.confirmRemoveMember", { name: row.loginName }),
       t("common.confirmTitle"),
-      { type: "warning", ...messageBoxButtons() },
+      { type: "warning", ...messageBoxButtons(t) },
     );
   } catch {
     return;
@@ -662,7 +656,7 @@ async function toggleStatus(u: usersApi.UserRow) {
     await ElMessageBox.confirm(
       t("views.users.toggleConfirm", { name: u.loginName, action }),
       t("common.confirmTitle"),
-      { type: "warning", ...messageBoxButtons() },
+      { type: "warning", ...messageBoxButtons(t) },
     );
   } catch {
     return;
@@ -684,7 +678,7 @@ async function kickUser(u: usersApi.UserRow) {
   try {
     await ElMessageBox.confirm(t("views.users.kickConfirm", { name: u.loginName }), t("common.confirmTitle"), {
       type: "warning",
-      ...messageBoxButtons(),
+      ...messageBoxButtons(t),
     });
     await usersApi.kickUserSession(u);
     ElMessage.success(t("views.users.kicked"));

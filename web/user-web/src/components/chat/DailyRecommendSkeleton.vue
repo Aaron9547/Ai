@@ -29,8 +29,8 @@ const { t } = useI18n();
 .rec-skel-card {
   padding: 14px 14px 12px;
   border-radius: 8px;
-  background: #ffffff;
-  border: 1px solid #eef1f5;
+  background: var(--rec-card-bg, #ffffff);
+  border: 1px solid var(--rec-card-border, #eef1f5);
   min-height: 118px;
   box-sizing: border-box;
 }

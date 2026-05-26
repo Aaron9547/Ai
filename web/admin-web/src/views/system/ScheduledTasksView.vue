@@ -146,10 +146,11 @@
 </template>
 
 <script setup lang="ts">
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElMessage } from "element-plus";
 import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import * as stApi from "@/api/scheduledTasksAdmin";
+import { confirmMessageBox } from "@/utils/messageBoxI18n";
 import type { ScheduledRunDetail, ScheduledTaskMeta, ScheduledTaskRow, TaskProgress } from "@/api/scheduledTasksAdmin";
 
 const { t } = useI18n();
@@ -463,7 +464,7 @@ function stopPoll() {
 
 async function remove(row: ScheduledTaskRow) {
   try {
-    await ElMessageBox.confirm(t("views.scheduledTasks.deleteConfirm", { name: row.name }), { type: "warning" });
+    await confirmMessageBox(t, t("views.scheduledTasks.deleteConfirm", { name: row.name }), { type: "warning" });
     await stApi.deleteScheduledTask(row.id);
     ElMessage.success(t("views.scheduledTasks.deleted"));
     await load();

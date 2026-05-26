@@ -12,7 +12,8 @@
         <el-tab-pane :label="t('views.gateway.tabEndpoints')" name="endpoints">
           <div class="tab-toolbar">
             <el-button type="primary" @click="openEndpointCreate">{{ t("views.gateway.newEndpoint") }}</el-button>
-            <el-button :loading="syncLoading" @click="onSyncOpenApiSpec">{{ t("views.gateway.syncOpenApiSpec") }}</el-button>
+            <el-button :loading="syncLoading" @click="onSyncOpenApiSpec(true)">{{ t("views.gateway.syncOpenApiSpec") }}</el-button>
+            <el-button :loading="syncOverwriteLoading" @click="onSyncOpenApiSpec(false)">{{ t("views.gateway.syncOpenApiSpecOverwrite") }}</el-button>
             <el-button text type="primary" :loading="epLoading" @click="loadEndpoints">{{ t("views.gateway.refresh") }}</el-button>
           </div>
           <el-table v-loading="epLoading" :data="epRows" stripe border :empty-text="t('views.gateway.emptyEndpoints')">
@@ -220,11 +221,24 @@
         <el-button type="primary" :loading="rlSaving" @click="submitLimit">{{ t("views.gateway.save") }}</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="syncProgressVisible"
+      :title="t('views.gateway.syncOpenApiSpecProgressTitle')"
+      width="440px"
+      :close-on-click-modal="false"
+      :close-on-press-escape="!syncLoading"
+      :show-close="!syncLoading"
+    >
+      <p class="sync-progress-msg">{{ syncProgressMessage }}</p>
+      <el-progress :percentage="syncProgressPercent" :status="syncLoading ? undefined : 'success'" />
+      <p v-if="syncProgressDetail" class="sync-progress-detail">{{ syncProgressDetail }}</p>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElMessage } from "element-plus";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import * as epApi from "@/api/gatewayApiEndpoints";
@@ -232,6 +246,7 @@ import * as gwApi from "@/api/gatewayRateLimits";
 import { AI_ADMIN_ACCESS_TOKEN_KEY } from "@/plugins/http";
 import { useAdminFounderTenantOptions } from "@/composables/useAdminFounderTenantOptions";
 import { readJwtTid, readJwtTmr } from "@/utils/jwtSubject";
+import { confirmMessageBox } from "@/utils/messageBoxI18n";
 import { apiRequestErrorMessage } from "@/utils/apiRequestErrorMessage";
 import type { TenantRow } from "@/api/tenants";
 import { formatTenantNameCode, formatTenantRowOptionLabel } from "@/utils/adminListDisplay";
@@ -256,8 +271,14 @@ const epSize = ref(20);
 const epDlg = ref(false);
 const epEditId = ref<number | null>(null);
 const epSaving = ref(false);
+const SYNC_BATCH_SIZE = 50;
 const syncLoading = ref(false);
-const syncOneLoading = ref(false);
+const syncOverwriteLoading = ref(false);
+const syncEmptyOnly = ref(true);
+const syncProgressVisible = ref(false);
+const syncProgressPercent = ref(0);
+const syncProgressMessage = ref("");
+const syncProgressDetail = ref("");
 const epForm = reactive({
   displayName: "",
   pathPattern: "",
@@ -333,28 +354,87 @@ function onEpSizeChange() {
   void loadEndpoints();
 }
 
-async function onSyncOpenApiSpec() {
+function batchSkippedCount(batch: epApi.OpenApiSpecBatchSyncResult): number {
+  return batch.batchSkippedAlreadyFilled ?? batch.batchSkipped ?? 0;
+}
+
+async function onSyncOpenApiSpec(emptyOnly: boolean) {
+  syncEmptyOnly.value = emptyOnly;
   try {
-    await ElMessageBox.confirm(t("views.gateway.syncOpenApiSpecConfirm"), { type: "info" });
+    await confirmMessageBox(
+      t,
+      emptyOnly ? t("views.gateway.syncOpenApiSpecConfirm") : t("views.gateway.syncOpenApiSpecOverwriteConfirm"),
+      { type: emptyOnly ? "info" : "warning" },
+    );
   } catch {
     return;
   }
-  syncLoading.value = true;
+  if (emptyOnly) {
+    syncLoading.value = true;
+  } else {
+    syncOverwriteLoading.value = true;
+  }
+  syncProgressVisible.value = true;
+  syncProgressPercent.value = 0;
+  syncProgressMessage.value = t("views.gateway.syncOpenApiSpecProgress", { processed: 0, total: 0 });
+  syncProgressDetail.value = "";
+  let offset = 0;
+  let totalUpdated = 0;
+  let totalSkipped = 0;
+  let totalNoSchema = 0;
+  let totalUnmatched = 0;
+  let openApiReady = true;
+  let openApiPathCount = 0;
   try {
-    const result = await epApi.syncOpenApiSpec(true);
-    ElMessage.success(
-      t("views.gateway.syncOpenApiSpecDone", {
-        updated: result.updated,
-        skipped: result.skipped,
-        unmatched: result.unmatched,
-      }),
-    );
+    for (;;) {
+      const batch = await epApi.syncOpenApiSpecBatch(offset, SYNC_BATCH_SIZE, emptyOnly);
+      openApiReady = batch.openApiReady;
+      openApiPathCount = batch.openApiPathCount ?? 0;
+      totalUpdated += batch.batchUpdated;
+      totalSkipped += batchSkippedCount(batch);
+      totalNoSchema += batch.batchNoSchema ?? 0;
+      totalUnmatched += batch.batchUnmatched;
+      syncProgressPercent.value =
+        batch.total > 0 ? Math.min(100, Math.round((batch.processed / batch.total) * 100)) : 100;
+      syncProgressMessage.value = t("views.gateway.syncOpenApiSpecProgress", {
+        processed: batch.processed,
+        total: batch.total,
+      });
+      syncProgressDetail.value = t("views.gateway.syncOpenApiSpecProgressBatch", {
+        updated: batch.batchUpdated,
+        skipped: batchSkippedCount(batch),
+        noSchema: batch.batchNoSchema ?? 0,
+        unmatched: batch.batchUnmatched,
+      });
+      if (batch.done) {
+        break;
+      }
+      offset = batch.processed;
+    }
+    if (!openApiReady) {
+      ElMessage.warning(t("views.gateway.syncOpenApiSpecNoOpenApi"));
+    } else if (openApiPathCount === 0) {
+      ElMessage.warning(t("views.gateway.syncOpenApiSpecEmptyPaths", { count: openApiPathCount }));
+    } else if (totalUpdated === 0 && totalUnmatched === 0 && totalSkipped > 0 && emptyOnly) {
+      ElMessage.info(t("views.gateway.syncOpenApiSpecAllSkippedHint"));
+    } else {
+      ElMessage.success(
+        t("views.gateway.syncOpenApiSpecDone", {
+          updated: totalUpdated,
+          skipped: totalSkipped,
+          noSchema: totalNoSchema,
+          unmatched: totalUnmatched,
+          paths: openApiPathCount,
+        }),
+      );
+    }
     await loadEndpoints();
     await loadPicker();
   } catch (e: unknown) {
     ElMessage.error(apiRequestErrorMessage(e, t("views.gateway.syncOpenApiSpecFailed")));
   } finally {
     syncLoading.value = false;
+    syncOverwriteLoading.value = false;
   }
 }
 
@@ -516,7 +596,8 @@ async function submitEndpoint() {
 
 async function onEndpointDelete(row: epApi.ApiEndpointRow) {
   try {
-    await ElMessageBox.confirm(t("views.gateway.deleteEndpointConfirm", { name: row.displayName }), t("views.gateway.confirm"), {
+    await confirmMessageBox(t, t("views.gateway.deleteEndpointConfirm", { name: row.displayName }), {
+      title: t("views.gateway.confirm"),
       type: "warning",
     });
     await epApi.deleteApiEndpoint(row.id);
@@ -643,10 +724,10 @@ async function submitLimit() {
 
 async function onLimitDelete(row: gwApi.RateLimitRow) {
   try {
-    await ElMessageBox.confirm(
+    await confirmMessageBox(
+      t,
       t("views.gateway.deleteLimitConfirm", { method: row.httpMethod, path: row.pathPattern }),
-      t("views.gateway.confirm"),
-      { type: "warning" },
+      { title: t("views.gateway.confirm"), type: "warning" },
     );
     await gwApi.deleteRateLimit(row.id);
     await loadRateLimits();
@@ -701,6 +782,16 @@ onMounted(() => {
   font-size: 15px;
   color: var(--el-text-color-primary);
 }
+.sync-progress-msg {
+  margin: 0 0 12px;
+  font-size: 14px;
+}
+.sync-progress-detail {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
 .hdr-sub {
   margin: 0;
   font-size: 12px;

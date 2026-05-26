@@ -27,6 +27,9 @@ class GwApiOpenApiSpecExtractorTest {
                 "/partner/v1/chat/probe", "/partner/v1/chat/probe"));
         assertTrue(GwApiOpenApiSpecExtractor.pathMatches(
                 "/api/v1/admin/gateway-access-parties/*", "/api/v1/admin/gateway-access-parties/{id}"));
+        assertTrue(GwApiOpenApiSpecExtractor.pathMatches(
+                "/api/v1/admin/gateway-api-endpoints/sync-openapi-spec/batch",
+                "/api/v1/admin/gateway-api-endpoints/sync-openapi-spec/batch"));
     }
 
     @Test

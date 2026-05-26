@@ -64,10 +64,36 @@ export type TenantShellAuthRegisterPutBody = Omit<
   emailPassword?: string;
 };
 
+export type TenantShellKnowledgePlanetRuntime = {
+  enabled: boolean;
+  weeklyComputeCron: string;
+  weeklyEmailCron: string;
+  digestModelId: string;
+  emailEnabled: boolean;
+  reuseRegisterSmtp: boolean;
+  emailDeliveryReady: boolean;
+  emailSmtpHost: string;
+  emailSmtpPort: number;
+  emailUsername: string;
+  emailPasswordConfigured: boolean;
+  emailFrom: string;
+  emailSsl: boolean;
+  emailSubjectTemplate: string;
+  emailBodyTemplate: string;
+};
+
+export type TenantShellKnowledgePlanetPutBody = Omit<
+  TenantShellKnowledgePlanetRuntime,
+  "emailDeliveryReady" | "emailPasswordConfigured"
+> & {
+  emailPassword?: string;
+};
+
 export type TenantShellConfig = {
   branding: TenantShellBranding;
   modelCallingRuntime: TenantShellModelCallingRuntime;
   authRegister: TenantShellAuthRegisterRuntime;
+  knowledgePlanet: TenantShellKnowledgePlanetRuntime;
   outbound: TenantShellOutbound;
 };
 
@@ -136,6 +162,16 @@ export async function putTenantShellAuthRegister(
   body: TenantShellAuthRegisterPutBody,
 ): Promise<TenantShellConfig> {
   const { data } = await http.put<TenantShellConfig>("/api/v1/admin/tenant-shell-config/auth-register", body);
+  return data;
+}
+
+export async function putTenantShellKnowledgePlanet(
+  body: TenantShellKnowledgePlanetPutBody,
+): Promise<TenantShellConfig> {
+  const { data } = await http.put<TenantShellConfig>(
+    "/api/v1/admin/tenant-shell-config/knowledge-planet",
+    body,
+  );
   return data;
 }
 

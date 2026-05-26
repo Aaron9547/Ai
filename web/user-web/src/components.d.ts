@@ -34,6 +34,8 @@ declare module 'vue' {
     ElTabPane: typeof import('element-plus/es')['ElTabPane']
     ElTabs: typeof import('element-plus/es')['ElTabs']
     ElUpload: typeof import('element-plus/es')['ElUpload']
+    KnowledgePlanetCard: typeof import('./components/chat/KnowledgePlanetCard.vue')['default']
+    KnowledgePlanetOverlay: typeof import('./components/chat/KnowledgePlanetOverlay.vue')['default']
     LocaleThemeToolbar: typeof import('./components/LocaleThemeToolbar.vue')['default']
     QuickPromptChip: typeof import('./components/chat/QuickPromptChip.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']

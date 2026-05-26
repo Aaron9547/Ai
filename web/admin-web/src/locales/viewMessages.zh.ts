@@ -331,10 +331,23 @@ export default {
     requestSpecPh: '[{"name":"prompt","in":"body","type":"string","required":true,"description":"..."}]',
     responseSpecPh: '[{"name":"status","type":"string","description":"..."}]',
     specJsonInvalid: "入参/出参须为合法 JSON 数组",
-    syncOpenApiSpec: "从 OpenAPI 同步",
+    syncOpenApiSpec: "从 OpenAPI 补空",
+    syncOpenApiSpecOverwrite: "覆盖同步",
+    syncOpenApiSpecOverwriteConfirm:
+      "将用 SpringDoc OpenAPI 覆盖目录中已配置的入参/出参（含已有内容）。确定继续？",
+    syncOpenApiSpecAllSkippedHint:
+      "全部为「跳过」：默认仅补空，且库中入参/出参已有内容（或已与 OpenAPI 一致）。若需重拉请点「覆盖同步」。",
+    syncOpenApiSpecNoOpenApi: "未能加载 SpringDoc OpenAPI（请确认服务已启动且 springdoc 可用）",
     syncOpenApiSpecOne: "从 OpenAPI 拉取",
     syncOpenApiSpecConfirm: "将按 path + method 从 SpringDoc OpenAPI 补全尚未配置的入参/出参，已填写内容不会被覆盖。继续？",
-    syncOpenApiSpecDone: "同步完成：更新 {updated}，跳过 {skipped}，未匹配 {unmatched}",
+    syncOpenApiSpecDone:
+      "同步完成：更新 {updated}，跳过（已有）{skipped}，无字段 {noSchema}，未匹配 {unmatched}（OpenAPI 共 {paths} 条路径）",
+    syncOpenApiSpecEmptyPaths:
+      "SpringDoc 未扫描到任何 API 路径（openApiPathCount=0）。请确认后端已启动，并在浏览器打开 /v3/api-docs 是否有 JSON。",
+    syncOpenApiSpecProgressTitle: "正在从 OpenAPI 同步",
+    syncOpenApiSpecProgress: "已处理 {processed} / {total} 条接口目录",
+    syncOpenApiSpecProgressBatch:
+      "本批：更新 {updated}，跳过（已有）{skipped}，无字段 {noSchema}，未匹配 {unmatched}",
     syncOpenApiSpecOneDone: "已从 OpenAPI 拉取入参/出参",
     syncOpenApiSpecFailed: "OpenAPI 同步失败",
     confirm: "确认",

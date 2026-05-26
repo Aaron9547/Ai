@@ -14,6 +14,7 @@ import com.aaron.cloud.chat.websearch.ChatWebSearchGroundingService;
 import com.aaron.cloud.chat.websearch.WebGroundingBundle;
 import com.aaron.cloud.chat.websearch.WebSearchStreamGroundingSession;
 import com.aaron.cloud.chat.dto.ChatStarterPromptDtos;
+import com.aaron.cloud.chat.knowledgeplanet.KnowledgePlanetIngestService;
 import com.aaron.cloud.chat.starter.ChatStarterFollowUpService;
 import com.aaron.cloud.chat.dto.WebSearchReferenceView;
 import com.aaron.cloud.chat.websearch.WebSearchReference;
@@ -124,6 +125,7 @@ public class ChatApplicationService {
     private final TenantRuntimeSettingApplicationService tenantRuntimeSettingApplicationService;
     private final ChatWebSearchGroundingService chatWebSearchGroundingService;
     private final ChatTurnDigestApplicationService chatTurnDigestApplicationService;
+    private final KnowledgePlanetIngestService knowledgePlanetIngestService;
     private final ChatStarterFollowUpService chatStarterFollowUpService;
     private final ChatSendIdempotencyGuard chatSendIdempotencyGuard;
 
@@ -932,6 +934,13 @@ public class ChatApplicationService {
                                             assistantTextForMemory,
                                             modelAliasForMemory,
                                             isMock);
+                                    knowledgePlanetIngestService.scheduleAfterTurn(
+                                            snap,
+                                            conversationId,
+                                            assistantRowId,
+                                            payload.getContent(),
+                                            assistantTextForMemory,
+                                            modelAliasForMemory);
                                 });
                     } catch (Exception e) {
                         log.error(

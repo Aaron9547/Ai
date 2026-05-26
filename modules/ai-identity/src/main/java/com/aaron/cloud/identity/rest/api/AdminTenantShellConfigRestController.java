@@ -69,6 +69,13 @@ public class AdminTenantShellConfigRestController extends ApiV1ControllerBases.A
                 TenantContextHolder.require().getTenantId(), body);
     }
 
+    @PutMapping("/knowledge-planet")
+    public TenantShellAdminApplicationService.ShellConfigResponse putKnowledgePlanet(
+            @RequestBody TenantShellAdminApplicationService.ShellKnowledgePlanetPutBody body) {
+        return tenantShellAdminApplicationService.saveKnowledgePlanet(
+                TenantContextHolder.require().getTenantId(), body);
+    }
+
     @PostMapping(value = "/logo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public TenantShellAdminApplicationService.LogoUploadResponse uploadLogo(@RequestPart("file") MultipartFile file)
             throws Exception {

@@ -30,6 +30,16 @@
   --chat-hover: rgba(0, 0, 0, 0.04);
   --chat-hover-strong: rgba(0, 0, 0, 0.06);
   --chat-accent: #5b9fd4;
+  --chat-send-bg-idle: var(--chat-model-select-bg);
+  --chat-send-border: var(--chat-model-select-border);
+  --chat-send-icon-idle: var(--chat-text-muted);
+  --chat-send-bg-active: var(--chat-text-primary);
+  --chat-send-icon-active: #ffffff;
+  --chat-send-bg-active-hover: #333333;
+  --chat-send-bg-stop: var(--chat-bg-elevated);
+  --chat-send-border-stop: var(--chat-text-primary);
+  --chat-send-icon-stop: var(--chat-text-primary);
+  --chat-send-shadow-active: 0 1px 2px rgba(0, 0, 0, 0.06);
   --chat-link: #2563eb;
   --chat-toggle-think-glow: rgba(99, 102, 241, 0.32);
   --chat-toggle-think-ring: rgba(99, 102, 241, 0.55);
@@ -46,6 +56,38 @@
   --chat-md-table-border: #e4e4e7;
   --chat-md-blockquote-border: #d4d4d8;
   --chat-model-select-hover: #f4f4f4;
+  --chat-model-select-bg: #f0f3f6;
+  --chat-model-select-border: #e4e8ed;
+  --chat-conv-hover: rgba(91, 159, 212, 0.08);
+  --chat-conv-active-bg: rgba(91, 159, 212, 0.12);
+  --chat-conv-accent: #5b9fd4;
+  /* 右侧画像推荐栏 */
+  --rec-bg-panel: #fcfdfe;
+  --rec-bg-panel-planet: #f4f7fa;
+  --rec-bg-collapsed: #f5f8fc;
+  --rec-bg-body: rgba(252, 253, 254, 0.92);
+  --rec-bg-footer: #fafbfc;
+  --rec-border: #e8ecef;
+  --rec-border-subtle: #eef1f4;
+  --rec-text-title: #2c3e50;
+  --rec-text-muted: #a0adb8;
+  --rec-text-body: #7a8794;
+  --rec-text-hint: #b0bcc6;
+  --rec-text-link: #3d6f94;
+  --rec-icon: #6b7c8a;
+  --rec-hover-bg: #eef4fa;
+  --rec-rail-color: #5a7a94;
+  --rec-card-bg: #ffffff;
+  --rec-card-border: #e9edf2;
+  --rec-card-hover-border: #c5d9eb;
+  --rec-card-title: #2c3e50;
+  --rec-card-summary: #7a8794;
+  --rec-card-foot: #a0adb8;
+  --rec-card-badge-bg: #f0f6fb;
+  --rec-card-badge-text: #6b8aa8;
+  --rec-btn-bg: #ffffff;
+  --rec-btn-border: #c5d9eb;
+  --rec-scrollbar: #d0d8e0;
 }
 
 html.dark .chat-app {
@@ -79,6 +121,16 @@ html.dark .chat-app {
   --chat-hover: rgba(255, 255, 255, 0.06);
   --chat-hover-strong: rgba(255, 255, 255, 0.1);
   --chat-accent: #34d399;
+  --chat-send-bg-idle: var(--chat-bg-muted);
+  --chat-send-border: var(--chat-border-subtle);
+  --chat-send-icon-idle: var(--chat-text-muted);
+  --chat-send-bg-active: #f4f4f5;
+  --chat-send-icon-active: #18181b;
+  --chat-send-bg-active-hover: #e4e4e7;
+  --chat-send-bg-stop: var(--chat-bg-elevated);
+  --chat-send-border-stop: var(--chat-text-primary);
+  --chat-send-icon-stop: var(--chat-text-primary);
+  --chat-send-shadow-active: 0 1px 2px rgba(0, 0, 0, 0.28);
   --chat-link: #60a5fa;
   --chat-toggle-think-glow: rgba(129, 140, 248, 0.38);
   --chat-toggle-think-ring: rgba(165, 180, 252, 0.65);
@@ -95,6 +147,37 @@ html.dark .chat-app {
   --chat-md-table-border: #52525b;
   --chat-md-blockquote-border: #52525b;
   --chat-model-select-hover: #27272a;
+  --chat-model-select-bg: #27272a;
+  --chat-model-select-border: #3f3f46;
+  --chat-conv-hover: rgba(255, 255, 255, 0.06);
+  --chat-conv-active-bg: #3f3f46;
+  --chat-conv-accent: #34d399;
+  --rec-bg-panel: #141414;
+  --rec-bg-panel-planet: #121212;
+  --rec-bg-collapsed: #1a1a1a;
+  --rec-bg-body: rgba(26, 26, 26, 0.96);
+  --rec-bg-footer: #1a1a1a;
+  --rec-border: #2e2e2e;
+  --rec-border-subtle: #3f3f46;
+  --rec-text-title: #f4f4f5;
+  --rec-text-muted: #a1a1aa;
+  --rec-text-body: #d4d4d8;
+  --rec-text-hint: #71717a;
+  --rec-text-link: #60a5fa;
+  --rec-icon: #a1a1aa;
+  --rec-hover-bg: #27272a;
+  --rec-rail-color: #a1a1aa;
+  --rec-card-bg: #1f1f1f;
+  --rec-card-border: #3f3f46;
+  --rec-card-hover-border: #52525b;
+  --rec-card-title: #f4f4f5;
+  --rec-card-summary: #a1a1aa;
+  --rec-card-foot: #71717a;
+  --rec-card-badge-bg: #27272a;
+  --rec-card-badge-text: #94a3b8;
+  --rec-btn-bg: #27272a;
+  --rec-btn-border: #3f3f46;
+  --rec-scrollbar: #52525b;
 }
 
 /* 覆盖 ChatView / ChatSidebar 内 scoped 硬编码色（提高权重） */
@@ -253,9 +336,20 @@ html.dark .chat-app .model-pill-select .el-select__placeholder {
   color: var(--chat-text-primary) !important;
 }
 
+html.dark .chat-app .model-pill-select .el-select__wrapper,
+html.dark .chat-app .model-pill-select .el-input__wrapper {
+  background: var(--chat-model-select-bg) !important;
+  border-color: var(--chat-model-select-border) !important;
+}
+
 html.dark .chat-app .model-pill-select .el-select__wrapper:hover,
 html.dark .chat-app .model-pill-select .el-input__wrapper:hover {
   background: var(--chat-model-select-hover) !important;
+}
+
+html.dark .chat-app .model-pill-select .el-input__wrapper.is-focus,
+html.dark .chat-app .model-pill-select .el-select__wrapper.is-focused {
+  border-color: #52525b !important;
 }
 
 html.dark .chat-app .model-pill-select .el-select__caret,
@@ -426,12 +520,50 @@ html.dark .chat-app .conv-item {
 }
 
 html.dark .chat-app .conv-item:hover {
-  background: var(--chat-bg-muted) !important;
+  background: var(--chat-conv-hover) !important;
 }
 
 html.dark .chat-app .conv-item.active {
-  background: #3f3f46 !important;
-  border-left-color: var(--chat-text-primary) !important;
+  background: var(--chat-conv-active-bg) !important;
+}
+
+html.dark .chat-app .conv-item.active .conv-accent {
+  background: var(--chat-conv-accent) !important;
+}
+
+html.dark .chat-app .conv-title {
+  color: var(--chat-text-muted) !important;
+}
+
+html.dark .chat-app .conv-item.active .conv-title {
+  color: var(--chat-text-primary) !important;
+}
+
+html.dark .chat-app .conv-group-label {
+  color: var(--chat-text-muted) !important;
+}
+
+html.dark .chat-app .conv-act-btn {
+  background: var(--chat-bg-elevated) !important;
+  color: var(--chat-text-muted) !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35) !important;
+}
+
+html.dark .chat-app .conv-act-btn:hover {
+  color: var(--chat-link) !important;
+}
+
+html.dark .chat-app .conv-act-btn--danger:hover {
+  color: #f87171 !important;
+  background: #3f1f1f !important;
+}
+
+html.dark .chat-app .conv-empty-text {
+  color: var(--chat-text-muted) !important;
+}
+
+html.dark .chat-app .footer-vdiv {
+  background: var(--chat-border-subtle) !important;
 }
 
 html.dark .chat-app .sidebar-foot {
@@ -461,4 +593,142 @@ html.dark .chat-app .foot-link {
 html.dark .chat-app .foot-link:hover {
   background: var(--chat-bg-muted) !important;
   color: var(--chat-text-primary) !important;
+}
+
+/* 右侧画像推荐栏（DailyRecommendSidebar / DailyRecommendCard） */
+html.dark .chat-app .rec-panel {
+  background: var(--rec-bg-panel) !important;
+  border-left-color: var(--rec-border) !important;
+}
+
+html.dark .chat-app .rec-panel--planet:not(.rec-panel--collapsed) {
+  background: var(--rec-bg-panel-planet) !important;
+  border-left-color: var(--rec-border) !important;
+}
+
+html.dark .chat-app .rec-panel--collapsed {
+  background: var(--rec-bg-collapsed) !important;
+}
+
+html.dark .chat-app .rec-recommend-body {
+  background: var(--rec-bg-body) !important;
+  border-top-color: var(--rec-border) !important;
+}
+
+html.dark .chat-app .rec-panel--planet .rec-recommend-body {
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.25) !important;
+}
+
+html.dark .chat-app .rec-recommend-head {
+  border-bottom-color: var(--rec-border-subtle) !important;
+}
+
+html.dark .chat-app .rec-header-title,
+html.dark .chat-app .rec-center-title {
+  color: var(--rec-text-title) !important;
+}
+
+html.dark .chat-app .rec-header-sub,
+html.dark .chat-app .rec-center-msg {
+  color: var(--rec-text-body) !important;
+}
+
+html.dark .chat-app .rec-icon-btn {
+  color: var(--rec-icon) !important;
+}
+
+html.dark .chat-app .rec-icon-btn:hover:not(:disabled) {
+  background: var(--rec-hover-bg) !important;
+  color: var(--rec-text-link) !important;
+}
+
+html.dark .chat-app .rec-rail {
+  color: var(--rec-rail-color) !important;
+}
+
+html.dark .chat-app .rec-rail:hover {
+  background: var(--rec-hover-bg) !important;
+  color: var(--rec-text-link) !important;
+}
+
+html.dark .chat-app .rec-center-link {
+  color: var(--rec-text-link) !important;
+}
+
+html.dark .chat-app .rec-retry-btn {
+  background: var(--rec-btn-bg) !important;
+  border-color: var(--rec-btn-border) !important;
+  color: var(--rec-text-link) !important;
+}
+
+html.dark .chat-app .rec-retry-btn:hover:not(:disabled) {
+  background: var(--rec-hover-bg) !important;
+}
+
+html.dark .chat-app .rec-footer {
+  background: var(--rec-bg-footer) !important;
+  border-top-color: var(--rec-border-subtle) !important;
+  color: var(--rec-text-hint) !important;
+}
+
+html.dark .chat-app .rec-card {
+  background: var(--rec-card-bg) !important;
+  border-color: var(--rec-card-border) !important;
+}
+
+html.dark .chat-app .rec-card:hover {
+  border-color: var(--rec-card-hover-border) !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35) !important;
+}
+
+html.dark .chat-app .rec-card-title {
+  color: var(--rec-card-title) !important;
+}
+
+html.dark .chat-app .rec-card-summary {
+  color: var(--rec-card-summary) !important;
+}
+
+html.dark .chat-app .rec-card-foot {
+  color: var(--rec-card-foot) !important;
+}
+
+html.dark .chat-app .rec-card-badge {
+  background: var(--rec-card-badge-bg) !important;
+  color: var(--rec-card-badge-text) !important;
+}
+
+html.dark .chat-app .rec-card-tag--tone-0 {
+  color: #93c5fd !important;
+  background: #1e3a5f !important;
+}
+html.dark .chat-app .rec-card-tag--tone-1 {
+  color: #cbd5e1 !important;
+  background: #334155 !important;
+}
+html.dark .chat-app .rec-card-tag--tone-2 {
+  color: #86efac !important;
+  background: #14532d !important;
+}
+html.dark .chat-app .rec-card-tag--tone-3 {
+  color: #fcd34d !important;
+  background: #422006 !important;
+}
+html.dark .chat-app .rec-card-tag--tone-4 {
+  color: #c4b5fd !important;
+  background: #3b0764 !important;
+}
+
+html.dark .chat-app .rec-recommend-scroll {
+  scrollbar-color: var(--rec-scrollbar) transparent;
+}
+
+html.dark .chat-app .rec-skel-card {
+  background: var(--rec-card-bg) !important;
+  border-color: var(--rec-card-border) !important;
+}
+
+html.dark .chat-app .rec-skel-wrap .skeleton-shimmer {
+  background: linear-gradient(90deg, #27272a 22%, #3f3f46 50%, #27272a 78%) !important;
+  background-size: 200% 100% !important;
 }

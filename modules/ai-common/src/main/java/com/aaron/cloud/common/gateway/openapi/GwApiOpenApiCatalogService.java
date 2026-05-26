@@ -16,21 +16,45 @@ public class GwApiOpenApiCatalogService {
 
     private final ObjectProvider<OpenAPIService> openApiServiceProvider;
 
-    public Optional<GwApiOpenApiSpecPair> resolve(String pathPattern, String httpMethod) {
+    /** 加载（或构建）当前 SpringDoc OpenAPI 模型；全量同步时应只调用一次。 */
+    public Optional<OpenAPI> openApiCatalog() {
         OpenAPIService openApiService = openApiServiceProvider.getIfAvailable();
         if (openApiService == null) {
             return Optional.empty();
         }
         OpenAPI openApi = loadOpenApi(openApiService);
-        if (openApi == null) {
-            return Optional.empty();
+        return openApi == null ? Optional.empty() : Optional.of(openApi);
+    }
+
+    public int openApiPathCount(OpenAPI openApi) {
+        if (openApi == null || openApi.getPaths() == null) {
+            return 0;
+        }
+        return openApi.getPaths().size();
+    }
+
+    public GwApiOpenApiLookupResult lookup(OpenAPI openApi, String pathPattern, String httpMethod) {
+        if (openApi == null || openApi.getPaths() == null || openApi.getPaths().isEmpty()) {
+            return GwApiOpenApiLookupResult.notFound();
+        }
+        if (!GwApiOpenApiSpecExtractor.hasOperation(openApi, pathPattern, httpMethod)) {
+            return GwApiOpenApiLookupResult.notFound();
         }
         GwApiOpenApiSpecPair pair = GwApiOpenApiSpecExtractor.extract(openApi, pathPattern, httpMethod);
-        if (GwApiEndpointSpecSupport.isBlankSpec(pair.requestSpecJson())
-                && GwApiEndpointSpecSupport.isBlankSpec(pair.responseSpecJson())) {
+        return GwApiOpenApiLookupResult.found(pair);
+    }
+
+    public Optional<GwApiOpenApiSpecPair> resolve(String pathPattern, String httpMethod) {
+        return openApiCatalog()
+                .flatMap(openApi -> resolve(openApi, pathPattern, httpMethod));
+    }
+
+    public Optional<GwApiOpenApiSpecPair> resolve(OpenAPI openApi, String pathPattern, String httpMethod) {
+        GwApiOpenApiLookupResult lookup = lookup(openApi, pathPattern, httpMethod);
+        if (!lookup.hasExtractableSpec()) {
             return Optional.empty();
         }
-        return Optional.of(pair);
+        return Optional.of(lookup.spec());
     }
 
     public String effectiveRequestSpecJson(String storedRequestSpecJson, String pathPattern, String httpMethod) {
@@ -55,10 +79,18 @@ public class GwApiOpenApiCatalogService {
 
     private static OpenAPI loadOpenApi(OpenAPIService openApiService) {
         Locale locale = Locale.getDefault();
+        OpenAPI built = openApiService.build(locale);
+        if (hasPaths(built)) {
+            return built;
+        }
         OpenAPI cached = openApiService.getCachedOpenAPI(locale);
-        if (cached != null) {
+        if (hasPaths(cached)) {
             return cached;
         }
-        return openApiService.build(locale);
+        return built;
+    }
+
+    private static boolean hasPaths(OpenAPI openApi) {
+        return openApi != null && openApi.getPaths() != null && !openApi.getPaths().isEmpty();
     }
 }

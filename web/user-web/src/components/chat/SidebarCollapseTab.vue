@@ -44,11 +44,12 @@ const arrow = computed(() => (props.side === "left" ? ArrowLeft : ArrowRight));
   justify-content: center;
   box-shadow: 0 2px 10px rgba(30, 60, 90, 0.1);
   transition:
-    background 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease,
-    box-shadow 0.15s ease,
-    transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform var(--chat-shell-duration, 0.34s) var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1)),
+    opacity 0.22s ease;
 }
 
 .sidebar-collapse-tab:hover {

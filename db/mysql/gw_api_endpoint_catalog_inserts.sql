@@ -42,6 +42,9 @@ INSERT IGNORE INTO gw_api_endpoint (path_pattern, http_method, display_name, rem
 ('/open/v1/chat/daily-recommend/retry', 'POST', 'C端今日推荐失败重试', NULL, 1, 2109, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/daily-recommend/regenerate-on-login', 'POST', 'C端登录后刷新画像推荐', NULL, 1, 2110, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/daily-recommend/click', 'POST', 'C端画像推荐资讯点击埋点', NULL, 1, 2111, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/open/v1/chat/knowledge-planet/summary', 'GET', 'C端知识星球摘要', NULL, 1, 2112, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/open/v1/chat/knowledge-planet/universe', 'GET', 'C端知识星球星系', NULL, 1, 2113, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/open/v1/chat/knowledge-planet/weekly/latest', 'GET', 'C端知识星球最新周报', NULL, 1, 2114, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 -- ---------- API：/api/v1/auth（须 JWT）----------
 ('/api/v1/auth/admin-context', 'POST', '管理端切换工作区 JWT', 'jwt-local', 1, 2000, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 -- ---------- API：/api/v1/admin/me ----------
@@ -96,6 +99,7 @@ INSERT IGNORE INTO gw_api_endpoint (path_pattern, http_method, display_name, rem
 ('/api/v1/admin/gateway-api-endpoints/*', 'PUT', '更新接口目录项', NULL, 1, 2570, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/gateway-api-endpoints/*', 'DELETE', '删除接口目录项', NULL, 1, 2580, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/gateway-api-endpoints/sync-openapi-spec', 'POST', '从 OpenAPI 同步接口 spec', NULL, 1, 2581, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/gateway-api-endpoints/sync-openapi-spec/batch', 'POST', '分批从 OpenAPI 同步接口 spec（进度轮询）', NULL, 1, 2583, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/gateway-api-endpoints/*/sync-openapi-spec', 'POST', '单条 OpenAPI spec 同步', NULL, 1, 2582, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/cors-allowed-origins', 'GET', 'CORS 来源列表', NULL, 1, 2590, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/cors-allowed-origins', 'POST', '新增 CORS 来源', NULL, 1, 2600, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),

@@ -336,11 +336,24 @@ export default {
     requestSpecPh: '[{"name":"prompt","in":"body","type":"string","required":true,"description":"..."}]',
     responseSpecPh: '[{"name":"status","type":"string","description":"..."}]',
     specJsonInvalid: "Request/response spec must be valid JSON arrays",
-    syncOpenApiSpec: "Sync from OpenAPI",
+    syncOpenApiSpec: "Sync empty fields",
+    syncOpenApiSpecOverwrite: "Overwrite sync",
+    syncOpenApiSpecOverwriteConfirm:
+      "Overwrite existing request/response specs from SpringDoc OpenAPI. Continue?",
+    syncOpenApiSpecAllSkippedHint:
+      "All skipped: default mode only fills empty specs; yours are already set or identical. Use Overwrite sync to replace.",
+    syncOpenApiSpecNoOpenApi: "Could not load SpringDoc OpenAPI (is the app running with springdoc enabled?)",
     syncOpenApiSpecOne: "Pull from OpenAPI",
     syncOpenApiSpecConfirm:
       "Fill empty request/response specs from SpringDoc OpenAPI by path and method. Existing values will not be overwritten. Continue?",
-    syncOpenApiSpecDone: "Sync done: updated {updated}, skipped {skipped}, unmatched {unmatched}",
+    syncOpenApiSpecDone:
+      "Sync done: updated {updated}, skipped (filled) {skipped}, no schema {noSchema}, unmatched {unmatched} (OpenAPI {paths} paths)",
+    syncOpenApiSpecEmptyPaths:
+      "SpringDoc returned zero API paths. Ensure the backend is running and open /v3/api-docs in the browser.",
+    syncOpenApiSpecProgressTitle: "Syncing from OpenAPI",
+    syncOpenApiSpecProgress: "Processed {processed} / {total} catalog entries",
+    syncOpenApiSpecProgressBatch:
+      "This batch: updated {updated}, skipped (filled) {skipped}, no schema {noSchema}, unmatched {unmatched}",
     syncOpenApiSpecOneDone: "Request/response specs pulled from OpenAPI",
     syncOpenApiSpecFailed: "OpenAPI sync failed",
   },

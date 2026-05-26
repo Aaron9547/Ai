@@ -1,0 +1,77 @@
+/* 左右侧栏：外壳宽度连续动画 + 内层裁剪（非双面板瞬间切换） */
+:root {
+  --chat-shell-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --chat-shell-duration: 0.42s;
+}
+
+.sidebar,
+.rec-panel {
+  transition:
+    width var(--chat-shell-duration) var(--chat-shell-ease),
+    background-color var(--chat-shell-duration) var(--chat-shell-ease),
+    border-color var(--chat-shell-duration) var(--chat-shell-ease);
+  will-change: width;
+}
+
+.sidebar-collapse-tab {
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform var(--chat-shell-duration) var(--chat-shell-ease),
+    opacity 0.28s var(--chat-shell-ease);
+}
+
+.chat-body {
+  transition: padding var(--chat-shell-duration) var(--chat-shell-ease);
+}
+
+.chat-body > .main {
+  transition:
+    max-width var(--chat-shell-duration) var(--chat-shell-ease),
+    opacity 0.2s ease;
+}
+
+.chat-float-tools {
+  transition: right var(--chat-shell-duration) var(--chat-shell-ease) !important;
+}
+
+.chat-app:has(.rec-panel--planet:not(.rec-panel--collapsed)) .chat-float-tools {
+  right: calc(320px + 10px);
+}
+
+.chat-app:has(.rec-panel--collapsed) .chat-float-tools,
+.chat-app:has(.rec-panel--planet.rec-panel--collapsed) .chat-float-tools {
+  right: calc(40px + 10px);
+}
+
+.chat-app--tablet :deep(.sidebar) {
+  transition:
+    width var(--chat-shell-duration) var(--chat-shell-ease),
+    background-color var(--chat-shell-duration) var(--chat-shell-ease),
+    border-color var(--chat-shell-duration) var(--chat-shell-ease);
+}
+
+.chat-app--mobile :deep(.sidebar) {
+  transition: transform var(--chat-shell-duration) var(--chat-shell-ease) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .rec-panel,
+  .sidebar .sidebar-body,
+  .sidebar .sidebar-rail-layer,
+  .rec-panel .rec-body,
+  .rec-panel .rec-rail-layer,
+  .sidebar-collapse-tab,
+  .chat-body > .main,
+  .chat-float-tools {
+    transition: none !important;
+  }
+
+  .sidebar,
+  .rec-panel {
+    will-change: auto;
+  }
+}

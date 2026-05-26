@@ -2,7 +2,7 @@
 import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElMessage } from "element-plus";
 import {
   auditSummary,
   createAccessParty,
@@ -24,6 +24,7 @@ import {
   type AuditLogRow,
 } from "@/api/gatewayAccessParty";
 import { listApiEndpointPicker, type ApiEndpointRow } from "@/api/gatewayApiEndpoints";
+import { confirmMessageBox } from "@/utils/messageBoxI18n";
 
 const { t } = useI18n();
 const router = useRouter();
@@ -214,7 +215,7 @@ async function onRotateSecret(row: AccessPartyRow) {
 }
 
 async function onDeleteParty(row: AccessPartyRow) {
-  await ElMessageBox.confirm(t("views.gatewayAccessParty.deleteConfirm"), { type: "warning" });
+  await confirmMessageBox(t, t("views.gatewayAccessParty.deleteConfirm"), { type: "warning" });
   await deleteAccessParty(row.id);
   await loadParties();
 }
@@ -272,7 +273,7 @@ async function saveModule() {
 }
 
 async function onDeleteModule(row: ApiModuleRow) {
-  await ElMessageBox.confirm(t("views.gatewayAccessParty.deleteModuleConfirm"), { type: "warning" });
+  await confirmMessageBox(t, t("views.gatewayAccessParty.deleteModuleConfirm"), { type: "warning" });
   await deleteApiModule(row.id);
   await loadModules();
 }

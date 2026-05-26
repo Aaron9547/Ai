@@ -26,16 +26,53 @@ public final class GwApiOpenApiSpecExtractor {
     private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
 
     public static GwApiOpenApiSpecPair extract(OpenAPI openApi, String pathPattern, String httpMethod) {
+        Operation operation = findOperation(openApi, pathPattern, httpMethod);
+        if (operation == null) {
+            return GwApiOpenApiSpecPair.empty();
+        }
+        return extractFromOperation(openApi, operation);
+    }
+
+    /** 目录 path + method 是否在 OpenAPI 中存在对应操作（与 spec 是否为空无关）。 */
+    public static boolean hasOperation(OpenAPI openApi, String pathPattern, String httpMethod) {
+        return findOperation(openApi, pathPattern, httpMethod) != null;
+    }
+
+    public static Operation findOperation(OpenAPI openApi, String pathPattern, String httpMethod) {
         if (openApi == null || openApi.getPaths() == null || pathPattern == null || pathPattern.isBlank()) {
-            return emptyPair();
+            return null;
         }
         String catalogPath = pathPattern.trim();
         String method = normalizeMethod(httpMethod);
-        Operation operation = findOperation(openApi, catalogPath, method);
-        if (operation == null) {
-            return emptyPair();
+        Operation wildcardMatch = null;
+        for (Map.Entry<String, io.swagger.v3.oas.models.PathItem> entry : openApi.getPaths().entrySet()) {
+            String openApiPath = entry.getKey();
+            if (!pathMatches(catalogPath, openApiPath)) {
+                continue;
+            }
+            io.swagger.v3.oas.models.PathItem item = entry.getValue();
+            if (item == null) {
+                continue;
+            }
+            Operation op = pickOperation(item, method);
+            if (op == null) {
+                continue;
+            }
+            if (openApiPathToAnt(openApiPath).equals(catalogPath)) {
+                return op;
+            }
+            if (wildcardMatch == null) {
+                wildcardMatch = op;
+            }
         }
-        Components components = openApi.getComponents();
+        return wildcardMatch;
+    }
+
+    public static GwApiOpenApiSpecPair extractFromOperation(OpenAPI openApi, Operation operation) {
+        if (operation == null) {
+            return GwApiOpenApiSpecPair.empty();
+        }
+        Components components = openApi == null ? null : openApi.getComponents();
         List<GwApiEndpointSpecSupport.ParamRow> requestRows = new ArrayList<>();
         if (operation.getParameters() != null) {
             for (Parameter parameter : operation.getParameters()) {
@@ -78,37 +115,15 @@ public final class GwApiOpenApiSpecExtractor {
         return new GwApiOpenApiSpecPair(toJson(requestRows), toJson(responseRows));
     }
 
-    private static Operation findOperation(OpenAPI openApi, String catalogPath, String method) {
-        Operation wildcardMatch = null;
-        for (Map.Entry<String, io.swagger.v3.oas.models.PathItem> entry : openApi.getPaths().entrySet()) {
-            String openApiPath = entry.getKey();
-            if (!pathMatches(catalogPath, openApiPath)) {
-                continue;
-            }
-            io.swagger.v3.oas.models.PathItem item = entry.getValue();
-            if (item == null) {
-                continue;
-            }
-            Operation op = pickOperation(item, method);
-            if (op == null) {
-                continue;
-            }
-            if (openApiPathToAnt(openApiPath).equals(catalogPath)) {
-                return op;
-            }
-            if (wildcardMatch == null) {
-                wildcardMatch = op;
-            }
-        }
-        return wildcardMatch;
-    }
-
     static boolean pathMatches(String catalogPath, String openApiPath) {
         String antFromOpenApi = openApiPathToAnt(openApiPath);
         if (catalogPath.equals(antFromOpenApi)) {
             return true;
         }
-        return PATH_MATCHER.match(catalogPath, antFromOpenApi);
+        if (PATH_MATCHER.match(catalogPath, antFromOpenApi)) {
+            return true;
+        }
+        return PATH_MATCHER.match(antFromOpenApi, catalogPath);
     }
 
     static String openApiPathToAnt(String openApiPath) {
@@ -161,6 +176,10 @@ public final class GwApiOpenApiSpecExtractor {
         if (json != null) {
             return json;
         }
+        io.swagger.v3.oas.models.media.MediaType sse = content.get("text/event-stream");
+        if (sse != null) {
+            return sse;
+        }
         return content.values().stream().filter(Objects::nonNull).findFirst().orElse(null);
     }
 
@@ -171,6 +190,10 @@ public final class GwApiOpenApiSpecExtractor {
             String paramIn,
             Components components,
             String prefix) {
+        if (schema == null) {
+            return;
+        }
+        schema = resolveSchema(schema, components);
         if (schema == null) {
             return;
         }
@@ -204,15 +227,48 @@ public final class GwApiOpenApiSpecExtractor {
             }
             return;
         }
+        if (schema.getAdditionalProperties() instanceof Schema ap) {
+            appendLooseSchemaRow(rows, resolveSchema(ap, components), paramIn, prefix, "mapValue", "Map 键值");
+            return;
+        }
+        if ("array".equalsIgnoreCase(String.valueOf(schema.getType())) && schema.getItems() != null) {
+            appendLooseSchemaRow(
+                    rows,
+                    resolveSchema(schema.getItems(), components),
+                    paramIn,
+                    prefix,
+                    prefix == null || prefix.isBlank() ? "items" : prefix + "[]",
+                    "数组元素");
+            return;
+        }
         if (prefix != null && !prefix.isBlank()) {
             return;
         }
+        appendLooseSchemaRow(rows, schema, paramIn, "", "body", schema.getDescription());
+    }
+
+    @SuppressWarnings("rawtypes")
+    private static void appendLooseSchemaRow(
+            List<GwApiEndpointSpecSupport.ParamRow> rows,
+            Schema schema,
+            String paramIn,
+            String prefix,
+            String defaultName,
+            String defaultDescription) {
+        if (schema == null) {
+            return;
+        }
         GwApiEndpointSpecSupport.ParamRow row = new GwApiEndpointSpecSupport.ParamRow();
-        row.setName("body");
-        row.setIn("body");
+        row.setName(prefix == null || prefix.isBlank() ? defaultName : prefix);
+        if (paramIn != null) {
+            row.setIn(paramIn);
+        }
         row.setType(schemaType(schema));
         row.setRequired(Boolean.TRUE.equals(schema.getRequired()));
-        row.setDescription(schema.getDescription());
+        row.setDescription(
+                schema.getDescription() != null && !schema.getDescription().isBlank()
+                        ? schema.getDescription()
+                        : defaultDescription);
         rows.add(row);
     }
 
@@ -234,6 +290,18 @@ public final class GwApiOpenApiSpecExtractor {
             Schema resolved = components.getSchemas().get(refName);
             if (resolved != null) {
                 return resolveSchema(resolved, components);
+            }
+        }
+        if (schema.getAllOf() != null && !schema.getAllOf().isEmpty()) {
+            for (Object raw : schema.getAllOf()) {
+                if (raw instanceof Schema part) {
+                    Schema resolved = resolveSchema(part, components);
+                    if (resolved != null
+                            && resolved.getProperties() != null
+                            && !resolved.getProperties().isEmpty()) {
+                        return resolved;
+                    }
+                }
             }
         }
         if (schema.getItems() != null && (schema.getProperties() == null || schema.getProperties().isEmpty())) {
@@ -278,9 +346,5 @@ public final class GwApiOpenApiSpecExtractor {
         } catch (JsonProcessingException ex) {
             return "[]";
         }
-    }
-
-    private static GwApiOpenApiSpecPair emptyPair() {
-        return new GwApiOpenApiSpecPair("[]", "[]");
     }
 }

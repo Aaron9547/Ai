@@ -89,6 +89,16 @@ public class AdminGatewayApiEndpointRestController extends ApiV1ControllerBases.
         return openApiSyncApplicationService.syncAll(emptyOnly);
     }
 
+    /** 分批同步（管理端轮询进度）；每批独立提交，避免长事务与 HTTP 超时。 */
+    @PostMapping("/sync-openapi-spec/batch")
+    public GatewayApiEndpointOpenApiSyncApplicationService.BatchSyncResult syncOpenApiSpecBatch(
+            @RequestParam(defaultValue = "0") int offset,
+            @RequestParam(defaultValue = "50") int limit,
+            @RequestParam(defaultValue = "true") boolean emptyOnly) {
+        TenantContextHolder.require();
+        return openApiSyncApplicationService.syncBatch(offset, limit, emptyOnly);
+    }
+
     @PostMapping("/{id}/sync-openapi-spec")
     public GwApiEndpoint syncOpenApiSpecOne(
             @PathVariable long id, @RequestParam(defaultValue = "true") boolean emptyOnly) {

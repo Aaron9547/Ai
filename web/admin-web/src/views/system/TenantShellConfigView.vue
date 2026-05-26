@@ -70,6 +70,10 @@
     </el-card>
       </el-tab-pane>
 
+      <el-tab-pane :label="t('admin.shell.tabs.knowledgePlanet')" name="knowledgePlanet">
+    <KnowledgePlanetShellBlock />
+      </el-tab-pane>
+
       <el-tab-pane :label="t('admin.shell.tabs.registration')" name="registration">
     <AuthRegisterShellBlock />
       </el-tab-pane>
@@ -684,6 +688,7 @@ import {
 import SiteCrawlPresetPicker from "@/views/system/components/SiteCrawlPresetPicker.vue";
 import SiteCrawlRuntimeFields from "@/views/system/components/SiteCrawlRuntimeFields.vue";
 import AuthRegisterShellBlock from "@/components/system/AuthRegisterShellBlock.vue";
+import KnowledgePlanetShellBlock from "@/components/system/KnowledgePlanetShellBlock.vue";
 import {
   parseSiteCrawlRuntimeForm,
   serializeSiteCrawlRuntimeJson,
@@ -693,7 +698,7 @@ import {
 
 const { t, locale } = useI18n();
 
-const SHELL_TAB_NAMES = ["branding", "registration", "modelCalling", "outbound"] as const;
+const SHELL_TAB_NAMES = ["branding", "knowledgePlanet", "registration", "modelCalling", "outbound"] as const;
 type ShellTabName = (typeof SHELL_TAB_NAMES)[number];
 
 const route = useRoute();

@@ -164,6 +164,37 @@ public enum TenantRuntimeSettingKey {
             "每日热点拉取时刻（cron）",
             SettingValueKind.STRING,
             "0 0 6 * * *",
+            false),
+    /** 个人知识星球：对话沉淀、周报与周一邮件（管理端「租户能力与外观」配置）。 */
+    KNOWLEDGE_PLANET_ENABLED(
+            "KNOWLEDGE_PLANET_ENABLED",
+            "个人知识星球",
+            SettingValueKind.BOOLEAN,
+            "false",
+            false),
+    KNOWLEDGE_PLANET_WEEKLY_COMPUTE_CRON(
+            "KNOWLEDGE_PLANET_WEEKLY_COMPUTE_CRON",
+            "知识星球周一方案计算（cron）",
+            SettingValueKind.STRING,
+            "0 0 3 * * MON",
+            false),
+    KNOWLEDGE_PLANET_WEEKLY_EMAIL_CRON(
+            "KNOWLEDGE_PLANET_WEEKLY_EMAIL_CRON",
+            "知识星球周一邮件推送（cron）",
+            SettingValueKind.STRING,
+            "0 0 9 * * MON",
+            false),
+    KNOWLEDGE_PLANET_EMAIL_JSON(
+            "KNOWLEDGE_PLANET_EMAIL_JSON",
+            "知识星球周报邮件（JSON）",
+            SettingValueKind.STRING,
+            "{}",
+            true),
+    KNOWLEDGE_PLANET_DIGEST_MODEL_ID(
+            "KNOWLEDGE_PLANET_DIGEST_MODEL_ID",
+            "知识星球沉淀/周报模型 id",
+            SettingValueKind.STRING,
+            "",
             false);
 
     @EnumValue
@@ -206,6 +237,11 @@ public enum TenantRuntimeSettingKey {
                     SITE_CRAWL_RUNTIME_JSON,
                     CHAT_STARTER_DAILY_HOT_ENABLED,
                     CHAT_STARTER_DAILY_HOT_CRON,
+                    KNOWLEDGE_PLANET_ENABLED,
+                    KNOWLEDGE_PLANET_WEEKLY_COMPUTE_CRON,
+                    KNOWLEDGE_PLANET_WEEKLY_EMAIL_CRON,
+                    KNOWLEDGE_PLANET_EMAIL_JSON,
+                    KNOWLEDGE_PLANET_DIGEST_MODEL_ID,
                     AUTH_REGISTER_VERIFICATION_JSON -> true;
             default -> false;
         };

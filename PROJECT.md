@@ -3,7 +3,7 @@
 ## 概述
 
 - **坐标**：`com.aaron.cloud:Ai`（Maven）。
-- **定位**：以 AI 对话为核心的 **AI 中台**（多模型、RAG/Milvus、智能体与工具、画像与长记忆、访客设备码、一键网页入库等）；前后端同仓，后端 Java（JDK 25），前端 Vue 3（`web/user-web` / `web/admin-web`）。
+- **定位**：以 AI 对话为核心的 **AI 中台**（多模型、RAG/Milvus、智能体与工具、画像与长记忆、**个人知识星球**、访客设备码、一键网页入库等）；前后端同仓，后端 Java（JDK 25），前端 Vue 3（`web/user-web` / `web/admin-web`）。
 - **详细架构与编码约束**：见仓库根目录 **`.cursorrules`**（权威）；本文档侧重**对外说明**与**版本演进记录**。**`application.yml`** 侧重**进程启动、Bean 选路与基础设施连接**（键旁注释 + `${ENV:默认}`；EPP 桥接见 **`AiEnvironmentBridgePostProcessor`**，登记于 **`META-INF/spring.factories`**）。**按租户免重启的运行参数**（**`ten_runtime_setting`** / **`TenantRuntimeSettingKey`**，管理端「租户运行参数」API）与 yml 的分层约定见 **`.cursorrules` §3.8**。
 - **管理端双语**：页面级文案以 **`web/admin-web`** 的 **vue-i18n** 为主；**部分接口返回的 label/placeholder** 由后端按 **`Accept-Language`** 拼装，见下文 **「管理端 Accept-Language 与 LLM 元数据（服务端文案）」**。
 - **管理端租户成员与审计**：字段级契约见下文 **「管理端租户成员与审计写入规则（约定）」**；**重点逻辑注释及逻辑变更时须同步更新注释/专节** 见仓库根目录 **`.cursorrules` §7.2**。
@@ -184,6 +184,97 @@ sequenceDiagram
 
 ---
 
+## 个人知识星球（功能模块索引）
+
+**稳定边界（不写迭代清单）**
+
+- **产品语义（三级钻取）**：
+  1. **星系层（Galaxy）**：按对话主题（`topic_tags` 首项）聚合为一颗**主题星球**（实体球体，大小∝该主题下知识点数量）。
+  2. **星球层（Planet）**：点击星球后镜头钻取（Zoom-in），展示该主题下的**知识点小球**与**轨道/关联连线**（力导向物理）。
+  3. **图谱层（Graph）**：知识点间 `relation` 连线（同子标签或时序相邻）；星球→知识点为 `orbit` 流光连线。
+  非租户 RAG；与 **`ten_user_memory_*`** 并行。每周一计算成长方案并邮件推送。
+- **主体键**：与画像一致，**`subject_key`** = **`u:{userId}`**（已登录）或 **`d:{deviceId}`**（访客）；**周报邮件**仅 **`u:*` 且 `sec_user.email` 非空**。
+- **持久化**：**`ten_user_knowledge_node`**（单轮节点：标题、摘要、`topic_tags_json`、来源会话/消息）；**`ten_user_weekly_insight`**（按 **`week_start`**=当周周一、`KnowledgeWeeklyInsightStatus`：DRAFT/READY/SENT/SKIPPED/FAILED，**`plan_json`** 见下）。
+- **默认关闭**：**`KNOWLEDGE_PLANET_ENABLED`** = `false`；开启后才有沉淀、定时任务与 C 端入口。
+
+**`plan_json` 结构（LLM 输出，邮件与全屏 overlay 共用）**
+
+| 字段 | 含义 |
+|------|------|
+| `summary` | 本周一句话总览 |
+| `thinkDirections` | 建议思考方向（3～5 条） |
+| `gapAreas` | 可弥补的不足（2～4 条） |
+| `bookRecommendations` | `{ title, reason }` 荐书（2～4 本） |
+
+**配置与调度**
+
+| 能力 | 入口 / 键 |
+|------|-----------|
+| 总开关、Cron、邮件模板、沉淀模型 | 管理端 **租户能力与外观** → Tab **「知识星球」**；**`PUT /api/v1/admin/tenant-shell-config/knowledge-planet`** |
+| 运行时键 | **`KNOWLEDGE_PLANET_ENABLED`**、**`KNOWLEDGE_PLANET_WEEKLY_COMPUTE_CRON`**（默认 `0 0 3 * * MON`）、**`KNOWLEDGE_PLANET_WEEKLY_EMAIL_CRON`**（默认 `0 0 9 * * MON`）、**`KNOWLEDGE_PLANET_EMAIL_JSON`**、**`KNOWLEDGE_PLANET_DIGEST_MODEL_ID`**（`ten_runtime_setting`，Shell 专管，不出现在「运行时参数」列表） |
+| 定时注册 | **`ten_scheduled_task`** 执行器 **`KNOWLEDGE_PLANET_WEEKLY_COMPUTE`**、**`KNOWLEDGE_PLANET_WEEKLY_EMAIL`**；Shell 保存时 **`KnowledgePlanetScheduledTaskSynchronizer`** 同步启停与 Cron；tick 与 RAG/热点共用 **`TenantScheduledTaskPoller`**（**`Asia/Shanghai`**） |
+| 邮件通道 | **`TenantTemplateEmailSender`** + **`TenantKnowledgePlanetEmailResolver`**；可 **`reuseRegisterSmtp`** 合并 **`AUTH_REGISTER_VERIFICATION_JSON`** 的 SMTP |
+
+**编排与包路径**
+
+| 阶段 | 类（模块） |
+|------|------------|
+| 对话后沉淀 | **`KnowledgePlanetIngestService`**（**`ai-chat`**，`com.aaron.cloud.chat.knowledgeplanet`）；**`ChatApplicationService`** 助手流式落库后虚拟线程调用 |
+| 周一方案计算 | **`KnowledgePlanetWeeklyComputeService`** + **`KnowledgePlanetWeeklyComputeJobHandler`**（**`ai-job`**） |
+| 周一邮件 | **`KnowledgePlanetWeeklyEmailApplicationService`**（**`ai-identity`**）+ **`KnowledgePlanetWeeklyEmailJobHandler`** |
+| C 端查询 | **`KnowledgePlanetQueryService`**、**`ChatKnowledgePlanetController`** |
+
+**Open API**（前缀 **`/open/v1/chat`**，网关目录 **2112～2114**）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | **`/knowledge-planet/summary`** | 是否启用、节点数、最近节点、最新周报摘要摘要 |
+| GET | **`/knowledge-planet/universe`** | 星系数据：`planets` + `nodes`（planet/knowledge）+ `links`（orbit/relation）；供 **3d-force-graph** |
+| GET | **`/knowledge-planet/weekly/latest`** | 当前登录用户最新 READY/SENT 周报（未登录 401） |
+
+**端到端数据流**
+
+```mermaid
+flowchart TB
+  subgraph ingest [对话沉淀]
+    CHAT[ChatApplicationService 流式结束]
+    ING[KnowledgePlanetIngestService]
+    NODE[(ten_user_knowledge_node)]
+    CHAT --> ING --> NODE
+  end
+  subgraph weekly [每周一]
+    CRON1[KNOWLEDGE_PLANET_WEEKLY_COMPUTE<br/>默认 03:00 MON]
+    CRON2[KNOWLEDGE_PLANET_WEEKLY_EMAIL<br/>默认 09:00 MON]
+    INS[(ten_user_weekly_insight)]
+    MAIL[TenantTemplateEmailSender]
+    CRON1 --> INS
+    CRON2 --> INS
+    CRON2 --> MAIL
+  end
+  NODE --> CRON1
+  subgraph ui [C 端 user-web]
+    CARD[侧栏入口预览]
+    OV[全屏 3d-force-graph<br/>星系 / 钻取 / 侧栏摘要]
+    CARD --> OV
+  end
+  NODE --> ui
+  INS --> ui
+```
+
+**与 RAG / 记忆 / 今日推荐的区分**
+
+| 维度 | 个人知识星球 | 租户 RAG | 分层记忆 | 今日画像推荐 |
+|------|--------------|----------|----------|--------------|
+| 数据表 | **`ten_user_knowledge_*`** | **`rag_*`** | **`ten_user_memory_*`** | **`chat_user_daily_recommend`** |
+| 触发 | 每轮助手落库后 | 文档入库/爬站 | 每轮 user/assistant 片段 | 每日/空会话 |
+| C 端入口 | 右侧栏「知识星球」卡片 | 无（管理端知识库） | 注入 system，无独立 UI | 同栏「今日画像推荐」 |
+
+**已建库运维**：**必须**手工执行 **`db/mysql/migrate_0_1_254_knowledge_planet.sql`**（含表、定时任务种子、网关 **`INSERT IGNORE`**）；新库以 **`schema_v1.sql`** + **`gw_api_endpoint_catalog_inserts.sql`** 为准可跳过迁移主体 DDL。迭代明细见 **「变更记录」** **`### 0.1.254-SNAPSHOT`**。
+
+**迭代写在哪里**：功能边界与索引见**本节**；版本差异见 **「变更记录」** 顶节 **`### 0.1.254-SNAPSHOT`**。
+
+---
+
 ## ★ 用户端（`web/user-web`）路由与租户（**必读**）
 
 > **C 端对话入口不是 `/chat`。** 正式路径为 **`/{租户编码}/chat`**（`租户编码` = 库表 **`sys_tenant.code`**，与种子 **`default`** 等一致），例如 **`/default/chat`**。地址栏**第一段**即当前工作区；出站请求优先带 **`X-Tenant-Code`**（该段为合法编码时）；若本地仍缓存旧版纯数字「租户段」则发 **`X-Tenant-Id`** 兼容（见 **`web/user-web/src/utils/outboundTenant.ts`** 与路由 **`beforeEach`**）。网关 **`TenantContextFilter`** 在 **`X-Tenant-Id` 缺省**时会将 **`X-Tenant-Code`** 解析为内部 **`tenantId`**（已登录 JWT 路径同样生效）。
@@ -271,12 +362,21 @@ sequenceDiagram
 
 ## 变更记录
 
+### 0.1.254-SNAPSHOT
+
+- **个人知识星球**：表 **`ten_user_knowledge_node`**、**`ten_user_weekly_insight`**；对话后 **`KnowledgePlanetIngestService`** 沉淀节点；定时 **`KNOWLEDGE_PLANET_WEEKLY_COMPUTE`**（默认周一 03:00）、**`KNOWLEDGE_PLANET_WEEKLY_EMAIL`**（默认周一 09:00）；租户 Shell Tab「知识星球」+ **`KNOWLEDGE_PLANET_*`** 运行时键；Open API **`/open/v1/chat/knowledge-planet/*`**；user-web 侧栏 Three.js 预览 + Canvas/GSAP 全屏。**已建库须手工执行** **`db/mysql/migrate_0_1_254_knowledge_planet.sql`**。
+- **邮件**：**`TenantTemplateEmailSender`** 抽取；周报走 **`KNOWLEDGE_PLANET_EMAIL_JSON`**（可复用注册 SMTP）。
+- **文档**：**`PROJECT.md`** 新增 **「个人知识星球（功能模块索引）」** 专节（稳定边界、配置表、Open API、与 RAG/记忆/今日推荐对照、运维说明）。
+- **三级钻取 UI**：**`KnowledgePlanetUniverseBuilder`** + **`GET …/knowledge-planet/universe`**；C 端 **3d-force-graph** 实体星球 + 钻取 + 侧栏摘要；沉淀 Prompt 强调 `topicTags[0]` 为主题分类。
+- **user-web 星球 UX**：侧栏 **羽化门户** + 全屏 Fresnel 图谱；进入/退出对称转场；侧栏 **外壳宽度 0.42s 裁剪动画**（非双面板切换，`sidebar-collapse.css`）；全屏层 **`useRandomDotNetwork`** 随机粒子连线背景（[randomDot](https://rstyro.github.io/html5/randomDot/index.html)）；修复右侧推荐栏收起后 **`rec-rail`** 仅占顶部一条（`rec-rail-layer` 补 flex 列布局）；修复左右侧栏 **`min-width: auto`** 导致宽度过渡失效（内层 300px 撑开 flex 项）。
+- **user-web 星图体验（第 0～1 期）**：全屏默认 **2D 全星图**（**`useKnowledgePlanetStarMap`** + **`force-graph`**，星球+知识点同屏）；顶栏 **星图/档案** Tab、搜索/适应星图、**2D/沉浸 3D** 切换；常驻侧栏（星球列表、知识点档案、首次引导）；随机点网仅开场约 1.6s；**`UniverseViewMode.full`** 供 3D 全图。
+
 ### 0.1.253-SNAPSHOT
 
 - **gw_api_endpoint 入参/出参**：**`request_spec_json`**、**`response_spec_json`**（JSON 数组）；**`GwApiEndpointSpecSupport`** 渲染 Markdown 表格；**`AccessPartyIntegrationDocBuilder`** 新增 **§5 接口明细（入参/出参）**；**已建库须手工执行** **`db/mysql/migrate_0_1_253_gw_api_endpoint_spec.sql`**。
 - **接入方授权向导**：**`GET …/gateway-access-parties/{id}/grant-wizard`** + **`GatewayAccessPartyGrantWizardApplicationService`**；管理端 **「授权绑定」** 独立页 **`AccessPartyGrantWizardView`**（按 API 模块分步、步骤条过渡、最后一步提交）；Hub 页移除 **「配额与授权」** Tab。
 - **admin-web**：**`GatewayRateLimitsView`** 接口表单可编辑入参/出参 JSON；**`gatewayApiEndpoints.ts`** CRUD 扩展 spec 字段；路由 **`/gateway/access-parties/:partyId/grant`**；i18n **`bindGrant`** / **`grantWizard*`**；**`AccessPartyGrantWizardView`** 授权页 UI 简化为 **`el-card` + `el-steps` + 列表式接口勾选**。
-- **OpenAPI spec 自动化**：**`GwApiOpenApiSpecExtractor`** + **`GwApiOpenApiCatalogService`**（SpringDoc **`OpenAPIService.build` / `getCachedOpenAPI`**）；导出对接文档 **DB spec 优先、OpenAPI fallback**（方案 A）；**`POST …/gateway-api-endpoints/sync-openapi-spec`** / **`…/{id}/sync-openapi-spec`** 一键同步（方案 B，默认仅补空）；管理端 **「从 OpenAPI 同步」**。
+- **OpenAPI spec 自动化**：**`GwApiOpenApiLookupResult`** 区分 **未匹配**（无 OpenAPI 操作）与 **无字段**（有操作但无 schema，如 SSE/204）；**`batchNoSchema`** / **`openApiPathCount`**；修复将「空 schema」误计为未匹配导致 **209 条全未匹配**；**Map/allOf** schema 提取增强；管理端汇总展示四类计数。
 - **版本**：**`pom.xml`** bump **0.1.252 → 0.1.253-SNAPSHOT**；**`gw_api_endpoint_catalog_inserts.sql`** 补 **`grant-wizard`** 目录行。
 
 ### 0.1.252-SNAPSHOT
@@ -286,6 +386,7 @@ sequenceDiagram
 - **管理端 API**：**`UserView`** / **`TenantMemberRow`** 返回 **`accountNo`**、联系方式与注册途径；路径仍用 **`/{account}`**（**`ac:`** 优先）。
 - **版本**：**`pom.xml`** bump **0.1.251 → 0.1.252-SNAPSHOT**；各 **`modules/*/pom.xml`** 父版本与根 POM 对齐（修复 IDEA/Maven 无法解析父 POM、**`AiApplication`** 未编译）。
 - **ai-gateway**：**`AccessPartyFilterConfiguration`** 补 **`GwAccessPartyRepository`/`GwApiEndpointRepository`** import（修复全量编译失败）。
+- **admin-web**：**`messageBoxI18n.ts`** 统一 **`ElMessageBox`** 的 **`common.confirm`/`common.cancel`**；修复网关 OpenAPI 同步等弹窗误把 **`{ type }`** 当第二参数导致按钮为英文 OK/Cancel。
 - **接入方管理端 403**：**`AdminHttpMenuRoutes`** 补 **`gateway-access-parties`** / **`gateway-api-modules`** / **`gateway-access-party-grants`** / **`gateway-access-party-audit`** → **`GATEWAY_API`**（**`AdminMenuAuthorizationFilter`** 未映射路径一律 403）。
 - **admin-web 接入方页**：状态/启用列由原始 **`ON`/`OFF`** 改为与 API 限流页一致的 **是/否** 标签；新建/编辑弹窗增加启用开关。
 - **admin-web 接入方 Phase 2**：新建后 **Secret 专用弹窗**（须确认已保存）；**API 模块** CRUD + **绑定接口**；**配额与授权**（按模块授权、添加授权向导、RPM  inline 编辑、启用开关、移除）；审计 Tab 增加接入方筛选与分页。

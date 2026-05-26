@@ -13,7 +13,7 @@
 
     <groupId>com.aaron.cloud</groupId>
     <artifactId>Ai</artifactId>
-    <version>0.1.253-SNAPSHOT</version>
+    <version>0.1.254-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>Ai</name>
     <description>Ai platform (multi-tenant AI middleware)</description>

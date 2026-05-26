@@ -13,7 +13,9 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public enum TenantScheduledExecutorCode {
     RAG_WEB_CRAWL_DISPATCH("RAG_WEB_CRAWL_DISPATCH", "知识库网页爬取调度"),
-    CHAT_STARTER_DAILY_HOT("CHAT_STARTER_DAILY_HOT", "对话推荐问题·每日热点");
+    CHAT_STARTER_DAILY_HOT("CHAT_STARTER_DAILY_HOT", "对话推荐问题·每日热点"),
+    KNOWLEDGE_PLANET_WEEKLY_COMPUTE("KNOWLEDGE_PLANET_WEEKLY_COMPUTE", "知识星球·周一方案计算"),
+    KNOWLEDGE_PLANET_WEEKLY_EMAIL("KNOWLEDGE_PLANET_WEEKLY_EMAIL", "知识星球·周一邮件推送");
 
     @EnumValue
     private final String code;

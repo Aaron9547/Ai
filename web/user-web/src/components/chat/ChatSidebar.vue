@@ -6,29 +6,9 @@
       'sidebar--drawer-open': drawerOpen,
     }"
   >
-    <div class="sidebar-pane sidebar-pane--narrow" :aria-hidden="!showCollapsed">
-      <div class="sidebar-collapsed">
-        <button
-          type="button"
-          class="sidebar-fab"
-          :aria-label="t('chat.ariaNewChat')"
-          @click="emit('newConv')"
-        >
-          <el-icon :size="18"><Plus /></el-icon>
-        </button>
-        <div class="sidebar-collapsed-gap" aria-hidden="true" />
-        <button
-          type="button"
-          class="sidebar-rail"
-          :aria-label="t('chat.expandConvs')"
-          @click="collapsed = false"
-        >
-          <el-icon :size="20"><ChatLineRound /></el-icon>
-        </button>
-      </div>
-    </div>
-
-    <div class="sidebar-pane sidebar-pane--wide" :aria-hidden="showCollapsed">
+    <div class="sidebar-clip">
+      <div class="sidebar-inner">
+      <div class="sidebar-body" :aria-hidden="showCollapsed">
       <div class="sidebar-top">
         <div class="brand-logo" aria-hidden="true">{{ brandLabel }}</div>
         <div class="sidebar-top-actions">
@@ -133,6 +113,30 @@
           </RouterLink>
         </div>
       </div>
+      </div>
+
+      <div class="sidebar-rail-layer" :aria-hidden="!showCollapsed">
+        <div class="sidebar-collapsed">
+          <button
+            type="button"
+            class="sidebar-fab"
+            :aria-label="t('chat.ariaNewChat')"
+            @click="emit('newConv')"
+          >
+            <el-icon :size="18"><Plus /></el-icon>
+          </button>
+          <div class="sidebar-collapsed-gap" aria-hidden="true" />
+          <button
+            type="button"
+            class="sidebar-rail"
+            :aria-label="t('chat.expandConvs')"
+            @click="collapsed = false"
+          >
+            <el-icon :size="20"><ChatLineRound /></el-icon>
+          </button>
+        </div>
+      </div>
+    </div>
     </div>
 
     <SidebarCollapseTab
@@ -276,11 +280,10 @@ const convGroups = computed<ConvGroup[]>(() => {
 .sidebar {
   --sidebar-width-expanded: 248px;
   --sidebar-width-collapsed: 40px;
-  --sidebar-ease: cubic-bezier(0.4, 0, 0.2, 1);
-  --sidebar-duration: 0.28s;
-
   position: relative;
+  flex: 0 0 var(--sidebar-width-expanded);
   width: var(--sidebar-width-expanded);
+  min-width: 0;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -288,55 +291,66 @@ const convGroups = computed<ConvGroup[]>(() => {
   border-right: 1px solid var(--chat-border, #e8edf2);
   min-height: 0;
   overflow: visible;
-  transition: width var(--sidebar-duration) var(--sidebar-ease);
+  transition:
+    width var(--chat-shell-duration, 0.42s) var(--chat-shell-ease, cubic-bezier(0.32, 0.72, 0, 1)),
+    flex-basis var(--chat-shell-duration, 0.42s) var(--chat-shell-ease, cubic-bezier(0.32, 0.72, 0, 1)),
+    background-color var(--chat-shell-duration, 0.42s) var(--chat-shell-ease, cubic-bezier(0.32, 0.72, 0, 1)),
+    border-color var(--chat-shell-duration, 0.42s) var(--chat-shell-ease, cubic-bezier(0.32, 0.72, 0, 1));
+}
+
+.sidebar-clip {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
 }
 
 .sidebar--collapsed {
+  flex-basis: var(--sidebar-width-collapsed);
   width: var(--sidebar-width-collapsed);
   background: var(--chat-bg-subtle, #f5f8fc);
 }
 
-.sidebar-pane {
-  position: absolute;
-  inset: 0;
+.sidebar-inner {
+  position: relative;
+  width: var(--sidebar-width-expanded);
+  height: 100%;
+  min-height: 0;
+  flex: 1;
+}
+
+.sidebar-body {
   display: flex;
   flex-direction: column;
+  height: 100%;
   min-height: 0;
-  overflow: hidden;
+  opacity: 1;
+  transition: opacity 0.32s var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1)) 0.12s;
+}
+
+.sidebar--collapsed .sidebar-body {
   opacity: 0;
-  visibility: hidden;
   pointer-events: none;
-  transition:
-    opacity 0.22s var(--sidebar-ease),
-    visibility 0.22s var(--sidebar-ease);
+  transition-delay: 0s;
 }
 
-.sidebar-pane--wide {
-  width: var(--sidebar-width-expanded);
-}
-
-.sidebar-pane--narrow {
+.sidebar-rail-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
   width: var(--sidebar-width-collapsed);
-  align-items: center;
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.32s var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1)) 0.06s;
 }
 
-.sidebar:not(.sidebar--collapsed) .sidebar-pane--wide {
+.sidebar--collapsed .sidebar-rail-layer {
   opacity: 1;
-  visibility: visible;
   pointer-events: auto;
-}
-
-.sidebar--collapsed .sidebar-pane--narrow {
-  opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sidebar,
-  .sidebar-pane {
-    transition: none;
-  }
 }
 
 .sidebar-collapsed {
@@ -511,7 +525,7 @@ const convGroups = computed<ConvGroup[]>(() => {
   font-size: 11px;
   font-weight: 600;
   line-height: 1.3;
-  color: #a0adb8;
+  color: var(--chat-text-muted, #a0adb8);
   letter-spacing: 0.02em;
 }
 
@@ -533,11 +547,11 @@ const convGroups = computed<ConvGroup[]>(() => {
 }
 
 .conv-item:hover {
-  background: rgba(91, 159, 212, 0.08);
+  background: var(--chat-conv-hover, rgba(91, 159, 212, 0.08));
 }
 
 .conv-item.active {
-  background: rgba(91, 159, 212, 0.12);
+  background: var(--chat-conv-active-bg, rgba(91, 159, 212, 0.12));
 }
 
 .conv-accent {
@@ -550,7 +564,7 @@ const convGroups = computed<ConvGroup[]>(() => {
 }
 
 .conv-item.active .conv-accent {
-  background: #5b9fd4;
+  background: var(--chat-conv-accent, #5b9fd4);
 }
 
 .conv-body {
@@ -571,7 +585,7 @@ const convGroups = computed<ConvGroup[]>(() => {
   width: 100%;
   font-size: 14px;
   line-height: 1.3;
-  color: #5a6b7a;
+  color: var(--chat-text-muted, #5a6b7a);
   text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -580,7 +594,7 @@ const convGroups = computed<ConvGroup[]>(() => {
 
 .conv-item.active .conv-title {
   font-weight: 600;
-  color: #2c3e50;
+  color: var(--chat-text-primary, #2c3e50);
 }
 
 .conv-actions {
