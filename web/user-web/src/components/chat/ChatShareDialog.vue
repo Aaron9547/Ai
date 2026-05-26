@@ -61,6 +61,8 @@
         :title="conversationTitle"
         :turns="captureTurns"
         :footer="t('chat.shareSnippetFooter')"
+        :brand-logo-url="brandLogoUrl"
+        :brand-title="brandTitle"
       />
     </div>
 
@@ -126,7 +128,11 @@ const props = defineProps<{
   /** 点击分享时对应的助手消息下标 */
   anchorAssistantIdx: number;
   tenantCode: string;
+  brandLogoUrl?: string | null;
+  brandTitle?: string;
 }>();
+
+const brandTitle = computed(() => props.brandTitle?.trim() || "Ai");
 
 const emit = defineEmits<{
   "update:modelValue": [v: boolean];

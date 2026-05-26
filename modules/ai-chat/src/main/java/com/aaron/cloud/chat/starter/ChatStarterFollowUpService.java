@@ -21,6 +21,7 @@ import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
 import com.aaron.cloud.common.time.BeijingTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -56,7 +57,10 @@ public class ChatStarterFollowUpService {
     private final ModelInvokePort modelInvokePort;
     private final ChatStarterPromptJsonSupport jsonSupport;
     private final ChatStarterPromptApplicationService starterPromptApplicationService;
-    private final ChatStarterPromptSimilarityService starterPromptSimilarityService;
+
+    /** REST 拉取时等待流式并行追问写入缓存的最长时间。 */
+    private static final long FOLLOW_UP_CACHE_WAIT_MS = 60_000L;
+    private static final long FOLLOW_UP_CACHE_POLL_MS = 400L;
 
     public ChatStarterPromptDtos.StarterPromptListView listFollowUp(
             long conversationId, long assistantMessageId, int limit) {
@@ -82,51 +86,25 @@ public class ChatStarterFollowUpService {
 
         String userQ = findPairedUserQuestion(tenantId, conversationId, assistantMessageId);
         String assistantText = assistant.getContent() == null ? "" : assistant.getContent().trim();
-        if (assistantText.isBlank()) {
-            return ensureNonEmpty(
-                    starterPromptApplicationService.listForTenant(
-                            tenantId,
-                            snap.getUserId(),
-                            snap.getDeviceId(),
-                            ChatStarterPromptScene.FOLLOW_UP,
-                            limit,
-                            false,
-                            null,
-                            false,
-                            false),
-                    limit);
+        if (assistantText.isBlank() || !hasFollowUpLanguageModel(tenantId)) {
+            return poolFallback(tenantId, snap.getUserId(), snap.getDeviceId(), limit);
         }
 
-        var localSimilar =
-                starterPromptSimilarityService.pickForConversation(
-                        tenantId, userQ, assistantText, limit);
-        if (localSimilar.isPresent()) {
-            scheduleFollowUpLlmCache(tenantId, assistantMessageId, userQ, assistantText);
-            return ensureNonEmpty(localSimilar.get(), limit);
+        Optional<String> waitedJson = waitForCachedQuestionsJson(tenantId, assistantMessageId);
+        if (waitedJson.isPresent()) {
+            return ensureNonEmpty(fromJson(waitedJson.get(), limit), limit);
         }
 
-        List<String> generated = generateFollowUpQuestions(tenantId, userQ, assistantText);
+        List<String> generated =
+                ChatStarterFollowUpTextSupport.filterQuestions(
+                        generateFollowUpQuestions(tenantId, userQ, assistantText));
         if (generated.isEmpty()) {
-            return ensureNonEmpty(
-                    starterPromptApplicationService.listForTenant(
-                            tenantId,
-                            snap.getUserId(),
-                            snap.getDeviceId(),
-                            ChatStarterPromptScene.FOLLOW_UP,
-                            limit,
-                            false,
-                            null,
-                            false,
-                            false),
-                    limit);
+            return poolFallback(tenantId, snap.getUserId(), snap.getDeviceId(), limit);
         }
 
-        String questionsJson = jsonSupport.toJson(generated);
-        cacheRepository.saveQuestions(tenantId, assistantMessageId, questionsJson);
-
+        persistFollowUpCache(tenantId, assistantMessageId, generated);
         syncFollowUpPool(tenantId, generated);
-
-        return ensureNonEmpty(fromJson(questionsJson, limit), limit);
+        return ensureNonEmpty(fromJson(jsonSupport.toJson(generated), limit), limit);
     }
 
     /**
@@ -145,7 +123,8 @@ public class ChatStarterFollowUpService {
     }
 
     /**
-     * 流式收尾（即时）：不阻塞 SSE；若追问 LLM 已结束则用其结果，否则立即运营池/内置兜底，后台写完缓存供 REST 复用。
+     * 流式收尾（即时）：仅当并行追问 LLM 已结束且有效时经 SSE 下发；否则返回空列表，由前端骨架 + REST
+     * {@link #listFollowUp} 等待缓存或同步调模型；运营池仅在模型不可用/生成失败时由 REST 兜底。
      */
     public ChatStarterPromptDtos.StarterPromptListView resolveForStreamEndImmediate(
             long tenantId,
@@ -155,11 +134,16 @@ public class ChatStarterFollowUpService {
             String assistantText,
             int limit) {
         int cap = Math.max(1, Math.min(limit, 6));
+        String a = assistantText == null ? "" : assistantText.trim();
+        if (a.isBlank() || !hasFollowUpLanguageModel(tenantId)) {
+            return poolFallback(tenantId, null, null, cap);
+        }
         if (inflight != null) {
             if (inflight.isDone()) {
                 try {
-                    List<String> generated = inflight.get();
-                    if (generated != null && !generated.isEmpty()) {
+                    List<String> generated =
+                            ChatStarterFollowUpTextSupport.filterQuestions(inflight.get());
+                    if (!generated.isEmpty()) {
                         persistFollowUpCache(tenantId, assistantMessageId, generated);
                         syncFollowUpPool(tenantId, generated);
                         return fromJson(jsonSupport.toJson(generated), cap);
@@ -173,29 +157,23 @@ public class ChatStarterFollowUpService {
             } else {
                 inflight.whenComplete(
                         (qs, ex) -> {
-                            if (ex == null && qs != null && !qs.isEmpty()) {
-                                persistFollowUpCache(tenantId, assistantMessageId, qs);
-                                syncFollowUpPool(tenantId, qs);
+                            if (ex == null && qs != null) {
+                                List<String> filtered =
+                                        ChatStarterFollowUpTextSupport.filterQuestions(qs);
+                                if (!filtered.isEmpty()) {
+                                    persistFollowUpCache(
+                                            tenantId, assistantMessageId, filtered);
+                                    syncFollowUpPool(tenantId, filtered);
+                                }
                             }
                         });
-                // 追问 LLM 未完成时不推送运营池占位，由前端骨架 + REST 拉取本轮结果
-                return new ChatStarterPromptDtos.StarterPromptListView(List.of(), false);
             }
-        }
-        var local =
-                starterPromptSimilarityService.pickForConversation(
-                        tenantId, userQ, assistantText, cap);
-        if (local.isPresent()) {
-            return ensureNonEmpty(local.get(), cap);
-        }
-        if (assistantText == null || assistantText.isBlank()) {
-            return fastFallback(tenantId, cap);
         }
         return new ChatStarterPromptDtos.StarterPromptListView(List.of(), false);
     }
 
     /**
-     * 流式收尾：优先采用已完成的 LLM 结果（限时等待），否则运营池/内置兜底；超时后后台写完缓存供 REST 复用。
+     * 流式收尾（限时等待 LLM）：超时则返回空，由 REST 继续等待；仅在无可用语言模型时走运营池。
      */
     public ChatStarterPromptDtos.StarterPromptListView resolveForStreamEnd(
             long tenantId,
@@ -203,9 +181,14 @@ public class ChatStarterFollowUpService {
             CompletableFuture<List<String>> inflight,
             int limit) {
         int cap = Math.max(1, Math.min(limit, 6));
+        if (!hasFollowUpLanguageModel(tenantId)) {
+            return poolFallback(tenantId, null, null, cap);
+        }
         if (inflight != null) {
             try {
-                List<String> generated = inflight.get(STREAM_FOLLOW_UP_WAIT_MS, TimeUnit.MILLISECONDS);
+                List<String> generated =
+                        ChatStarterFollowUpTextSupport.filterQuestions(
+                                inflight.get(STREAM_FOLLOW_UP_WAIT_MS, TimeUnit.MILLISECONDS));
                 if (!generated.isEmpty()) {
                     persistFollowUpCache(tenantId, assistantMessageId, generated);
                     syncFollowUpPool(tenantId, generated);
@@ -214,24 +197,30 @@ public class ChatStarterFollowUpService {
             } catch (TimeoutException te) {
                 inflight.whenComplete(
                         (qs, ex) -> {
-                            if (ex == null && qs != null && !qs.isEmpty()) {
-                                persistFollowUpCache(tenantId, assistantMessageId, qs);
-                                syncFollowUpPool(tenantId, qs);
+                            if (ex == null && qs != null) {
+                                List<String> filtered =
+                                        ChatStarterFollowUpTextSupport.filterQuestions(qs);
+                                if (!filtered.isEmpty()) {
+                                    persistFollowUpCache(
+                                            tenantId, assistantMessageId, filtered);
+                                    syncFollowUpPool(tenantId, filtered);
+                                }
                             }
                         });
             } catch (Exception ex) {
                 log.debug("[推荐问题] 流式追问等待失败 assistantMessageId={}", assistantMessageId, ex);
             }
         }
-        return fastFallback(tenantId, cap);
+        return new ChatStarterPromptDtos.StarterPromptListView(List.of(), false);
     }
 
-    private ChatStarterPromptDtos.StarterPromptListView fastFallback(long tenantId, int limit) {
+    private ChatStarterPromptDtos.StarterPromptListView poolFallback(
+            long tenantId, Long userId, String deviceId, int limit) {
         return ensureNonEmpty(
                 starterPromptApplicationService.listForTenant(
                         tenantId,
-                        null,
-                        null,
+                        userId,
+                        deviceId,
                         ChatStarterPromptScene.FOLLOW_UP,
                         limit,
                         false,
@@ -241,31 +230,49 @@ public class ChatStarterFollowUpService {
                 limit);
     }
 
-    private void scheduleFollowUpLlmCache(
-            long tenantId, long assistantMessageId, String userQ, String assistantText) {
-        Thread.startVirtualThread(
-                () -> {
-                    try {
-                        List<String> generated =
-                                generateFollowUpQuestions(tenantId, userQ, assistantText);
-                        if (!generated.isEmpty()) {
-                            persistFollowUpCache(tenantId, assistantMessageId, generated);
-                            syncFollowUpPool(tenantId, generated);
-                        }
-                    } catch (Exception ex) {
-                        log.debug(
-                                "[推荐问题] 后台 LLM 追问缓存失败 assistantMessageId={}",
-                                assistantMessageId,
-                                ex);
-                    }
-                });
+    private Optional<String> waitForCachedQuestionsJson(long tenantId, long assistantMessageId) {
+        long deadline = System.currentTimeMillis() + FOLLOW_UP_CACHE_WAIT_MS;
+        while (System.currentTimeMillis() < deadline) {
+            var cached = cacheRepository.findByAssistantMessage(tenantId, assistantMessageId);
+            if (cached.isPresent()) {
+                String json = cached.get().getQuestionsJson();
+                if (json != null && !json.isBlank()) {
+                    return Optional.of(json);
+                }
+            }
+            try {
+                Thread.sleep(FOLLOW_UP_CACHE_POLL_MS);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return Optional.empty();
+            }
+        }
+        return Optional.empty();
+    }
+
+    private boolean hasFollowUpLanguageModel(long tenantId) {
+        SysLlmModel lang = llmModelRepository.pickDefaultLanguageModel(tenantId).orElse(null);
+        if (lang == null) {
+            return false;
+        }
+        LlmModelKind k = lang.getModelKind() != null ? lang.getModelKind() : LlmModelKind.LANGUAGE;
+        if (k != LlmModelKind.LANGUAGE) {
+            return false;
+        }
+        try {
+            LlmModelKindPolicy.assertLanguageModelForChatStream(lang);
+            return true;
+        } catch (Exception ex) {
+            return false;
+        }
     }
 
     private void persistFollowUpCache(long tenantId, long assistantMessageId, List<String> questions) {
-        if (questions == null || questions.isEmpty()) {
+        List<String> filtered = ChatStarterFollowUpTextSupport.filterQuestions(questions);
+        if (filtered.isEmpty()) {
             return;
         }
-        cacheRepository.saveQuestions(tenantId, assistantMessageId, jsonSupport.toJson(questions));
+        cacheRepository.saveQuestions(tenantId, assistantMessageId, jsonSupport.toJson(filtered));
     }
 
     private ChatStarterPromptDtos.StarterPromptListView ensureNonEmpty(
@@ -284,7 +291,7 @@ public class ChatStarterFollowUpService {
     }
 
     private void syncFollowUpPool(long tenantId, List<String> questions) {
-        for (String q : questions) {
+        for (String q : ChatStarterFollowUpTextSupport.filterQuestions(questions)) {
             var p = new ChatStarterPrompt();
             p.setTenantId(tenantId);
             p.setScene(ChatStarterPromptScene.FOLLOW_UP);
@@ -361,7 +368,7 @@ public class ChatStarterFollowUpService {
     }
 
     private ChatStarterPromptDtos.StarterPromptListView fromJson(String json, int limit) {
-        List<String> qs = jsonSupport.parseQuestions(json);
+        List<String> qs = ChatStarterFollowUpTextSupport.filterQuestions(jsonSupport.parseQuestions(json));
         int cap = Math.max(1, Math.min(limit, 6));
         List<ChatStarterPromptDtos.StarterPromptItem> items = new ArrayList<>();
         for (int i = 0; i < Math.min(cap, qs.size()); i++) {

@@ -3,7 +3,7 @@
     <div class="share-page-sheet">
       <header class="share-page-head">
         <div class="share-page-brand">
-          <span class="share-page-logo">Ai</span>
+          <BrandMark :logo-url="logoUrl" :label="displayBrandTitle" size="share" />
           <span class="share-page-tag">{{ t("chat.shareCaptureTag") }}</span>
         </div>
         <h1 class="share-page-title">{{ title || t("chat.sharePageTitle") }}</h1>
@@ -60,9 +60,12 @@ import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
 import * as chatApi from "../../api/chat";
+import BrandMark from "../../components/BrandMark.vue";
 import MarkdownRichContent from "../../components/chat/MarkdownRichContent.vue";
+import { useTenantBranding } from "../../composables/useTenantBranding";
 
 const { t } = useI18n();
+const { logoUrl, displayBrandTitle, loadTenantBranding } = useTenantBranding();
 const route = useRoute();
 
 const title = ref("");
@@ -104,6 +107,7 @@ function assistantMarkdownSource(m: chatApi.ChatHistoryMessage): string {
 }
 
 onMounted(async () => {
+  void loadTenantBranding();
   const code = String(route.params.shareCode ?? "");
   if (!code) {
     error.value = t("chat.shareNotFound");
@@ -154,20 +158,6 @@ onMounted(async () => {
   align-items: center;
   gap: 8px;
   margin-bottom: 10px;
-}
-
-.share-page-logo {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 32px;
-  height: 32px;
-  padding: 0 8px;
-  border-radius: 9px;
-  background: #202020;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
 }
 
 .share-page-tag {

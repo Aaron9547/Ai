@@ -26,6 +26,7 @@ import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import type { DailyRecommendItem } from "../../api/dailyRecommend";
 import { trackDailyRecommendClick } from "../../api/dailyRecommend";
+import { isHttpExternalUrl, normalizeExternalUrl } from "../../utils/externalUrl";
 
 const props = withDefaults(
   defineProps<{ item: DailyRecommendItem; showTodayBadge?: boolean }>(),
@@ -36,9 +37,8 @@ const { t } = useI18n();
 const clicked = ref(false);
 
 const safeUrl = computed(() => {
-  const u = props.item.url?.trim() ?? "";
-  if (u.startsWith("http://") || u.startsWith("https://")) return u;
-  return "#";
+  const u = normalizeExternalUrl(props.item.url);
+  return isHttpExternalUrl(u) ? u : "#";
 });
 
 const metaDate = computed(() => {
@@ -57,6 +57,10 @@ const tagToneClass = computed(() => {
 });
 
 function onCardClick(ev: MouseEvent): void {
+  if (safeUrl.value === "#") {
+    ev.preventDefault();
+    return;
+  }
   if (clicked.value) {
     ev.preventDefault();
     return;
@@ -69,9 +73,8 @@ function onCardClick(ev: MouseEvent): void {
     summary: props.item.summary,
     source: props.item.source,
     date: props.item.date,
-    url: props.item.url,
+    url: safeUrl.value,
   });
-  if (safeUrl.value === "#") ev.preventDefault();
   window.setTimeout(() => {
     clicked.value = false;
   }, 1200);

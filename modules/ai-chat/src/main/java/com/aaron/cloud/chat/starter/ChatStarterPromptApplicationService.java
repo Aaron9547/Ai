@@ -103,6 +103,10 @@ public class ChatStarterPromptApplicationService {
 
         List<ChatStarterPromptDtos.StarterPromptItem> items =
                 picked.stream()
+                        .filter(
+                                p ->
+                                        ChatStarterFollowUpTextSupport.isDisplayableChip(
+                                                p.getPromptText()))
                         .map(
                                 p ->
                                         new ChatStarterPromptDtos.StarterPromptItem(

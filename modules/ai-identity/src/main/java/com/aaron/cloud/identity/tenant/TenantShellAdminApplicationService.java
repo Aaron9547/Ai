@@ -58,18 +58,16 @@ public class TenantShellAdminApplicationService {
     private final KnowledgePlanetTenantRuntime knowledgePlanetTenantRuntime;
     private final TenantKnowledgePlanetEmailResolver knowledgePlanetEmailResolver;
     private final KnowledgePlanetScheduledTaskSynchronizer knowledgePlanetScheduledTaskSynchronizer;
+    private final TenantBrandingResolver tenantBrandingResolver;
 
     public ShellConfigResponse load(long tenantId) {
-        SysTenant t =
-                sysTenantRepository
-                        .findById(tenantId)
-                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "tenant not found"));
-        String baseName = t.getName() == null ? "" : t.getName().trim();
-        String rawLogo = t.getAdminLogoUrl() == null ? "" : t.getAdminLogoUrl().trim();
-        String rawTitle = t.getAdminPortalTitle() == null ? "" : t.getAdminPortalTitle().trim();
-        String rawFooter = t.getAdminFooterText() == null ? "" : t.getAdminFooterText().trim();
-        String portalResolved = rawTitle.isEmpty() ? baseName : rawTitle;
-        BrandingDto branding = new BrandingDto(rawLogo, rawTitle, rawFooter, portalResolved);
+        sysTenantRepository
+                .findById(tenantId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "tenant not found"));
+        TenantBrandingResolver.TenantBrandingSnapshot snap = tenantBrandingResolver.resolve(tenantId);
+        BrandingDto branding =
+                new BrandingDto(
+                        snap.logoUrl(), snap.portalTitle(), snap.footerText(), snap.portalTitleResolved());
         String tenantJson =
                 tenantRuntimeSettingApplicationService.getEffectiveValueText(
                         tenantId, TenantRuntimeSettingKey.OUTBOUND_RESILIENCE_JSON);

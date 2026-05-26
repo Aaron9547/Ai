@@ -1,6 +1,7 @@
 @import "./chat-theme.css";
 @import "./sidebar-collapse.css";
 @import "./sidebar-user-menu.css";
+@import "./motion.css";
 
 /* 用户端：类 ChatGPT 浅色主界面 */
 html,
@@ -8,6 +9,9 @@ body {
   margin: 0;
   height: 100%;
   color-scheme: light;
+  transition:
+    background-color 0.25s var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1)),
+    color 0.25s var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1));
 }
 
 body {
@@ -16,6 +20,20 @@ body {
   font-family: Inter, "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
+}
+
+.chat-app {
+  transition:
+    background-color 0.25s var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1)),
+    color 0.25s var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html,
+  body,
+  .chat-app {
+    transition-duration: 0.01ms !important;
+  }
 }
 
 #app {

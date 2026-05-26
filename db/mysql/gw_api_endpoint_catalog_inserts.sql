@@ -20,6 +20,7 @@ INSERT IGNORE INTO gw_api_endpoint (path_pattern, http_method, display_name, rem
 ('/open/v1/auth/register/send-code', 'POST', '开放注册验证码', '邮箱注册发送验证码', 1, 1011, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 -- ---------- Open：/open/v1/system ----------
 ('/open/v1/system/me', 'GET', '开放当前上下文 me', '访客可访问', 1, 1020, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/open/v1/system/tenant-branding', 'GET', '开放租户外观', '与管理端 Shell 外观同源', 1, 1021, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 -- ---------- Open：/open/v1/profile（须 JWT）----------
 ('/open/v1/profile/export', 'GET', '画像与记忆导出', 'jwt-local', 1, 1025, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/profile/data', 'DELETE', '画像与记忆删除', 'jwt-local', 1, 1026, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),

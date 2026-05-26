@@ -178,11 +178,11 @@ export default {
       outboundBlock: "Model API behavior (advanced)",
       outboundBlockTip:
         "Tune retries, timeouts, and error isolation when this tenant calls LLM providers; merged on top of server defaults. Most tenants can leave this as {}.",
-      sideLogo: "Sidebar logo",
+      sideLogo: "Brand logo",
       logoUpload: "Upload image",
       logoClear: "Clear",
       logoUrlHint:
-        "Prefer “Upload image” for a stored path, or paste a full HTTPS / same-origin URL. Clear any field and click “Save admin appearance” to fall back to defaults (mark if no logo, tenant name as title, default footer).",
+        "Logo and title apply to both the admin sidebar and the user app (chat sidebar, sign-in, share images). Prefer “Upload image” for a stored path, or paste a full HTTPS / same-origin URL. Clear any field and click “Save admin appearance” to fall back to defaults (mark if no logo, tenant name as title, default footer).",
       logoUrlPlaceholder: "Filled after upload, or paste an image URL",
       portalTitle: "Console title (optional)",
       portalTitlePlaceholder: "Leave empty to use the tenant display name",

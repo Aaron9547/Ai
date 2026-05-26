@@ -1,0 +1,100 @@
+:root {
+  --motion-duration-fast: 0.22s;
+  --motion-duration-normal: 0.32s;
+  --motion-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --motion-ease-out: cubic-bezier(0, 0, 0.2, 1);
+}
+
+/* 会话主区切换 */
+.thread-pane-enter-active,
+.thread-pane-leave-active {
+  transition:
+    opacity var(--motion-duration-normal) var(--motion-ease-standard),
+    transform var(--motion-duration-normal) var(--motion-ease-standard);
+}
+
+.thread-pane-enter-from,
+.thread-pane-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.thread-pane-enter-to,
+.thread-pane-leave-from {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* 路由页切换 */
+.route-fade-enter-active,
+.route-fade-leave-active {
+  transition: opacity var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.route-fade-enter-from,
+.route-fade-leave-to {
+  opacity: 0;
+}
+
+/* 工具条图标 / 文案 crossfade */
+.motion-crossfade-enter-active,
+.motion-crossfade-leave-active {
+  transition: opacity var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.motion-crossfade-enter-from,
+.motion-crossfade-leave-to {
+  opacity: 0;
+}
+
+.motion-crossfade-leave-active {
+  position: absolute;
+}
+
+/* 侧栏会话列表 */
+.conv-list-enter-active,
+.conv-list-leave-active {
+  transition:
+    opacity var(--motion-duration-fast) var(--motion-ease-out),
+    transform var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.conv-list-enter-from,
+.conv-list-leave-to {
+  opacity: 0;
+  transform: translateX(-6px);
+}
+
+.conv-list-move {
+  transition: transform var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.thread-pane-loading {
+  flex-shrink: 0;
+  width: 100%;
+  max-width: 56rem;
+  box-sizing: border-box;
+  padding: 32px 24px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thread-pane-enter-active,
+  .thread-pane-leave-active,
+  .route-fade-enter-active,
+  .route-fade-leave-active,
+  .motion-crossfade-enter-active,
+  .motion-crossfade-leave-active,
+  .conv-list-enter-active,
+  .conv-list-leave-active,
+  .conv-list-move {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+
+  .thread-pane-enter-from,
+  .thread-pane-leave-to,
+  .conv-list-enter-from,
+  .conv-list-leave-to {
+    transform: none !important;
+  }
+}

@@ -18,7 +18,8 @@
 
             <div class="auth-brand">
               <span class="auth-brand-glow" aria-hidden="true" />
-              <h2 class="auth-title">{{ t("auth.title") }}</h2>
+              <BrandMark :logo-url="brandLogoUrl" :label="brandTitle" size="auth" />
+              <h2 class="auth-title">{{ brandTitle }}</h2>
               <p class="auth-subtitle">{{ tab === "login" ? t("auth.loginSubtitle") : t("auth.regSubtitle") }}</p>
             </div>
 
@@ -152,7 +153,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { Close } from "@element-plus/icons-vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
@@ -167,12 +168,26 @@ import {
   openAuthSendCodeErrorMessage,
 } from "../utils/openAuthHttpErrors";
 import { saveUserMemberships } from "../utils/userMembershipStorage";
+import BrandMark from "./BrandMark.vue";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const { t } = useI18n();
 
-const props = defineProps<{ modelValue: boolean }>();
+const props = withDefaults(
+  defineProps<{
+    modelValue: boolean;
+    brandLogoUrl?: string | null;
+    brandTitle?: string;
+  }>(),
+  { brandLogoUrl: "", brandTitle: "" },
+);
+
+const brandTitle = computed(() => {
+  const custom = props.brandTitle?.trim();
+  if (custom) return custom;
+  return t("auth.title");
+});
 const emit = defineEmits<{ "update:modelValue": [boolean]; done: [] }>();
 
 const router = useRouter();

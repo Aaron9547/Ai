@@ -1136,6 +1136,7 @@ FROM (
     UNION ALL SELECT NULL, '/open/v1/auth/register', 'POST', 30, 0, '自助注册', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)
     UNION ALL SELECT NULL, '/open/v1/auth/register/send-code', 'POST', 20, 0, '注册验证码', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)
     UNION ALL SELECT NULL, '/open/v1/system/me', 'GET', 120, 0, '开放 me', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)
+    UNION ALL SELECT NULL, '/open/v1/system/tenant-branding', 'GET', 120, 0, '开放租户外观', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)
     UNION ALL SELECT NULL, '/open/v1/chat/models', 'GET', 120, 0, '对话模型列表', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)
     UNION ALL SELECT NULL, '/open/v1/chat/conversations', 'GET', 120, 0, '开放会话列表', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)
     UNION ALL SELECT NULL, '/open/v1/chat/conversations', 'POST', 60, 0, '创建会话', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)

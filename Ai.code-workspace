@@ -2,12 +2,6 @@
 	"folders": [
 		{
 			"path": "."
-		},
-		{
-			"path": "../ly-mc-electricity-meter-svc"
-		},
-		{
-			"path": "../ly-ai-application-svc"
 		}
 	],
 	"settings": {

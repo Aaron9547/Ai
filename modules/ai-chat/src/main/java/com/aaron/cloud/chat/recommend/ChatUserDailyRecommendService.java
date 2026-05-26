@@ -5,6 +5,7 @@ import com.aaron.cloud.chat.dto.ChatDailyRecommendDtos.DailyRecommendItemView;
 import com.aaron.cloud.chat.dto.ChatDailyRecommendDtos.DailyRecommendResponse;
 import com.aaron.cloud.chat.recommend.ChatDailyRecommendJsonSupport.DailyRecommendItemRecord;
 import com.aaron.cloud.chat.websearch.ChatWebSearchGroundingService;
+import com.aaron.cloud.chat.websearch.WebSearchReference;
 import com.aaron.cloud.common.api.dto.model.ModelChatRequest;
 import com.aaron.cloud.common.api.enums.chat.ChatStarterDailyBatchStatus;
 import com.aaron.cloud.common.api.enums.llm.LlmModelKind;
@@ -42,7 +43,7 @@ public class ChatUserDailyRecommendService {
             你是资讯推荐编辑。根据联网检索摘要与用户画像，输出今日个性化资讯卡片列表。
             只输出 JSON 数组，不要 markdown，不要解释。每项字段：
             tag（领域标签，2～8字）、title（标题，12～48字）、summary（摘要，24～120字）、
-            source（来源媒体名）、date（发布日期 yyyy-MM-dd，未知可写今日）、url（可点击链接，须 http/https）。
+            source（来源媒体名）、date（发布日期 yyyy-MM-dd，未知可写今日）、            url（可点击链接，须 http/https，且必须从【联网引用列表】中原样选取，禁止编造域名）。
             共 5～8 条，内容不重复、与画像相关；若无画像则输出通用热点资讯。
             示例：[{"tag":"科技","title":"…","summary":"…","source":"新华网","date":"2026-05-21","url":"https://…"}]
             """;
@@ -243,7 +244,13 @@ public class ChatUserDailyRecommendService {
                 return;
             }
 
-            List<DailyRecommendItemRecord> items = structureItems(tenantId, profileHint, summary);
+            List<DailyRecommendItemRecord> items =
+                    structureItems(
+                            tenantId,
+                            profileHint,
+                            summary,
+                            grounding.bundle().references());
+            items = ChatDailyRecommendUrlSupport.attachReferenceUrls(items, grounding.bundle().references());
             if (items.isEmpty()) {
                 failBatch(batch, "语言模型未解析出有效推荐条目");
                 return;
@@ -266,7 +273,11 @@ public class ChatUserDailyRecommendService {
     }
 
     private List<DailyRecommendItemRecord> structureItems(
-            long tenantId, String profileHint, String webSummary) throws Exception {
+            long tenantId,
+            String profileHint,
+            String webSummary,
+            List<WebSearchReference> references)
+            throws Exception {
         SysLlmModel lang = llmModelRepository.pickDefaultLanguageModel(tenantId).orElse(null);
         if (lang == null) {
             return List.of();
@@ -289,6 +300,11 @@ public class ChatUserDailyRecommendService {
         user.setRole("user");
         StringBuilder body = new StringBuilder();
         body.append("【联网检索摘要】\n").append(webSummary);
+        String refBlock = ChatDailyRecommendUrlSupport.formatReferencesForPrompt(references);
+        if (!refBlock.isBlank()) {
+            body.append("\n\n【联网引用列表】（每条推荐的 url 必须从下列 url 中选取）\n")
+                    .append(refBlock);
+        }
         if (profileHint != null && !profileHint.isBlank()) {
             body.append("\n\n【用户画像与记忆】\n").append(profileHint.trim());
         }
@@ -412,7 +428,7 @@ public class ChatUserDailyRecommendService {
                             r.summary(),
                             blankToDash(r.source()),
                             blankToDash(r.date()),
-                            r.url()));
+                            ChatDailyRecommendUrlSupport.normalizeHttpUrl(r.url())));
         }
         return out;
     }

@@ -148,9 +148,9 @@ flowchart TB
     SSE[助手流结束 SSE] --> FU[followUpPrompts 帧]
     FU --> UI2[助手消息下 chips]
     SSE --> REST[可选 GET follow-up-prompts<br/>历史/补拉]
-    REST --> CACHE[(chat_starter_follow_up_cache)]
-    REST --> LLM2[语言模型按上下文生成]
-    REST --> POOL2[(FOLLOW_UP 运营池 / 内置兜底)]
+    REST --> CACHE[(chat_starter_follow_up_cache<br/>轮询等待流式并行 LLM)]
+    REST --> LLM2[缓存未命中则同步语言模型]
+    LLM2 -->|无模型或失败| POOL2[(FOLLOW_UP 运营池 / 内置兜底)]
   end
 ```
 
@@ -365,8 +365,10 @@ flowchart TB
 
 ### 0.1.255-SNAPSHOT
 
+- **猜你想问**：**`ChatStarterFollowUpService`** 有语言模型时仅等 LLM（SSE 未完成则空列表 + REST 轮询缓存/同步生成），**不再**经相似度从运营池抢答；运营池/内置兜底仅在无模型或生成失败时；**`ChatStarterFollowUpTextSupport`** 过滤不可展示文案。
+- **租户外观共用**：**`GET /open/v1/system/tenant-branding`** 与管理端 Shell「管理端外观」同源（**`sys_tenant.admin_logo_url`** 等）；**`TenantBrandingResolver`**；user-web 侧栏/空态/登录/分享图经 **`useTenantBranding`** + **`BrandMark`** 展示同一 LOGO 与标题。
 - **知识库向量检索试跑**：**`POST …/retrieval-test`** 回显 Milvus **`vectorSimilarity`**（ES 行在同次 topK 内则回填）/ 可选 **`keywordScore`**（BM25）；混合模式 Milvus 未过阈值不 ES 兜底；ES **`operator=and` + `min_score`**。
-- **联网知识库沉淀**：`chat_starter_prompt` 增 **`query_normalized`**、**`query_norm_hash`**（SHA256，索引用）、**`grounding_json`**、**`hit_count`**；场景 **`WEB_KNOWLEDGE`**、来源 **`WEB_SEARCH_GROUNDING`**。**不对问句建 UNIQUE**（utf8mb4 长字段超 767 字节上限，且同一问句需多版本容纳资讯更新）。**`freshHours` 内**合并更新同一条；**超过 `freshHours`** 外呼后**插入新版本**；本地命中仅取 **`staleHours` 内**最新版（与 **`WEB_SEARCH_GROUNDING_CACHE_JSON`** 分档对齐）。**`ChatWebSearchKnowledgeService`** 异步沉淀；外呼前本地精确/语义命中。**`ChatStarterPromptSimilarityService`** 追问池合并 **WEB_KNOWLEDGE**。
+- **联网知识库沉淀**：`chat_starter_prompt` 增 **`query_normalized`**、**`query_norm_hash`**（SHA256，索引用）、**`grounding_json`**、**`hit_count`**；场景 **`WEB_KNOWLEDGE`**、来源 **`WEB_SEARCH_GROUNDING`**。**不对问句建 UNIQUE**（utf8mb4 长字段超 767 字节上限，且同一问句需多版本容纳资讯更新）。**`freshHours` 内**合并更新同一条；**超过 `freshHours`** 外呼后**插入新版本**；本地命中仅取 **`staleHours` 内**最新版（与 **`WEB_SEARCH_GROUNDING_CACHE_JSON`** 分档对齐）。**`ChatWebSearchKnowledgeService`** 异步沉淀；外呼前本地精确/语义命中。**WEB_KNOWLEDGE** 仅联网检索命中，不作「猜你想问」chip（**`ChatStarterFollowUpService`** 不再走运营池相似度捷径）。
 - **管理端**：**「推荐问题与猜你想问」** 新增 **「联网知识库」** Tab（**`WebSearchKnowledgeTable`**）：摘要预览、**引用数可点开弹窗**（**`GET …/starter-prompts/{id}/web-grounding`**）、本地命中次数、启停与删除（同问句可多行版本）。
 - **枚举**：**`ChatStarterPromptScene.WEB_KNOWLEDGE`**、**`ChatStarterPromptSource.WEB_SEARCH_GROUNDING`**。
 - **已建库须手工执行** **`db/mysql/migrate_0_1_255_web_search_knowledge.sql`**；若曾误跑旧版 UNIQUE 或缺 **`query_norm_hash`**，补 **`migrate_0_1_255_web_search_knowledge_index_fix.sql`**。
@@ -378,6 +380,7 @@ flowchart TB
 - **user-web 对话代码块**：**`CodeBlock.vue`**（PrismJS + Tailwind、mac 顶栏、复制反馈）；**`MarkdownRichContent.vue`** 经 markdown-it **token** 拆分围栏/缩进代码；**`prismSetup`** 补全 **javascript** 等语法与 **clike** 回退；**`bubble-md` 旧 `pre` 样式** 不再覆盖 **`.ai-code-block`**。
 - **user-web 输入框清空**：**圆形 ×** 置于发送钮左侧（与附件/发送同一行底对齐），不占输入区、不与多行文字重叠。
 - **user-web 输入区**：**思考 / 联网** 模式 pill 略放大（12px 字、更高点击区域）。
+- **user-web 全局动画**：**`motion.css`** 统一过渡令牌；**`AnchorMotionToolbar`**（gsap FLIP）语言/主题工具条单实例跨锚点平滑位移；**`ChatView`** 会话主区 **`thread-pane`** out-in 切换 + **`after-leave`** 延迟加载；**`LocaleThemeToolbar`** 语言/主题图标 crossfade；**`AppRouteTransition`** 路由 fade；**`ChatSidebar`** 会话列表 **TransitionGroup**。
 - **知识星球聚类**：**`KnowledgePlanetUniverseBuilder`** 按任意 **topicTag 交集** 并簇（传递闭包），同会话/时序相邻补 **relation** 连线；**`KnowledgePlanetIngestService`** 沉淀时注入【已有主题星球】【本会话已沉淀】并约束 **topicTags[0] 复用**、追问不随意 skip。
 - **admin-web 列表滚动**：知识库文档矩阵、对话日志、HTTP 访问日志、计量事件去掉表格局部 **`max-height`/固定高度**，改由 **`AdminLayout`** 主区滚动；成员画像一览移除 **用户 ID** 列，详情标题用登录名/昵称。
 - **admin-web 对话日志抽检**：**`MarkdownRichContent`** + **`CodeBlock`**（PrismJS）；全局 **`markdown-prose.css`** 恢复列表/标题/引用/表格样式；详情 **大弹框**；**修复** `normalizeGfmBlockMarkdown` 在表格行间误插空行导致 GFM 表格变纯文本，并合并模型输出中表格行间的多余空行（对齐用户端）。

@@ -3,7 +3,7 @@
     <div class="share-capture-sheet">
       <header class="share-capture-head">
         <div class="share-capture-head__brand">
-          <span class="share-capture-head__logo">Ai</span>
+          <BrandMark :logo-url="brandLogoUrl" :label="brandTitle" size="share" />
           <span class="share-capture-head__tag">{{ t("chat.shareCaptureTag") }}</span>
         </div>
         <h2 class="share-capture-head__title">{{ title }}</h2>
@@ -46,6 +46,7 @@
 import { ChatLineRound, User } from "@element-plus/icons-vue";
 import { ref } from "vue";
 import { useI18n } from "vue-i18n";
+import BrandMark from "@/components/BrandMark.vue";
 import MarkdownRichContent from "./MarkdownRichContent.vue";
 
 export type ShareCaptureTurn = {
@@ -54,11 +55,16 @@ export type ShareCaptureTurn = {
   assistantSource: string;
 };
 
-defineProps<{
-  title: string;
-  turns: ShareCaptureTurn[];
-  footer: string;
-}>();
+withDefaults(
+  defineProps<{
+    title: string;
+    turns: ShareCaptureTurn[];
+    footer: string;
+    brandLogoUrl?: string | null;
+    brandTitle?: string;
+  }>(),
+  { brandLogoUrl: "", brandTitle: "Ai" },
+);
 
 const { t } = useI18n();
 const rootRef = ref<HTMLElement | null>(null);
@@ -102,21 +108,6 @@ defineExpose({
   align-items: center;
   gap: 8px;
   margin-bottom: 10px;
-}
-
-.share-capture-head__logo {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 32px;
-  height: 32px;
-  padding: 0 8px;
-  border-radius: 9px;
-  background: #202020;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
 }
 
 .share-capture-head__tag {

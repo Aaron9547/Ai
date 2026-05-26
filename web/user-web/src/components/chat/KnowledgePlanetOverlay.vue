@@ -166,9 +166,6 @@
         <aside class="kp-side">
           <header class="kp-side-head">
             <h2>{{ t("knowledgePlanet.overlayTitle") }}</h2>
-            <button type="button" class="kp-icon-btn" :aria-label="t('knowledgePlanet.close')" @click="requestClose">
-              ×
-            </button>
           </header>
 
           <el-scrollbar class="kp-side-scroll">
@@ -1358,31 +1355,12 @@ html.dark .kp-render-toggle__btn--active {
   padding-right: 4px;
 }
 
-.kp-side-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
 .kp-side-head h2 {
   margin: 0;
   font-size: 16px;
   font-weight: 500;
   color: #00f2fe;
   letter-spacing: 0.06em;
-}
-
-.kp-icon-btn {
-  border: none;
-  background: transparent;
-  color: #9ab;
-  font-size: 26px;
-  cursor: pointer;
-  line-height: 1;
-}
-
-.kp-icon-btn:hover {
-  color: #00f2fe;
 }
 
 .kp-select-hint {

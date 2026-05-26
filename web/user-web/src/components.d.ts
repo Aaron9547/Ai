@@ -8,6 +8,9 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AnchorMotionToolbar: typeof import('./components/motion/AnchorMotionToolbar.vue')['default']
+    AppRouteTransition: typeof import('./components/motion/AppRouteTransition.vue')['default']
+    BrandMark: typeof import('./components/BrandMark.vue')['default']
     ChatBrandRail: typeof import('./components/chat/ChatBrandRail.vue')['default']
     ChatQuickPromptBar: typeof import('./components/chat/ChatQuickPromptBar.vue')['default']
     ChatShareCaptureCard: typeof import('./components/chat/ChatShareCaptureCard.vue')['default']

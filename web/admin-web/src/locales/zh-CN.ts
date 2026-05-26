@@ -179,11 +179,11 @@ export default {
       outboundBlock: "大模型调用策略（高级）",
       outboundBlockTip:
         "控制本租户访问大模型接口时的重试、超时、错误隔离等；在服务器默认配置之上叠加，一般无需修改。",
-      sideLogo: "侧栏 LOGO",
+      sideLogo: "品牌 LOGO",
       logoUpload: "上传图片",
       logoClear: "清除",
       logoUrlHint:
-        "推荐点「上传图片」自动生成地址；也可手动填写完整 HTTPS 或本站相对路径。清空任意项并点「保存管理端外观」后，该项会使用系统默认（无 LOGO 用色块、标题用租户名、默认页脚）。",
+        "LOGO 与标题同时用于管理端侧栏与用户端（对话侧栏、登录框、分享图）。推荐点「上传图片」自动生成地址；也可手动填写完整 HTTPS 或本站相对路径。清空任意项并点「保存管理端外观」后，该项会使用系统默认（无 LOGO 用色块、标题用租户名、默认页脚）。",
       logoUrlPlaceholder: "上传后自动填入，或可粘贴图片 URL",
       portalTitle: "管理台标题（可选）",
       portalTitlePlaceholder: "留空则使用租户名称",

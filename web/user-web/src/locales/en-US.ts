@@ -250,7 +250,7 @@ export default {
     loginSubtitle: "Sign in with your email to continue",
     regSubtitle: "Verify your email to create an account",
     email: "Email",
-    emailPh: "name@example.com",
+    emailPh: "name@@example.com",
     password: "Password",
     confirmPassword: "Confirm password",
     confirmPassPh: "Re-enter password",

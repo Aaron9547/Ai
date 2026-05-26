@@ -13,7 +13,11 @@
       <template v-if="!themeOnly">
         <el-dropdown trigger="click" teleported popper-class="lt-dropdown-popper" @command="onLocale">
           <button type="button" class="lt-trigger" :title="t('ui.language')">
-            <span class="lt-locale-mark" aria-hidden="true">{{ localeMark }}</span>
+            <span class="lt-locale-mark-wrap" aria-hidden="true">
+              <Transition name="motion-crossfade" mode="out-in">
+                <span :key="localeMark" class="lt-locale-mark">{{ localeMark }}</span>
+              </Transition>
+            </span>
             <span v-if="!compact" class="lt-value">{{ localeLabel(store.locale) }}</span>
             <el-icon v-if="!compact" class="lt-caret" aria-hidden="true"><ArrowDown /></el-icon>
           </button>
@@ -31,7 +35,9 @@
       <el-dropdown trigger="click" teleported popper-class="lt-dropdown-popper" @command="onColorMode">
         <button type="button" class="lt-trigger" :title="t('ui.theme')">
           <span class="lt-icon-wrap" aria-hidden="true">
-            <el-icon><component :is="themeIcon" /></el-icon>
+            <Transition name="motion-crossfade" mode="out-in">
+              <el-icon :key="store.colorMode"><component :is="themeIcon" /></el-icon>
+            </Transition>
           </span>
           <span v-if="!compact" class="lt-value">{{ themeLabel(store.colorMode) }}</span>
           <el-icon v-if="!compact" class="lt-caret" aria-hidden="true"><ArrowDown /></el-icon>
@@ -150,13 +156,27 @@ html.dark .lt-group {
 }
 
 .lt-icon-wrap {
+  position: relative;
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25em;
+  min-height: 1.25em;
   font-size: 16px;
   color: var(--el-text-color-secondary);
 }
 
 .locale-theme-toolbar--compact .lt-icon-wrap {
   font-size: 18px;
+}
+
+.lt-locale-mark-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5em;
+  min-height: 1em;
 }
 
 .lt-locale-mark {

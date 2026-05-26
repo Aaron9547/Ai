@@ -7,6 +7,7 @@ import {
 } from "../api/dailyRecommend";
 import { getUserAccessToken } from "../plugins/http";
 import { apiRequestErrorMessage } from "../utils/apiRequestErrorMessage";
+import { normalizeExternalUrl } from "../utils/externalUrl";
 
 const LS_PREFIX = "daily-recommend-";
 const LS_META_KEY = "daily-recommend-meta";
@@ -101,6 +102,13 @@ function writeCache(
   localStorage.setItem(storageKey(cacheKey, recommendDate), JSON.stringify(payload));
 }
 
+function normalizeRecommendItems(items: DailyRecommendItem[]): DailyRecommendItem[] {
+  return items.map((it) => ({
+    ...it,
+    url: normalizeExternalUrl(it.url),
+  }));
+}
+
 function tagsFromItems(items: DailyRecommendItem[]): string[] {
   const set = new Set<string>();
   for (const it of items) {
@@ -139,7 +147,7 @@ function createDailyRecommendStore() {
       return true;
     }
     if (res.status === "OK" && res.list.length > 0) {
-      recommendations.value = res.list;
+      recommendations.value = normalizeRecommendItems(res.list);
       status.value = "success";
       errorMessage.value = null;
       fromTodayCache.value = false;
@@ -251,7 +259,7 @@ function createDailyRecommendStore() {
       if (cached) {
         cacheKey.value = meta.cacheKey;
         recommendDate.value = meta.recommendDate;
-        recommendations.value = cached.recommendations;
+        recommendations.value = normalizeRecommendItems(cached.recommendations);
         profileTags.value =
           cached.profileTags?.length ? cached.profileTags : tagsFromItems(cached.recommendations);
         status.value = "success";

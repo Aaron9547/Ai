@@ -5,6 +5,7 @@ import com.aaron.cloud.common.context.LoginUser;
 import com.aaron.cloud.common.context.TenantContextHolder;
 import com.aaron.cloud.common.tenant.SysTenantRepository;
 import com.aaron.cloud.common.web.rest.OpenV1ControllerBases;
+import com.aaron.cloud.identity.tenant.TenantBrandingResolver;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class SystemController extends OpenV1ControllerBases.OpenSystem {
 
     private final SysTenantRepository sysTenantRepository;
+    private final TenantBrandingResolver tenantBrandingResolver;
 
     /**
      * 当前租户上下文快照；访客 {@code userId} 可能为 {@code null}，不可用 {@link Map#of}（禁止 null 值）。
@@ -66,6 +68,28 @@ public class SystemController extends OpenV1ControllerBases.OpenSystem {
             out.put("tenantName", null);
             out.put("tenantCode", null);
         }
+        return out;
+    }
+
+    /**
+     * 租户外观（与管理端 Shell「管理端外观」同源：{@code sys_tenant.admin_logo_url} 等），供 C 端侧栏/登录/分享图展示。
+     */
+    @GetMapping("/tenant-branding")
+    public Map<String, Object> tenantBranding() {
+        var snap = TenantContextHolder.getOrNull();
+        Map<String, Object> out = new LinkedHashMap<>(6);
+        if (snap == null || snap.getTenantId() == null) {
+            out.put("logoUrl", "");
+            out.put("portalTitle", "");
+            out.put("footerText", "");
+            out.put("portalTitleResolved", "");
+            return out;
+        }
+        var branding = tenantBrandingResolver.resolve(snap.getTenantId());
+        out.put("logoUrl", branding.logoUrl());
+        out.put("portalTitle", branding.portalTitle());
+        out.put("footerText", branding.footerText());
+        out.put("portalTitleResolved", branding.portalTitleResolved());
         return out;
     }
 }

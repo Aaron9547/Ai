@@ -13,7 +13,8 @@
       :conv-id="convId"
       :logged-in-username="loggedInUsername"
       :me-page-path="mePagePath"
-      :brand-label="t('chat.emptyBrand')"
+      :brand-label="displayBrandTitle"
+      :brand-logo-url="logoUrl"
       :collapsible="!isMobile"
       :default-collapsed="isTablet"
       :drawer-open="isMobile && sidebarOpen"
@@ -24,16 +25,27 @@
       @logout="logoutUser"
       @login="authOpen = true"
     />
-    <UserAuthDialog v-model="authOpen" @done="onAuthDone" />
+    <UserAuthDialog
+      v-model="authOpen"
+      :brand-logo-url="logoUrl"
+      :brand-title="displayBrandTitle"
+      @done="onAuthDone"
+    />
 
     <div class="chat-body">
       <div
-        v-if="!isMobile && messages.length === 0"
-        class="chat-float-tools"
+        v-show="toolbarFloating"
+        ref="toolbarAnchorFloatRef"
+        class="chat-float-tools toolbar-anchor-slot"
         :class="{ 'chat-float-tools--rec-collapsed': recPanelCollapsed }"
-      >
-        <LocaleThemeToolbar compact floating />
-      </div>
+        aria-hidden="true"
+      />
+      <AnchorMotionToolbar
+        :anchor-el="activeToolbarAnchor"
+        :floating="toolbarFloating"
+        :layout-hint="recPanelCollapsed"
+        compact
+      />
     <section class="main">
       <header v-if="isMobile" class="mobile-nav">
         <button
@@ -49,9 +61,9 @@
           class="mobile-nav-title"
           :title="activeTitle"
         >{{ activeTitle }}</span>
-        <span v-else class="mobile-nav-brand">{{ t("chat.emptyBrand") }}</span>
+        <span v-else class="mobile-nav-brand">{{ displayBrandTitle }}</span>
         <div class="mobile-nav-end">
-          <LocaleThemeToolbar compact class="thread-head-tools" />
+          <div ref="toolbarAnchorHeadMobileRef" class="toolbar-anchor-slot" aria-hidden="true" />
           <button
             type="button"
             class="mobile-nav-btn mobile-nav-btn--accent"
@@ -62,7 +74,9 @@
           </button>
         </div>
       </header>
-      <header v-if="messages.length > 0 && !isMobile" class="thread-head">
+      <Transition name="thread-pane" mode="out-in" @after-leave="onThreadPaneAfterLeave">
+      <div :key="threadPaneKey" class="thread-pane">
+      <header v-if="!isMobile && (messages.length > 0 || threadLoading)" class="thread-head">
         <div class="thread-head-row">
           <div class="thread-head-leading">
             <h1 v-if="!isMobile" class="thread-title">{{ activeTitle }}</h1>
@@ -75,15 +89,18 @@
               <span class="thread-token-badge-val" v-html="t('chat.tokenLineValue', { n: sessionTokenTotal })" />
             </div>
           </div>
-          <LocaleThemeToolbar v-if="!isMobile" compact class="thread-head-tools" />
+          <div ref="toolbarAnchorHeadDesktopRef" class="toolbar-anchor-slot toolbar-anchor-slot--head" aria-hidden="true" />
         </div>
         <p v-if="isMobile" class="thread-hint">
           {{ t("chat.threadHintMobile") }}
         </p>
       </header>
 
-      <div v-if="messages.length === 0" class="chat-hero">
-        <div class="empty-brand">{{ t("chat.emptyBrand") }}</div>
+      <div v-if="threadLoading && messages.length === 0" class="thread-pane-loading">
+        <el-skeleton :rows="5" animated />
+      </div>
+      <div v-else-if="messages.length === 0" class="chat-hero">
+        <BrandMark :logo-url="logoUrl" :label="displayBrandTitle" size="hero" />
         <p class="empty-welcome">{{ t("chat.emptyWelcome") }}</p>
         <div class="quick-prompts" role="list">
           <QuickPromptChip
@@ -633,6 +650,8 @@
         </div>
         </div>
       </el-scrollbar>
+      </div>
+      </Transition>
 
       <footer class="composer">
         <div class="composer-dock">
@@ -814,6 +833,8 @@
       :messages="messages"
       :anchor-assistant-idx="shareAnchorAssistantIdx"
       :tenant-code="tenantCodeParam"
+      :brand-logo-url="logoUrl"
+      :brand-title="displayBrandTitle"
     />
   </div>
 </template>
@@ -846,13 +867,15 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
 import { useWindowBreakpoints } from "../../composables/useWindowBreakpoints";
+import BrandMark from "../../components/BrandMark.vue";
 import ChatSidebar from "../../components/chat/ChatSidebar.vue";
+import { useTenantBranding } from "../../composables/useTenantBranding";
 import DailyRecommendSidebar from "../../components/chat/DailyRecommendSidebar.vue";
 import QuickPromptChip from "../../components/chat/QuickPromptChip.vue";
 import { useDailyRecommend } from "../../composables/useDailyRecommend";
 import { bumpKnowledgePlanetPulse } from "../../composables/useKnowledgePlanetPulse";
+import AnchorMotionToolbar from "../../components/motion/AnchorMotionToolbar.vue";
 import ChatShareDialog from "../../components/chat/ChatShareDialog.vue";
-import LocaleThemeToolbar from "../../components/LocaleThemeToolbar.vue";
 import UserAuthDialog from "../../components/UserAuthDialog.vue";
 import * as chatApi from "../../api/chat";
 import { ChatStreamHttpError } from "../../api/chat";
@@ -868,12 +891,29 @@ import { useUiPreferencesStore } from "../../stores/uiPreferences";
 
 const route = useRoute();
 const { t, locale } = useI18n();
+const { logoUrl, displayBrandTitle, loadTenantBranding } = useTenantBranding();
 const uiPrefs = useUiPreferencesStore();
 const chatResponseLocale = computed(() => toChatResponseLocale(uiPrefs.locale));
 const { isMobile, isTablet } = useWindowBreakpoints();
 const sidebarOpen = ref(false);
 /** 右侧推荐栏收起态，用于空对话悬浮工具栏定位 */
 const recPanelCollapsed = ref(false);
+const toolbarAnchorFloatRef = ref<HTMLElement | null>(null);
+const toolbarAnchorHeadMobileRef = ref<HTMLElement | null>(null);
+const toolbarAnchorHeadDesktopRef = ref<HTMLElement | null>(null);
+const threadLoading = ref(false);
+const threadPaneKey = computed(() => (convId.value != null ? String(convId.value) : "none"));
+const toolbarFloating = computed(
+  () => !isMobile.value && messages.value.length === 0 && !threadLoading.value,
+);
+const activeToolbarAnchor = computed(() => {
+  if (isMobile.value) return toolbarAnchorHeadMobileRef.value;
+  if (toolbarFloating.value) return toolbarAnchorFloatRef.value;
+  return toolbarAnchorHeadDesktopRef.value;
+});
+let threadLoadSeq = 0;
+type ThreadPaneAction = { kind: "load"; convId: number } | { kind: "empty" };
+let pendingThreadAction: ThreadPaneAction | null = null;
 
 /** 每次发起新的助手流式回复自增；丢弃代数已过期的 SSE 分帧，避免上一轮 {@code ragDoc} 写入本轮气泡。 */
 let assistantStreamGeneration = 0;
@@ -1332,16 +1372,38 @@ function stepAssistantVariant(m: Msg, delta: number) {
 }
 
 async function loadMessagesForConv(id: number) {
+  const seq = ++threadLoadSeq;
+  threadLoading.value = true;
   clearThread();
   try {
     const rows = await chatApi.listConversationMessages(id);
+    if (seq !== threadLoadSeq) return;
     messages.value = mapHistoryToMsgs(rows);
   } catch {
+    if (seq !== threadLoadSeq) return;
     ElMessage.error(t("chat.loadHistoryFail"));
+  } finally {
+    if (seq === threadLoadSeq) {
+      threadLoading.value = false;
+    }
   }
+  if (seq !== threadLoadSeq) return;
   await ensureEmptyStarterPromptsIfNeeded();
   loadFollowUpForLastAssistant();
   await scrollToBottom();
+}
+
+async function onThreadPaneAfterLeave() {
+  const action = pendingThreadAction;
+  pendingThreadAction = null;
+  if (!action) return;
+  if (action.kind === "load") {
+    await loadMessagesForConv(action.convId);
+    return;
+  }
+  clearThread();
+  threadLoading.value = false;
+  await ensureEmptyStarterPromptsIfNeeded();
 }
 
 function threadContentMatches(local: Msg, server: Msg): boolean {
@@ -2406,17 +2468,18 @@ function clearThread() {
 }
 
 function selectConv(id: number) {
+  if (convId.value === id) return;
   if (sending.value) {
     cancelActiveStream();
     sending.value = false;
   }
+  pendingThreadAction = { kind: "load", convId: id };
   convId.value = id;
   webSearchEnabled.value = false;
   if (isMobile.value) {
     sidebarOpen.value = false;
   }
   syncRecommendForConversation();
-  void loadMessagesForConv(id);
 }
 
 async function onRenameConv(id: number) {
@@ -2456,9 +2519,8 @@ async function onDeleteConv(id: number) {
   }
   await chatApi.archiveConversation(id);
   if (convId.value === id) {
+    pendingThreadAction = { kind: "empty" };
     convId.value = null;
-    clearThread();
-    await ensureEmptyStarterPromptsIfNeeded();
     syncRecommendForConversation();
   }
   await refresh();
@@ -2558,12 +2620,14 @@ watch(
     if (!tenantShellReady.value) return;
     clearThread();
     convId.value = null;
+    await loadTenantBranding();
     await loadChatShellForCurrentTenant();
   },
 );
 
 onMounted(async () => {
   refreshAuthLabel();
+  await loadTenantBranding();
   await loadChatShellForCurrentTenant();
   tenantShellReady.value = true;
 });
@@ -2655,19 +2719,21 @@ async function newConvInner() {
   const c = await chatApi.createConversation(
     `${t("chat.newConvPrefix")} ${new Date().toLocaleString(dateLoc, { hour12: false })}`,
   );
+  pendingThreadAction = { kind: "load", convId: c.id };
   convId.value = c.id;
   webSearchEnabled.value = false;
   if (isMobile.value) {
     sidebarOpen.value = false;
   }
   await refresh();
-  clearThread();
   syncRecommendForConversation();
-  await ensureEmptyStarterPromptsIfNeeded();
   ElMessage.success(t("chat.convCreated"));
 }
 
 function onKeydown(e: KeyboardEvent) {
+  if (e.ctrlKey || e.metaKey || e.altKey) {
+    return;
+  }
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     void send();
@@ -2857,6 +2923,18 @@ async function send() {
   right: calc(40px + 10px);
 }
 
+.toolbar-anchor-slot {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 96px;
+  height: 40px;
+  pointer-events: none;
+}
+
+.toolbar-anchor-slot--head {
+  width: 96px;
+}
+
 .main {
   flex: 1;
   min-width: 0;
@@ -2866,9 +2944,25 @@ async function send() {
   background: var(--chat-bg-main, #f8fafc);
 }
 
-.main > .thread-head,
-.main > .chat-hero,
-.main > .messages-scroll,
+.thread-pane {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.main > .thread-pane > .thread-head,
+.main > .thread-pane > .chat-hero,
+.main > .thread-pane > .thread-pane-loading,
+.main > .thread-pane > .messages-scroll,
+.main > .composer {
+  width: 100%;
+  max-width: 56rem;
+  box-sizing: border-box;
+}
+
 .main > .composer {
   width: 100%;
   max-width: 56rem;
@@ -3592,21 +3686,6 @@ async function send() {
 .messages-scroll-inner {
   padding: 20px 0 16px;
   box-sizing: border-box;
-}
-
-.empty-brand {
-  width: 52px;
-  height: 52px;
-  border-radius: 12px;
-  background: linear-gradient(145deg, var(--nexus-brand-600, #4f46e5) 0%, var(--nexus-violet-600, #7c3aed) 100%);
-  color: #fff;
-  font-weight: 700;
-  font-size: 17px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 16px;
-  box-shadow: 0 8px 24px rgba(79, 70, 229, 0.22);
 }
 
 .empty-welcome {

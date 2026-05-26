@@ -51,7 +51,7 @@ public class ChatStarterPromptSimilarityService {
         List<Scored> scored = new ArrayList<>();
         for (ChatStarterPrompt p : pool) {
             String text = p.getPromptText();
-            if (text == null || text.isBlank()) {
+            if (!ChatStarterFollowUpTextSupport.isDisplayableChip(text)) {
                 continue;
             }
             double lex = lexicalScore(ctxTokens, tokenize(text));
@@ -86,18 +86,27 @@ public class ChatStarterPromptSimilarityService {
 
     private List<ChatStarterPrompt> loadPool(long tenantId) {
         var today = BeijingTime.today();
+        List<ChatStarterPrompt> followUp =
+                promptRepository.listEnabledForRuntime(
+                        tenantId, ChatStarterPromptScene.FOLLOW_UP, today);
         List<ChatStarterPrompt> merged = new ArrayList<>();
-        merged.addAll(
-                promptRepository.listEnabledForRuntime(
-                        tenantId, ChatStarterPromptScene.FOLLOW_UP, today));
-        merged.addAll(
-                promptRepository.listEnabledForRuntime(
-                        tenantId, ChatStarterPromptScene.WEB_KNOWLEDGE, today));
+        for (ChatStarterPrompt p : followUp) {
+            if (ChatStarterFollowUpTextSupport.isDisplayableChip(p.getPromptText())) {
+                merged.add(p);
+            }
+        }
         if (!merged.isEmpty()) {
             return merged;
         }
-        return promptRepository.listEnabledForRuntime(
-                tenantId, ChatStarterPromptScene.EMPTY, today);
+        List<ChatStarterPrompt> empty =
+                promptRepository.listEnabledForRuntime(
+                        tenantId, ChatStarterPromptScene.EMPTY, today);
+        for (ChatStarterPrompt p : empty) {
+            if (ChatStarterFollowUpTextSupport.isDisplayableChip(p.getPromptText())) {
+                merged.add(p);
+            }
+        }
+        return merged;
     }
 
     private void rerankWithEmbeddingIfConfigured(long tenantId, String context, List<Scored> candidates) {

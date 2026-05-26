@@ -244,7 +244,7 @@ export default {
     loginSubtitle: "使用邮箱登录，继续你的对话",
     regSubtitle: "邮箱验证后即可完成注册",
     email: "邮箱",
-    emailPh: "name@example.com",
+    emailPh: "name@@example.com",
     password: "密码",
     confirmPassword: "确认密码",
     confirmPassPh: "再次输入密码",

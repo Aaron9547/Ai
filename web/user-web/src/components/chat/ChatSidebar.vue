@@ -10,7 +10,7 @@
       <div class="sidebar-inner">
       <div class="sidebar-body" :aria-hidden="showCollapsed">
       <div class="sidebar-top">
-        <div class="brand-logo" aria-hidden="true">{{ brandLabel }}</div>
+        <BrandMark :logo-url="brandLogoUrl" :label="brandLabel" size="sidebar" aria-hidden="true" />
         <div class="sidebar-top-actions">
           <button type="button" class="btn-new" :aria-label="t('chat.ariaNewChat')" @click="emit('newConv')">
             <el-icon><Plus /></el-icon>
@@ -28,7 +28,7 @@
         <div v-else class="conv-groups">
           <section v-for="group in convGroups" :key="group.key" class="conv-group">
             <h3 class="conv-group-label">{{ group.label }}</h3>
-            <ul class="conv-list">
+            <TransitionGroup name="conv-list" tag="ul" class="conv-list">
               <li
                 v-for="c in group.items"
                 :key="c.id"
@@ -60,7 +60,7 @@
                   </button>
                 </div>
               </li>
-            </ul>
+            </TransitionGroup>
           </section>
         </div>
       </el-scrollbar>
@@ -158,6 +158,7 @@ import {
   SwitchButton,
   User,
 } from "@element-plus/icons-vue";
+import BrandMark from "@/components/BrandMark.vue";
 import SidebarCollapseTab from "./SidebarCollapseTab.vue";
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
@@ -175,6 +176,7 @@ const props = withDefaults(
     mePagePath: string;
     drawerOpen?: boolean;
     brandLabel?: string;
+    brandLogoUrl?: string | null;
     collapsible?: boolean;
     defaultCollapsed?: boolean;
   }>(),
@@ -399,21 +401,6 @@ const convGroups = computed<ConvGroup[]>(() => {
   min-width: 0;
 }
 
-.brand-logo {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: linear-gradient(145deg, #5b9fd4 0%, #3d7ab8 100%);
-  color: #fff;
-  font-size: 14px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  letter-spacing: -0.02em;
-  flex-shrink: 0;
-}
-
 .btn-new {
   display: inline-flex;
   align-items: center;
@@ -524,7 +511,9 @@ const convGroups = computed<ConvGroup[]>(() => {
   margin: 8px 0 8px 4px;
   border-radius: 2px;
   background: transparent;
-  transition: background 0.15s ease;
+  transition:
+    background 0.22s var(--motion-ease-standard, ease),
+    opacity 0.22s var(--motion-ease-standard, ease);
 }
 
 .conv-item.active .conv-accent {
