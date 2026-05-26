@@ -29,6 +29,11 @@ public final class RagQueryEmbeddingHasher {
         return v;
     }
 
+    /** 入库与查询向量 L2 归一化，与 Milvus COSINE 度量一致。 */
+    static void normalizeL2InPlace(float[] v) {
+        normalizeL2(v);
+    }
+
     private static void normalizeL2(float[] v) {
         double s = 0;
         for (float f : v) {

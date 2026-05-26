@@ -1,5 +1,6 @@
 package com.aaron.cloud.chat.websearch;
 
+import com.aaron.cloud.chat.starter.ChatWebSearchKnowledgeService;
 import com.aaron.cloud.chat.websearch.cache.WebSearchConversationReuseService;
 import com.aaron.cloud.chat.websearch.cache.WebSearchGroundingCacheLookup;
 import com.aaron.cloud.chat.websearch.cache.WebSearchGroundingCacheService;
@@ -44,6 +45,7 @@ public class ChatWebSearchGroundingService {
     private final TenantRuntimeSettingApplicationService tenantRuntimeSettingApplicationService;
     private final WebSearchGroundingCacheService webSearchGroundingCacheService;
     private final WebSearchConversationReuseService webSearchConversationReuseService;
+    private final ChatWebSearchKnowledgeService webSearchKnowledgeService;
 
     /**
      * 连续多轮调用联网 API（轮数与各轮后缀见租户运行参数 {@link com.aaron.cloud.common.api.enums.TenantRuntimeSettingKey#WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT}
@@ -75,10 +77,31 @@ public class ChatWebSearchGroundingService {
                         snap.getTenantId(), conversationId, normalized, cachePolicy);
         if (conversationReuse.isPresent()) {
             WebGroundingBundle b = conversationReuse.get();
-            emitCumulative(onCumulativeReferences, b.references());
-            webSearchGroundingCacheService.store(
-                    snap.getTenantId(), modelId, configScope, normalized, b, cachePolicy);
-            return b;
+            return finalizeGrounding(
+                    snap,
+                    modelId,
+                    configScope,
+                    normalized,
+                    base,
+                    b,
+                    cachePolicy,
+                    onCumulativeReferences);
+        }
+
+        Optional<WebGroundingBundle> knowledgeHit =
+                webSearchKnowledgeService.tryLookup(snap.getTenantId(), normalized);
+        if (knowledgeHit.isPresent()) {
+            WebGroundingBundle b = knowledgeHit.get();
+            log.info("[联网知识库] 本地命中：租户 {}，会话 {}", snap.getTenantId(), conversationId);
+            return finalizeGrounding(
+                    snap,
+                    modelId,
+                    configScope,
+                    normalized,
+                    base,
+                    b,
+                    cachePolicy,
+                    onCumulativeReferences);
         }
 
         Optional<WebSearchGroundingCacheLookup> cached =
@@ -103,8 +126,15 @@ public class ChatWebSearchGroundingService {
         }
 
         if (effectiveRounds <= 0 && seed != null) {
-            emitCumulative(onCumulativeReferences, seed.references());
-            return seed;
+            return finalizeGrounding(
+                    snap,
+                    modelId,
+                    configScope,
+                    normalized,
+                    base,
+                    seed,
+                    cachePolicy,
+                    onCumulativeReferences);
         }
 
         WebGroundingBundle live =
@@ -121,9 +151,32 @@ public class ChatWebSearchGroundingService {
                         onCumulativeReferences);
 
         WebGroundingBundle merged = seed == null ? live : WebSearchGroundingMergeSupport.merge(seed, live);
+        return finalizeGrounding(
+                snap,
+                modelId,
+                configScope,
+                normalized,
+                base,
+                merged,
+                cachePolicy,
+                onCumulativeReferences);
+    }
+
+    private WebGroundingBundle finalizeGrounding(
+            TenantContextHolder.TenantSnapshot snap,
+            long modelId,
+            String configScope,
+            String normalized,
+            String rawQuery,
+            WebGroundingBundle bundle,
+            WebSearchGroundingCachePolicy cachePolicy,
+            Consumer<List<WebSearchReference>> onCumulativeReferences) {
+        emitCumulative(onCumulativeReferences, bundle.references());
         webSearchGroundingCacheService.store(
-                snap.getTenantId(), modelId, configScope, normalized, merged, cachePolicy);
-        return merged;
+                snap.getTenantId(), modelId, configScope, normalized, bundle, cachePolicy);
+        webSearchKnowledgeService.ingestAsync(
+                snap.getTenantId(), rawQuery, normalized, bundle);
+        return bundle;
     }
 
     /**
@@ -152,9 +205,18 @@ public class ChatWebSearchGroundingService {
                         snap.getTenantId(), conversationId, normalized, cachePolicy);
         if (conversationReuse.isPresent()) {
             WebGroundingBundle b = conversationReuse.get();
-            emitCumulative(onCumulativeReferences, b.references());
-            webSearchGroundingCacheService.store(
-                    snap.getTenantId(), modelId, configScope, normalized, b, cachePolicy);
+            finalizeGrounding(
+                    snap, modelId, configScope, normalized, base, b, cachePolicy, onCumulativeReferences);
+            return WebSearchStreamGroundingSession.completed(b);
+        }
+
+        Optional<WebGroundingBundle> knowledgeHit =
+                webSearchKnowledgeService.tryLookup(snap.getTenantId(), normalized);
+        if (knowledgeHit.isPresent()) {
+            WebGroundingBundle b = knowledgeHit.get();
+            log.info("[联网知识库] 本地命中：租户 {}，会话 {}", snap.getTenantId(), conversationId);
+            finalizeGrounding(
+                    snap, modelId, configScope, normalized, base, b, cachePolicy, onCumulativeReferences);
             return WebSearchStreamGroundingSession.completed(b);
         }
 
@@ -178,7 +240,8 @@ public class ChatWebSearchGroundingService {
         }
 
         if (effectiveRounds <= 0 && seed != null) {
-            emitCumulative(onCumulativeReferences, seed.references());
+            finalizeGrounding(
+                    snap, modelId, configScope, normalized, base, seed, cachePolicy, onCumulativeReferences);
             return WebSearchStreamGroundingSession.completed(seed);
         }
 
@@ -197,8 +260,8 @@ public class ChatWebSearchGroundingService {
                             onCumulativeReferences);
             WebGroundingBundle merged =
                     seed == null ? live : WebSearchGroundingMergeSupport.merge(seed, live);
-            webSearchGroundingCacheService.store(
-                    snap.getTenantId(), modelId, configScope, normalized, merged, cachePolicy);
+            finalizeGrounding(
+                    snap, modelId, configScope, normalized, base, merged, cachePolicy, onCumulativeReferences);
             return WebSearchStreamGroundingSession.completed(merged);
         }
 
@@ -241,10 +304,13 @@ public class ChatWebSearchGroundingService {
                                     normalized,
                                     rest,
                                     cachePolicy);
+                            webSearchKnowledgeService.ingestAsync(
+                                    snap.getTenantId(), base, normalized, rest);
                             return rest;
                         },
                         command -> Thread.startVirtualThread(command));
 
+        webSearchKnowledgeService.ingestAsync(snap.getTenantId(), base, normalized, initial);
         return new WebSearchStreamGroundingSession(initial, remainder);
     }
 

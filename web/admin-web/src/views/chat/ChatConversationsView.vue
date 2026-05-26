@@ -34,7 +34,6 @@
         :data="rows"
         stripe
         border
-        max-height="520"
         class="data-table"
         :empty-text="t('views.chatConv.empty')"
         highlight-current-row
@@ -89,19 +88,28 @@
       </div>
     </el-card>
 
-    <el-drawer v-model="drawerOpen" :title="drawerTitle" size="min(760px, 96vw)" destroy-on-close>
-      <el-scrollbar max-height="calc(100vh - 120px)">
-        <p v-if="drawerConv" class="drawer-debug-id">{{ t("views.chatConv.drawerDebug", { id: drawerConv.id }) }}</p>
+    <el-dialog
+      v-model="detailOpen"
+      :title="detailTitle"
+      class="chat-conv-detail-dlg"
+      width="92%"
+      top="3vh"
+      destroy-on-close
+      append-to-body
+      align-center
+    >
+      <div class="detail-dlg-body">
+        <p v-if="detailConv" class="detail-meta-id">{{ t("views.chatConv.drawerDebug", { id: detailConv.id }) }}</p>
         <div
-          v-if="drawerConv && drawerConv.totalTokensInConversation != null"
-          class="drawer-token-banner"
+          v-if="detailConv && detailConv.totalTokensInConversation != null"
+          class="detail-token-banner"
         >
           {{ t("views.chatConv.drawerTokenBanner")
-          }}<strong>{{ formatConversationTokensApprox(drawerConv.totalTokensInConversation) }}</strong>
+          }}<strong>{{ formatConversationTokensApprox(detailConv.totalTokensInConversation) }}</strong>
         </div>
         <div v-if="msgLoading" class="msg-loading">{{ t("views.chatConv.loading") }}</div>
         <div v-else class="msg-list">
-          <template v-for="seg in drawerMessageSegments" :key="seg.key">
+          <template v-for="seg in detailMessageSegments" :key="seg.key">
             <div v-if="seg.kind === 'pair'" class="qa-pair-card">
               <header class="qa-pair-head">
                 <span class="qa-pair-badge">{{ t("views.chatConv.roundN", { n: seg.pairIndex }) }}</span>
@@ -114,9 +122,9 @@
                 </div>
                 <div v-if="seg.user.reasoning" class="msg-reasoning msg-reasoning--non-assistant">
                   <span class="msg-reasoning-hdr">{{ t("views.chatConv.reasoning") }}</span>
-                  <pre>{{ seg.user.reasoning }}</pre>
+                  <MarkdownRichContent class="msg-md-inline" :source="seg.user.reasoning" />
                 </div>
-                <pre class="msg-plain qa-user-pre">{{ seg.user.content }}</pre>
+                <MarkdownRichContent class="msg-md-inline qa-user-md" :source="seg.user.content ?? ''" />
                 <div v-if="seg.user.attachments?.length" class="qa-user-attachments">
                   <span class="qa-user-attach-label">{{ t("views.chatConv.userAttachments") }}</span>
                   <span v-for="a in seg.user.attachments" :key="a.id" class="qa-user-attach-chip" :title="a.fileName">
@@ -152,9 +160,9 @@
               <template v-else>
                 <div v-if="seg.message.reasoning" class="msg-reasoning msg-reasoning--non-assistant">
                   <span class="msg-reasoning-hdr">{{ t("views.chatConv.reasoning") }}</span>
-                  <pre>{{ seg.message.reasoning }}</pre>
+                  <MarkdownRichContent class="msg-md-inline" :source="seg.message.reasoning" />
                 </div>
-                <pre class="msg-plain">{{ seg.message.content }}</pre>
+                <MarkdownRichContent class="msg-md-inline" :source="seg.message.content ?? ''" />
                 <div v-if="seg.message.attachments?.length" class="qa-user-attachments">
                   <span class="qa-user-attach-label">{{ t("views.chatConv.userAttachments") }}</span>
                   <span
@@ -170,8 +178,8 @@
             </div>
           </template>
         </div>
-      </el-scrollbar>
-    </el-drawer>
+      </div>
+    </el-dialog>
 
     <el-dialog
       v-model="ragCitationDlgOpen"
@@ -195,11 +203,11 @@
           class="rag-citation-pre"
           :class="{ 'rag-citation-pre--snapshot': ragCitationDlgSnapshot }"
         >{{ ragCitationDlgBody }}</pre>
-        <div
+        <MarkdownRichContent
           v-else
-          class="rag-citation-pre rag-citation-md"
-          :class="{ 'rag-citation-pre--snapshot': ragCitationDlgSnapshot }"
-          v-html="ragCitationMarkdownHtml"
+          class="rag-citation-md"
+          :class="{ 'rag-citation-md--snapshot': ragCitationDlgSnapshot }"
+          :source="ragCitationDlgBody"
         />
       </div>
     </el-dialog>
@@ -214,8 +222,8 @@ import type { ChatConversationRow, ChatMessageAdminRow, RagCitationAdmin } from 
 import * as ragApi from "../../api/ragAdmin";
 import { apiRequestErrorMessage } from "../../utils/apiRequestErrorMessage";
 import ChatDrawerAssistantAuditBlock from "./components/ChatDrawerAssistantAuditBlock.vue";
+import MarkdownRichContent from "../../components/markdown/MarkdownRichContent.vue";
 import axios from "axios";
-import { renderMarkdownToSafeHtml } from "../../utils/renderMarkdown";
 import { useAdminFounderListTenantFilter } from "../../composables/useAdminFounderTenantOptions";
 import {
   formatChatConversationUser,
@@ -244,8 +252,8 @@ const total = ref(0);
 const page = ref(1);
 const size = ref(20);
 
-const drawerOpen = ref(false);
-const drawerConv = ref<ChatConversationRow | null>(null);
+const detailOpen = ref(false);
+const detailConv = ref<ChatConversationRow | null>(null);
 const messages = ref<ChatMessageAdminRow[]>([]);
 const msgLoading = ref(false);
 
@@ -256,17 +264,15 @@ const ragCitationDlgSnapshot = ref(false);
 const ragCitationDlgRenderMd = ref(false);
 const ragCitationDlgLoading = ref(false);
 
-const ragCitationMarkdownHtml = computed(() => renderMarkdownToSafeHtml(ragCitationDlgBody.value));
-
-const drawerTitle = computed(() => {
-  if (!drawerConv.value) return t("views.chatConv.drawerTitle");
-  const title = (drawerConv.value.title ?? "").trim() || t("views.chatConv.unnamedConv");
-  const tenant = formatTenantNameCode(drawerConv.value);
+const detailTitle = computed(() => {
+  if (!detailConv.value) return t("views.chatConv.drawerTitle");
+  const title = (detailConv.value.title ?? "").trim() || t("views.chatConv.unnamedConv");
+  const tenant = formatTenantNameCode(detailConv.value);
   return tenant !== emDash ? `${tenant} · ${title}` : title;
 });
 
 /** 将连续「用户 + 助手」合并为一轮卡片，其余单条单独展示。 */
-const drawerMessageSegments = computed<DrawerMessageSegment[]>(() => {
+const detailMessageSegments = computed<DrawerMessageSegment[]>(() => {
   const msgs = messages.value;
   const out: DrawerMessageSegment[] = [];
   let i = 0;
@@ -376,8 +382,8 @@ function onSizeChange() {
 }
 
 async function openMessages(row: ChatConversationRow) {
-  drawerConv.value = row;
-  drawerOpen.value = true;
+  detailConv.value = row;
+  detailOpen.value = true;
   msgLoading.value = true;
   messages.value = [];
   try {
@@ -399,7 +405,7 @@ onMounted(() => {
 <style scoped>
 .page {
   padding: 0 0 24px;
-  /* 对话详情抽屉：随浅色/深色主题切换的表面色 */
+  /* 对话详情弹框：随浅色/深色主题切换的表面色 */
   --cc-user-bg: var(--el-color-primary-light-9);
   --cc-user-border: var(--el-color-primary-light-5);
   --cc-banner-bg: var(--el-color-primary-light-9);
@@ -452,15 +458,24 @@ onMounted(() => {
   justify-content: flex-end;
 }
 
-.drawer-debug-id {
-  margin: 0 8px 10px;
+.detail-dlg-body {
+  max-height: min(78vh, calc(92vh - 140px));
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0 2px 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--el-border-color-darker) transparent;
+}
+
+.detail-meta-id {
+  margin: 0 4px 10px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
 
-.drawer-token-banner {
-  margin: 0 8px 12px;
-  padding: 10px 12px;
+.detail-token-banner {
+  margin: 0 4px 14px;
+  padding: 10px 14px;
   font-size: 13px;
   color: var(--el-text-color-primary);
   background: var(--cc-banner-bg);
@@ -468,7 +483,7 @@ onMounted(() => {
   border-radius: 8px;
 }
 
-.drawer-token-banner strong {
+.detail-token-banner strong {
   color: var(--el-color-primary);
   font-weight: 700;
 }
@@ -479,7 +494,8 @@ onMounted(() => {
 }
 
 .msg-list {
-  padding: 0 8px 24px;
+  padding: 0 6px 16px;
+  min-width: 0;
 }
 
 .qa-pair-card {
@@ -546,9 +562,14 @@ onMounted(() => {
   color: var(--el-text-color-regular);
 }
 
-.qa-user-pre {
-  margin-top: 2px;
+.msg-md-inline {
+  font-size: 13px;
+  line-height: 1.6;
   color: var(--el-text-color-primary);
+}
+
+.qa-user-md {
+  margin-top: 2px;
 }
 
 .qa-user-attachments {
@@ -667,37 +688,16 @@ onMounted(() => {
 }
 
 .rag-citation-md {
+  max-height: min(60vh, 480px);
+  overflow: auto;
   white-space: normal;
 }
 
-.rag-citation-md :deep(p) {
-  margin: 0 0 0.5em;
-}
-
-.rag-citation-md :deep(p:last-child) {
-  margin-bottom: 0;
-}
-
-.rag-citation-md :deep(h1),
-.rag-citation-md :deep(h2),
-.rag-citation-md :deep(h3),
-.rag-citation-md :deep(h4) {
-  margin: 0 0 0.4em;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.rag-citation-md :deep(ul),
-.rag-citation-md :deep(ol) {
-  margin: 0 0 0.5em;
-  padding-left: 1.25em;
-}
-
-.rag-citation-md :deep(pre) {
-  padding: 10px;
+.rag-citation-md--snapshot {
+  padding: 12px 14px;
   border-radius: 8px;
-  background: var(--el-fill-color);
-  overflow-x: auto;
+  border: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-lighter);
 }
 
 /* 思考在正文之前，与「先推理后作答」的阅读顺序一致 */
@@ -739,5 +739,48 @@ onMounted(() => {
 
 :global(html.dark) .qa-orphan-hint {
   color: var(--el-color-warning-light-3);
+}
+</style>
+
+<style>
+/* 对话详情大弹框：宽屏更大、小屏自适应 */
+.chat-conv-detail-dlg.el-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(1200px, 96vw) !important;
+  max-width: 96vw;
+  max-height: 92vh;
+  margin: 3vh auto;
+}
+
+.chat-conv-detail-dlg .el-dialog__header {
+  flex-shrink: 0;
+  padding: 16px 20px 12px;
+  margin-right: 0;
+}
+
+.chat-conv-detail-dlg .el-dialog__body {
+  flex: 1;
+  min-height: 0;
+  padding: 0 20px 20px;
+  overflow: hidden;
+}
+
+@media (max-width: 768px) {
+  .chat-conv-detail-dlg.el-dialog {
+    width: 100% !important;
+    max-width: 100vw;
+    max-height: 100vh;
+    margin: 0;
+    border-radius: 0;
+  }
+
+  .chat-conv-detail-dlg .el-dialog__body {
+    padding: 0 12px 16px;
+  }
+
+  .detail-dlg-body {
+    max-height: calc(100vh - 120px);
+  }
 }
 </style>

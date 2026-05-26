@@ -22,7 +22,6 @@
         <header class="rec-recommend-head">
           <div class="rec-header-text">
             <h2 class="rec-header-title">{{ t("dailyRecommend.title") }}</h2>
-            <span class="rec-header-sub">{{ t("dailyRecommend.oncePerDay") }}</span>
           </div>
           <div class="rec-header-actions">
             <button
@@ -226,11 +225,7 @@ void loadPlanetSummary();
 
 <style scoped>
 .rec-panel {
-  --rec-width-expanded: 300px;
-  --rec-width-collapsed: 40px;
   position: relative;
-  flex: 0 0 var(--rec-width-expanded);
-  width: var(--rec-width-expanded);
   min-width: 0;
   flex-shrink: 0;
   height: 100%;
@@ -241,36 +236,19 @@ void loadPlanetSummary();
   border-left: 1px solid var(--rec-border, #e8ecef);
   box-sizing: border-box;
   overflow: visible;
-  transition:
-    width var(--chat-shell-duration, 0.42s) var(--chat-shell-ease, cubic-bezier(0.32, 0.72, 0, 1)),
-    flex-basis var(--chat-shell-duration, 0.42s) var(--chat-shell-ease, cubic-bezier(0.32, 0.72, 0, 1)),
-    background-color var(--chat-shell-duration, 0.42s) var(--chat-shell-ease, cubic-bezier(0.32, 0.72, 0, 1)),
-    border-color var(--chat-shell-duration, 0.42s) var(--chat-shell-ease, cubic-bezier(0.32, 0.72, 0, 1));
-}
-
-.rec-clip {
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-  width: 100%;
-  overflow: hidden;
 }
 
 .rec-panel--planet:not(.rec-panel--collapsed) {
-  --rec-width-expanded: 320px;
-  background: var(--rec-bg-panel-planet, #f4f7fa);
-  border-left-color: var(--rec-border, #dde3ea);
+  background: var(--rec-bg-panel-planet, #fcfcfd);
+  border-left-color: var(--rec-border, rgba(0, 0, 0, 0.08));
 }
 
 .rec-panel--collapsed {
-  flex-basis: var(--rec-width-collapsed);
-  width: var(--rec-width-collapsed);
   background: var(--rec-bg-collapsed, #f5f8fc);
 }
 
 .rec-inner {
   position: relative;
-  width: var(--rec-width-expanded);
   height: 100%;
   min-height: 0;
   flex: 1;
@@ -279,16 +257,8 @@ void loadPlanetSummary();
 .rec-body {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  min-height: 0;
-  opacity: 1;
-  transition: opacity 0.32s var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1)) 0.12s;
-}
-
-.rec-panel--collapsed .rec-body {
-  opacity: 0;
-  pointer-events: none;
-  transition-delay: 0s;
+  padding: 20px 20px 0;
+  box-sizing: border-box;
 }
 
 .rec-rail-layer {
@@ -296,17 +266,9 @@ void loadPlanetSummary();
   left: 0;
   top: 0;
   bottom: 0;
-  width: var(--rec-width-collapsed);
+  width: 40px;
   display: flex;
   flex-direction: column;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.32s var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1)) 0.06s;
-}
-
-.rec-panel--collapsed .rec-rail-layer {
-  opacity: 1;
-  pointer-events: auto;
 }
 
 .rec-collapsed {
@@ -344,27 +306,19 @@ void loadPlanetSummary();
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--rec-bg-body, rgba(252, 253, 254, 0.92));
-  backdrop-filter: blur(8px);
-  border-top: 1px solid var(--rec-border, #e8ecef);
-}
-
-.rec-panel--planet .rec-recommend-body {
-  margin-top: 4px;
-  border-radius: 16px 16px 0 0;
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.04);
+  background: transparent;
+  margin-top: 20px;
 }
 
 .rec-recommend-head {
   flex-shrink: 0;
-  min-height: 50px;
   box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 10px 14px 8px;
-  border-bottom: 1px solid var(--rec-border-subtle, #eef1f4);
+  padding: 0 0 12px;
+  border-bottom: none;
 }
 
 .rec-header-text {
@@ -376,19 +330,15 @@ void loadPlanetSummary();
 
 .rec-header-title {
   margin: 0;
-  font-size: 14px;
+  font-size: 10px;
   font-weight: 700;
   line-height: 1.2;
-  color: var(--rec-text-title, #2c3e50);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--rec-text-title, #94a3b8);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.rec-header-sub {
-  font-size: 11px;
-  line-height: 1.2;
-  color: var(--rec-text-muted, #a0adb8);
 }
 
 .rec-header-actions {
@@ -413,8 +363,13 @@ void loadPlanetSummary();
 }
 
 .rec-icon-btn:hover:not(:disabled) {
-  background: var(--rec-hover-bg, #eef4fa);
-  color: var(--rec-text-link, #3d6f94);
+  background: var(--rec-hover-bg, rgba(79, 70, 229, 0.06));
+  color: var(--rec-text-link, #4f46e5);
+}
+
+.rec-icon-btn:hover:not(:disabled) :deep(.el-icon) {
+  transform: rotate(180deg);
+  transition: transform 0.7s var(--nexus-ease, cubic-bezier(0.4, 0, 0.2, 1));
 }
 
 .rec-icon-btn:disabled {
@@ -453,10 +408,10 @@ void loadPlanetSummary();
 .rec-list {
   list-style: none;
   margin: 0;
-  padding: 10px 14px 12px;
+  padding: 0 0 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .rec-center-state {
@@ -518,15 +473,19 @@ void loadPlanetSummary();
 
 .rec-footer {
   flex-shrink: 0;
-  min-height: 30px;
+  min-height: 36px;
   box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 10px;
-  font-size: 11px;
-  color: var(--rec-text-hint, #b0bcc6);
-  border-top: 1px solid var(--rec-border-subtle, #eef1f4);
-  background: var(--rec-bg-footer, #fafbfc);
+  padding: 16px 0 20px;
+  margin-top: auto;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--rec-text-hint, #94a3b8);
+  border-top: 1px solid var(--rec-border-subtle, rgba(0, 0, 0, 0.06));
+  background: transparent;
 }
 </style>

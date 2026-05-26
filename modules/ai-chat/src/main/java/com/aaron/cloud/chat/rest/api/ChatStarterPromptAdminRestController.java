@@ -42,6 +42,11 @@ public class ChatStarterPromptAdminRestController extends ApiV1ControllerBases.A
         adminService.delete(id);
     }
 
+    @GetMapping("/starter-prompts/{id}/web-grounding")
+    public ChatStarterPromptDtos.WebGroundingDetailView getWebGroundingDetail(@PathVariable long id) {
+        return adminService.getWebGroundingDetail(id);
+    }
+
     @GetMapping("/starter-prompts/daily-batches")
     public List<ChatStarterPromptDtos.DailyBatchRow> listDailyBatches(
             @RequestParam(defaultValue = "14") int limit) {

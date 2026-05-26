@@ -8,7 +8,8 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public enum ChatStarterPromptScene {
     EMPTY("EMPTY", "空会话起步"),
-    FOLLOW_UP("FOLLOW_UP", "助手回复后追问");
+    FOLLOW_UP("FOLLOW_UP", "助手回复后追问"),
+    WEB_KNOWLEDGE("WEB_KNOWLEDGE", "联网检索知识库");
 
     @EnumValue
     private final String code;

@@ -226,7 +226,7 @@ public class TenantShellAdminApplicationService {
         return load(tenantId);
     }
 
-    /** 个人知识星球：开关、Cron、邮件模板、沉淀模型；并同步 {@code ten_scheduled_task}。 */
+    /** 个人知识星球：开关、可选沉淀模型、邮件模板；并同步 {@code ten_scheduled_task} 启停（Cron 由定时任务专管）。 */
     public ShellConfigResponse saveKnowledgePlanet(long tenantId, ShellKnowledgePlanetPutBody body) {
         if (body == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "body required");
@@ -254,18 +254,6 @@ public class TenantShellAdminApplicationService {
 
         List<PutItem> items = new ArrayList<>();
         items.add(item(TenantRuntimeSettingKey.KNOWLEDGE_PLANET_ENABLED, body.isEnabled() ? "true" : "false"));
-        items.add(
-                item(
-                        TenantRuntimeSettingKey.KNOWLEDGE_PLANET_WEEKLY_COMPUTE_CRON,
-                        trimOrEmpty(body.getWeeklyComputeCron()).isEmpty()
-                                ? KnowledgePlanetTenantRuntime.DEFAULT_COMPUTE_CRON
-                                : body.getWeeklyComputeCron().trim()));
-        items.add(
-                item(
-                        TenantRuntimeSettingKey.KNOWLEDGE_PLANET_WEEKLY_EMAIL_CRON,
-                        trimOrEmpty(body.getWeeklyEmailCron()).isEmpty()
-                                ? KnowledgePlanetTenantRuntime.DEFAULT_EMAIL_CRON
-                                : body.getWeeklyEmailCron().trim()));
         String digestId = trimOrEmpty(body.getDigestModelId());
         items.add(item(TenantRuntimeSettingKey.KNOWLEDGE_PLANET_DIGEST_MODEL_ID, digestId));
         String emailJson = knowledgePlanetEmailResolver.toJson(emailCfg);
@@ -284,8 +272,6 @@ public class TenantShellAdminApplicationService {
         var em = cfg.getEmail();
         return new KnowledgePlanetRuntimeDto(
                 enabled,
-                knowledgePlanetTenantRuntime.weeklyComputeCron(tenantId),
-                knowledgePlanetTenantRuntime.weeklyEmailCron(tenantId),
                 knowledgePlanetTenantRuntime.digestModelId(tenantId).map(String::valueOf).orElse(""),
                 cfg.isEnabled(),
                 cfg.isReuseRegisterSmtp(),
@@ -532,8 +518,6 @@ public class TenantShellAdminApplicationService {
 
     public record KnowledgePlanetRuntimeDto(
             boolean enabled,
-            String weeklyComputeCron,
-            String weeklyEmailCron,
             String digestModelId,
             boolean emailEnabled,
             boolean reuseRegisterSmtp,
@@ -644,8 +628,6 @@ public class TenantShellAdminApplicationService {
     @Data
     public static class ShellKnowledgePlanetPutBody {
         private boolean enabled;
-        private String weeklyComputeCron;
-        private String weeklyEmailCron;
         private String digestModelId;
         private boolean emailEnabled = true;
         private boolean reuseRegisterSmtp = true;

@@ -10,9 +10,12 @@ import com.aaron.cloud.common.profile.TenUserMemoryAbstractRepository;
 import com.aaron.cloud.common.profile.UserProfileApplicationService;
 import com.aaron.cloud.common.util.TextClamp;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,9 +32,12 @@ public class KnowledgePlanetIngestService {
             只输出严格 JSON（不要 markdown），格式：
             {"skip":true}
             或
-            {"skip":false,"title":"不超过24字标题","summary":"1～3句摘要","topicTags":["主题分类","子标签"]}
-            topicTags 第一项为「知识星球」主题名（如：内网穿透、前端工程化），决定星系中的星球；其余为子标签。
-            无实质信息、纯寒暄、重复已有话题时 skip 为 true。
+            {"skip":false,"title":"不超过24字标题","summary":"1～3句摘要","topicTags":["主题分类","子标签1","子标签2"]}
+            topicTags 第一项为「知识星球」主题名（如：排序算法、Java、前端工程化），决定星系中的星球；第 2 项起为子标签（技术名、语言、算法名等，便于与历史节点关联）。
+            规则：
+            1. 若用户消息中给出【已有主题星球】，且本轮属于同一技术领域，topicTags[0] 必须与列表中某一项完全一致，勿为相近话题另造新名（如已有「排序算法」则勿写「Java排序」「算法」）。
+            2. 同一对话内的追问、换语言实现、对比、延伸（如「五种语言冒泡排序」接在「十大排序」后）应沉淀，skip 仅用于纯寒暄或完全无新信息的重复。
+            3. 子标签尽量包含能串联历史节点的关键词（如：排序、冒泡、Java、多语言）。
             """;
 
     private final KnowledgePlanetTenantRuntime planetRuntime;
@@ -111,6 +117,7 @@ public class KnowledgePlanetIngestService {
         if (!abstractHint.isBlank()) {
             userPayload.append("\n\n【长期记忆抽象】\n").append(TextClamp.ellipsis(abstractHint, 2000));
         }
+        appendPlanetContext(userPayload, tenantId, subjectKey, conversationId);
 
         String raw = llmSupport.invokeJson(tenantId, model.get(), INGEST_SYSTEM, userPayload.toString());
         IngestLlmResult parsed = llmSupport.parseJson(raw, IngestLlmResult.class);
@@ -135,6 +142,43 @@ public class KnowledgePlanetIngestService {
         }
         nodeRepository.insert(row);
         log.debug("[知识星球] 节点已沉淀 tenantId={} subject={} title={}", tenantId, subjectKey, title);
+    }
+
+    private void appendPlanetContext(
+            StringBuilder userPayload, long tenantId, String subjectKey, long conversationId) {
+        Set<String> planetNames = new LinkedHashSet<>();
+        for (TenUserKnowledgeNode n : nodeRepository.listRecent(tenantId, subjectKey, 40)) {
+            if (n.getTopicTagsJson() == null || n.getTopicTagsJson().isBlank()) {
+                continue;
+            }
+            try {
+                List<String> tags = objectMapper.readValue(n.getTopicTagsJson(), new TypeReference<List<String>>() {});
+                if (tags != null && !tags.isEmpty() && tags.getFirst() != null) {
+                    String primary = tags.getFirst().trim();
+                    if (!primary.isEmpty()) {
+                        planetNames.add(primary);
+                    }
+                }
+            } catch (Exception ignored) {
+                // skip malformed
+            }
+        }
+        if (!planetNames.isEmpty()) {
+            userPayload.append("\n\n【已有主题星球】（topicTags[0] 请优先复用）\n");
+            userPayload.append(String.join("、", planetNames));
+        }
+        List<TenUserKnowledgeNode> inConv =
+                nodeRepository.listByConversation(tenantId, subjectKey, conversationId, 8);
+        if (!inConv.isEmpty()) {
+            userPayload.append("\n\n【本会话已沉淀】\n");
+            for (TenUserKnowledgeNode n : inConv) {
+                userPayload.append("- ").append(n.getTitle());
+                if (n.getTopicTagsJson() != null && !n.getTopicTagsJson().isBlank()) {
+                    userPayload.append(" （标签：").append(n.getTopicTagsJson()).append("）");
+                }
+                userPayload.append('\n');
+            }
+        }
     }
 
     @Data

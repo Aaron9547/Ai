@@ -110,6 +110,9 @@ export type RagRetrievalTestHit = {
   chunkId: number;
   chunkSeq: number;
   contentPreview: string;
+  hitSource?: "milvus" | "es" | null;
+  vectorSimilarity?: number | null;
+  keywordScore?: number | null;
 };
 
 export type RagRetrievalTestResult = {
@@ -122,6 +125,7 @@ export type RagRetrievalTestResult = {
   milvusRecallCount?: number;
   afterCosineThresholdCount?: number;
   minCosineThreshold?: number;
+  maxMilvusSimilarity?: number;
   diagnosticsHint?: string;
 };
 

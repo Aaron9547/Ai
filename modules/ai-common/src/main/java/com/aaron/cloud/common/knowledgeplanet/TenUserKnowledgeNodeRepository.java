@@ -27,6 +27,17 @@ public class TenUserKnowledgeNodeRepository {
                         .last("LIMIT " + Math.max(1, Math.min(limit, 100))));
     }
 
+    public List<TenUserKnowledgeNode> listByConversation(
+            long tenantId, String subjectKey, long conversationId, int limit) {
+        return mapper.selectList(
+                Wrappers.<TenUserKnowledgeNode>lambdaQuery()
+                        .eq(TenUserKnowledgeNode::getTenantId, tenantId)
+                        .eq(TenUserKnowledgeNode::getSubjectKey, subjectKey)
+                        .eq(TenUserKnowledgeNode::getConversationId, conversationId)
+                        .orderByDesc(TenUserKnowledgeNode::getCreatedAt)
+                        .last("LIMIT " + Math.max(1, Math.min(limit, 20))));
+    }
+
     public long countBySubject(long tenantId, String subjectKey) {
         return mapper.selectCount(
                 Wrappers.<TenUserKnowledgeNode>lambdaQuery()

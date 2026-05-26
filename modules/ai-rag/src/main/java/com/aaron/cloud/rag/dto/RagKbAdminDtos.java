@@ -249,7 +249,17 @@ public final class RagKbAdminDtos {
     }
 
     public record RagRetrievalTestHitView(
-            long documentId, String documentTitle, long chunkId, int chunkSeq, String contentPreview) {}
+            long documentId,
+            String documentTitle,
+            long chunkId,
+            int chunkSeq,
+            String contentPreview,
+            /** {@code milvus} / {@code es} */
+            String hitSource,
+            /** Milvus 余弦相似度。 */
+            Double vectorSimilarity,
+            /** Elasticsearch BM25 分（仅 ES 行）。 */
+            Double keywordScore) {}
 
     public record RagRetrievalTestView(
             String retrievalMode,
@@ -261,6 +271,8 @@ public final class RagKbAdminDtos {
             int milvusRecallCount,
             int afterCosineThresholdCount,
             double minCosineThreshold,
+            /** Milvus 原始召回中的最高余弦相似度（无召回时为 0）。 */
+            double maxMilvusSimilarity,
             String diagnosticsHint) {}
 
     @Data

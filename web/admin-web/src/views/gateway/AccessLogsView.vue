@@ -33,7 +33,6 @@
         :data="rows"
         stripe
         border
-        max-height="520"
         class="log-table"
         :empty-text="t('views.accessLogs.empty')"
         highlight-current-row

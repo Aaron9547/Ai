@@ -278,43 +278,22 @@ const convGroups = computed<ConvGroup[]>(() => {
 
 <style scoped>
 .sidebar {
-  --sidebar-width-expanded: 248px;
-  --sidebar-width-collapsed: 40px;
   position: relative;
-  flex: 0 0 var(--sidebar-width-expanded);
-  width: var(--sidebar-width-expanded);
-  min-width: 0;
-  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: var(--chat-bg-subtle, #f5f8fc);
-  border-right: 1px solid var(--chat-border, #e8edf2);
+  min-width: 0;
   min-height: 0;
   overflow: visible;
-  transition:
-    width var(--chat-shell-duration, 0.42s) var(--chat-shell-ease, cubic-bezier(0.32, 0.72, 0, 1)),
-    flex-basis var(--chat-shell-duration, 0.42s) var(--chat-shell-ease, cubic-bezier(0.32, 0.72, 0, 1)),
-    background-color var(--chat-shell-duration, 0.42s) var(--chat-shell-ease, cubic-bezier(0.32, 0.72, 0, 1)),
-    border-color var(--chat-shell-duration, 0.42s) var(--chat-shell-ease, cubic-bezier(0.32, 0.72, 0, 1));
-}
-
-.sidebar-clip {
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-  width: 100%;
-  overflow: hidden;
+  background: #fafafa;
+  border-right: 1px solid var(--chat-border, rgba(0, 0, 0, 0.06));
 }
 
 .sidebar--collapsed {
-  flex-basis: var(--sidebar-width-collapsed);
-  width: var(--sidebar-width-collapsed);
   background: var(--chat-bg-subtle, #f5f8fc);
 }
 
 .sidebar-inner {
   position: relative;
-  width: var(--sidebar-width-expanded);
   height: 100%;
   min-height: 0;
   flex: 1;
@@ -323,16 +302,6 @@ const convGroups = computed<ConvGroup[]>(() => {
 .sidebar-body {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  min-height: 0;
-  opacity: 1;
-  transition: opacity 0.32s var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1)) 0.12s;
-}
-
-.sidebar--collapsed .sidebar-body {
-  opacity: 0;
-  pointer-events: none;
-  transition-delay: 0s;
 }
 
 .sidebar-rail-layer {
@@ -340,17 +309,9 @@ const convGroups = computed<ConvGroup[]>(() => {
   left: 0;
   top: 0;
   bottom: 0;
-  width: var(--sidebar-width-collapsed);
+  width: 40px;
   display: flex;
   flex-direction: column;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.32s var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1)) 0.06s;
-}
-
-.sidebar--collapsed .sidebar-rail-layer {
-  opacity: 1;
-  pointer-events: auto;
 }
 
 .sidebar-collapsed {
@@ -387,9 +348,9 @@ const convGroups = computed<ConvGroup[]>(() => {
 }
 
 .sidebar-fab:hover {
-  background: rgba(91, 159, 212, 0.1);
-  border-color: #c5d9eb;
-  color: #3d7ab8;
+  background: var(--sidebar-fab-hover-bg, rgba(91, 159, 212, 0.1));
+  border-color: var(--sidebar-fab-hover-border, #c5d9eb);
+  color: var(--sidebar-rail-hover-color, #3d7ab8);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(91, 159, 212, 0.16);
 }
@@ -407,17 +368,20 @@ const convGroups = computed<ConvGroup[]>(() => {
   border: none;
   border-radius: 0;
   background: transparent;
-  color: #5a7a94;
+  color: var(--sidebar-rail-color, #5a7a94);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .sidebar-rail:hover {
-  background: #eef4fa;
-  color: #3d6f94;
+  background: var(--sidebar-rail-hover-bg, rgba(79, 70, 229, 0.06));
+  color: var(--sidebar-rail-hover-color, var(--nexus-brand-600, #4f46e5));
 }
 
 .sidebar-top {
@@ -468,8 +432,8 @@ const convGroups = computed<ConvGroup[]>(() => {
 }
 
 .btn-new:hover {
-  background: #eef4fa;
-  border-color: #c5d9eb;
+  background: var(--sidebar-btn-hover-bg, rgba(79, 70, 229, 0.06));
+  border-color: var(--sidebar-btn-hover-border, rgba(99, 102, 241, 0.22));
 }
 
 .btn-new-text {
@@ -699,8 +663,8 @@ const convGroups = computed<ConvGroup[]>(() => {
 }
 
 .foot-entry:hover {
-  background: rgba(91, 159, 212, 0.1);
-  color: #3d6f94;
+  background: var(--sidebar-rail-hover-bg, rgba(91, 159, 212, 0.1));
+  color: var(--sidebar-rail-hover-color, #3d6f94);
 }
 
 .foot-entry--accent {

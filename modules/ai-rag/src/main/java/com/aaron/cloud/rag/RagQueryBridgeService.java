@@ -2,6 +2,7 @@ package com.aaron.cloud.rag;
 
 import com.aaron.cloud.common.api.dto.RagCitationHit;
 import com.aaron.cloud.common.api.dto.RagVectorRecallHit;
+import com.aaron.cloud.common.api.enums.rag.RagRetrievalHitSource;
 import com.aaron.cloud.common.api.enums.rag.RagRetrievalMode;
 import com.aaron.cloud.common.api.ports.RagEmbeddingPort;
 import com.aaron.cloud.common.config.properties.AiProvidersProperties;
@@ -16,6 +17,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
@@ -336,19 +338,76 @@ public class RagQueryBridgeService {
     }
 
     /**
-     * 管理端检索试跑诊断：解释 Milvus 有召回但被余弦阈值或分片关联过滤掉的情况。
+     * 管理端检索试跑：单次 embed + Milvus search，返回带相似度的命中、片段与诊断（与对话 RAG 同过滤规则）。
      */
-    public RagRetrievalTestDiagnostics buildRetrievalTestDiagnostics(
+    public RagRetrievalTestSearchResult searchForRetrievalTest(
             long tenantId, long kbId, String query, int topK) {
         if (aiProvidersProperties.resolvedVectorStore() != VectorStoreProviderMode.milvus) {
-            return new RagRetrievalTestDiagnostics(
-                    0, 0, 0, 0d, "当前 ai.providers.vector-store 非 milvus，向量检索不可用。");
+            RagRetrievalTestDiagnostics diag =
+                    new RagRetrievalTestDiagnostics(
+                            0,
+                            0,
+                            0,
+                            0d,
+                            0d,
+                            "当前 ai.providers.vector-store 非 milvus，向量检索不可用。");
+            return new RagRetrievalTestSearchResult(List.of(), List.of(), diag);
         }
         String q = query == null ? "" : query;
         float[] vec = ragEmbeddingPort.embed(tenantId, kbId, q);
-        List<RagVectorRecallHit> hits =
+        List<RagVectorRecallHit> milvusHits =
                 vectorStorePort.searchVectors(tenantId, collectionName(kbId), vec, topK);
         double minCos = resolveChatVectorMinCosineScore(tenantId, kbId);
+        double maxSim = maxMilvusScore(milvusHits);
+        logRetrievalTestMilvusScores(tenantId, kbId, q, topK, minCos, maxSim, milvusHits);
+
+        RagRetrievalMode mode = tenantRagRuntimeResolver.resolveRetrievalMode(tenantId);
+        List<RagRetrievalScoredHit> scoredHits =
+                switch (mode) {
+                    case MILVUS -> milvusHitsToScoredCitations(tenantId, kbId, milvusHits, topK, minCos);
+                    case MILVUS_ES_HYBRID ->
+                            searchHybridScoredCitations(tenantId, kbId, q, topK, milvusHits, minCos);
+                };
+        List<String> snippets = milvusHitsToSnippets(tenantId, kbId, milvusHits, topK, minCos);
+        if (mode == RagRetrievalMode.MILVUS_ES_HYBRID) {
+            if (!snippets.isEmpty()) {
+                snippets = mergeHybridSnippetsForTest(tenantId, kbId, q, topK, snippets);
+            } else {
+                snippets = esKeywordSnippetsOnly(tenantId, kbId, q, topK);
+            }
+            logRetrievalTestHybridEsBranch(tenantId, kbId, scoredHits, milvusHits, minCos, maxSim);
+        }
+        RagRetrievalTestDiagnostics diag =
+                buildRetrievalTestDiagnosticsFromMilvusHits(
+                        tenantId, kbId, milvusHits, minCos, maxSim, scoredHits);
+        log.info(
+                "[知识库检索试跑] 完成 tenantId={} kbId={} mode={} topK={} queryLen={} milvusRecall={} maxSim={} threshold={} finalHits={}",
+                tenantId,
+                kbId,
+                RagQueryLogZh.mode(mode),
+                topK,
+                q.length(),
+                milvusHits.size(),
+                formatSimilarity(maxSim),
+                minCos,
+                scoredHits.size());
+        return new RagRetrievalTestSearchResult(scoredHits, snippets, diag);
+    }
+
+    /** @deprecated 请使用 {@link #searchForRetrievalTest}，避免重复 Milvus 检索。 */
+    @Deprecated
+    public RagRetrievalTestDiagnostics buildRetrievalTestDiagnostics(
+            long tenantId, long kbId, String query, int topK) {
+        return searchForRetrievalTest(tenantId, kbId, query, topK).diagnostics();
+    }
+
+    private RagRetrievalTestDiagnostics buildRetrievalTestDiagnosticsFromMilvusHits(
+            long tenantId,
+            long kbId,
+            List<RagVectorRecallHit> hits,
+            double minCos,
+            double maxSim,
+            List<RagRetrievalScoredHit> finalHits) {
         int afterCosine = 0;
         int resolvable = 0;
         for (RagVectorRecallHit hit : hits) {
@@ -362,22 +421,373 @@ public class RagQueryBridgeService {
                 resolvable++;
             }
         }
-        String hint = buildRetrievalHint(hits.size(), afterCosine, resolvable, minCos);
-        return new RagRetrievalTestDiagnostics(hits.size(), afterCosine, resolvable, minCos, hint);
+        String hint =
+                buildRetrievalHint(hits.size(), afterCosine, resolvable, minCos, maxSim, finalHits);
+        return new RagRetrievalTestDiagnostics(
+                hits.size(), afterCosine, resolvable, minCos, maxSim, hint);
+    }
+
+    private void logRetrievalTestHybridEsBranch(
+            long tenantId,
+            long kbId,
+            List<RagRetrievalScoredHit> finalHits,
+            List<RagVectorRecallHit> milvusHits,
+            double minCos,
+            double maxSim) {
+        long milvusHitCount =
+                finalHits.stream().filter(h -> h.source() == RagRetrievalHitSource.MILVUS).count();
+        long esHitCount =
+                finalHits.stream().filter(h -> h.source() == RagRetrievalHitSource.ES).count();
+        if (milvusHitCount == 0 && !milvusHits.isEmpty()) {
+            if (esHitCount > 0) {
+                log.info(
+                        "[知识库检索试跑] 向量均未过阈值 {}（最高 {}），已启用 ES 关键词兜底 {} 条",
+                        minCos,
+                        formatSimilarity(maxSim),
+                        esHitCount);
+            } else {
+                log.info(
+                        "[知识库检索试跑] Milvus 原始召回 {} 条均未过阈值 {}（最高相似度 {}），ES 关键词兜底无命中",
+                        milvusHits.size(),
+                        minCos,
+                        formatSimilarity(maxSim));
+            }
+            if (esHitCount == 0) {
+                return;
+            }
+        }
+        if (esHitCount > 0 && milvusHitCount > 0) {
+            log.info(
+                    "[知识库检索试跑] 混合命中：Milvus {} 条 + ES {} 条（向量过阈值后 ES 关键词补充）",
+                    milvusHitCount,
+                    esHitCount);
+        }
+        if (esHitCount > 0) {
+            int rank = 0;
+            for (RagRetrievalScoredHit h : finalHits) {
+                if (h.source() != RagRetrievalHitSource.ES) {
+                    continue;
+                }
+                rank++;
+                var c = h.citation();
+                log.info(
+                        "[知识库检索试跑] ES#{} chunkId={} bm25={} doc={}#{}",
+                        rank,
+                        c.chunkId(),
+                        h.keywordScore() == null ? emDash() : formatSimilarity(h.keywordScore()),
+                        c.documentTitle() == null ? "" : c.documentTitle(),
+                        c.chunkSeq() + 1);
+            }
+        }
+    }
+
+    private void logRetrievalTestMilvusScores(
+            long tenantId,
+            long kbId,
+            String query,
+            int topK,
+            double minCos,
+            double maxSim,
+            List<RagVectorRecallHit> milvusHits) {
+        log.info(
+                "[知识库检索试跑] Milvus 原始召回 tenantId={} kbId={} topK={} queryLen={} recallCount={} maxSimilarity={} threshold={} queryPreview={}",
+                tenantId,
+                kbId,
+                topK,
+                query == null ? 0 : query.length(),
+                milvusHits.size(),
+                formatSimilarity(maxSim),
+                minCos,
+                previewForLog(query, 80));
+        int rank = 0;
+        for (RagVectorRecallHit hit : milvusHits) {
+            rank++;
+            long chunkId = parseChunkRef(hit.embeddingRef());
+            String docHint = "";
+            if (chunkId > 0) {
+                docHint =
+                        ragChunkRepository
+                                .findCitationHitForKb(tenantId, kbId, chunkId)
+                                .map(
+                                        c ->
+                                                (c.documentTitle() == null ? "" : c.documentTitle())
+                                                        + "#"
+                                                        + (c.chunkSeq() + 1))
+                                .orElse("chunkId=" + chunkId + "(未关联)");
+            }
+            log.info(
+                    "[知识库检索试跑] Milvus#{} chunkRef={} similarity={} passedThreshold={} doc={}",
+                    rank,
+                    hit.embeddingRef(),
+                    formatSimilarity(hit.score()),
+                    passesMilvusCosineThreshold(hit.score(), minCos),
+                    docHint.isEmpty() ? emDash() : docHint);
+        }
+    }
+
+    private static String emDash() {
+        return "—";
+    }
+
+    private static String previewForLog(String text, int maxLen) {
+        if (text == null) {
+            return "";
+        }
+        String t = text.trim().replace('\n', ' ');
+        if (t.length() <= maxLen) {
+            return t;
+        }
+        return t.substring(0, maxLen) + "…";
+    }
+
+    private static double maxMilvusScore(List<RagVectorRecallHit> hits) {
+        float max = 0f;
+        for (RagVectorRecallHit h : hits) {
+            if (h.score() > max) {
+                max = h.score();
+            }
+        }
+        return max;
+    }
+
+    /**
+     * 同一次 Milvus topK 召回的 chunkId → 余弦分（含未过阈值的原始分，便于混合检索试跑对照 ES 命中）。
+     */
+    private static Map<Long, Double> milvusRawScoreByChunkId(List<RagVectorRecallHit> hits) {
+        Map<Long, Double> map = new LinkedHashMap<>();
+        for (RagVectorRecallHit hit : hits) {
+            long chunkId = parseChunkRef(hit.embeddingRef());
+            if (chunkId <= 0) {
+                continue;
+            }
+            map.putIfAbsent(chunkId, (double) hit.score());
+        }
+        return map;
+    }
+
+    private static String formatSimilarity(double score) {
+        return String.format(java.util.Locale.ROOT, "%.4f", score);
+    }
+
+    private static String formatSimilarity(float score) {
+        return formatSimilarity((double) score);
+    }
+
+    private List<RagRetrievalScoredHit> milvusHitsToScoredCitations(
+            long tenantId, long kbId, List<RagVectorRecallHit> hits, int topK, double minCos) {
+        return milvusHitsToScoredCitations(tenantId, kbId, hits, topK, minCos, false);
+    }
+
+    /** 混合检索：同一 {@code documentId} 只保留一条（Milvus 优先顺序），避免 ES 同文档多分片占满 topK。 */
+    private List<RagRetrievalScoredHit> milvusHitsToScoredCitationsHybrid(
+            long tenantId, long kbId, List<RagVectorRecallHit> hits, int topK, double minCos) {
+        return milvusHitsToScoredCitations(tenantId, kbId, hits, topK, minCos, true);
+    }
+
+    private List<RagRetrievalScoredHit> milvusHitsToScoredCitations(
+            long tenantId,
+            long kbId,
+            List<RagVectorRecallHit> hits,
+            int topK,
+            double minCos,
+            boolean oneChunkPerDocument) {
+        List<RagRetrievalScoredHit> out = new ArrayList<>();
+        Set<Long> seenDocIds = oneChunkPerDocument ? new LinkedHashSet<>() : Set.of();
+        for (RagVectorRecallHit hit : hits) {
+            if (out.size() >= topK) {
+                break;
+            }
+            if (!passesMilvusCosineThreshold(hit.score(), minCos)) {
+                continue;
+            }
+            long chunkId = parseChunkRef(hit.embeddingRef());
+            if (chunkId <= 0) {
+                continue;
+            }
+            ragChunkRepository
+                    .findCitationHitForKb(tenantId, kbId, chunkId)
+                    .ifPresent(
+                            c -> {
+                                if (oneChunkPerDocument && seenDocIds.contains(c.documentId())) {
+                                    return;
+                                }
+                                if (oneChunkPerDocument) {
+                                    seenDocIds.add(c.documentId());
+                                }
+                                out.add(
+                                        new RagRetrievalScoredHit(
+                                                c,
+                                                RagRetrievalHitSource.MILVUS,
+                                                (double) hit.score(),
+                                                null));
+                            });
+        }
+        return out;
+    }
+
+    private List<RagRetrievalScoredHit> searchHybridScoredCitations(
+            long tenantId,
+            long kbId,
+            String query,
+            int topK,
+            List<RagVectorRecallHit> milvusHits,
+            double minCos) {
+        List<RagRetrievalScoredHit> mil =
+                milvusHitsToScoredCitationsHybrid(tenantId, kbId, milvusHits, topK, minCos);
+        if (mil.isEmpty()) {
+            return esKeywordScoredHitsOnly(tenantId, kbId, query, topK);
+        }
+        Map<Long, Double> milvusRawByChunk = milvusRawScoreByChunkId(milvusHits);
+        Map<Long, RagRetrievalScoredHit> merged = new LinkedHashMap<>();
+        Set<Long> seenDocIds = new LinkedHashSet<>();
+        for (RagRetrievalScoredHit h : mil) {
+            putHybridScoredHit(merged, seenDocIds, h, topK);
+        }
+        mergeEsScoredHits(merged, seenDocIds, tenantId, kbId, query, topK, milvusRawByChunk);
+        return new ArrayList<>(merged.values());
+    }
+
+    private void mergeEsScoredHits(
+            Map<Long, RagRetrievalScoredHit> merged,
+            Set<Long> seenDocIds,
+            long tenantId,
+            long kbId,
+            String query,
+            int topK,
+            Map<Long, Double> milvusRawByChunk) {
+        ElasticsearchRagSearchClient esClient = elasticsearchRagSearchClient.getIfAvailable();
+        if (esClient == null) {
+            return;
+        }
+        for (ElasticsearchScoredCitationHit es :
+                esClient.searchScoredCitationHits(tenantId, kbId, query, topK)) {
+            if (merged.size() >= topK) {
+                break;
+            }
+            RagCitationHit c = es.citation();
+            RagRetrievalScoredHit scored =
+                    new RagRetrievalScoredHit(
+                            c,
+                            RagRetrievalHitSource.ES,
+                            milvusRawByChunk.get(c.chunkId()),
+                            es.score());
+            putHybridScoredHit(merged, seenDocIds, scored, topK);
+        }
+    }
+
+    private static boolean putHybridScoredHit(
+            Map<Long, RagRetrievalScoredHit> merged,
+            Set<Long> seenDocIds,
+            RagRetrievalScoredHit hit,
+            int topK) {
+        if (merged.size() >= topK) {
+            return false;
+        }
+        RagCitationHit c = hit.citation();
+        if (seenDocIds.contains(c.documentId())) {
+            return false;
+        }
+        if (merged.putIfAbsent(c.chunkId(), hit) != null) {
+            return false;
+        }
+        seenDocIds.add(c.documentId());
+        return true;
+    }
+
+    private List<RagRetrievalScoredHit> esKeywordScoredHitsOnly(
+            long tenantId, long kbId, String query, int topK) {
+        Map<Long, RagRetrievalScoredHit> merged = new LinkedHashMap<>();
+        Set<Long> seenDocIds = new LinkedHashSet<>();
+        mergeEsScoredHits(merged, seenDocIds, tenantId, kbId, query, topK, Map.of());
+        return new ArrayList<>(merged.values());
+    }
+
+    private List<String> esKeywordSnippetsOnly(long tenantId, long kbId, String query, int topK) {
+        ElasticsearchRagSearchClient esClient = elasticsearchRagSearchClient.getIfAvailable();
+        if (esClient == null) {
+            return List.of();
+        }
+        return esClient.searchContents(tenantId, kbId, query, topK);
+    }
+
+    private List<String> mergeHybridSnippetsForTest(
+            long tenantId, long kbId, String query, int topK, List<String> milvusSnippets) {
+        ElasticsearchRagSearchClient esClient = elasticsearchRagSearchClient.getIfAvailable();
+        if (esClient == null) {
+            return milvusSnippets;
+        }
+        return mergeTwoListsDedupe(topK, milvusSnippets, esClient.searchContents(tenantId, kbId, query, topK));
+    }
+
+    private List<String> milvusHitsToSnippets(
+            long tenantId, long kbId, List<RagVectorRecallHit> hits, int topK, double minCos) {
+        List<String> out = new ArrayList<>();
+        for (RagVectorRecallHit hit : hits) {
+            if (out.size() >= topK) {
+                break;
+            }
+            if (!passesMilvusCosineThreshold(hit.score(), minCos)) {
+                continue;
+            }
+            long chunkId = parseChunkRef(hit.embeddingRef());
+            if (chunkId <= 0) {
+                continue;
+            }
+            ragChunkRepository
+                    .resolvePromptSnippetForKb(tenantId, kbId, chunkId)
+                    .filter(p -> !p.isBlank())
+                    .ifPresent(out::add);
+        }
+        return out;
     }
 
     private static String buildRetrievalHint(
-            int milvusRecall, int afterCosine, int resolvable, double minCos) {
+            int milvusRecall,
+            int afterCosine,
+            int resolvable,
+            double minCos,
+            double maxSim,
+            List<RagRetrievalScoredHit> finalHits) {
         if (milvusRecall == 0) {
             return "Milvus 未召回任何分片：请确认文档状态为「已发布」、入库时 Milvus 写入成功，或对本库执行「触发索引」。"
                     + " 混合检索模式下历史文档可能仅有 Milvus 无 ES 词条。";
         }
         if (afterCosine == 0) {
-            return "Milvus 召回 "
-                    + milvusRecall
-                    + " 条，但均未达到本库对话向量阈值 "
-                    + minCos
-                    + "；可在知识库高级设置中调低 chat_vector_min_cosine_score。";
+            long esOnly =
+                    finalHits == null
+                            ? 0
+                            : finalHits.stream().filter(h -> h.source() == RagRetrievalHitSource.ES).count();
+            String base =
+                    "Milvus 召回 "
+                            + milvusRecall
+                            + " 条，但均未达到本库对话向量阈值 "
+                            + minCos
+                            + "（最高相似度 "
+                            + String.format(java.util.Locale.ROOT, "%.4f", maxSim)
+                            + "）。";
+            if (esOnly > 0) {
+                base += " 已用 ES 关键词兜底 " + esOnly + " 条（BM25 见 keywordScore / 日志 ES#n）。";
+            } else {
+                base += " 混合检索已尝试 ES 关键词兜底，仍无命中。";
+            }
+            if (maxSim < 0.2d) {
+                base +=
+                        " 相似度极低，请检查：① 知识库绑定向量模型与入库时是否一致 ② 是否需对本库「触发索引」③ Milvus 向量维度是否与当前模型一致。";
+            } else {
+                base += " 可在知识库高级设置中调低 chat_vector_min_cosine_score。";
+            }
+            return base;
+        }
+        long esOnly =
+                finalHits == null
+                        ? 0
+                        : finalHits.stream().filter(h -> h.source() == RagRetrievalHitSource.ES).count();
+        if (esOnly > 0 && afterCosine > 0) {
+            return "Milvus 阈值内 "
+                    + afterCosine
+                    + " 条，另合并 ES 关键词补充 "
+                    + esOnly
+                    + " 条（BM25 见各行 keywordScore / 日志 ES#n）。";
         }
         if (resolvable == 0) {
             return "通过阈值 "
@@ -410,14 +820,17 @@ public class RagQueryBridgeService {
                 milvusQueryVecOrNull != null
                         ? searchMilvusSnippetsWithVec(tenantId, kbId, milvusQueryVecOrNull, topK)
                         : searchMilvusSnippets(tenantId, kbId, query, topK);
-        List<String> es = List.of();
         ElasticsearchRagSearchClient esClient = elasticsearchRagSearchClient.getIfAvailable();
-        if (esClient != null) {
-            es = esClient.searchContents(tenantId, kbId, query, topK);
-        } else {
-            log.debug("[知识库检索] 混合模式未配置 Elasticsearch 客户端，本库仅使用 Milvus 结果");
+        if (esClient == null) {
+            if (mil.isEmpty()) {
+                log.debug("[知识库检索] 混合模式未配置 Elasticsearch 客户端，向量无命中则返回空");
+            }
+            return mil;
         }
-        return mergeTwoListsDedupe(topK, mil, es);
+        if (mil.isEmpty()) {
+            return esClient.searchContents(tenantId, kbId, query, topK);
+        }
+        return mergeTwoListsDedupe(topK, mil, esClient.searchContents(tenantId, kbId, query, topK));
     }
 
     private List<String> searchHybridSnippetsWithMilvusVec(
@@ -439,18 +852,47 @@ public class RagQueryBridgeService {
         if (esClient == null) {
             return mil;
         }
-        List<RagCitationHit> fromEs = esClient.searchCitationHits(tenantId, kbId, query, topK);
-        Map<Long, RagCitationHit> merged = new LinkedHashMap<>();
-        for (RagCitationHit h : mil) {
-            merged.putIfAbsent(h.chunkId(), h);
+        if (mil.isEmpty()) {
+            return mergeHybridCitationHits(
+                    List.of(), esClient.searchCitationHits(tenantId, kbId, query, topK), topK);
+        }
+        return mergeHybridCitationHits(
+                mil, esClient.searchCitationHits(tenantId, kbId, query, topK), topK);
+    }
+
+    /**
+     * 混合检索合并：Milvus 结果在前；按 {@code chunkId} 去重；同一 {@code documentId} 只保留一条（对话 RAG 与试跑一致）。
+     */
+    private static List<RagCitationHit> mergeHybridCitationHits(
+            List<RagCitationHit> milvusFirst, List<RagCitationHit> fromEs, int topK) {
+        Map<Long, RagCitationHit> byChunk = new LinkedHashMap<>();
+        Set<Long> seenDocIds = new LinkedHashSet<>();
+        for (RagCitationHit h : milvusFirst) {
+            putHybridCitation(byChunk, seenDocIds, h, topK);
+            if (byChunk.size() >= topK) {
+                return new ArrayList<>(byChunk.values());
+            }
         }
         for (RagCitationHit h : fromEs) {
-            merged.putIfAbsent(h.chunkId(), h);
-            if (merged.size() >= topK) {
+            putHybridCitation(byChunk, seenDocIds, h, topK);
+            if (byChunk.size() >= topK) {
                 break;
             }
         }
-        return new ArrayList<>(merged.values());
+        return new ArrayList<>(byChunk.values());
+    }
+
+    private static void putHybridCitation(
+            Map<Long, RagCitationHit> byChunk, Set<Long> seenDocIds, RagCitationHit hit, int topK) {
+        if (byChunk.size() >= topK) {
+            return;
+        }
+        if (seenDocIds.contains(hit.documentId())) {
+            return;
+        }
+        if (byChunk.putIfAbsent(hit.chunkId(), hit) == null) {
+            seenDocIds.add(hit.documentId());
+        }
     }
 
     private List<RagCitationHit> searchHybridCitationsWithMilvusVec(

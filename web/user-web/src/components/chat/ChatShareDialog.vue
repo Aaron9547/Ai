@@ -97,7 +97,6 @@ import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import ChatShareCaptureCard, { type ShareCaptureTurn } from "./ChatShareCaptureCard.vue";
 import * as chatApi from "../../api/chat";
-import { renderMarkdownToSafeHtml } from "../../utils/renderMarkdown";
 import {
   buildChatShareTurns,
   findTurnByAssistantIndex,
@@ -207,20 +206,20 @@ const captureTurns = computed((): ShareCaptureTurn[] => {
     result.push({
       turnIndex: turn.index,
       userPlain: user.content ?? "",
-      assistantHtml: assistantHtml(assistant),
+      assistantSource: assistantMarkdownSource(assistant),
     });
   }
   return result;
 });
 
-function assistantHtml(m: ShareDialogMsg): string {
+function assistantMarkdownSource(m: ShareDialogMsg): string {
   if ((m.workflowSegments?.length ?? 0) > 0) {
-    const parts = m.workflowSegments!
+    return m.workflowSegments!
       .filter((s) => s.text && s.status !== "loading")
-      .map((s) => renderMarkdownToSafeHtml(s.text || ""));
-    return parts.join("");
+      .map((s) => s.text || "")
+      .join("\n\n");
   }
-  return renderMarkdownToSafeHtml(m.content ?? "");
+  return m.content ?? "";
 }
 
 watch(selectedTurnIndexes, () => {

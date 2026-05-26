@@ -67,7 +67,7 @@ export function useKnowledgePlanetScene(
     const cloudGeom = new THREE.BufferGeometry();
     cloudGeom.setAttribute("position", new THREE.BufferAttribute(cloudPos, 3));
     pointsMat = new THREE.PointsMaterial({
-      color: 0x00f2fe,
+      color: 0x6366f1,
       size: 0.035,
       transparent: true,
       opacity: 0.65,
@@ -85,7 +85,7 @@ export function useKnowledgePlanetScene(
       new THREE.Points(
         new THREE.BufferGeometry().setFromPoints(verts),
         new THREE.PointsMaterial({
-          color: 0x4facfe,
+          color: 0x818cf8,
           size: 0.02,
           transparent: true,
           opacity: 0.5,
@@ -97,7 +97,7 @@ export function useKnowledgePlanetScene(
     const wire = new THREE.Mesh(
       new THREE.IcosahedronGeometry(2.05, 2),
       new THREE.MeshBasicMaterial({
-        color: 0x00f2fe,
+        color: 0x6366f1,
         wireframe: true,
         transparent: true,
         opacity: 0.08,
@@ -107,13 +107,13 @@ export function useKnowledgePlanetScene(
 
     const ring = new THREE.Mesh(
       new THREE.TorusGeometry(2.35, 0.012, 8, 100),
-      new THREE.MeshBasicMaterial({ color: 0x4facfe, transparent: true, opacity: 0.28 }),
+      new THREE.MeshBasicMaterial({ color: 0x7c3aed, transparent: true, opacity: 0.28 }),
     );
     ring.rotation.x = Math.PI / 2;
     group.add(ring);
 
     scene.add(new THREE.AmbientLight(0x223344, 0.65));
-    const light = new THREE.PointLight(0x00f2fe, 1.2, 18);
+    const light = new THREE.PointLight(0x6366f1, 1.2, 18);
     light.position.set(2, 1, 4);
     scene.add(light);
 

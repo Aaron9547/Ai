@@ -12,10 +12,10 @@
           <pre class="msg-summary-pre">{{ message.contentSummary }}</pre>
         </div>
         <div v-if="message.reasoning" class="msg-reasoning msg-reasoning--in-current">
-          <span class="msg-reasoning-hdr">思考过程</span>
-          <pre>{{ message.reasoning }}</pre>
+          <span class="msg-reasoning-hdr">{{ t("views.chatDrawerAudit.reasoning") }}</span>
+          <MarkdownRichContent class="msg-reasoning-md" :source="message.reasoning" />
         </div>
-        <div class="msg-md bubble-md bubble-md--current" v-html="assistantHtml(message.content)" />
+        <MarkdownRichContent class="msg-md bubble-md bubble-md--current" :source="message.content ?? ''" />
         <div v-if="message.totalTokens != null && message.totalTokens > 0" class="msg-usage msg-usage--current">
           本版约 {{ message.totalTokens }} tokens（提示 {{ message.promptTokens ?? "—" }} / 生成
           {{ message.completionTokens ?? "—" }}）
@@ -79,10 +79,10 @@
                 <span v-if="pv.modelAlias" class="msg-prior-model">模型 {{ pv.modelAlias }}</span>
               </div>
               <div v-if="pv.reasoning" class="msg-reasoning msg-reasoning--archive">
-                <span class="msg-reasoning-hdr">思考过程</span>
-                <pre>{{ pv.reasoning }}</pre>
+                <span class="msg-reasoning-hdr">{{ t("views.chatDrawerAudit.reasoning") }}</span>
+                <MarkdownRichContent class="msg-reasoning-md" :source="pv.reasoning" />
               </div>
-              <div class="msg-md bubble-md bubble-md--archive" v-html="assistantHtml(pv.content ?? '')" />
+              <MarkdownRichContent class="msg-md bubble-md bubble-md--archive" :source="pv.content ?? ''" />
               <div v-if="pv.totalTokens != null && pv.totalTokens > 0" class="msg-usage msg-usage--archive">
                 该版约 {{ pv.totalTokens }} tokens（提示 {{ pv.promptTokens ?? "—" }} / 生成 {{ pv.completionTokens ?? "—" }}）
               </div>
@@ -99,10 +99,10 @@
         <pre class="msg-summary-pre">{{ message.contentSummary }}</pre>
       </div>
       <div v-if="message.reasoning" class="msg-reasoning">
-        <span class="msg-reasoning-hdr">思考过程</span>
-        <pre>{{ message.reasoning }}</pre>
+        <span class="msg-reasoning-hdr">{{ t("views.chatDrawerAudit.reasoning") }}</span>
+        <MarkdownRichContent class="msg-reasoning-md" :source="message.reasoning" />
       </div>
-      <div class="msg-md bubble-md" v-html="assistantHtml(message.content)" />
+      <MarkdownRichContent class="msg-md bubble-md" :source="message.content ?? ''" />
       <div v-if="message.totalTokens != null && message.totalTokens > 0" class="msg-usage">
         本条约 {{ message.totalTokens }} tokens（提示 {{ message.promptTokens ?? "—" }} / 生成 {{ message.completionTokens ?? "—" }}）
       </div>
@@ -153,15 +153,11 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
 import type { ChatMessageAdminRow, RagCitationAdmin, WebSearchRefAdmin } from "../../../api/chatAdmin";
-import { renderMarkdownToSafeHtml } from "../../../utils/renderMarkdown";
+import MarkdownRichContent from "../../../components/markdown/MarkdownRichContent.vue";
 
 defineProps<{ message: ChatMessageAdminRow }>();
 const emit = defineEmits<{ (e: "open-rag-citation", c: RagCitationAdmin): void }>();
 const { t } = useI18n();
-
-function assistantHtml(text: string): string {
-  return renderMarkdownToSafeHtml(text ?? "");
-}
 
 function ragCitationLabel(c: RagCitationAdmin): string {
   const t = (c.documentTitle || "文档").trim();
@@ -241,20 +237,22 @@ function webRefLabel(w: WebSearchRefAdmin): string {
   color: var(--el-text-color-primary);
 }
 
-.bubble-md :deep(p) {
-  margin: 0 0 0.5em;
-}
-
-.bubble-md :deep(p:last-child) {
-  margin-bottom: 0;
-}
-
-.bubble-md :deep(pre) {
+.bubble-md :deep(.markdown-rich__html pre) {
   overflow-x: auto;
   padding: 10px;
   border-radius: 8px;
   background: var(--el-fill-color);
   font-size: 13px;
+}
+
+.msg-reasoning-md {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--el-text-color-regular);
+}
+
+.msg-reasoning-md :deep(.ai-code-block) {
+  margin: 0.6em 0;
 }
 
 .msg-usage {
@@ -536,7 +534,7 @@ function webRefLabel(w: WebSearchRefAdmin): string {
   line-height: 1.55;
 }
 
-.bubble-md--archive :deep(pre) {
+.bubble-md--archive :deep(.markdown-rich__html pre) {
   background: var(--el-fill-color);
   font-size: 12px;
 }

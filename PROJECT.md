@@ -55,7 +55,7 @@
 - **编排位置**：**`ChatWebSearchGroundingService`** 由 **`ChatApplicationService#openAssistantSseStream`** 在 RAG 等之后、主 **`ModelInvokePort`** 之前注入网络检索 **system**；请求体 **`webSearchEnabled`**（及重试覆盖项）参与决策。
 - **联网实例选择**：租户在「外观与模型调用」配置 **`WEB_SEARCH_GROUNDING_MODEL_ID`**（**`sys_llm_model.id`**，须 **WEB_SEARCH** 且启用）；留空时 **`SysLlmModelRepository#resolveWebSearchModel`** 按 **`sort_order` + `id`** 取默认行（与记忆嵌入 **VECTOR** 绑定方式一致）。
 - **多轮检索与提示后缀**：轮数及各轮拼在用户问题后的说明为租户运行参数 **`WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT`**、**`WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON`**（**`TenantRuntimeSettingKey`**）；与 **`application.yml` 分层**见 **`.cursorrules` §3.8**。
-- **检索缓存**：**`WEB_SEARCH_GROUNDING_CACHE_JSON`**（Redis 精确 + 语义近邻，默认滚动 **6h/24h/48h**）；同会话相同问句复用见 **`WebSearchConversationReuseService`**。对话流式在 **`streamCompletion` 前**完成配置轮数联网（**`groundMultiRoundsWithRaw`**，SSE 渐进 **`webSearchRefs`**）见 **「变更记录」** **`### 0.1.244-SNAPSHOT`**。
+- **检索缓存**：**`WEB_SEARCH_GROUNDING_CACHE_JSON`**（Redis 精确 + 语义近邻，默认滚动 **6h/24h/48h**）；同会话相同问句复用见 **`WebSearchConversationReuseService`**。持久化 **联网知识库**（**`chat_starter_prompt` scene=WEB_KNOWLEDGE**）在 Redis 未命中时优先本地精确/语义命中，每次成功外呼后由 **`ChatWebSearchKnowledgeService`** 沉淀。对话流式在 **`streamCompletion` 前**完成配置轮数联网（**`groundMultiRoundsWithRaw`**，SSE 渐进 **`webSearchRefs`**）见 **「变更记录」** **`### 0.1.244-SNAPSHOT`**。
 - **引用持久化与 SSE**：检索归一化条目落 **`chat_message.meta_json#webSearchReferences`**（助手行写入；**同一轮 user 行**在助手落库后同步写入或移除该键，便于按轮次导出）；主流式前下发 **`webSearchRefs`** 分帧（**`v`** 为 **`{"references":[…]}`**）。**`GET …/conversations/{id}/messages`** 经 **`ChatMessageView`** 对 **user / assistant** 均解析 **`webSearchReferences`**。**`VolcArkBotWebSearchProvider`** 合并根 **`references`** 与 **`bot_usage…tool_details…results`**（按 URL 去重）。用户端 **`web/user-web`**（**`chat.ts` / `ChatView.vue`**）与管理端类型 **`chatAdmin.ts`** 对齐字段；迭代明细见 **「变更记录」** 当前顶 **`###`** 节。
 - **扩展与实现真源**：**`WebSearchProviderRegistry`** / **`WebSearchModelProvider`**（首版 **`VolcArkBotWebSearchProvider`** 等）、**`SysLlmModel`** 解析、计量回写、**`WebSearchFlagDeserializer`** 等与周边模块的细则以代码及 **`LlmModelKind`** 注释为准。
 
@@ -126,8 +126,8 @@ flowchart TD
 
 **稳定边界（不写迭代清单）**
 
-- **产品语义**：空会话展示可点击推荐问句；运营可维护池子；可选 **每日联网热点** 作兜底；助手回复后可展示 **猜你想问**（追问 chips）。
-- **持久化**：**`chat_starter_prompt`**、**`chat_starter_daily_batch`**、**`chat_starter_follow_up_cache`**、**`chat_starter_event`**（**`chat_*`** 前缀，见 **`.cursorrules` §4.1.3**）。
+- **产品语义**：空会话展示可点击推荐问句；运营可维护池子；可选 **每日联网热点** 作兜底；助手回复后可展示 **猜你想问**（追问 chips）；每次对话 **联网检索** 成功可沉淀为租户 **联网知识库**（scene **`WEB_KNOWLEDGE`**），相似问句优先本地命中以减少外呼。
+- **持久化**：**`chat_starter_prompt`**（含 **`grounding_json`** 联网摘要与引用）、**`chat_starter_daily_batch`**、**`chat_starter_follow_up_cache`**、**`chat_starter_event`**（**`chat_*`** 前缀，见 **`.cursorrules` §4.1.3**）。
 - **配置入口**：每日热点 Cron 与启停为 **`ten_scheduled_task`** 执行器 **`CHAT_STARTER_DAILY_HOT`**（管理端 **「定时任务」**）；运营池与热点批次、手动重抓在 **「推荐问题与猜你想问」**（**`/chat/starter-prompts`**）。统一调度 tick 与 RAG 共用 **`ai.rag.scheduled-tasks`**（**`TenantScheduledTaskPoller`**）。
 - **编排位置**：**`ChatStarterPromptApplicationService`**（抽样）、**`ChatStarterDailyHotTopicService`** + **`ChatStarterDailyHotJobHandler`**（热点）、**`ChatStarterFollowUpService`**（追问）；包 **`com.aaron.cloud.chat.starter`** / **`com.aaron.cloud.scheduled.handler`**。
 - **Open API**：**`GET /open/v1/chat/starter-prompts`**、**`POST …/starter-prompts/events`**、**`GET …/conversations/{id}/messages/{msgId}/follow-up-prompts`**。
@@ -178,6 +178,7 @@ sequenceDiagram
 | 能力 | 路径 |
 |------|------|
 | 运营池（含插入时间列） | 管理端 **推荐问题与猜你想问** `/chat/starter-prompts` |
+| 联网知识库（自动沉淀） | 同页 **联网知识库** Tab；编排 **`ChatWebSearchKnowledgeService`** |
 | 每日热点批次 | 同页 **每日热点** Tab；Cron 在 **定时任务** `CHAT_STARTER_DAILY_HOT` |
 
 **迭代写在哪里**：同 **「联网搜索」** 专节约定。
@@ -191,7 +192,7 @@ sequenceDiagram
 - **产品语义（三级钻取）**：
   1. **星系层（Galaxy）**：按对话主题（`topic_tags` 首项）聚合为一颗**主题星球**（实体球体，大小∝该主题下知识点数量）。
   2. **星球层（Planet）**：点击星球后镜头钻取（Zoom-in），展示该主题下的**知识点小球**与**轨道/关联连线**（力导向物理）。
-  3. **图谱层（Graph）**：知识点间 `relation` 连线（同子标签或时序相邻）；星球→知识点为 `orbit` 流光连线。
+  3. **图谱层（Graph）**：知识点间 `relation` 连线（任意 **topicTag** 交集、同会话、或时序相邻）；星球→知识点为 `orbit` 流光连线；多节点并簇规则见 **`KnowledgePlanetUniverseBuilder`**（非仅首标签字面相等）。
   非租户 RAG；与 **`ten_user_memory_*`** 并行。每周一计算成长方案并邮件推送。
 - **主体键**：与画像一致，**`subject_key`** = **`u:{userId}`**（已登录）或 **`d:{deviceId}`**（访客）；**周报邮件**仅 **`u:*` 且 `sec_user.email` 非空**。
 - **持久化**：**`ten_user_knowledge_node`**（单轮节点：标题、摘要、`topic_tags_json`、来源会话/消息）；**`ten_user_weekly_insight`**（按 **`week_start`**=当周周一、`KnowledgeWeeklyInsightStatus`：DRAFT/READY/SENT/SKIPPED/FAILED，**`plan_json`** 见下）。
@@ -210,9 +211,9 @@ sequenceDiagram
 
 | 能力 | 入口 / 键 |
 |------|-----------|
-| 总开关、Cron、邮件模板、沉淀模型 | 管理端 **租户能力与外观** → Tab **「知识星球」**；**`PUT /api/v1/admin/tenant-shell-config/knowledge-planet`** |
-| 运行时键 | **`KNOWLEDGE_PLANET_ENABLED`**、**`KNOWLEDGE_PLANET_WEEKLY_COMPUTE_CRON`**（默认 `0 0 3 * * MON`）、**`KNOWLEDGE_PLANET_WEEKLY_EMAIL_CRON`**（默认 `0 0 9 * * MON`）、**`KNOWLEDGE_PLANET_EMAIL_JSON`**、**`KNOWLEDGE_PLANET_DIGEST_MODEL_ID`**（`ten_runtime_setting`，Shell 专管，不出现在「运行时参数」列表） |
-| 定时注册 | **`ten_scheduled_task`** 执行器 **`KNOWLEDGE_PLANET_WEEKLY_COMPUTE`**、**`KNOWLEDGE_PLANET_WEEKLY_EMAIL`**；Shell 保存时 **`KnowledgePlanetScheduledTaskSynchronizer`** 同步启停与 Cron；tick 与 RAG/热点共用 **`TenantScheduledTaskPoller`**（**`Asia/Shanghai`**） |
+| 总开关、可选沉淀模型、邮件模板 | 管理端 **租户能力与外观** → Tab **「知识星球」**；**`PUT /api/v1/admin/tenant-shell-config/knowledge-planet`**（沉淀模型下拉 **LANGUAGE**，留空走默认） |
+| 运行时键 | **`KNOWLEDGE_PLANET_ENABLED`**、**`KNOWLEDGE_PLANET_EMAIL_JSON`**、**`KNOWLEDGE_PLANET_DIGEST_MODEL_ID`**（Shell 专管）；**`*_CRON`** 键仅迁移种子，**Cron 在「定时任务」维护** |
+| 定时注册 | **`ten_scheduled_task`** 执行器 **`KNOWLEDGE_PLANET_WEEKLY_COMPUTE`**、**`KNOWLEDGE_PLANET_WEEKLY_EMAIL`**；Shell 保存 **`KnowledgePlanetScheduledTaskSynchronizer`** 同步启停（**不覆盖**已有 Cron）；tick 与 RAG/热点共用 **`TenantScheduledTaskPoller`**（**`Asia/Shanghai`**） |
 | 邮件通道 | **`TenantTemplateEmailSender`** + **`TenantKnowledgePlanetEmailResolver`**；可 **`reuseRegisterSmtp`** 合并 **`AUTH_REGISTER_VERIFICATION_JSON`** 的 SMTP |
 
 **编排与包路径**
@@ -362,6 +363,29 @@ flowchart TB
 
 ## 变更记录
 
+### 0.1.255-SNAPSHOT
+
+- **知识库向量检索试跑**：**`POST …/retrieval-test`** 回显 Milvus **`vectorSimilarity`**（ES 行在同次 topK 内则回填）/ 可选 **`keywordScore`**（BM25）；混合模式 Milvus 未过阈值不 ES 兜底；ES **`operator=and` + `min_score`**。
+- **联网知识库沉淀**：`chat_starter_prompt` 增 **`query_normalized`**、**`query_norm_hash`**（SHA256，索引用）、**`grounding_json`**、**`hit_count`**；场景 **`WEB_KNOWLEDGE`**、来源 **`WEB_SEARCH_GROUNDING`**。**不对问句建 UNIQUE**（utf8mb4 长字段超 767 字节上限，且同一问句需多版本容纳资讯更新）。**`freshHours` 内**合并更新同一条；**超过 `freshHours`** 外呼后**插入新版本**；本地命中仅取 **`staleHours` 内**最新版（与 **`WEB_SEARCH_GROUNDING_CACHE_JSON`** 分档对齐）。**`ChatWebSearchKnowledgeService`** 异步沉淀；外呼前本地精确/语义命中。**`ChatStarterPromptSimilarityService`** 追问池合并 **WEB_KNOWLEDGE**。
+- **管理端**：**「推荐问题与猜你想问」** 新增 **「联网知识库」** Tab（**`WebSearchKnowledgeTable`**）：摘要预览、**引用数可点开弹窗**（**`GET …/starter-prompts/{id}/web-grounding`**）、本地命中次数、启停与删除（同问句可多行版本）。
+- **枚举**：**`ChatStarterPromptScene.WEB_KNOWLEDGE`**、**`ChatStarterPromptSource.WEB_SEARCH_GROUNDING`**。
+- **已建库须手工执行** **`db/mysql/migrate_0_1_255_web_search_knowledge.sql`**；若曾误跑旧版 UNIQUE 或缺 **`query_norm_hash`**，补 **`migrate_0_1_255_web_search_knowledge_index_fix.sql`**。
+- **版本**：**`pom.xml`** bump **0.1.254 → 0.1.255-SNAPSHOT**。
+- **user-web 对话页修补**：**`sidebar-collapse.css`** 侧栏 **0.42s** 宽度过渡（`flex-basis`/`width` 统一由全局驱动，内层 opacity 渐隐）；**`ChatView`** 会话 Token 徽章紧贴标题；深色：**折叠钮 hover**（靛紫而非白闪）、**侧栏底栏用户区**、**分享弹窗**、**点赞/点踩激活态**；左侧栏 **rail/新建/折叠钮** hover 改 **`--sidebar-*`** 令牌（对齐右侧 **`--rec-hover-bg`**，去除 `#eef4fa` 硬编码）。
+- **admin-web 知识星球 Shell**：移除 **周一方案/邮件 Cron**（改 **定时任务**）；沉淀模型改 **LANGUAGE 下拉**（可选，留空默认）；**`KnowledgePlanetScheduledTaskSynchronizer`** 更新任务时保留已有 Cron。
+- **user-web 知识星球全屏**：星图 **2D/3D 分段切换**（单控件高亮，**`html.dark`** 适配）。
+- **user-web 知识星球全屏**：查看知识点时 **返回主题星球 / 取消选中 / 标题** 并入顶栏 **右侧**；双按钮分步返回与清空选中；**修复** 2D 选中后切 3D 时顶栏返回/取消选中按钮消失（`mapCanGoBack` 不再仅限 2D；切 3D 保留星球下钻态）。
+- **user-web 对话代码块**：**`CodeBlock.vue`**（PrismJS + Tailwind、mac 顶栏、复制反馈）；**`MarkdownRichContent.vue`** 经 markdown-it **token** 拆分围栏/缩进代码；**`prismSetup`** 补全 **javascript** 等语法与 **clike** 回退；**`bubble-md` 旧 `pre` 样式** 不再覆盖 **`.ai-code-block`**。
+- **user-web 输入框清空**：**圆形 ×** 置于发送钮左侧（与附件/发送同一行底对齐），不占输入区、不与多行文字重叠。
+- **user-web 输入区**：**思考 / 联网** 模式 pill 略放大（12px 字、更高点击区域）。
+- **知识星球聚类**：**`KnowledgePlanetUniverseBuilder`** 按任意 **topicTag 交集** 并簇（传递闭包），同会话/时序相邻补 **relation** 连线；**`KnowledgePlanetIngestService`** 沉淀时注入【已有主题星球】【本会话已沉淀】并约束 **topicTags[0] 复用**、追问不随意 skip。
+- **admin-web 列表滚动**：知识库文档矩阵、对话日志、HTTP 访问日志、计量事件去掉表格局部 **`max-height`/固定高度**，改由 **`AdminLayout`** 主区滚动；成员画像一览移除 **用户 ID** 列，详情标题用登录名/昵称。
+- **admin-web 对话日志抽检**：**`MarkdownRichContent`** + **`CodeBlock`**（PrismJS）；全局 **`markdown-prose.css`** 恢复列表/标题/引用/表格样式；详情 **大弹框**；**修复** `normalizeGfmBlockMarkdown` 在表格行间误插空行导致 GFM 表格变纯文本，并合并模型输出中表格行间的多余空行（对齐用户端）。
+- **user-web 知识星球**：档案 Tab 与右侧摘要栏改用 **`el-scrollbar`**（替代原生滚动条），样式与对话侧栏一致。
+- **admin-web 知识中心**：文档矩阵 **批量删除 / 单篇删除 / 删除分类** 确认框改用 **`confirmMessageBox`**，确认/取消按钮随 **`common.confirm` / `common.cancel`** 中英文切换（修复 Element Plus 默认英文 OK/Cancel）。
+- **混合检索兜底**：Milvus 均未过 **`chat_vector_min_cosine_score`** 时，**`MILVUS_ES_HYBRID`** 仍走 **ES 关键词**（`title^2`+`content`、短词放宽 **`min_score`**）；对话与检索试跑同路径。**`RagEmbeddingService`** 对嵌入向量 **L2 归一化**（与 COSINE 一致；若相似度仍极低须核对向量模型并 **触发索引**）。
+- **混合检索去重**：**`RagQueryBridgeService`** 合并 Milvus+ES 时按 **`documentId`** 每文档最多 1 条（Milvus 优先）；**`searchCitationHits`** 与 **`searchForRetrievalTest`** 共用，避免 ES 同文档多分片占满 topK。
+
 ### 0.1.254-SNAPSHOT
 
 - **个人知识星球**：表 **`ten_user_knowledge_node`**、**`ten_user_weekly_insight`**；对话后 **`KnowledgePlanetIngestService`** 沉淀节点；定时 **`KNOWLEDGE_PLANET_WEEKLY_COMPUTE`**（默认周一 03:00）、**`KNOWLEDGE_PLANET_WEEKLY_EMAIL`**（默认周一 09:00）；租户 Shell Tab「知识星球」+ **`KNOWLEDGE_PLANET_*`** 运行时键；Open API **`/open/v1/chat/knowledge-planet/*`**；user-web 侧栏 Three.js 预览 + Canvas/GSAP 全屏。**已建库须手工执行** **`db/mysql/migrate_0_1_254_knowledge_planet.sql`**。
@@ -370,6 +394,8 @@ flowchart TB
 - **三级钻取 UI**：**`KnowledgePlanetUniverseBuilder`** + **`GET …/knowledge-planet/universe`**；C 端 **3d-force-graph** 实体星球 + 钻取 + 侧栏摘要；沉淀 Prompt 强调 `topicTags[0]` 为主题分类。
 - **user-web 星球 UX**：侧栏 **羽化门户** + 全屏 Fresnel 图谱；进入/退出对称转场；侧栏 **外壳宽度 0.42s 裁剪动画**（非双面板切换，`sidebar-collapse.css`）；全屏层 **`useRandomDotNetwork`** 随机粒子连线背景（[randomDot](https://rstyro.github.io/html5/randomDot/index.html)）；修复右侧推荐栏收起后 **`rec-rail`** 仅占顶部一条（`rec-rail-layer` 补 flex 列布局）；修复左右侧栏 **`min-width: auto`** 导致宽度过渡失效（内层 300px 撑开 flex 项）。
 - **user-web 星图体验（第 0～1 期）**：全屏默认 **2D 全星图**（**`useKnowledgePlanetStarMap`** + **`force-graph`**，星球+知识点同屏）；顶栏 **星图/档案** Tab、搜索/适应星图、**2D/沉浸 3D** 切换；常驻侧栏（星球列表、知识点档案、首次引导）；随机点网仅开场约 1.6s；**`UniverseViewMode.full`** 供 3D 全图。
+- **user-web 体验修补**：知识星球 **退出星云** 并入顶栏（不再遮挡星图）；3D/2D **主题星球钻取与返回**（`universe3dMode` + 地图导航条）；联网检索/参考文档/猜你想问骨架 **深色模式**；输入框 **清空钮移至发送钮上方**；侧栏 **`overflow:visible`** 恢复贴边折叠钮显示。
+- **user-web Nexus Vision UI**：对话页 **Nexus 设计令牌**（**`chat-theme.css`**：Surface `#FCFCFD`/`#0D0E12`、Indigo 品牌色、极细边框）；**`ChatView`** 毛玻璃顶栏 + Token 徽章淡入、24px 助手卡片 / 克制浅灰用户气泡、**岛屿输入框**（顶栏思考/联网 Tab + 底行附件/输入/发送，`rounded-[28px]`）；侧栏 **`sidebar-collapse.css`** 重写为对接稿 **width 裁剪 + 0.3s ease**（去掉 body 延迟淡入淡出）；右侧 **Intelligence Dashboard**（**`DailyRecommendSidebar`** 320px、**「今日智能洞察」** 卡片流、**`KnowledgePlanetCard`** 圆角星球视窗）；**`index.html`** 引入 Inter / JetBrains Mono；i18n **`dailyRecommend`/`knowledgePlanet`/`chat.tokenLine*`** 文案对齐对接稿。
 
 ### 0.1.253-SNAPSHOT
 

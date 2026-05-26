@@ -1,56 +1,128 @@
-/* 左右侧栏：外壳宽度连续动画 + 内层裁剪（非双面板瞬间切换） */
+/**
+ * 侧栏展开/收起：外壳 width 缓慢过渡（对接稿 w-80 ↔ w-0 思路），内层固定宽度裁剪。
+ */
 :root {
-  --chat-shell-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --chat-shell-ease: cubic-bezier(0.4, 0, 0.2, 1);
   --chat-shell-duration: 0.42s;
+  --sidebar-width-expanded: 256px;
+  --sidebar-width-collapsed: 40px;
+  --rec-width-expanded: 320px;
+  --rec-width-collapsed: 40px;
 }
 
 .sidebar,
 .rec-panel {
+  flex: 0 0 auto !important;
+  overflow: visible;
   transition:
     width var(--chat-shell-duration) var(--chat-shell-ease),
-    background-color var(--chat-shell-duration) var(--chat-shell-ease),
-    border-color var(--chat-shell-duration) var(--chat-shell-ease);
+    flex-basis var(--chat-shell-duration) var(--chat-shell-ease),
+    min-width var(--chat-shell-duration) var(--chat-shell-ease),
+    max-width var(--chat-shell-duration) var(--chat-shell-ease),
+    border-color var(--chat-shell-duration) var(--chat-shell-ease),
+    background-color var(--chat-shell-duration) var(--chat-shell-ease) !important;
   will-change: width;
+}
+
+.sidebar {
+  width: var(--sidebar-width-expanded) !important;
+  flex-basis: var(--sidebar-width-expanded) !important;
+}
+
+.sidebar.sidebar--collapsed {
+  width: var(--sidebar-width-collapsed) !important;
+  flex-basis: var(--sidebar-width-collapsed) !important;
+}
+
+.rec-panel {
+  width: var(--rec-width-expanded) !important;
+  flex-basis: var(--rec-width-expanded) !important;
+}
+
+.rec-panel.rec-panel--collapsed {
+  width: var(--rec-width-collapsed) !important;
+  flex-basis: var(--rec-width-collapsed) !important;
+}
+
+.sidebar-clip,
+.rec-clip {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.sidebar-inner {
+  width: var(--sidebar-width-expanded);
+  height: 100%;
+  min-height: 0;
+}
+
+.rec-inner {
+  width: var(--rec-width-expanded);
+  height: 100%;
+  min-height: 0;
+}
+
+.sidebar-body,
+.rec-body {
+  height: 100%;
+  min-height: 0;
+  opacity: 1;
+  transition: opacity calc(var(--chat-shell-duration) * 0.72) var(--chat-shell-ease);
+}
+
+.sidebar.sidebar--collapsed .sidebar-body,
+.rec-panel.rec-panel--collapsed .rec-body {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sidebar-rail-layer,
+.rec-rail-layer {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity calc(var(--chat-shell-duration) * 0.85) var(--chat-shell-ease);
+}
+
+.sidebar.sidebar--collapsed .sidebar-rail-layer,
+.rec-panel.rec-panel--collapsed .rec-rail-layer {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .sidebar-collapse-tab {
   transition:
-    background 0.18s ease,
-    border-color 0.18s ease,
-    color 0.18s ease,
-    box-shadow 0.18s ease,
+    background 0.2s var(--chat-shell-ease),
+    border-color 0.2s var(--chat-shell-ease),
+    color 0.2s var(--chat-shell-ease),
+    box-shadow 0.2s var(--chat-shell-ease),
     transform var(--chat-shell-duration) var(--chat-shell-ease),
-    opacity 0.28s var(--chat-shell-ease);
-}
-
-.chat-body {
-  transition: padding var(--chat-shell-duration) var(--chat-shell-ease);
+    opacity var(--chat-shell-duration) var(--chat-shell-ease) !important;
 }
 
 .chat-body > .main {
-  transition:
-    max-width var(--chat-shell-duration) var(--chat-shell-ease),
-    opacity 0.2s ease;
+  transition: max-width var(--chat-shell-duration) var(--chat-shell-ease);
 }
 
 .chat-float-tools {
   transition: right var(--chat-shell-duration) var(--chat-shell-ease) !important;
 }
 
-.chat-app:has(.rec-panel--planet:not(.rec-panel--collapsed)) .chat-float-tools {
-  right: calc(320px + 10px);
+.chat-app:has(.rec-panel:not(.rec-panel--collapsed)) .chat-float-tools {
+  right: calc(var(--rec-width-expanded) + 10px);
 }
 
-.chat-app:has(.rec-panel--collapsed) .chat-float-tools,
-.chat-app:has(.rec-panel--planet.rec-panel--collapsed) .chat-float-tools {
-  right: calc(40px + 10px);
+.chat-app:has(.rec-panel.rec-panel--collapsed) .chat-float-tools {
+  right: calc(var(--rec-width-collapsed) + 10px);
 }
 
-.chat-app--tablet :deep(.sidebar) {
+.chat-app--tablet :deep(.sidebar),
+.chat-app--tablet :deep(.rec-panel) {
   transition:
     width var(--chat-shell-duration) var(--chat-shell-ease),
-    background-color var(--chat-shell-duration) var(--chat-shell-ease),
-    border-color var(--chat-shell-duration) var(--chat-shell-ease);
+    flex-basis var(--chat-shell-duration) var(--chat-shell-ease) !important;
 }
 
 .chat-app--mobile :deep(.sidebar) {
@@ -60,10 +132,10 @@
 @media (prefers-reduced-motion: reduce) {
   .sidebar,
   .rec-panel,
-  .sidebar .sidebar-body,
-  .sidebar .sidebar-rail-layer,
-  .rec-panel .rec-body,
-  .rec-panel .rec-rail-layer,
+  .sidebar-body,
+  .rec-body,
+  .sidebar-rail-layer,
+  .rec-rail-layer,
   .sidebar-collapse-tab,
   .chat-body > .main,
   .chat-float-tools {

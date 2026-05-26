@@ -9,6 +9,7 @@ import router from "./router";
 import { i18n } from "./i18n";
 import { useUiPreferencesStore } from "./stores/uiPreferences";
 import "./styles/global.css";
+import "./styles/markdown-prose.css";
 
 const app = createApp(App);
 const pinia = createPinia();

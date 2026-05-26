@@ -21,6 +21,13 @@
         </el-alert>
         <starter-prompt-pool-table scene="FOLLOW_UP" :rows="followUpRows" :loading="loading" @changed="reload" />
       </el-tab-pane>
+      <el-tab-pane :label="t('views.chatStarter.tabWebKnowledge')" name="webKnowledge">
+        <web-search-knowledge-table
+          :rows="webKnowledgeRows"
+          :loading="loading"
+          @changed="reload"
+        />
+      </el-tab-pane>
       <el-tab-pane :label="t('views.chatStarter.tabDailyHot')" name="dailyHot">
         <el-card shadow="never" class="panel">
           <template #header>
@@ -67,6 +74,7 @@ import {
   type StarterPromptRow,
 } from "@/api/chatStarterPrompt";
 import StarterPromptPoolTable from "./components/StarterPromptPoolTable.vue";
+import WebSearchKnowledgeTable from "./components/WebSearchKnowledgeTable.vue";
 
 const { t } = useI18n();
 const router = useRouter();
@@ -80,6 +88,9 @@ const batches = ref<DailyBatchRow[]>([]);
 
 const emptyRows = computed(() => allPrompts.value.filter((r) => r.scene === "EMPTY"));
 const followUpRows = computed(() => allPrompts.value.filter((r) => r.scene === "FOLLOW_UP"));
+const webKnowledgeRows = computed(() =>
+  allPrompts.value.filter((r) => r.scene === "WEB_KNOWLEDGE" && r.source === "WEB_SEARCH_GROUNDING"),
+);
 
 function batchStatusType(status: string) {
   if (status === "OK") return "success";

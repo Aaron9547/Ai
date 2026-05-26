@@ -22,13 +22,15 @@ public class KnowledgePlanetScheduledTaskSynchronizer {
                 TenantScheduledExecutorCode.KNOWLEDGE_PLANET_WEEKLY_COMPUTE,
                 "知识星球·周一方案计算",
                 planetRuntime.weeklyComputeCron(tenantId),
-                enabled);
+                enabled,
+                true);
         upsert(
                 tenantId,
                 TenantScheduledExecutorCode.KNOWLEDGE_PLANET_WEEKLY_EMAIL,
                 "知识星球·周一邮件推送",
                 planetRuntime.weeklyEmailCron(tenantId),
-                enabled);
+                enabled,
+                true);
     }
 
     private void upsert(
@@ -36,7 +38,8 @@ public class KnowledgePlanetScheduledTaskSynchronizer {
             TenantScheduledExecutorCode executor,
             String name,
             String cron,
-            boolean enabled) {
+            boolean enabled,
+            boolean preserveCronOnUpdate) {
         List<TenantScheduledTask> existing = scheduledTaskRepository.listByTenant(tenantId, executor);
         if (existing.isEmpty()) {
             TenantScheduledTask row = new TenantScheduledTask();
@@ -52,7 +55,9 @@ public class KnowledgePlanetScheduledTaskSynchronizer {
         TenantScheduledTask row = existing.getFirst();
         row.setName(name);
         row.setEnabled(enabled ? 1 : 0);
-        row.setCronExpression(cron);
+        if (!preserveCronOnUpdate || row.getCronExpression() == null || row.getCronExpression().isBlank()) {
+            row.setCronExpression(cron);
+        }
         scheduledTaskRepository.updateById(row);
     }
 }

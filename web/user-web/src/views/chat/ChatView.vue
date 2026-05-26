@@ -64,13 +64,22 @@
       </header>
       <header v-if="messages.length > 0 && !isMobile" class="thread-head">
         <div class="thread-head-row">
-          <h1 v-if="!isMobile" class="thread-title">{{ activeTitle }}</h1>
+          <div class="thread-head-leading">
+            <h1 v-if="!isMobile" class="thread-title">{{ activeTitle }}</h1>
+            <div
+              v-if="sessionTokenTotal > 0"
+              class="thread-token-badge"
+              :class="{ 'thread-token-badge--pulse': tokenBadgePulse }"
+            >
+              <span class="thread-token-badge-label">{{ t("chat.tokenLine") }}</span>
+              <span class="thread-token-badge-val" v-html="t('chat.tokenLineValue', { n: sessionTokenTotal })" />
+            </div>
+          </div>
           <LocaleThemeToolbar v-if="!isMobile" compact class="thread-head-tools" />
         </div>
-        <p class="thread-hint">
-          {{ isMobile ? t("chat.threadHintMobile") : t("chat.threadHintDesktop") }}
+        <p v-if="isMobile" class="thread-hint">
+          {{ t("chat.threadHintMobile") }}
         </p>
-        <p v-if="sessionTokenTotal > 0" class="thread-tokens" v-html="t('chat.tokenLine', { n: sessionTokenTotal })" />
       </header>
 
       <div v-if="messages.length === 0" class="chat-hero">
@@ -132,6 +141,11 @@
                   }"
                   @click="onReasoningBarClick(m)"
                 >
+                  <span
+                    v-if="showReasoningBarLiveLabel(m)"
+                    class="reasoning-bar-dot"
+                    aria-hidden="true"
+                  />
                   <span class="reasoning-bar-title">{{ t("chat.reasoningTitle") }}</span>
                   <span v-if="showReasoningBarLiveLabel(m)" class="reasoning-live">{{ intentReasoningLiveLabel(m) }}</span>
                   <span v-else class="reasoning-meta">
@@ -183,10 +197,11 @@
                         aria-hidden="true"
                       />
                     </p>
-                    <div
+                    <MarkdownRichContent
                       v-if="m.reasoning && m.reasoning.length"
                       class="reasoning-md bubble-md"
-                      v-html="reasoningMdStreamingHtml(m)"
+                      :source="m.reasoning ?? ''"
+                      :streaming="showReasoningStreamCursor(m)"
                     />
                     <p
                       v-else-if="reasoningIntentOrchestrationHint(m)"
@@ -288,15 +303,13 @@
                         <el-icon class="wf-spin" :size="18"><Loading /></el-icon>
                         <span>{{ t("chat.wfProcessing") }}</span>
                       </div>
-                      <template v-else-if="seg.status === 'streaming'">
-                        <div
-                          class="wf-body-md bubble-md bubble-md--streaming"
-                          v-html="workflowSegmentStreamingHtml(seg)"
-                        />
-                      </template>
-                      <template v-else-if="seg.status === 'done'">
-                        <div class="wf-body-md bubble-md" v-html="workflowSegmentRichHtml(seg.text || '')" />
-                      </template>
+                      <MarkdownRichContent
+                        v-else-if="seg.status === 'streaming' || seg.status === 'done'"
+                        class="wf-body-md bubble-md"
+                        :class="{ 'bubble-md--streaming': seg.status === 'streaming' }"
+                        :source="workflowSegmentMarkdownSource(seg.text || '')"
+                        :streaming="seg.status === 'streaming'"
+                      />
                       <div v-else class="wf-loading">
                         <el-icon class="wf-spin" :size="18"><Loading /></el-icon>
                         <span>{{ t("chat.wfWaiting") }}</span>
@@ -309,10 +322,11 @@
                 v-if="m.role === 'assistant' && showAssistantMdBubble(m)"
                 class="bubble-inner bubble-inner--assistant"
               >
-                <div
+                <MarkdownRichContent
                   class="bubble-md"
                   :class="{ 'bubble-md--streaming': m.streaming }"
-                  v-html="assistantMdStreamingHtml(m)"
+                  :source="m.content ?? ''"
+                  :streaming="!!m.streaming"
                 />
               </div>
               <div v-else-if="m.role === 'user'" class="bubble-inner bubble-inner--user">
@@ -621,170 +635,166 @@
       </el-scrollbar>
 
       <footer class="composer">
-        <div
-          class="composer-surface"
-          :class="{ 'composer-surface--drag': dragOver }"
-          @dragenter.prevent="onDragEnter"
-          @dragleave.prevent="onDragLeave"
-          @dragover.prevent
-          @drop.prevent="onDropFiles"
-        >
-          <div v-if="pendingFiles.length" class="attach-strip">
-            <div class="attach-chips">
-              <span v-for="(f, i) in pendingFiles" :key="`${i}-${f.name}-${f.size}`" class="attach-chip">
-                <el-icon class="attach-chip-icon"><Document /></el-icon>
-                <span class="attach-chip-name" :title="f.name">{{ truncateName(f.name) }}</span>
-                <button
-                  type="button"
-                  class="attach-chip-remove"
-                  :aria-label="t('chat.removeAttachAria')"
-                  @click="removePending(i)"
-                >
-                  <span aria-hidden="true">×</span>
-                </button>
-              </span>
-            </div>
-            <span class="attach-limit">{{ pendingFiles.length }}/{{ maxAttachmentsLimit }}</span>
-          </div>
-          <div class="composer-input-wrap">
-            <button
-              v-show="input.length > 0"
-              type="button"
-              class="input-clear-btn"
-              :title="t('chat.clearInput')"
-              :aria-label="t('chat.clearInputAria')"
-              @click="input = ''"
+        <div class="composer-dock">
+          <div class="composer-island-wrap">
+            <div
+              class="composer-surface"
+              :class="{ 'composer-surface--drag': dragOver }"
+              @dragenter.prevent="onDragEnter"
+              @dragleave.prevent="onDragLeave"
+              @dragover.prevent
+              @drop.prevent="onDropFiles"
             >
-              {{ t("chat.clearInput") }}
-            </button>
-            <el-input
-              v-model="input"
-              type="textarea"
-              :autosize="{ minRows: 2, maxRows: 8 }"
-              resize="none"
-              maxlength="8000"
-              :placeholder="t('chat.inputPlaceholder')"
-              class="composer-input"
-              @keydown="onKeydown"
-            />
-          </div>
-          <div class="composer-footer-bar">
-            <div class="footer-bar-primary">
-              <el-upload
-                class="footer-upload"
-                :disabled="attachDisabled"
-                :auto-upload="false"
-                :show-file-list="false"
-                multiple
-                :on-change="onFilePick"
-              >
-                <template #trigger>
-                  <button
-                    type="button"
-                    class="footer-icon-btn"
-                    :disabled="attachDisabled"
-                    :title="t('chat.addAttachTitle')"
-                    :aria-label="t('chat.addAttachAria')"
-                  >
-                    <el-icon :size="22"><Paperclip /></el-icon>
-                  </button>
-                </template>
-              </el-upload>
-              <span class="footer-vdiv" aria-hidden="true" />
-              <el-select
-                v-model="modelAlias"
-                class="model-pill-select"
-                :placeholder="t('chat.selectModel')"
-                size="default"
-                :disabled="!models.length"
-                :style="{ width: modelSelectWidthPx + 'px' }"
-                popper-class="model-select-dropdown"
-              >
-                <el-option
-                  v-for="m in models"
-                  :key="m.alias"
-                  :label="modelOptionLabel(m)"
-                  :value="m.alias"
-                  :disabled="m.quotaExhausted === true"
-                />
-              </el-select>
+              <div v-if="pendingFiles.length" class="attach-strip">
+                <div class="attach-chips">
+                  <span v-for="(f, i) in pendingFiles" :key="`${i}-${f.name}-${f.size}`" class="attach-chip">
+                    <el-icon class="attach-chip-icon"><Document /></el-icon>
+                    <span class="attach-chip-name" :title="f.name">{{ truncateName(f.name) }}</span>
+                    <button
+                      type="button"
+                      class="attach-chip-remove"
+                      :aria-label="t('chat.removeAttachAria')"
+                      @click="removePending(i)"
+                    >
+                      <span aria-hidden="true">×</span>
+                    </button>
+                  </span>
+                </div>
+                <span class="attach-limit">{{ pendingFiles.length }}/{{ maxAttachmentsLimit }}</span>
+              </div>
+
               <div
-                v-if="currentModel?.supportsThinking || webSearchAllowed"
-                class="deep-think-group"
+                v-if="currentModel?.supportsThinking || webSearchAllowed || models.length"
+                class="composer-toolbar"
               >
-                <div v-if="currentModel?.supportsThinking" class="deep-think-wrap">
+                <div class="composer-mode-tabs">
                   <button
+                    v-if="currentModel?.supportsThinking"
                     type="button"
-                    class="deep-think-toggle deep-think-toggle--think"
-                    :class="{ 'deep-think-toggle--on': thinkingEnabled }"
+                    class="composer-mode-pill composer-mode-pill--think"
+                    :class="{ 'composer-mode-pill--on': thinkingEnabled }"
                     :aria-pressed="thinkingEnabled"
                     :aria-label="t('chat.thinkingAria')"
                     @click="thinkingEnabled = !thinkingEnabled"
                   >
-                    <span
-                      class="deep-think-toggle-dot"
-                      :class="{ 'deep-think-toggle-dot--live': thinkingEnabled }"
-                      aria-hidden="true"
-                    />
                     {{ t("chat.thinking") }}
                   </button>
-                </div>
-                <div v-if="webSearchAllowed" class="deep-think-wrap">
                   <button
+                    v-if="webSearchAllowed"
                     type="button"
-                    class="deep-think-toggle deep-think-toggle--web"
-                    :class="{ 'deep-think-toggle--on': webSearchEnabled }"
+                    class="composer-mode-pill composer-mode-pill--web"
+                    :class="{ 'composer-mode-pill--on': webSearchEnabled }"
                     :aria-pressed="webSearchEnabled"
                     :aria-label="t('chat.webSearchAria')"
                     @click="webSearchEnabled = !webSearchEnabled"
                   >
-                    <span
-                      class="deep-think-toggle-dot"
-                      :class="{ 'deep-think-toggle-dot--live': webSearchEnabled }"
-                      aria-hidden="true"
-                    />
                     {{ t("chat.webSearch") }}
+                  </button>
+                </div>
+                <el-select
+                  v-if="models.length"
+                  v-model="modelAlias"
+                  class="model-pill-select composer-model-select"
+                  :placeholder="t('chat.selectModel')"
+                  size="default"
+                  :disabled="!models.length"
+                  :style="{ width: modelSelectWidthPx + 'px' }"
+                  popper-class="model-select-dropdown"
+                >
+                  <el-option
+                    v-for="m in models"
+                    :key="m.alias"
+                    :label="modelOptionLabel(m)"
+                    :value="m.alias"
+                    :disabled="m.quotaExhausted === true"
+                  />
+                </el-select>
+              </div>
+
+              <div class="composer-input-row">
+                <el-upload
+                  class="composer-attach-upload"
+                  :disabled="attachDisabled"
+                  :auto-upload="false"
+                  :show-file-list="false"
+                  multiple
+                  :on-change="onFilePick"
+                >
+                  <template #trigger>
+                    <button
+                      type="button"
+                      class="composer-attach-btn"
+                      :disabled="attachDisabled"
+                      :title="t('chat.addAttachTitle')"
+                      :aria-label="t('chat.addAttachAria')"
+                    >
+                      <el-icon :size="20"><Paperclip /></el-icon>
+                    </button>
+                  </template>
+                </el-upload>
+                <div class="composer-input-wrap">
+                  <el-input
+                    v-model="input"
+                    type="textarea"
+                    :autosize="{ minRows: 1, maxRows: 8 }"
+                    resize="none"
+                    maxlength="8000"
+                    :placeholder="t('chat.inputPlaceholder')"
+                    class="composer-input"
+                    @keydown="onKeydown"
+                  />
+                </div>
+                <div class="composer-send-col">
+                  <button
+                    v-show="input.length > 0"
+                    type="button"
+                    class="input-clear-btn"
+                    :title="t('chat.clearInput')"
+                    :aria-label="t('chat.clearInputAria')"
+                    @click="input = ''"
+                  >
+                    <el-icon :size="16" aria-hidden="true"><CircleClose /></el-icon>
+                  </button>
+                  <button
+                    type="button"
+                    class="send-fab"
+                    :class="{
+                      'send-fab--active': canSend || sending,
+                      'send-fab--stop': sending,
+                    }"
+                    :disabled="!sending && !canSend"
+                    :aria-label="sending ? t('chat.ariaStop') : t('chat.ariaSend')"
+                    @click="sending ? stopGenerating() : send()"
+                  >
+                    <span class="send-fab__icon" aria-hidden="true">
+                      <svg
+                        v-if="sending"
+                        class="send-fab__svg"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                      >
+                        <rect x="7" y="7" width="10" height="10" rx="2" />
+                      </svg>
+                      <svg
+                        v-else
+                        class="send-fab__svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M12 5v14M12 5l-5.5 5.5M12 5l5.5 5.5" />
+                      </svg>
+                    </span>
                   </button>
                 </div>
               </div>
             </div>
-            <button
-              type="button"
-              class="send-fab"
-              :class="{
-                'send-fab--active': canSend || sending,
-                'send-fab--stop': sending,
-              }"
-              :disabled="!sending && !canSend"
-              :aria-label="sending ? t('chat.ariaStop') : t('chat.ariaSend')"
-              @click="sending ? stopGenerating() : send()"
-            >
-              <span class="send-fab__icon" aria-hidden="true">
-                <svg
-                  v-if="sending"
-                  class="send-fab__svg"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                >
-                  <rect x="7" y="7" width="10" height="10" rx="2" />
-                </svg>
-                <svg
-                  v-else
-                  class="send-fab__svg"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2.25"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="M12 5v14M12 5l-5.5 5.5M12 5l5.5 5.5" />
-                </svg>
-              </span>
-            </button>
           </div>
+          <p class="composer-note">{{ t("chat.composerNote") }}</p>
         </div>
-        <p class="composer-note">{{ t("chat.composerNote") }}</p>
       </footer>
     </section>
 
@@ -817,6 +827,7 @@ import {
   ArrowRight,
   ArrowUp,
   ChatLineRound,
+  CircleClose,
   CircleCheck,
   Document,
   DocumentCopy,
@@ -848,7 +859,8 @@ import { ChatStreamHttpError } from "../../api/chat";
 import { AI_USER_ACCESS_TOKEN_KEY, clearUserSession } from "../../plugins/http";
 import { TENANT_CODE_PATH_RE } from "../../utils/outboundTenant";
 import { copyTextToUserClipboard } from "../../utils/clipboard";
-import { renderMarkdownToSafeHtml, renderStreamingMarkdownToSafeHtml } from "../../utils/renderMarkdown";
+import MarkdownRichContent from "../../components/chat/MarkdownRichContent.vue";
+import { renderMarkdownToSafeHtml } from "../../utils/renderMarkdown";
 import { apiRequestErrorMessage } from "../../utils/apiRequestErrorMessage";
 import { isAbortError } from "../../utils/isAbortError";
 import { toChatResponseLocale } from "../../utils/chatResponseLocale";
@@ -1394,31 +1406,9 @@ async function syncThreadAfterStream(conversationId: number): Promise<void> {
   }
 }
 
-function assistantMdHtml(text: string): string {
-  return renderMarkdownToSafeHtml(text ?? "");
-}
-
-/** 流式阶段行内光标（紧跟最后一个字符，不用 markdown 块级闭合标签注入） */
-const STREAM_CURSOR_HTML = '<span class="stream-md-cursor" aria-hidden="true"></span>';
-
-function assistantMdStreamingHtml(m: Msg): string {
-  if (m.role !== "assistant" || !m.streaming) {
-    return assistantMdHtml(m.content);
-  }
-  return renderStreamingMarkdownToSafeHtml(m.content, STREAM_CURSOR_HTML);
-}
-
 /** 思考分片仍在输出且主回复未开始时，展示思考区流式光标 */
 function showReasoningStreamCursor(m: Msg): boolean {
   return !!(m.reasoningStreaming && !m.content.trim().length);
-}
-
-function reasoningMdStreamingHtml(m: Msg): string {
-  const text = m.reasoning ?? "";
-  if (!showReasoningStreamCursor(m)) {
-    return assistantMdHtml(text);
-  }
-  return renderStreamingMarkdownToSafeHtml(text, STREAM_CURSOR_HTML);
 }
 
 /** 顶栏「思考中 / 联网查询中」：主回复已出现后改为折叠提示 */
@@ -1429,15 +1419,8 @@ function showReasoningBarLiveLabel(m: Msg): boolean {
   return !!(m.reasoningStreaming || m.webSearchPhase === "searching");
 }
 
-function workflowSegmentStreamingHtml(seg: { status: string; text?: string | null }): string {
-  if (seg.status === "streaming") {
-    return renderStreamingMarkdownToSafeHtml(seg.text || "", STREAM_CURSOR_HTML);
-  }
-  return workflowSegmentRichHtml(seg.text || "");
-}
-
 /** 工作流阶段正文：Markdown 默认会合并单换行；将换行转为硬换行并兼容字面量 \\n。 */
-function workflowSegmentRichHtml(text: string): string {
+function workflowSegmentMarkdownSource(text: string): string {
   let s = text ?? "";
   s = s.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   s = s.replace(/\\n/g, "\n");
@@ -1447,7 +1430,7 @@ function workflowSegmentRichHtml(text: string): string {
       .map((line) => line.trimEnd())
       .join("  \n");
   }
-  return renderMarkdownToSafeHtml(s);
+  return s;
 }
 
 function assistantThinkingShellEnabled(): boolean {
@@ -1583,6 +1566,7 @@ function beginAssistantStreamTiming(m: Msg, webSearchTurn: boolean) {
 
 const streamElapsedTick = ref(0);
 let streamElapsedTimer: ReturnType<typeof setInterval> | null = null;
+let tokenPulseTimer = 0;
 
 function ensureStreamElapsedTicker() {
   if (streamElapsedTimer != null) return;
@@ -2225,6 +2209,7 @@ onBeforeUnmount(() => {
     cancelAnimationFrame(scrollBottomRaf);
     scrollBottomRaf = null;
   }
+  window.clearTimeout(tokenPulseTimer);
   document.documentElement.style.removeProperty("--chat-model-dd-min");
 });
 
@@ -2237,6 +2222,17 @@ const activeTitle = computed(() => {
 const sessionTokenTotal = computed(() =>
   messages.value.reduce((s, m) => s + (m.usage?.totalTokens ?? 0), 0),
 );
+
+const tokenBadgePulse = ref(false);
+watch(sessionTokenTotal, (n, prev) => {
+  if (n > prev && prev > 0) {
+    tokenBadgePulse.value = true;
+    window.clearTimeout(tokenPulseTimer);
+    tokenPulseTimer = window.setTimeout(() => {
+      tokenBadgePulse.value = false;
+    }, 680);
+  }
+});
 
 async function scrollToBottom() {
   await nextTick();
@@ -2874,8 +2870,8 @@ async function send() {
 .main > .chat-hero,
 .main > .messages-scroll,
 .main > .composer {
-  width: 70%;
-  max-width: 70%;
+  width: 100%;
+  max-width: 56rem;
   box-sizing: border-box;
 }
 
@@ -2896,10 +2892,15 @@ async function send() {
 .thread-head {
   width: 100%;
   box-sizing: border-box;
-  padding: 14px 24px 12px;
-  border-bottom: 1px solid var(--chat-border, #e8edf2);
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--chat-border, rgba(0, 0, 0, 0.08));
   flex-shrink: 0;
-  background: var(--chat-bg-main, #fafafa);
+  background: var(--nexus-glass, rgba(255, 255, 255, 0.72));
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  position: sticky;
+  top: 0;
+  z-index: 20;
 }
 
 .thread-head-row {
@@ -2910,46 +2911,87 @@ async function send() {
   min-width: 0;
 }
 
+.thread-head-leading {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .thread-head-tools {
   flex-shrink: 0;
 }
 
 .thread-title {
   margin: 0;
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--chat-text-primary, #202020);
+  max-width: 100%;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--chat-text-primary, #0f172a);
   letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .thread-hint {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: #6e6e6e;
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--chat-text-muted, #94a3b8);
   line-height: 1.45;
-  max-width: 54rem;
 }
 
-.thread-tokens {
-  margin: 8px 0 0;
-  font-size: 12px;
-  color: #52525b;
-  line-height: 1.45;
-  max-width: 54rem;
+.thread-token-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--chat-border, rgba(0, 0, 0, 0.08));
+  background: var(--chat-bg-muted, #f8fafc);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--chat-text-muted, #94a3b8);
+  transition: opacity 0.35s var(--nexus-ease, cubic-bezier(0.4, 0, 0.2, 1));
 }
 
-.thread-tokens strong {
-  color: #18181b;
-  font-weight: 600;
+.thread-token-badge-label {
+  opacity: 0.85;
+}
+
+.thread-token-badge-val :deep(strong) {
+  color: var(--nexus-brand-600, #4f46e5);
+  font-weight: 700;
+}
+
+.thread-token-badge--pulse {
+  animation: token-badge-fade 0.68s var(--nexus-ease, cubic-bezier(0.4, 0, 0.2, 1));
+}
+
+@keyframes token-badge-fade {
+  0% {
+    opacity: 0.55;
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+  }
 }
 
 .reasoning {
-  margin-bottom: 10px;
-  border-radius: 10px;
-  background: #f4f4f5;
-  border: 1px solid #e4e4e7;
+  margin-bottom: 12px;
+  border-radius: var(--nexus-radius-md, 24px);
+  background: var(--chat-bg-reasoning, rgba(248, 250, 252, 0.6));
+  border: 1px solid var(--chat-border-subtle, rgba(0, 0, 0, 0.06));
+  box-shadow: var(--nexus-shadow-card, 0 10px 15px -3px rgba(0, 0, 0, 0.04));
   overflow: hidden;
   min-width: 0;
   max-width: 100%;
@@ -2983,16 +3025,39 @@ async function send() {
   background: transparent;
 }
 
+.reasoning-bar-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--nexus-reasoning, #f59e0b);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.55);
+  animation: reasoning-dot-breathe 1.6s ease-in-out infinite;
+}
+
+@keyframes reasoning-dot-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
 .reasoning-bar-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: #52525b;
-  letter-spacing: 0.02em;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--chat-text-muted, #94a3b8);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
 .reasoning-live {
-  font-size: 12px;
-  color: #19c37d;
+  font-size: 11px;
+  color: var(--nexus-knowledge, #10b981);
   font-weight: 500;
   animation: reasoning-live-pulse 1.6s ease-in-out infinite;
 }
@@ -3029,19 +3094,22 @@ async function send() {
 
 .reasoning-body {
   padding-top: 8px;
-  font-size: 13px;
-  color: #52525b;
-  line-height: 1.55;
+  font-size: 11px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  color: var(--chat-text-secondary, #475569);
+  line-height: 1.65;
   word-break: break-word;
   overflow-wrap: anywhere;
   min-width: 0;
   max-width: 100%;
+  opacity: 0.88;
 }
 
 .reasoning-md {
-  font-size: 13px;
-  color: #52525b;
-  line-height: 1.55;
+  font-size: 11px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  color: var(--chat-text-secondary, #475569);
+  line-height: 1.65;
 }
 
 .reasoning-intent-hint {
@@ -3406,7 +3474,8 @@ async function send() {
   font-size: 1.05em;
 }
 
-.bubble-md :deep(pre) {
+/* 围栏代码由 CodeBlock 渲染；勿用旧灰色 pre 覆盖 .ai-code-block */
+.bubble-md :deep(.markdown-rich__html pre) {
   margin: 0.5em 0;
   padding: 10px 12px;
   border-radius: 8px;
@@ -3432,7 +3501,7 @@ async function send() {
   color: var(--chat-text-body, #18181b);
 }
 
-.bubble-md :deep(pre code) {
+.bubble-md :deep(.markdown-rich__html pre code) {
   padding: 0;
   background: transparent;
   color: inherit;
@@ -3528,8 +3597,8 @@ async function send() {
 .empty-brand {
   width: 52px;
   height: 52px;
-  border-radius: 14px;
-  background: linear-gradient(145deg, #5b9fd4 0%, #3d7ab8 100%);
+  border-radius: 12px;
+  background: linear-gradient(145deg, var(--nexus-brand-600, #4f46e5) 0%, var(--nexus-violet-600, #7c3aed) 100%);
   color: #fff;
   font-weight: 700;
   font-size: 17px;
@@ -3537,7 +3606,7 @@ async function send() {
   align-items: center;
   justify-content: center;
   margin-bottom: 16px;
-  box-shadow: 0 8px 20px rgba(61, 122, 184, 0.18);
+  box-shadow: 0 8px 24px rgba(79, 70, 229, 0.22);
 }
 
 .empty-welcome {
@@ -3689,13 +3758,18 @@ async function send() {
 }
 
 .avatar--assistant {
-  background: #19c37d;
+  background: linear-gradient(145deg, var(--nexus-brand-600, #4f46e5) 0%, var(--nexus-violet-600, #7c3aed) 100%);
   color: #fff;
+  border-radius: 10px;
+  box-shadow: 0 8px 20px rgba(79, 70, 229, 0.22);
 }
 
 .avatar--user {
-  background: #202020;
-  color: #fff;
+  background: var(--chat-avatar-user-bg, #0f172a);
+  color: var(--chat-avatar-user-fg, #fff);
+  border: 1px solid var(--chat-avatar-user-border, transparent);
+  border-radius: 10px;
+  box-shadow: var(--chat-avatar-user-shadow, 0 6px 16px rgba(15, 23, 42, 0.12));
 }
 
 .bubble {
@@ -3742,25 +3816,37 @@ async function send() {
 
 .bubble-inner {
   position: relative;
-  padding: 12px 16px;
-  border-radius: 18px;
+  padding: 20px 24px;
+  border-radius: var(--nexus-radius-md, 24px);
   font-size: 15px;
-  line-height: 1.6;
+  line-height: 1.75;
   white-space: pre-wrap;
   word-break: break-word;
-  color: #18181b;
+  color: var(--chat-text-body, #1e293b);
 }
 
 .bubble-row.assistant .bubble-inner {
-  background: #f4f4f4;
-  border: none;
-  border-bottom-left-radius: 4px;
+  background: var(--chat-bg-bubble, #ffffff);
+  border: 1px solid var(--chat-border-subtle, rgba(0, 0, 0, 0.06));
+  box-shadow: var(--nexus-shadow-card, 0 10px 15px -3px rgba(0, 0, 0, 0.04));
 }
 
 .bubble-row.user .bubble-inner {
-  background: #f4f4f4;
-  border: none;
-  border-bottom-right-radius: 4px;
+  padding: 12px 20px;
+  background: #f1f5f9;
+  border: 1px solid rgba(0, 0, 0, 0.03);
+  color: #334155;
+  border-radius: 20px 20px 4px 20px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.bubble-row.user .user-msg-copy-btn {
+  color: #94a3b8;
+}
+
+.bubble-row.user .user-msg-copy-btn:hover {
+  background: rgba(15, 23, 42, 0.06);
+  color: #475569;
 }
 
 .bubble-inner--user {
@@ -4006,115 +4092,200 @@ async function send() {
 
 .composer {
   flex-shrink: 0;
-  padding: 8px 24px 16px;
-  background: var(--chat-bg-main, #fafafa);
+  padding: 0;
+  background: transparent;
   border-top: none;
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+}
+
+.composer-dock {
+  padding: 24px 24px 16px;
+  background: linear-gradient(
+    to top,
+    var(--chat-bg-main, #ffffff) 0%,
+    color-mix(in srgb, var(--chat-bg-main, #ffffff) 92%, transparent) 55%,
+    transparent 100%
+  );
+}
+
+.composer-island-wrap {
+  width: 100%;
+  max-width: 48rem;
+  margin: 0 auto;
 }
 
 .composer-surface {
   width: 100%;
-  max-width: 100%;
-  margin: 0 auto;
-  border-radius: 16px;
-  border: 1px solid var(--chat-border-subtle, #e4e8ed);
-  background: var(--chat-bg-elevated, #fff);
-  box-shadow: 0 1px 4px rgba(61, 122, 184, 0.06);
+  padding: 8px;
+  border-radius: 28px;
+  border: 1px solid var(--chat-border, rgba(0, 0, 0, 0.06));
+  background: var(--chat-bg-input, #ffffff);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.18);
   overflow: hidden;
   transition:
-    border-color 0.15s,
-    box-shadow 0.15s;
+    border-color 0.3s var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1)),
+    box-shadow 0.3s var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1));
 }
 
 .composer-surface:focus-within {
-  border-color: #9ec5e8;
-  box-shadow: 0 0 0 3px rgba(91, 159, 212, 0.14);
+  border-color: rgba(79, 70, 229, 0.28);
+  box-shadow:
+    0 25px 50px -12px rgba(0, 0, 0, 0.18),
+    0 0 0 4px rgba(99, 102, 241, 0.1);
 }
 
 .composer-surface--drag {
-  border-color: #19c37d;
-  background: #f6fffb;
-  box-shadow: 0 0 0 2px rgba(25, 195, 125, 0.2);
+  border-color: var(--nexus-knowledge, #10b981);
+  background: #f0fdf4;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.18);
 }
 
-.composer-input-wrap {
-  position: relative;
-  padding: 14px 16px 6px;
-}
-
-.input-clear-btn {
-  position: absolute;
-  right: 12px;
-  top: 10px;
-  z-index: 2;
-  padding: 4px 10px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  font-size: 12px;
-  color: #909399;
-  cursor: pointer;
-  transition: color 0.12s, background 0.12s;
-}
-
-.input-clear-btn:hover {
-  color: #202020;
-  background: #f0f0f0;
-}
-
-.composer-footer-bar {
+.composer-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 6px 10px 10px 8px;
-  border-top: 1px solid #f0f0f0;
+  gap: 10px;
+  padding: 6px 12px 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--chat-border-subtle, rgba(0, 0, 0, 0.06));
 }
 
-.footer-bar-primary {
+.composer-mode-tabs {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  gap: 8px;
   min-width: 0;
-  flex: 1;
-  gap: 0;
 }
 
-.footer-upload :deep(.el-upload) {
+.composer-mode-pill {
+  margin: 0;
+  padding: 6px 14px;
+  min-height: 32px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #94a3b8;
+  cursor: pointer;
+  transition:
+    color 0.2s var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1)),
+    background 0.2s var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1)),
+    border-color 0.2s var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1)),
+    transform 0.15s var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1));
+}
+
+.composer-mode-pill:hover:not(.composer-mode-pill--on) {
+  background: #f8fafc;
+  color: #64748b;
+}
+
+.composer-mode-pill--on {
+  color: var(--nexus-brand-600, #4f46e5);
+  background: #eef2ff;
+  border-color: rgba(99, 102, 241, 0.22);
+}
+
+.composer-mode-pill:active {
+  transform: scale(0.95);
+}
+
+.composer-model-select {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.composer-input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 4px 12px 6px;
+}
+
+.composer-attach-upload :deep(.el-upload) {
   display: flex;
 }
 
-.footer-icon-btn {
-  display: flex;
+.composer-attach-btn {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
+  margin: 0;
   padding: 0;
   border: none;
   border-radius: 50%;
   background: transparent;
-  color: #3f3f46;
+  color: #cbd5e1;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  flex-shrink: 0;
+  transition:
+    color 0.2s var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1)),
+    background 0.2s var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1)),
+    transform 0.15s var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1));
 }
 
-.footer-icon-btn:hover:not(:disabled) {
-  background: rgba(91, 159, 212, 0.1);
-  color: #3d6f94;
-  transform: translateY(-1px) scale(1.03);
+.composer-attach-btn:hover:not(:disabled) {
+  color: var(--nexus-brand-600, #4f46e5);
+  background: rgba(79, 70, 229, 0.06);
 }
 
-.footer-icon-btn:disabled {
+.composer-attach-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.composer-attach-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
 
-.footer-vdiv {
-  width: 1px;
-  height: 18px;
-  margin: 0 8px 0 4px;
-  flex-shrink: 0;
-  background: var(--chat-border-subtle, #e8e8e8);
+.composer-input-wrap {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 0;
 }
+
+.composer-send-col {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+  padding-bottom: 2px;
+}
+
+.input-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--chat-text-muted, #94a3b8);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    color 0.15s var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1)),
+    background 0.15s var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1)),
+    transform 0.12s var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1));
+}
+
+.input-clear-btn:hover {
+  color: var(--chat-text-secondary, #475569);
+  background: var(--chat-hover, rgba(79, 70, 229, 0.08));
+}
+
+.input-clear-btn:active {
+  transform: scale(0.92);
+}
+
 
 .model-pill-select {
   flex: 0 0 auto;
@@ -4255,16 +4426,16 @@ async function send() {
 }
 
 .deep-think-toggle--on {
-  color: #18181b;
-  font-weight: 500;
-  background: #fff;
-  border-color: #202020;
+  color: var(--nexus-brand-600, #4f46e5);
+  font-weight: 600;
+  background: #eef2ff;
+  border-color: rgba(79, 70, 229, 0.22);
 }
 
 .deep-think-toggle--on:hover {
-  color: #18181b;
-  background: #fff;
-  border-color: #202020;
+  color: var(--nexus-brand-700, #4338ca);
+  background: #e0e7ff;
+  border-color: rgba(79, 70, 229, 0.32);
 }
 
 @keyframes composer-toggle-dot-breathe {
@@ -4608,7 +4779,7 @@ async function send() {
 }
 
 .send-fab {
-  --send-fab-size: 38px;
+  --send-fab-size: 40px;
   width: var(--send-fab-size);
   height: var(--send-fab-size);
   min-width: var(--send-fab-size);
@@ -4618,7 +4789,7 @@ async function send() {
   align-items: center;
   justify-content: center;
   border: 1px solid var(--chat-send-border, var(--chat-model-select-border, #e4e8ed));
-  border-radius: 12px;
+  border-radius: 999px;
   cursor: pointer;
   color: var(--chat-send-icon-idle, var(--chat-text-muted, #71717a));
   background: var(--chat-send-bg-idle, var(--chat-model-select-bg, #f0f3f6));
@@ -4647,9 +4818,9 @@ async function send() {
 
 .send-fab--active {
   color: var(--chat-send-icon-active, #ffffff);
-  background: var(--chat-send-bg-active, var(--chat-text-primary, #202020));
-  border-color: var(--chat-send-bg-active, var(--chat-text-primary, #202020));
-  box-shadow: var(--chat-send-shadow-active, 0 1px 2px rgba(0, 0, 0, 0.06));
+  background: var(--chat-send-bg-active, linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%));
+  border-color: transparent;
+  box-shadow: var(--chat-send-shadow-active, 0 8px 20px rgba(79, 70, 229, 0.28));
 }
 
 .send-fab--active.send-fab--stop {
@@ -4660,8 +4831,9 @@ async function send() {
 }
 
 .send-fab--active:hover:not(:disabled):not(.send-fab--stop) {
-  background: var(--chat-send-bg-active-hover, #333333);
-  border-color: var(--chat-send-bg-active-hover, #333333);
+  background: var(--chat-send-bg-active-hover, #4338ca);
+  border-color: transparent;
+  transform: scale(1.04);
 }
 
 .send-fab--active.send-fab--stop:hover:not(:disabled) {
@@ -4768,13 +4940,14 @@ async function send() {
 .composer-input :deep(.el-textarea__inner) {
   box-shadow: none !important;
   border: none !important;
-  padding: 8px 52px 8px 12px;
-  min-height: 48px;
-  font-size: 15px;
-  line-height: 1.5;
+  padding: 6px 0;
+  min-height: 40px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.55;
   background: transparent;
-  color: #2c3e50;
-  border-radius: 12px;
+  color: var(--chat-text-primary, #0f172a);
+  border-radius: 0;
 }
 
 .composer-input-wrap:focus-within :deep(.el-textarea__inner) {
@@ -4782,17 +4955,23 @@ async function send() {
 }
 
 .composer-input :deep(.el-textarea__inner::placeholder) {
-  color: #c0c4cc;
+  color: #cbd5e1;
+  font-weight: 400;
 }
 
 .composer-note {
   width: 100%;
-  margin: 8px auto 0;
-  padding: 0 16px;
+  max-width: 48rem;
+  margin: 12px auto 0;
+  padding: 0;
   box-sizing: border-box;
-  font-size: 11px;
-  color: #a0adb8;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--chat-text-muted, #94a3b8);
   text-align: center;
+  opacity: 0.4;
 }
 
 /* —— 响应式：平板收窄侧栏；手机侧栏抽屉 + 顶栏 + 安全区 + 100dvh —— */
@@ -5045,33 +5224,34 @@ async function send() {
   font-size: 14px;
 }
 
-.chat-app--mobile .composer {
-  flex-shrink: 0;
-  padding: 6px 10px max(12px, env(safe-area-inset-bottom));
+.chat-app--mobile .composer-dock {
+  padding: 12px 10px max(12px, env(safe-area-inset-bottom));
   padding-left: max(10px, env(safe-area-inset-left));
   padding-right: max(10px, env(safe-area-inset-right));
 }
 
+.chat-app--mobile .composer-island-wrap {
+  max-width: none;
+}
+
 .chat-app--mobile .composer-note {
   margin-bottom: 0;
+  max-width: none;
 }
 
 .chat-app--mobile .composer-surface {
-  max-width: none;
-  border-radius: 16px;
+  border-radius: 20px;
 }
 
-.chat-app--mobile .composer-footer-bar {
+.chat-app--mobile .composer-toolbar {
   flex-wrap: wrap;
   row-gap: 8px;
 }
 
-.chat-app--mobile .footer-bar-primary {
-  gap: 6px;
-}
-
-.chat-app--mobile .footer-vmotion {
-  margin: 0;
+.chat-app--mobile .composer-model-select {
+  width: 100% !important;
+  max-width: 100%;
+  margin-left: 0;
 }
 
 .chat-app--mobile .model-pill-select {

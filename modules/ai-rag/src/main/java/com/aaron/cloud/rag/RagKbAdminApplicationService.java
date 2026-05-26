@@ -1,8 +1,6 @@
 package com.aaron.cloud.rag;
 
-import com.aaron.cloud.common.api.dto.RagCitationHit;
 import com.aaron.cloud.common.api.ports.RagEmbeddingPort;
-import com.aaron.cloud.common.api.ports.RagQueryPort;
 import com.aaron.cloud.rag.runtime.TenantRagRuntimeResolver;
 import com.aaron.cloud.common.api.enums.llm.LlmModelKind;
 import com.aaron.cloud.common.api.enums.llm.LlmModelStatus;
@@ -89,7 +87,6 @@ public class RagKbAdminApplicationService {
     private final SecUserAccountRepository secUserAccountRepository;
     private final RagVectorInfrastructure ragVectorInfrastructure;
     private final RagKbVectorModelGuard ragKbVectorModelGuard;
-    private final RagQueryPort ragQueryPort;
     private final RagQueryBridgeService ragQueryBridgeService;
     private final TenantRagRuntimeResolver tenantRagRuntimeResolver;
     private final SysTenantRepository sysTenantRepository;
@@ -147,20 +144,24 @@ public class RagKbAdminApplicationService {
         if (topK > 20) {
             topK = 20;
         }
-        RagRetrievalTestDiagnostics diag =
-                ragQueryBridgeService.buildRetrievalTestDiagnostics(tenantId, kbId, query, topK);
-        List<RagCitationHit> hits = ragQueryPort.searchCitationHits(tenantId, kbId, query, topK);
-        List<String> snippets = ragQueryPort.searchSnippets(tenantId, kbId, query, topK);
+        RagRetrievalTestSearchResult search =
+                ragQueryBridgeService.searchForRetrievalTest(tenantId, kbId, query, topK);
+        RagRetrievalTestDiagnostics diag = search.diagnostics();
         List<RagRetrievalTestHitView> hitViews =
-                hits.stream()
+                search.hits().stream()
                         .map(
-                                h ->
-                                        new RagRetrievalTestHitView(
-                                                h.documentId(),
-                                                h.documentTitle(),
-                                                h.chunkId(),
-                                                h.chunkSeq(),
-                                                h.contentPreview()))
+                                h -> {
+                                    var c = h.citation();
+                                    return new RagRetrievalTestHitView(
+                                            c.documentId(),
+                                            c.documentTitle(),
+                                            c.chunkId(),
+                                            c.chunkSeq(),
+                                            c.contentPreview(),
+                                            h.source() == null ? null : h.source().getCode(),
+                                            h.vectorSimilarity(),
+                                            h.keywordScore());
+                                })
                         .toList();
         return new RagRetrievalTestView(
                 tenantRagRuntimeResolver.resolveRetrievalModeStorage(tenantId),
@@ -168,10 +169,11 @@ public class RagKbAdminApplicationService {
                 topK,
                 hitViews.size(),
                 hitViews,
-                snippets,
+                search.snippets(),
                 diag.milvusRecallCount(),
                 diag.afterCosineThresholdCount(),
                 diag.minCosineThreshold(),
+                diag.maxMilvusSimilarity(),
                 diag.hint());
     }
 

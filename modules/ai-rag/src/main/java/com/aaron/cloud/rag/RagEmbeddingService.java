@@ -241,6 +241,7 @@ public class RagEmbeddingService {
         for (int i = 0; i < dim; i++) {
             out[i] = floats.get(i);
         }
+        RagQueryEmbeddingHasher.normalizeL2InPlace(out);
         return out;
     }
 

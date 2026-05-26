@@ -397,20 +397,15 @@ onMounted(() => {
 }
 
 .kc-hub-body {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
+  display: block;
   min-width: 0;
 }
 
 .kc-hub-main {
-  flex: 1;
   min-width: 0;
-  min-height: 0;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
+  gap: 12px;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 14px;
   background: var(--el-bg-color);
@@ -452,27 +447,6 @@ onMounted(() => {
 
 .chat-rag-switch {
   margin-right: 4px;
-}
-
-.kc-hub-main :deep(.kb-dmx-root) {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.kc-hub-main :deep(.docs-matrix) {
-  flex: 1;
-  min-height: 0;
-  align-items: stretch;
-  overflow: hidden;
-}
-
-.kc-hub-main :deep(.docs-main) {
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-  overflow: hidden;
 }
 
 @media (max-width: 720px) {

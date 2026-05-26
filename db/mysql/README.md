@@ -38,3 +38,5 @@
 - **`migrate_0_1_252_sec_user_account_email_index_fix.sql`**：若主脚本前半段已跑、**`uk_sec_user_email`** 报 **Error 1071** 时执行一次（收紧 **`email`** 后补建唯一索引）。
 - **`migrate_0_1_253_gw_api_endpoint_spec.sql`**：表 **`gw_api_endpoint`** 增加 **`request_spec_json`**、**`response_spec_json`**（对接文档入参/出参；与 **`pom.xml` `0.1.253-SNAPSHOT`** 一致）；**已建库须手工执行**；新库以 **`schema_v1.sql`** 为准可跳过。
 - **`migrate_0_1_254_knowledge_planet.sql`**：表 **`ten_user_knowledge_node`**、**`ten_user_weekly_insight`**、定时任务 **`KNOWLEDGE_PLANET_WEEKLY_*`**、Open API **`/open/v1/chat/knowledge-planet/*`**（与 **`pom.xml` `0.1.254-SNAPSHOT`** 一致）；**已建库须手工执行**；新库以 **`schema_v1.sql`** + **`gw_api_endpoint_catalog_inserts.sql`** 为准可跳过。
+- **`migrate_0_1_255_web_search_knowledge.sql`**：**`chat_starter_prompt`** 增 **`query_normalized`**、**`query_norm_hash`**、**`grounding_json`**、**`hit_count`** 及 **`idx_csp_web_knowledge_lookup`**（**无**问句 UNIQUE，避免 utf8mb4 768 限制与阻断资讯多版本）；**已建库须手工执行**；新库以 **`schema_v1.sql`** 为准可跳过。
+- **`migrate_0_1_255_web_search_knowledge_index_fix.sql`**：补 **`query_norm_hash`** + 索引（曾执行含 **`uk_csp_tenant_web_norm`** 旧脚本失败或缺列时按需执行）。

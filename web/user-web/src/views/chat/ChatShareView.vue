@@ -39,7 +39,11 @@
               ]"
             >
               <div v-if="m.role === 'user'" class="share-page-user-text">{{ m.content }}</div>
-              <div v-else v-html="assistantHtml(m)" />
+              <MarkdownRichContent
+                v-else
+                class="bubble-md"
+                :source="assistantMarkdownSource(m)"
+              />
             </div>
           </div>
         </article>
@@ -56,7 +60,7 @@ import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
 import * as chatApi from "../../api/chat";
-import { renderMarkdownToSafeHtml } from "../../utils/renderMarkdown";
+import MarkdownRichContent from "../../components/chat/MarkdownRichContent.vue";
 
 const { t } = useI18n();
 const route = useRoute();
@@ -89,14 +93,14 @@ const messageBlocks = computed(() => {
   return blocks;
 });
 
-function assistantHtml(m: chatApi.ChatHistoryMessage): string {
+function assistantMarkdownSource(m: chatApi.ChatHistoryMessage): string {
   if (m.workflowSegments?.length) {
     return m.workflowSegments
       .filter((s) => s.status !== "loading")
-      .map((s) => renderMarkdownToSafeHtml(s.text || ""))
-      .join("");
+      .map((s) => s.text || "")
+      .join("\n\n");
   }
-  return renderMarkdownToSafeHtml(m.content ?? "");
+  return m.content ?? "";
 }
 
 onMounted(async () => {

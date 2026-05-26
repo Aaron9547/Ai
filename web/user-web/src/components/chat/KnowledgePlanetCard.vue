@@ -1,20 +1,22 @@
 <template>
-  <button
-    v-if="summary?.enabled"
-    ref="cardRef"
-    type="button"
-    class="planet-portal-wrapper"
-    :class="{ 'planet-portal-wrapper--pulse': pulseActive }"
-    :aria-label="t('knowledgePlanet.enter')"
-    @click="onOpen"
-    @mouseenter="sceneHandle?.setHoverBoost(true)"
-    @mouseleave="sceneHandle?.setHoverBoost(false)"
-  >
-    <div class="portal-atmosphere" aria-hidden="true" />
-    <div ref="canvasHost" class="planet-portal-canvas" />
-    <div class="portal-content" aria-hidden="true">
+  <section v-if="summary?.enabled" class="planet-section">
+    <header class="planet-section-head">
+      <h3 class="planet-section-title">{{ t("knowledgePlanet.sectionTitle") }}</h3>
+    </header>
+    <button
+      ref="cardRef"
+      type="button"
+      class="planet-portal-wrapper"
+      :class="{ 'planet-portal-wrapper--pulse': pulseActive }"
+      :aria-label="t('knowledgePlanet.enter')"
+      @click="onOpen"
+      @mouseenter="sceneHandle?.setHoverBoost(true)"
+      @mouseleave="sceneHandle?.setHoverBoost(false)"
+    >
+      <div class="portal-atmosphere" aria-hidden="true" />
+      <div ref="canvasHost" class="planet-portal-canvas" />
+      <div class="portal-content" aria-hidden="true">
       <div class="portal-content-top">
-        <span class="portal-tag">{{ t("knowledgePlanet.portalTag") }}</span>
         <span class="portal-sync">
           <span class="portal-sync-dot" />
           {{ t("knowledgePlanet.syncLive") }}
@@ -35,7 +37,8 @@
       </div>
       <span class="portal-enter-hint">{{ t("knowledgePlanet.enterHint") }}</span>
     </div>
-  </button>
+    </button>
+  </section>
 </template>
 
 <script setup lang="ts">
@@ -107,19 +110,52 @@ watch(
 </script>
 
 <style scoped>
+.planet-section {
+  flex-shrink: 0;
+  margin-bottom: 4px;
+}
+
+.planet-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.planet-section-title {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--rec-text-title, #94a3b8);
+}
+
 .planet-portal-wrapper {
   position: relative;
-  flex-shrink: 0;
   display: block;
   width: 100%;
-  height: 300px;
-  margin: 0 0 16px;
+  aspect-ratio: 1;
+  max-height: 280px;
+  margin: 0;
   padding: 0;
-  border: none;
-  background: transparent;
+  border: 1px solid var(--rec-border, rgba(0, 0, 0, 0.08));
+  border-radius: 32px;
+  background: var(--rec-card-bg, #ffffff);
   cursor: pointer;
-  overflow: visible;
+  overflow: hidden;
   text-align: center;
+  box-shadow: var(--nexus-shadow-card, 0 10px 15px -3px rgba(0, 0, 0, 0.04));
+  transition:
+    border-color 0.25s var(--nexus-ease, cubic-bezier(0.4, 0, 0.2, 1)),
+    box-shadow 0.25s var(--nexus-ease, cubic-bezier(0.4, 0, 0.2, 1));
+}
+
+.planet-portal-wrapper:hover {
+  border-color: rgba(79, 70, 229, 0.28);
+  box-shadow:
+    var(--nexus-shadow-card, 0 10px 15px -3px rgba(0, 0, 0, 0.04)),
+    0 0 0 1px rgba(99, 102, 241, 0.08);
 }
 
 .planet-portal-wrapper--pulse .portal-atmosphere {
@@ -133,7 +169,7 @@ watch(
   width: 220px;
   height: 220px;
   transform: translate(-50%, -50%);
-  background: radial-gradient(circle, rgba(0, 242, 254, 0.18) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.16) 0%, transparent 70%);
   filter: blur(36px);
   z-index: 0;
   pointer-events: none;
@@ -181,8 +217,8 @@ watch(
 .portal-tag {
   font-size: 9px;
   letter-spacing: 0.22em;
-  color: rgba(0, 242, 254, 0.65);
-  font-family: ui-monospace, monospace;
+  color: rgba(79, 70, 229, 0.75);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
 }
 
 .portal-sync {
@@ -197,8 +233,8 @@ watch(
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: #00f2fe;
-  box-shadow: 0 0 8px #00f2fe;
+  background: var(--nexus-knowledge, #10b981);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.65);
 }
 
 .portal-main {
@@ -230,24 +266,30 @@ watch(
 }
 
 .portal-stat-val {
-  font-size: 20px;
-  font-weight: 300;
-  color: var(--rec-text-title, #2c3e50);
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--rec-text-title, #0f172a);
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+
+.portal-stat:nth-child(2) .portal-stat-val {
+  color: var(--nexus-brand-600, #4f46e5);
 }
 
 .portal-stat-lbl {
-  font-size: 9px;
-  color: rgba(0, 242, 254, 0.55);
-  letter-spacing: 0.08em;
+  font-size: 8px;
+  font-weight: 700;
+  color: var(--rec-text-muted, #94a3b8);
+  letter-spacing: 0.06em;
 }
 
 .portal-enter-hint {
   font-size: 9px;
-  letter-spacing: 0.2em;
-  color: rgba(0, 242, 254, 0.55);
-  font-family: ui-monospace, monospace;
+  letter-spacing: 0.12em;
+  color: var(--nexus-brand-600, #4f46e5);
+  font-weight: 600;
 }
 
 @keyframes atmosphere-breath {

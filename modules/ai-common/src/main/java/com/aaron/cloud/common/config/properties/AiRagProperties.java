@@ -41,6 +41,11 @@ public class AiRagProperties {
         /** 与对端默认 {@code elasticsearch.index-name} 一致（rag_agent_documents）。 */
         private String indexName = "rag_agent_documents";
         /**
+         * 混合检索 ES 分支 BM25 最低分（{@code min_score}）；低于此分的命中丢弃。默认 {@code 1.0}，环境变量
+         * {@code AI_RAG_ES_MIN_SCORE}。
+         */
+        private double minScore = 1.0d;
+        /**
          * 非空时对 ES 使用 HTTP Basic；否则使用 {@link Config} 内 {@code userName}/{@code password}（与 RAG 侧
          * {@code elasticsearch.username} 覆盖 {@code config.userName} 一致）。
          */

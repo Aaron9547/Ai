@@ -85,6 +85,7 @@ function sourceLabel(src: string) {
     MANUAL: t("views.chatStarter.sourceManual"),
     HOT_TOPIC_DAILY: t("views.chatStarter.sourceHot"),
     LLM_FOLLOW_UP: t("views.chatStarter.sourceLlm"),
+    WEB_SEARCH_GROUNDING: t("views.chatStarter.sourceWebKnowledge"),
   };
   return map[src] ?? src;
 }

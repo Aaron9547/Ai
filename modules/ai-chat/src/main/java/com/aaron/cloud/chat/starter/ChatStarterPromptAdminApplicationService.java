@@ -10,6 +10,9 @@ import com.aaron.cloud.common.chat.entity.ChatStarterDailyBatch;
 import com.aaron.cloud.common.chat.entity.ChatStarterPrompt;
 import com.aaron.cloud.common.security.AdminQueryTenantSupport;
 import com.aaron.cloud.common.time.BeijingTime;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -24,6 +27,7 @@ public class ChatStarterPromptAdminApplicationService {
     private final ChatStarterDailyBatchRepository dailyBatchRepository;
     private final ChatStarterDailyHotTopicService dailyHotTopicService;
     private final ChatStarterPromptJsonSupport jsonSupport;
+    private final ObjectMapper objectMapper;
 
     public List<ChatStarterPromptDtos.PromptRow> listPrompts() {
         long tid = AdminQueryTenantSupport.resolveIntentAdminDataTenantId(null);
@@ -101,6 +105,20 @@ public class ChatStarterPromptAdminApplicationService {
         promptRepository.deleteById(id, tid);
     }
 
+    /** 联网知识库：查看某条沉淀的摘要与引用列表（scene=WEB_KNOWLEDGE）。 */
+    public ChatStarterPromptDtos.WebGroundingDetailView getWebGroundingDetail(long id) {
+        long tid = AdminQueryTenantSupport.resolveIntentAdminDataTenantId(null);
+        ChatStarterPrompt row =
+                promptRepository
+                        .findById(id, tid)
+                        .orElseThrow(
+                                () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "推荐问题不存在"));
+        if (row.getScene() != ChatStarterPromptScene.WEB_KNOWLEDGE) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "非联网知识库条目");
+        }
+        return parseWebGroundingDetail(row);
+    }
+
     public List<ChatStarterPromptDtos.DailyBatchRow> listDailyBatches(int limit) {
         long tid = AdminQueryTenantSupport.resolveIntentAdminDataTenantId(null);
         return dailyBatchRepository.listByTenant(tid, limit).stream().map(this::toBatchRow).toList();
@@ -125,6 +143,7 @@ public class ChatStarterPromptAdminApplicationService {
     }
 
     private ChatStarterPromptDtos.PromptRow toRow(ChatStarterPrompt p) {
+        String grounding = p.getGroundingJson();
         return new ChatStarterPromptDtos.PromptRow(
                 p.getId(),
                 p.getScene() == null ? null : p.getScene().getCode(),
@@ -138,8 +157,80 @@ public class ChatStarterPromptAdminApplicationService {
                 p.getValidUntil(),
                 p.getSortOrder() == null ? 0 : p.getSortOrder(),
                 p.getBatchKey(),
+                p.getQueryNormalized(),
+                p.getHitCount() == null ? 0 : p.getHitCount(),
+                referenceCount(grounding),
+                groundingSummaryPreview(grounding),
                 BeijingTime.formatDisplay(p.getCreatedAt()),
                 BeijingTime.formatDisplay(p.getUpdatedAt()));
+    }
+
+    private int referenceCount(String groundingJson) {
+        if (groundingJson == null || groundingJson.isBlank()) {
+            return 0;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(groundingJson);
+            JsonNode refs = root.path("references");
+            return refs.isArray() ? refs.size() : 0;
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    private String groundingSummaryPreview(String groundingJson) {
+        if (groundingJson == null || groundingJson.isBlank()) {
+            return "";
+        }
+        try {
+            String s = objectMapper.readTree(groundingJson).path("summaryText").asText("").trim();
+            if (s.length() <= 120) {
+                return s;
+            }
+            return s.substring(0, 120) + "…";
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private ChatStarterPromptDtos.WebGroundingDetailView parseWebGroundingDetail(ChatStarterPrompt row) {
+        String grounding = row.getGroundingJson();
+        String summary = "";
+        List<ChatStarterPromptDtos.WebGroundingReferenceItem> refs = new ArrayList<>();
+        if (grounding != null && !grounding.isBlank()) {
+            try {
+                JsonNode root = objectMapper.readTree(grounding);
+                summary = root.path("summaryText").asText("").trim();
+                JsonNode arr = root.path("references");
+                if (arr.isArray()) {
+                    for (JsonNode n : arr) {
+                        refs.add(
+                                new ChatStarterPromptDtos.WebGroundingReferenceItem(
+                                        n.path("title").asText(""),
+                                        n.path("url").asText(""),
+                                        n.path("snippet").asText(""),
+                                        textOrNull(n, "siteName"),
+                                        textOrNull(n, "publishTime")));
+                    }
+                }
+            } catch (Exception ignored) {
+                // leave empty
+            }
+        }
+        return new ChatStarterPromptDtos.WebGroundingDetailView(
+                row.getPromptText() == null ? "" : row.getPromptText(),
+                row.getQueryNormalized() == null ? "" : row.getQueryNormalized(),
+                summary,
+                List.copyOf(refs));
+    }
+
+    private static String textOrNull(JsonNode n, String field) {
+        JsonNode v = n.path(field);
+        if (v.isMissingNode() || v.isNull()) {
+            return null;
+        }
+        String s = v.asText();
+        return s.isBlank() ? null : s;
     }
 
     private ChatStarterPromptDtos.DailyBatchRow toBatchRow(ChatStarterDailyBatch b) {

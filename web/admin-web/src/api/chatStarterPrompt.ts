@@ -13,6 +13,10 @@ export interface StarterPromptRow {
   validUntil?: string | null;
   sortOrder: number;
   batchKey?: string | null;
+  queryNormalized?: string | null;
+  hitCount?: number;
+  referenceCount?: number;
+  groundingSummaryPreview?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
 }
@@ -65,6 +69,28 @@ export async function updateStarterPrompt(
 
 export async function deleteStarterPrompt(id: number) {
   await http.delete(`/api/v1/admin/chat/starter-prompts/${id}`);
+}
+
+export interface WebGroundingReferenceItem {
+  title: string;
+  url: string;
+  snippet: string;
+  siteName?: string | null;
+  publishTime?: string | null;
+}
+
+export interface WebGroundingDetailView {
+  promptText: string;
+  queryNormalized: string;
+  summaryText: string;
+  references: WebGroundingReferenceItem[];
+}
+
+export async function getWebGroundingDetail(id: number) {
+  const { data } = await http.get<WebGroundingDetailView>(
+    `/api/v1/admin/chat/starter-prompts/${id}/web-grounding`,
+  );
+  return data;
 }
 
 export async function listDailyBatches(limit = 14) {

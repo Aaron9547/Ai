@@ -19,15 +19,21 @@
     "html-to-image": "^1.11.13",
     "markdown-it": "^14.1.1",
     "pinia": "^2.3.0",
+    "prismjs": "^1.30.0",
     "three": "^0.172.0",
     "vue": "^3.5.13",
     "vue-i18n": "^9.14.5",
     "vue-router": "^4.5.0"
   },
+  "optionalDependencies": {
+    "@rollup/rollup-win32-x64-msvc": "^4.40.0",
+    "@rollup/rollup-win32-ia32-msvc": "^4.40.0"
+  },
   "devDependencies": {
     "@types/dompurify": "^3.0.5",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^22.15.3",
+    "@types/prismjs": "^1.26.6",
     "@types/three": "^0.172.0",
     "@vitejs/plugin-vue": "^6.0.6",
     "typescript": "~5.7.2",

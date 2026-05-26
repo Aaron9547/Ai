@@ -172,15 +172,17 @@ public enum TenantRuntimeSettingKey {
             SettingValueKind.BOOLEAN,
             "false",
             false),
+    /** 迁移/默认种子；Cron 以管理端「定时任务」为准，Shell 不再编辑。 */
     KNOWLEDGE_PLANET_WEEKLY_COMPUTE_CRON(
             "KNOWLEDGE_PLANET_WEEKLY_COMPUTE_CRON",
-            "知识星球周一方案计算（cron）",
+            "知识星球周一方案计算（cron，定时任务专管）",
             SettingValueKind.STRING,
             "0 0 3 * * MON",
             false),
+    /** 迁移/默认种子；Cron 以管理端「定时任务」为准，Shell 不再编辑。 */
     KNOWLEDGE_PLANET_WEEKLY_EMAIL_CRON(
             "KNOWLEDGE_PLANET_WEEKLY_EMAIL_CRON",
-            "知识星球周一邮件推送（cron）",
+            "知识星球周一邮件推送（cron，定时任务专管）",
             SettingValueKind.STRING,
             "0 0 9 * * MON",
             false),

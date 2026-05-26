@@ -31,6 +31,18 @@ public class ChatStarterPrompt {
     private Integer sortOrder;
     private String batchKey;
 
+    /** 规范化问句，用于展示与语义匹配。 */
+    private String queryNormalized;
+
+    /** {@code SHA256(规范化问句)} 十六进制，用于索引与多版本分组（避免 utf8mb4 长字段唯一索引）。 */
+    private String queryNormHash;
+
+    /** 联网检索摘要与引用 JSON（scene=WEB_KNOWLEDGE 时使用）。 */
+    private String groundingJson;
+
+    /** 本地知识库命中次数（外呼前命中时递增）。 */
+    private Integer hitCount;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 

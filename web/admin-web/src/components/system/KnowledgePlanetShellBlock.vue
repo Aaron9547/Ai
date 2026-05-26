@@ -13,14 +13,23 @@
       <el-form-item :label="t('admin.shell.knowledgePlanet.enabled')">
         <el-switch v-model="form.enabled" />
       </el-form-item>
-      <el-form-item :label="t('admin.shell.knowledgePlanet.computeCron')">
-        <el-input v-model="form.weeklyComputeCron" placeholder="0 0 3 * * MON" />
-      </el-form-item>
-      <el-form-item :label="t('admin.shell.knowledgePlanet.emailCron')">
-        <el-input v-model="form.weeklyEmailCron" placeholder="0 0 9 * * MON" />
-      </el-form-item>
       <el-form-item :label="t('admin.shell.knowledgePlanet.digestModel')">
-        <el-input v-model="form.digestModelId" clearable :placeholder="t('admin.shell.knowledgePlanet.digestModelPh')" />
+        <el-select
+          v-model="digestModelId"
+          class="kp-digest-model-select"
+          clearable
+          filterable
+          :loading="loadingLanguageModels"
+          :placeholder="t('admin.shell.knowledgePlanet.digestModelPh')"
+        >
+          <el-option
+            v-for="opt in digestModelSelectOptions"
+            :key="opt.id"
+            :label="opt.label"
+            :value="opt.id"
+            :disabled="opt.disabled"
+          />
+        </el-select>
       </el-form-item>
       <el-form-item :label="t('admin.shell.knowledgePlanet.emailEnabled')">
         <el-switch v-model="form.emailEnabled" />
@@ -65,21 +74,24 @@
 
 <script setup lang="ts">
 import { ElMessage } from "element-plus";
-import { reactive, ref } from "vue";
+import { computed, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
+import { listLlmModels, type LlmModelAdminView } from "@/api/models";
 import {
   getTenantShellConfig,
   putTenantShellKnowledgePlanet,
   type TenantShellKnowledgePlanetPutBody,
 } from "@/api/tenantShellConfig";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const saving = ref(false);
+const loadingLanguageModels = ref(false);
 const emailDeliveryReady = ref(false);
+const languageModels = ref<LlmModelAdminView[]>([]);
+const digestModelId = ref<number | undefined>(undefined);
+
 const form = reactive<TenantShellKnowledgePlanetPutBody>({
   enabled: false,
-  weeklyComputeCron: "0 0 3 * * MON",
-  weeklyEmailCron: "0 0 9 * * MON",
   digestModelId: "",
   emailEnabled: true,
   reuseRegisterSmtp: true,
@@ -93,11 +105,46 @@ const form = reactive<TenantShellKnowledgePlanetPutBody>({
   emailBodyTemplate: "",
 });
 
+const digestModelSelectOptions = computed(() => {
+  void locale.value;
+  const selected = digestModelId.value;
+  const rows = languageModels.value
+    .slice()
+    .sort((a, b) => {
+      if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+      const ao = a.sortOrder ?? 0;
+      const bo = b.sortOrder ?? 0;
+      if (ao !== bo) return ao - bo;
+      return a.id - b.id;
+    })
+    .map((m) => ({
+      id: m.id,
+      label: `${m.displayName} (${m.alias}) · ${m.openaiModelId}`,
+      disabled: !m.enabled && m.id !== selected,
+    }));
+  if (typeof selected === "number" && !rows.some((r) => r.id === selected)) {
+    return [
+      {
+        id: selected,
+        label: t("admin.shell.knowledgePlanet.digestModelOrphan", { id: selected }),
+        disabled: false,
+      },
+      ...rows,
+    ];
+  }
+  return rows;
+});
+
+function parseDigestModelId(raw: string | undefined | null): number | undefined {
+  if (raw == null || raw.trim() === "") return undefined;
+  const n = Number(raw.trim());
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
 function applyFromConfig(kp: NonNullable<Awaited<ReturnType<typeof getTenantShellConfig>>["knowledgePlanet"]>): void {
   form.enabled = kp.enabled;
-  form.weeklyComputeCron = kp.weeklyComputeCron;
-  form.weeklyEmailCron = kp.weeklyEmailCron;
-  form.digestModelId = kp.digestModelId ?? "";
+  digestModelId.value = parseDigestModelId(kp.digestModelId);
+  form.digestModelId = digestModelId.value != null ? String(digestModelId.value) : "";
   form.emailEnabled = kp.emailEnabled;
   form.reuseRegisterSmtp = kp.reuseRegisterSmtp;
   emailDeliveryReady.value = kp.emailDeliveryReady;
@@ -111,8 +158,17 @@ function applyFromConfig(kp: NonNullable<Awaited<ReturnType<typeof getTenantShel
   form.emailPassword = "";
 }
 
+async function loadLanguageModels(): Promise<void> {
+  loadingLanguageModels.value = true;
+  try {
+    languageModels.value = await listLlmModels({ modelKind: "LANGUAGE" });
+  } finally {
+    loadingLanguageModels.value = false;
+  }
+}
+
 async function load(): Promise<void> {
-  const c = await getTenantShellConfig();
+  const [c] = await Promise.all([getTenantShellConfig(), loadLanguageModels()]);
   if (c.knowledgePlanet) applyFromConfig(c.knowledgePlanet);
 }
 
@@ -121,6 +177,7 @@ void load();
 async function save(): Promise<void> {
   saving.value = true;
   try {
+    form.digestModelId = digestModelId.value != null ? String(digestModelId.value) : "";
     const next = await putTenantShellKnowledgePlanet({ ...form });
     if (next.knowledgePlanet) applyFromConfig(next.knowledgePlanet);
     ElMessage.success(t("admin.shell.knowledgePlanet.saveOk"));
@@ -129,3 +186,10 @@ async function save(): Promise<void> {
   }
 }
 </script>
+
+<style scoped>
+.kp-digest-model-select {
+  width: 100%;
+  max-width: 480px;
+}
+</style>

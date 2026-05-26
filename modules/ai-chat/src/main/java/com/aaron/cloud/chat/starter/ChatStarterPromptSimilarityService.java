@@ -86,11 +86,15 @@ public class ChatStarterPromptSimilarityService {
 
     private List<ChatStarterPrompt> loadPool(long tenantId) {
         var today = BeijingTime.today();
-        List<ChatStarterPrompt> follow =
+        List<ChatStarterPrompt> merged = new ArrayList<>();
+        merged.addAll(
                 promptRepository.listEnabledForRuntime(
-                        tenantId, ChatStarterPromptScene.FOLLOW_UP, today);
-        if (!follow.isEmpty()) {
-            return follow;
+                        tenantId, ChatStarterPromptScene.FOLLOW_UP, today));
+        merged.addAll(
+                promptRepository.listEnabledForRuntime(
+                        tenantId, ChatStarterPromptScene.WEB_KNOWLEDGE, today));
+        if (!merged.isEmpty()) {
+            return merged;
         }
         return promptRepository.listEnabledForRuntime(
                 tenantId, ChatStarterPromptScene.EMPTY, today);

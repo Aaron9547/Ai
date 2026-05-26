@@ -30,7 +30,7 @@ const arrow = computed(() => (props.side === "left" ? ArrowLeft : ArrowRight));
 .sidebar-collapse-tab {
   position: absolute;
   top: 50%;
-  z-index: 30;
+  z-index: 40;
   width: 14px;
   height: 110px;
   padding: 0;
@@ -48,15 +48,15 @@ const arrow = computed(() => (props.side === "left" ? ArrowLeft : ArrowRight));
     border-color 0.18s ease,
     color 0.18s ease,
     box-shadow 0.18s ease,
-    transform var(--chat-shell-duration, 0.34s) var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1)),
-    opacity 0.22s ease;
+    transform var(--chat-shell-duration, 0.3s) var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1)),
+    opacity var(--chat-shell-duration, 0.3s) var(--chat-shell-ease, cubic-bezier(0.4, 0, 0.2, 1));
 }
 
 .sidebar-collapse-tab:hover {
-  background: #eef4fa;
-  border-color: #c5d9eb;
-  color: #3d6f94;
-  box-shadow: 0 3px 14px rgba(91, 159, 212, 0.16);
+  background: var(--sidebar-tab-hover-bg, rgba(79, 70, 229, 0.08));
+  border-color: var(--sidebar-tab-hover-border, rgba(99, 102, 241, 0.28));
+  color: var(--sidebar-tab-hover-color, var(--nexus-brand-600, #4f46e5));
+  box-shadow: var(--sidebar-tab-hover-shadow, 0 3px 14px rgba(79, 70, 229, 0.14));
 }
 
 .sidebar-collapse-tab:focus-visible {

@@ -193,6 +193,7 @@ INSERT IGNORE INTO gw_api_endpoint (path_pattern, http_method, display_name, rem
 ('/api/v1/admin/chat/starter-prompts/*', 'DELETE', '管理端删除推荐问题', NULL, 1, 4373, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/chat/starter-prompts/refresh-daily-hot', 'POST', '管理端手动刷新每日热点', NULL, 1, 4374, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/chat/starter-prompts/daily-batches', 'GET', '管理端每日热点批次', NULL, 1, 4375, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/chat/starter-prompts/*/web-grounding', 'GET', '管理端联网知识库引用明细', NULL, 1, 4376, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 -- ---------- API：RAG 租户 API ----------
 ('/api/v1/rag/kbs', 'GET', '租户 RAG 知识库列表', NULL, 1, 4300, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/rag/kbs', 'POST', '租户创建知识库', NULL, 1, 4310, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),

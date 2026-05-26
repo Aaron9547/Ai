@@ -156,6 +156,8 @@ ai:
         password: ${AI_RAG_ES_PASSWORD:admin123}
       # 与对端 elasticsearch.index-name 默认一致；独立测试索引可设 AI_RAG_ES_INDEX
       index-name: ${AI_RAG_ES_INDEX:rag_agent_documents}
+      # 混合检索 ES 分支 min_score（BM25）；过低易混入无关词条命中
+      min-score: ${AI_RAG_ES_MIN_SCORE:1.0}
     # 租户通用定时任务（Spring @Scheduled + 表 ten_scheduled_task；网页爬取等为 task_type 枚举扩展）。
     scheduled-tasks:
       poll-cron: ${AI_RAG_SCHEDULED_TASKS_POLL_CRON:0 * * * * *}

@@ -6,4 +6,5 @@ public record RagRetrievalTestDiagnostics(
         int afterCosineThresholdCount,
         int resolvableChunkCount,
         double minCosineThreshold,
+        double maxMilvusSimilarity,
         String hint) {}

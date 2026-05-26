@@ -6,7 +6,7 @@
     <parent>
         <groupId>com.aaron.cloud</groupId>
         <artifactId>Ai</artifactId>
-        <version>0.1.254-SNAPSHOT</version>
+        <version>0.1.255-SNAPSHOT</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>
     <artifactId>ai-chat</artifactId>

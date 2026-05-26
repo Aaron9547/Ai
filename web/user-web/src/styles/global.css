@@ -11,10 +11,11 @@ body {
 }
 
 body {
-  background: #fff;
-  color: #333333;
-  font-family: "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+  background: #fcfcfd;
+  color: #0f172a;
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 #app {
@@ -27,8 +28,8 @@ html.dark body {
 }
 
 html.dark body {
-  background: #0a0a0a;
-  color: #e5e5e5;
+  background: #0d0e12;
+  color: #f1f5f9;
 }
 
 html.dark .chat-app {
@@ -57,83 +58,6 @@ html.dark .me-body .card {
 html.dark .me-body .card-hint code {
   background: #27272a;
   color: #d4d4d8;
-}
-
-/* Markdown 围栏代码块：语言标签 + 复制（HTML 由 renderMarkdown.ts 注入） */
-.md-code-block {
-  position: relative;
-  margin: 0.75em 0;
-  border-radius: 10px;
-  border: 1px solid #e4e4e7;
-  background: #fafafa;
-  overflow: hidden;
-}
-
-.md-code-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 6px 10px;
-  background: #f4f4f5;
-  border-bottom: 1px solid #e4e4e7;
-  min-height: 36px;
-  box-sizing: border-box;
-}
-
-.md-code-lang {
-  margin-right: auto;
-  font-size: 12px;
-  font-weight: 600;
-  color: #71717a;
-  text-transform: lowercase;
-}
-
-.md-code-copy-btn {
-  font-size: 12px;
-  padding: 4px 10px;
-  border-radius: 6px;
-  border: 1px solid #d4d4d8;
-  background: #fff;
-  color: #3f3f46;
-  cursor: pointer;
-  line-height: 1.2;
-}
-
-.md-code-copy-btn:hover {
-  background: #f4f4f5;
-  border-color: #a1a1aa;
-}
-
-.md-code-block pre {
-  margin: 0 !important;
-  border-radius: 0 !important;
-  border: none !important;
-}
-
-html.dark .md-code-block {
-  border-color: #3f3f46;
-  background: #18181b;
-}
-
-html.dark .md-code-toolbar {
-  background: #27272a;
-  border-bottom-color: #3f3f46;
-}
-
-html.dark .md-code-lang {
-  color: #a1a1aa;
-}
-
-html.dark .md-code-copy-btn {
-  background: #3f3f46;
-  border-color: #52525b;
-  color: #fafafa;
-}
-
-html.dark .md-code-copy-btn:hover {
-  background: #52525b;
-  border-color: #71717a;
 }
 
 /* Toast / 确认框须高于全屏自定义弹层（如 UserAuthDialog 毛玻璃 2200） */

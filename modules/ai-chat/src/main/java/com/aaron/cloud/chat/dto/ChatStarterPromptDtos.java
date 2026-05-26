@@ -29,6 +29,10 @@ public final class ChatStarterPromptDtos {
             LocalDate validUntil,
             int sortOrder,
             String batchKey,
+            String queryNormalized,
+            int hitCount,
+            int referenceCount,
+            String groundingSummaryPreview,
             String createdAt,
             String updatedAt) {}
 
@@ -62,4 +66,14 @@ public final class ChatStarterPromptDtos {
             String fetchedAt) {}
 
     public record RefreshDailyHotResult(boolean ok, String message, int questionCount) {}
+
+    /** 联网知识库条目：引用明细（管理端弹窗）。 */
+    public record WebGroundingReferenceItem(
+            String title, String url, String snippet, String siteName, String publishTime) {}
+
+    public record WebGroundingDetailView(
+            String promptText,
+            String queryNormalized,
+            String summaryText,
+            List<WebGroundingReferenceItem> references) {}
 }

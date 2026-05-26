@@ -82,4 +82,50 @@ public class ChatStarterPromptRepository {
                         .eq(ChatStarterPrompt::getId, id)
                         .eq(ChatStarterPrompt::getTenantId, tenantId));
     }
+
+    /** 取该问句最新一条联网知识（按 {@code updated_at} 降序，允许多版本并存）。 */
+    public Optional<ChatStarterPrompt> findLatestWebKnowledgeByHash(
+            long tenantId, String queryNormHash, boolean enabledOnly) {
+        if (queryNormHash == null || queryNormHash.isBlank()) {
+            return Optional.empty();
+        }
+        var q =
+                Wrappers.<ChatStarterPrompt>lambdaQuery()
+                        .eq(ChatStarterPrompt::getTenantId, tenantId)
+                        .eq(ChatStarterPrompt::getScene, ChatStarterPromptScene.WEB_KNOWLEDGE)
+                        .eq(
+                                ChatStarterPrompt::getSource,
+                                ChatStarterPromptSource.WEB_SEARCH_GROUNDING)
+                        .eq(ChatStarterPrompt::getQueryNormHash, queryNormHash)
+                        .orderByDesc(ChatStarterPrompt::getUpdatedAt)
+                        .orderByDesc(ChatStarterPrompt::getId);
+        if (enabledOnly) {
+            q.eq(ChatStarterPrompt::getEnabled, 1);
+        }
+        return Optional.ofNullable(mapper.selectOne(q.last("LIMIT 1")));
+    }
+
+    public List<ChatStarterPrompt> listWebKnowledgeForSemanticScan(long tenantId, int limit) {
+        int cap = Math.max(1, Math.min(limit, 500));
+        return mapper.selectList(
+                Wrappers.<ChatStarterPrompt>lambdaQuery()
+                        .eq(ChatStarterPrompt::getTenantId, tenantId)
+                        .eq(ChatStarterPrompt::getScene, ChatStarterPromptScene.WEB_KNOWLEDGE)
+                        .eq(
+                                ChatStarterPrompt::getSource,
+                                ChatStarterPromptSource.WEB_SEARCH_GROUNDING)
+                        .eq(ChatStarterPrompt::getEnabled, 1)
+                        .isNotNull(ChatStarterPrompt::getGroundingJson)
+                        .orderByDesc(ChatStarterPrompt::getUpdatedAt)
+                        .last("LIMIT " + cap));
+    }
+
+    public int incrementHitCount(long id, long tenantId) {
+        return mapper.update(
+                null,
+                Wrappers.<ChatStarterPrompt>lambdaUpdate()
+                        .eq(ChatStarterPrompt::getId, id)
+                        .eq(ChatStarterPrompt::getTenantId, tenantId)
+                        .setSql("hit_count = hit_count + 1"));
+    }
 }

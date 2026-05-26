@@ -1,0 +1,191 @@
+/**
+ * 管理端 Markdown 正文（MarkdownRichContent / 对话抽检 / 分片预览）
+ * 须覆盖列表、标题、引用等；仅 task-list 取消默认 list-style。
+ */
+.markdown-rich .markdown-rich__html {
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+  line-height: 1.65;
+  word-break: break-word;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.markdown-rich .markdown-rich__html p {
+  margin: 0 0 0.55em;
+}
+
+.markdown-rich .markdown-rich__html p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-rich .markdown-rich__html h1,
+.markdown-rich .markdown-rich__html h2,
+.markdown-rich .markdown-rich__html h3,
+.markdown-rich .markdown-rich__html h4,
+.markdown-rich .markdown-rich__html h5,
+.markdown-rich .markdown-rich__html h6 {
+  margin: 0.75em 0 0.4em;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--el-text-color-primary);
+}
+
+.markdown-rich .markdown-rich__html h1 {
+  font-size: 1.35em;
+}
+
+.markdown-rich .markdown-rich__html h2 {
+  font-size: 1.2em;
+}
+
+.markdown-rich .markdown-rich__html h3 {
+  font-size: 1.08em;
+}
+
+.markdown-rich .markdown-rich__html h4,
+.markdown-rich .markdown-rich__html h5,
+.markdown-rich .markdown-rich__html h6 {
+  font-size: 1em;
+}
+
+.markdown-rich .markdown-rich__html ul,
+.markdown-rich .markdown-rich__html ol {
+  margin: 0.35em 0 0.65em;
+  padding-left: 1.45em;
+}
+
+.markdown-rich .markdown-rich__html ul {
+  list-style-type: disc;
+}
+
+.markdown-rich .markdown-rich__html ol {
+  list-style-type: decimal;
+}
+
+.markdown-rich .markdown-rich__html li {
+  margin: 0.2em 0;
+}
+
+.markdown-rich .markdown-rich__html li > p {
+  margin: 0;
+}
+
+.markdown-rich .markdown-rich__html li > p + p {
+  margin-top: 0.35em;
+}
+
+.markdown-rich .markdown-rich__html li > ul,
+.markdown-rich .markdown-rich__html li > ol {
+  margin: 0.2em 0 0.35em;
+}
+
+.markdown-rich .markdown-rich__html strong,
+.markdown-rich .markdown-rich__html b {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.markdown-rich .markdown-rich__html ul.contains-task-list,
+.markdown-rich .markdown-rich__html ol.contains-task-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.markdown-rich .markdown-rich__html li.task-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0.25em 0;
+}
+
+.markdown-rich .markdown-rich__html li.task-list-item input[type="checkbox"] {
+  margin-top: 0.3em;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.markdown-rich .markdown-rich__html blockquote {
+  margin: 0.5em 0;
+  padding: 0.35em 0 0.35em 12px;
+  border-left: 3px solid var(--el-border-color);
+  color: var(--el-text-color-secondary);
+}
+
+.markdown-rich .markdown-rich__html hr {
+  margin: 0.75em 0;
+  border: none;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.markdown-rich .markdown-rich__html a {
+  color: var(--el-color-primary);
+  text-decoration: none;
+}
+
+.markdown-rich .markdown-rich__html a:hover {
+  text-decoration: underline;
+}
+
+.markdown-rich .markdown-rich__html :not(pre) > code {
+  padding: 0.12em 0.35em;
+  border-radius: 4px;
+  font-size: 0.9em;
+  font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+  background: var(--el-fill-color);
+  color: var(--el-text-color-primary);
+}
+
+/* 与用户端 bubble-md 对齐：表格保持 table 布局 */
+.markdown-rich .markdown-rich__html table {
+  width: 100%;
+  max-width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin: 0.55em 0;
+  display: table;
+  table-layout: auto;
+}
+
+.markdown-rich .markdown-rich__html th,
+.markdown-rich .markdown-rich__html td {
+  border: 1px solid var(--el-border-color-lighter);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.markdown-rich .markdown-rich__html thead th {
+  background: var(--el-fill-color-light);
+  font-weight: 600;
+}
+
+.markdown-rich .markdown-rich__html tbody tr:nth-child(even) td {
+  background: var(--el-fill-color-lighter);
+}
+
+.markdown-rich .markdown-rich__html img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+.markdown-rich .markdown-rich__html pre {
+  margin: 0.75em 0;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: #0f1419;
+  color: #f4f4f5;
+  overflow-x: auto;
+  font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre;
+}
+
+.markdown-rich .markdown-rich__html pre code {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+}

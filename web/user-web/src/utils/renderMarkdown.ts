@@ -11,27 +11,7 @@ const md = new MarkdownIt({
   breaks: false,
 });
 
-const fenceDefault = md.renderer.rules.fence;
-if (!fenceDefault) {
-  throw new Error("markdown-it: default fence renderer missing");
-}
-md.renderer.rules.fence = (tokens, idx, options, env, self) => {
-  const inner = fenceDefault(tokens, idx, options, env, self);
-  const token = tokens[idx];
-  const info = token.info ? md.utils.unescapeAll(String(token.info)).trim() : "";
-  const lang = info ? info.split(/\s+/)[0] : "";
-  const langHtml = lang ? `<span class="md-code-lang">${md.utils.escapeHtml(lang)}</span>` : "";
-  return (
-      `<div class="md-code-block">` +
-      `<div class="md-code-toolbar">${langHtml}` +
-      `<button type="button" class="md-code-copy-btn" aria-label="复制代码" title="复制">复制</button>` +
-      `</div>` +
-      inner +
-      `</div>`
-  );
-};
-
-function normalizeAssistantMarkdownSource(source: string): string {
+export function normalizeAssistantMarkdownSource(source: string): string {
   let s = source ?? "";
   s = s.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   // 模型偶发输出连续大量空行，压成最多双换行，减轻块级元素堆叠
@@ -39,92 +19,19 @@ function normalizeAssistantMarkdownSource(source: string): string {
   return s;
 }
 
-let mdCopyListenerAttached = false;
-
-function copyTextToClipboard(text: string): Promise<void> {
-  if (navigator.clipboard && window.isSecureContext) {
-    return navigator.clipboard.writeText(text);
-  }
-  return new Promise((resolve, reject) => {
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.setAttribute("readonly", "");
-    ta.style.position = "fixed";
-    ta.style.left = "-9999px";
-    ta.style.top = "0";
-    document.body.appendChild(ta);
-    ta.select();
-    try {
-      if (document.execCommand("copy")) {
-        resolve();
-      } else {
-        reject(new Error("execCommand copy failed"));
-      }
-    } catch (e) {
-      reject(e);
-    } finally {
-      ta.remove();
-    }
-  });
-}
-
-function onMarkdownCodeCopyClick(ev: MouseEvent): void {
-  const t = ev.target as HTMLElement | null;
-  if (!t) {
-    return;
-  }
-  const btn = t.closest("button.md-code-copy-btn");
-  if (!btn) {
-    return;
-  }
-  ev.preventDefault();
-  ev.stopPropagation();
-  const block = btn.closest(".md-code-block");
-  const codeEl = block?.querySelector("pre code") as HTMLElement | null;
-  const text = (codeEl?.innerText ?? codeEl?.textContent ?? "").replace(/\u00a0/g, " ");
-  if (!text) {
-    return;
-  }
-  const labelDefault = "复制";
-  const labelDone = "已复制";
-  void copyTextToClipboard(text).then(
-      () => {
-        btn.textContent = labelDone;
-        window.setTimeout(() => {
-          btn.textContent = labelDefault;
-        }, 1600);
-      },
-      () => {
-        btn.textContent = "失败";
-        window.setTimeout(() => {
-          btn.textContent = labelDefault;
-        }, 1600);
-      },
-  );
-}
-
-function ensureMarkdownCodeCopyListener(): void {
-  if (mdCopyListenerAttached || typeof document === "undefined") {
-    return;
-  }
-  mdCopyListenerAttached = true;
-  document.addEventListener("click", onMarkdownCodeCopyClick);
-}
-
 /**
  * 将助手 Markdown 转为可安全 v-html 的 HTML（禁止原始 HTML 标签，仅解析 MD 语法）。
- * 围栏代码块会带「复制」按钮（委托到 document，一次注册）。
+ * 对话主气泡请用 {@link buildMarkdownRichBlocks} + CodeBlock 组件渲染围栏代码。
  */
 const SANITIZE_OPTS: DOMPurify.Config = {
-  ADD_ATTR: ["target", "rel", "type", "title", "aria-label"],
-  ADD_TAGS: ["button"],
+  ADD_ATTR: ["target", "rel"],
 };
 
 function sanitizeMarkdownHtml(raw: string): string {
   return DOMPurify.sanitize(raw, SANITIZE_OPTS);
 }
 
-function countFenceLines(s: string): number {
+export function countFenceLines(s: string): number {
   let n = 0;
   for (const line of s.split("\n")) {
     if (/^\s*```/.test(line)) {
@@ -134,12 +41,12 @@ function countFenceLines(s: string): number {
   return n;
 }
 
-function isInOpenFence(s: string): boolean {
+export function isInOpenFence(s: string): boolean {
   return countFenceLines(s) % 2 === 1;
 }
 
 /** 流式未写完的围栏代码块：临时补闭合围栏以便高亮，不改动原始存盘内容。 */
-function closeStreamingMarkdownFences(s: string): string {
+export function closeStreamingMarkdownFences(s: string): string {
   if (!isInOpenFence(s)) {
     return s;
   }
@@ -160,7 +67,7 @@ function hasDanglingInlineMarksOnLastLine(s: string): boolean {
 }
 
 /** 末行未闭合的行内标记临时补全，减少露出 **、` 等符号。 */
-function closeDanglingInlineMarks(s: string): string {
+export function closeDanglingInlineMarks(s: string): string {
   const lines = s.split("\n");
   const lastIdx = lines.length - 1;
   let last = lines[lastIdx] ?? "";
@@ -287,7 +194,7 @@ function appendStreamingCursorRegex(html: string, cursorHtml: string): string {
   return h + cursorHtml;
 }
 
-function appendStreamingCursor(html: string, cursorHtml: string): string {
+export function appendStreamingCursor(html: string, cursorHtml: string): string {
   if (!cursorHtml) {
     return html;
   }
@@ -301,8 +208,10 @@ function appendStreamingCursor(html: string, cursorHtml: string): string {
   return appendStreamingCursorRegex(html, cursorHtml);
 }
 
+/** 流式打字光标 HTML（与 ChatView 中 class 一致） */
+export const STREAM_CURSOR_HTML = '<span class="stream-md-cursor" aria-hidden="true"></span>';
+
 export function renderMarkdownToSafeHtml(source: string): string {
-  ensureMarkdownCodeCopyListener();
   const raw = md.render(normalizeAssistantMarkdownSource(source));
   return sanitizeMarkdownHtml(raw);
 }
@@ -311,7 +220,6 @@ export function renderMarkdownToSafeHtml(source: string): string {
  * 流式阶段：按当前已输出内容渲染 Markdown（补全未闭合围栏/行内标记），末尾接打字光标。
  */
 export function renderStreamingMarkdownToSafeHtml(source: string, cursorHtml = ""): string {
-  ensureMarkdownCodeCopyListener();
   const normalized = normalizeAssistantMarkdownSource(source ?? "");
   if (!normalized.trim()) {
     return cursorHtml;

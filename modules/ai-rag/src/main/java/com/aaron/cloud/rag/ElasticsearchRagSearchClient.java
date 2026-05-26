@@ -1,6 +1,7 @@
 package com.aaron.cloud.rag;
 
 import com.aaron.cloud.common.api.dto.RagCitationHit;
+import co.elastic.clients.elasticsearch._types.query_dsl.Operator;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.json.jackson.JacksonJsonpMapper;
@@ -40,10 +41,12 @@ public class ElasticsearchRagSearchClient {
     private final ElasticsearchClient client;
     private final RestClient lowLevel;
     private final String indexName;
+    private final double minScore;
 
     public ElasticsearchRagSearchClient(AiRagProperties aiRagProperties) {
         var es = aiRagProperties.getElasticsearch();
         this.indexName = es.getIndexName() == null || es.getIndexName().isBlank() ? "rag_agent_documents" : es.getIndexName();
+        this.minScore = es.getMinScore() > 0d ? es.getMinScore() : 1.0d;
         String effective = ElasticsearchRagHostParser.resolveEffectiveUriString(es);
         if (effective.isEmpty()) {
             throw new IllegalStateException(
@@ -69,10 +72,11 @@ public class ElasticsearchRagSearchClient {
         ElasticsearchTransport transport = new RestClientTransport(lowLevel, new JacksonJsonpMapper());
         this.client = new ElasticsearchClient(transport);
         log.info(
-                "Elasticsearch RAG client index={} nodes={} basicAuth={}",
+                "Elasticsearch RAG client index={} nodes={} basicAuth={} minScore={}",
                 indexName,
                 hosts.stream().map(HttpHost::toString).toList(),
-                !user.isEmpty());
+                !user.isEmpty(),
+                minScore);
     }
 
     private static String resolveEsUsername(AiRagProperties.Elasticsearch es) {
@@ -101,47 +105,31 @@ public class ElasticsearchRagSearchClient {
 
     /** 混合检索引用侧：索引建议含 chunk_id、document_id、title、content；缺 chunk_id 的命中跳过。 */
     public List<RagCitationHit> searchCitationHits(long tenantId, long kbId, String query, int topK) {
+        return searchScoredCitationHits(tenantId, kbId, query, topK).stream()
+                .map(ElasticsearchScoredCitationHit::citation)
+                .toList();
+    }
+
+    /**
+     * 混合检索引用侧（带 BM25 分）：{@code match} 使用 {@code operator=and}，并应用 {@code min_score}，降低「整句任一词命中」的噪声。
+     */
+    public List<ElasticsearchScoredCitationHit> searchScoredCitationHits(
+            long tenantId, long kbId, String query, int topK) {
         if (query == null || query.isBlank()) {
             return List.of();
         }
         int size = (int) Math.min(Math.max(1, topK), 50L);
+        double scoreFloor = effectiveMinScore(query);
         try {
             SearchResponse<Map<String, Object>> resp =
                     client.search(
                             s ->
                                     s.index(indexName)
                                             .size(size)
-                                            .query(
-                                                    q ->
-                                                            q.bool(
-                                                                    b -> {
-                                                                        b.must(
-                                                                                m ->
-                                                                                        m.term(
-                                                                                                t ->
-                                                                                                        t.field(
-                                                                                                                        "tenant_id")
-                                                                                                                .value(
-                                                                                                                        tenantId)));
-                                                                        b.must(
-                                                                                m ->
-                                                                                        m.term(
-                                                                                                t ->
-                                                                                                        t.field("kb_id")
-                                                                                                                .value(
-                                                                                                                        kbId)));
-                                                                        b.must(
-                                                                                m ->
-                                                                                        m.match(
-                                                                                                mm ->
-                                                                                                        mm.field(
-                                                                                                                        "content")
-                                                                                                                .query(
-                                                                                                                        query)));
-                                                                        return b;
-                                                                    })),
+                                            .minScore(scoreFloor)
+                                            .query(q -> q.bool(b -> keywordBoolQuery(b, tenantId, kbId, query))),
                             MAP_DOC_CLASS);
-            List<RagCitationHit> out = new ArrayList<>();
+            List<ElasticsearchScoredCitationHit> out = new ArrayList<>();
             for (var hit : resp.hits().hits()) {
                 Map<String, Object> src = hit.source();
                 if (src == null) {
@@ -155,7 +143,10 @@ public class ElasticsearchRagSearchClient {
                 String title = src.get("title") == null ? "" : Objects.toString(src.get("title"), "");
                 Object c = src.get("content");
                 String preview = previewText(c == null ? "" : Objects.toString(c, ""));
-                out.add(new RagCitationHit(kbId, docId, title, chunkId, 0, preview));
+                double score = hit.score() == null ? 0d : hit.score();
+                out.add(
+                        new ElasticsearchScoredCitationHit(
+                                new RagCitationHit(kbId, docId, title, chunkId, 0, preview), score));
             }
             return out;
         } catch (Exception ex) {
@@ -167,6 +158,37 @@ public class ElasticsearchRagSearchClient {
                     ex);
             return List.of();
         }
+    }
+
+    /**
+     * 短查询（单词/短语）BM25 分往往低于全局 {@code min-score}，放宽下限以便混合检索在向量未过阈值时仍能关键词兜底。
+     */
+    private double effectiveMinScore(String query) {
+        if (minScore <= 0d) {
+            return 0d;
+        }
+        String q = query == null ? "" : query.trim();
+        if (q.length() <= 16 && !q.contains(" ")) {
+            return Math.min(minScore, 0.35d);
+        }
+        return minScore;
+    }
+
+    private static co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery.Builder keywordBoolQuery(
+            co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery.Builder b,
+            long tenantId,
+            long kbId,
+            String query) {
+        b.must(m -> m.term(t -> t.field("tenant_id").value(tenantId)));
+        b.must(m -> m.term(t -> t.field("kb_id").value(kbId)));
+        b.must(
+                m ->
+                        m.multiMatch(
+                                mm ->
+                                        mm.fields("title^2", "content")
+                                                .query(query)
+                                                .operator(Operator.And)));
+        return b;
     }
 
     private static long longFromSource(Map<String, Object> src, String key) {
@@ -247,41 +269,15 @@ public class ElasticsearchRagSearchClient {
             return List.of();
         }
         int size = (int) Math.min(Math.max(1, topK), 50L);
+        double scoreFloor = effectiveMinScore(query);
         try {
             SearchResponse<Map<String, Object>> resp =
                     client.search(
                             s ->
                                     s.index(indexName)
                                             .size(size)
-                                            .query(
-                                                    q ->
-                                                            q.bool(
-                                                                    b -> {
-                                                                        b.must(
-                                                                                m ->
-                                                                                        m.term(
-                                                                                                t ->
-                                                                                                        t.field(
-                                                                                                                        "tenant_id")
-                                                                                                                .value(
-                                                                                                                        tenantId)));
-                                                                        b.must(
-                                                                                m ->
-                                                                                        m.term(
-                                                                                                t ->
-                                                                                                        t.field("kb_id")
-                                                                                                                .value(
-                                                                                                                        kbId)));
-                                                                        b.must(
-                                                                                m ->
-                                                                                        m.match(
-                                                                                                mm ->
-                                                                                                        mm.field(
-                                                                                                                        "content")
-                                                                                                                .query(
-                                                                                                                        query)));
-                                                                        return b;
-                                                                    })),
+                                            .minScore(scoreFloor)
+                                            .query(q -> q.bool(b -> keywordBoolQuery(b, tenantId, kbId, query))),
                             MAP_DOC_CLASS);
             List<String> out = new ArrayList<>();
             for (var hit : resp.hits().hits()) {

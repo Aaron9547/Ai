@@ -33,7 +33,6 @@
         :data="rows"
         stripe
         border
-        max-height="520"
         class="data-table"
         :empty-text="t('views.metering.empty')"
         highlight-current-row

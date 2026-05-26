@@ -19,6 +19,7 @@
     "markdown-it-multimd-table": "^4.2.3",
     "markdown-it-task-lists": "^2.1.1",
     "pinia": "^2.3.0",
+    "prismjs": "^1.30.0",
     "vue": "^3.5.13",
     "vue-i18n": "^9.14.5",
     "vue-router": "^4.5.0"
@@ -27,6 +28,7 @@
     "@types/dompurify": "^3.0.5",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^22.15.3",
+    "@types/prismjs": "^1.26.6",
     "@vitejs/plugin-vue": "^6.0.6",
     "typescript": "~5.7.2",
     "unplugin-auto-import": "^19.1.2",

@@ -54,8 +54,7 @@
         </div>
       </template>
       <el-table v-loading="loading" :data="rows" stripe border :empty-text="t('views.profiles.empty')">
-        <el-table-column prop="userId" :label="t('views.profiles.colUserId')" width="100" />
-        <el-table-column prop="loginName" :label="t('views.profiles.colLoginName')" min-width="120" />
+        <el-table-column prop="loginName" :label="t('views.profiles.colLoginName')" min-width="140" show-overflow-tooltip />
         <el-table-column prop="displayName" :label="t('views.profiles.colNickname')" min-width="120" />
         <el-table-column prop="profileTagCount" :label="t('views.profiles.colTagCount')" width="110" align="center" />
         <el-table-column :label="t('views.profiles.colHasAbstract')" width="110" align="center">
@@ -84,13 +83,11 @@
       </div>
     </el-card>
 
-    <el-dialog v-model="detailOpen" :title="t('views.profiles.dlgTitle')" width="860px" destroy-on-close class="profile-detail-dlg">
+    <el-dialog v-model="detailOpen" :title="detailDlgTitle" width="860px" destroy-on-close class="profile-detail-dlg">
       <template v-if="detail">
-        <el-scrollbar max-height="560px">
-          <div class="detail-wrap">
+        <div class="detail-wrap">
             <h3 class="detail-sec-title">{{ t("views.profiles.secBasic") }}</h3>
             <el-descriptions :column="2" border size="small" class="detail-desc">
-              <el-descriptions-item :label="t('views.profiles.descUserId')">{{ detail.userId }}</el-descriptions-item>
               <el-descriptions-item :label="t('views.profiles.descMemoryTotal')">{{ detail.memoryChunkTotal }}</el-descriptions-item>
               <el-descriptions-item :label="t('views.profiles.colLoginName')">{{ detail.loginName || t("common.dash") }}</el-descriptions-item>
               <el-descriptions-item :label="t('views.profiles.colNickname')">{{ detail.displayName || t("common.dash") }}</el-descriptions-item>
@@ -212,7 +209,6 @@
             </div>
             <pre v-show="showRawJson" class="json-pre">{{ detailRawJson }}</pre>
           </div>
-        </el-scrollbar>
       </template>
     </el-dialog>
   </div>
@@ -271,6 +267,13 @@ const detailRawJson = computed(() => {
   } catch {
     return String(detailRawPayload.value);
   }
+});
+
+const detailDlgTitle = computed(() => {
+  const d = detail.value;
+  if (!d) return t("views.profiles.dlgTitle");
+  const name = (d.displayName || d.loginName || "").trim();
+  return name ? `${t("views.profiles.dlgTitle")} · ${name}` : t("views.profiles.dlgTitle");
 });
 
 function formatPrimitive(v: unknown): string {

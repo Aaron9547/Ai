@@ -30,10 +30,9 @@
             <div class="share-capture-msg__avatar" aria-hidden="true">
               <el-icon :size="15"><ChatLineRound /></el-icon>
             </div>
-            <div
-              class="share-capture-msg__bubble share-capture-msg__bubble--assistant bubble-md"
-              v-html="turn.assistantHtml"
-            />
+            <div class="share-capture-msg__bubble share-capture-msg__bubble--assistant bubble-md">
+              <MarkdownRichContent :source="turn.assistantSource" />
+            </div>
           </div>
         </article>
       </div>
@@ -47,11 +46,12 @@
 import { ChatLineRound, User } from "@element-plus/icons-vue";
 import { ref } from "vue";
 import { useI18n } from "vue-i18n";
+import MarkdownRichContent from "./MarkdownRichContent.vue";
 
 export type ShareCaptureTurn = {
   turnIndex: number;
   userPlain: string;
-  assistantHtml: string;
+  assistantSource: string;
 };
 
 defineProps<{

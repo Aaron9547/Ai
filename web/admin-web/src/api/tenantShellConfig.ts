@@ -66,8 +66,6 @@ export type TenantShellAuthRegisterPutBody = Omit<
 
 export type TenantShellKnowledgePlanetRuntime = {
   enabled: boolean;
-  weeklyComputeCron: string;
-  weeklyEmailCron: string;
   digestModelId: string;
   emailEnabled: boolean;
   reuseRegisterSmtp: boolean;

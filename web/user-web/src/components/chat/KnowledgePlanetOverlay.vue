@@ -17,15 +17,20 @@
       />
       <canvas ref="transitionCanvas" class="kp-transition-canvas" />
 
-      <button ref="exitFab" type="button" class="kp-exit-fab" :disabled="isClosing" @click="requestClose">
-        <span class="kp-exit-icon">×</span>
-        <span>{{ t("knowledgePlanet.exit") }}</span>
-        <kbd class="kp-exit-kbd">Esc</kbd>
-      </button>
-
       <div ref="overlayRoot" class="kp-universe-root">
         <div class="kp-main">
           <header class="kp-toolbar">
+            <button
+              ref="exitFab"
+              type="button"
+              class="kp-exit-fab"
+              :disabled="isClosing"
+              @click="requestClose"
+            >
+              <span class="kp-exit-icon">×</span>
+              <span>{{ t("knowledgePlanet.exit") }}</span>
+              <kbd class="kp-exit-kbd">Esc</kbd>
+            </button>
             <nav class="kp-tabs" role="tablist">
               <button
                 type="button"
@@ -60,45 +65,75 @@
               <button type="button" class="kp-tool-btn" @click="fitStarMap">
                 {{ t("knowledgePlanet.fitMap") }}
               </button>
-              <button
-                type="button"
-                class="kp-tool-btn"
-                :class="{ 'kp-tool-btn--active': renderMode === '2d' }"
-                @click="setRenderMode('2d')"
+              <div
+                class="kp-render-toggle"
+                role="group"
+                :aria-label="t('knowledgePlanet.renderModeAria')"
               >
-                {{ t("knowledgePlanet.view2d") }}
-              </button>
-              <button
-                type="button"
-                class="kp-tool-btn"
-                :class="{ 'kp-tool-btn--active': renderMode === '3d' }"
-                @click="setRenderMode('3d')"
-              >
-                {{ t("knowledgePlanet.view3d") }}
-              </button>
+                <button
+                  type="button"
+                  class="kp-render-toggle__btn"
+                  :class="{ 'kp-render-toggle__btn--active': renderMode === '2d' }"
+                  :aria-pressed="renderMode === '2d'"
+                  @click="setRenderMode('2d')"
+                >
+                  {{ t("knowledgePlanet.view2d") }}
+                </button>
+                <button
+                  type="button"
+                  class="kp-render-toggle__btn"
+                  :class="{ 'kp-render-toggle__btn--active': renderMode === '3d' }"
+                  :aria-pressed="renderMode === '3d'"
+                  @click="setRenderMode('3d')"
+                >
+                  {{ t("knowledgePlanet.view3d") }}
+                </button>
+              </div>
               <label v-if="selectedPlanet" class="kp-focus-toggle">
                 <input v-model="focusPlanetOnly" type="checkbox" @change="onFocusToggle" />
                 {{ t("knowledgePlanet.focusPlanetOnly") }}
               </label>
             </div>
+
+            <nav
+              v-if="mainTab === 'map' && mapCanGoBack"
+              class="kp-map-nav"
+              :aria-label="t('knowledgePlanet.mapNavAria')"
+            >
+              <span v-if="mapBackCrumb" class="kp-map-nav-crumb">{{ mapBackCrumb }}</span>
+              <template v-if="selectedKnowledge">
+                <button type="button" class="kp-map-nav-btn" @click="backToPlanetFromKnowledge">
+                  {{ t("knowledgePlanet.backToPlanet") }}
+                </button>
+                <button type="button" class="kp-map-nav-btn kp-map-nav-btn--ghost" @click="clearMapSelection">
+                  {{ t("knowledgePlanet.backClearSelection") }}
+                </button>
+              </template>
+              <template v-else-if="renderMode === '3d' && universe3dMode === 'planet' && selectedPlanet">
+                <button type="button" class="kp-map-nav-btn" @click="goBackInMap">
+                  {{ t("knowledgePlanet.backFullMap") }}
+                </button>
+                <button type="button" class="kp-map-nav-btn kp-map-nav-btn--ghost" @click="clearMapSelection">
+                  {{ t("knowledgePlanet.backClearSelection") }}
+                </button>
+              </template>
+              <button v-else type="button" class="kp-map-nav-btn" @click="goBackInMap">
+                {{ mapBackLabel }}
+              </button>
+            </nav>
           </header>
 
           <p v-if="mainTab === 'map'" class="kp-map-hint">
             {{
-              focusPlanetOnly && selectedPlanet
-                ? t("knowledgePlanet.focusPlanetHint", { name: selectedPlanet.name })
-                : t("knowledgePlanet.starMapHint")
+              selectedKnowledge
+                ? t("knowledgePlanet.knowledgeNodeHint")
+                : focusPlanetOnly && selectedPlanet
+                  ? t("knowledgePlanet.focusPlanetHint", { name: selectedPlanet.name })
+                  : universe3dMode === "planet" && selectedPlanet
+                    ? t("knowledgePlanet.drillPlanetHint", { name: selectedPlanet.name })
+                    : t("knowledgePlanet.starMapHint")
             }}
           </p>
-
-          <button
-            v-if="mainTab === 'map' && focusPlanetOnly && selectedPlanet"
-            type="button"
-            class="kp-back-map"
-            @click="clearPlanetFocus"
-          >
-            {{ t("knowledgePlanet.backFullMap") }}
-          </button>
 
           <div v-show="mainTab === 'map'" class="kp-graph-wrap">
             <div ref="graphHost" class="kp-graph-host" />
@@ -109,18 +144,22 @@
           </div>
 
           <div v-show="mainTab === 'archive'" class="kp-archive">
-            <p v-if="archiveNodes.length === 0" class="kp-archive-empty">
-              {{ t("knowledgePlanet.archiveEmpty") }}
-            </p>
-            <ul v-else class="kp-archive-list">
-              <li v-for="kn in archiveNodes" :key="kn.id">
-                <button type="button" class="kp-archive-item" @click="openFromArchive(kn.id)">
-                  <strong>{{ kn.title }}</strong>
-                  <span class="kp-archive-planet">{{ planetName(kn.planetId) }}</span>
-                  <span class="kp-archive-summary">{{ kn.summary }}</span>
-                </button>
-              </li>
-            </ul>
+            <el-scrollbar class="kp-archive-scroll">
+              <div class="kp-archive-scroll-inner">
+                <p v-if="archiveNodes.length === 0" class="kp-archive-empty">
+                  {{ t("knowledgePlanet.archiveEmpty") }}
+                </p>
+                <ul v-else class="kp-archive-list">
+                  <li v-for="kn in archiveNodes" :key="kn.id">
+                    <button type="button" class="kp-archive-item" @click="openFromArchive(kn.id)">
+                      <strong>{{ kn.title }}</strong>
+                      <span class="kp-archive-planet">{{ planetName(kn.planetId) }}</span>
+                      <span class="kp-archive-summary">{{ kn.summary }}</span>
+                    </button>
+                  </li>
+                </ul>
+              </div>
+            </el-scrollbar>
           </div>
         </div>
 
@@ -132,6 +171,8 @@
             </button>
           </header>
 
+          <el-scrollbar class="kp-side-scroll">
+          <div class="kp-side-scroll-inner">
           <section v-if="selectedKnowledge" class="kp-detail">
             <h3>{{ t("knowledgePlanet.knowledgeDetail") }}</h3>
             <p class="kp-detail-title">{{ selectedKnowledge.title }}</p>
@@ -210,6 +251,8 @@
               </button>
             </div>
           </div>
+          </div>
+          </el-scrollbar>
         </aside>
       </div>
     </div>
@@ -229,7 +272,10 @@ import type {
 } from "../../api/knowledgePlanet";
 import { warpOriginCenter } from "../../api/knowledgePlanet";
 import { useKnowledgePlanetStarMap } from "../../composables/useKnowledgePlanetStarMap";
-import { useKnowledgePlanetUniverseGraph } from "../../composables/useKnowledgePlanetUniverseGraph";
+import {
+  useKnowledgePlanetUniverseGraph,
+  type UniverseViewMode,
+} from "../../composables/useKnowledgePlanetUniverseGraph";
 import { useRandomDotNetwork } from "../../composables/useRandomDotNetwork";
 
 const TOUR_STORAGE_KEY = "kp-tour-v1";
@@ -260,6 +306,7 @@ const mainTab = ref<MainTab>("map");
 const renderMode = ref<RenderMode>("2d");
 const searchQuery = ref("");
 const focusPlanetOnly = ref(false);
+const universe3dMode = ref<UniverseViewMode>("full");
 const selectedPlanetId = ref<string | null>(null);
 const selectedKnowledgeId = ref<string | null>(null);
 const graphEmpty = ref(false);
@@ -310,6 +357,30 @@ const archiveNodes = computed((): KnowledgeGraphNode[] => {
 
 const recentKnowledge = computed((): KnowledgeGraphNode[] => archiveNodes.value.slice(0, 8));
 
+const mapCanGoBack = computed(() => {
+  if (mainTab.value !== "map") return false;
+  if (renderMode.value === "3d" && universe3dMode.value === "planet") return true;
+  if (focusPlanetOnly.value && selectedPlanet.value) return true;
+  if (selectedKnowledgeId.value) return true;
+  if (selectedPlanetId.value) return true;
+  return false;
+});
+
+const mapBackLabel = computed(() => {
+  if (renderMode.value === "3d" && universe3dMode.value === "planet") {
+    return t("knowledgePlanet.backFullMap");
+  }
+  if (selectedKnowledgeId.value) return t("knowledgePlanet.backToPlanet");
+  if (focusPlanetOnly.value) return t("knowledgePlanet.backFullMap");
+  return t("knowledgePlanet.backClearSelection");
+});
+
+const mapBackCrumb = computed(() => {
+  if (selectedKnowledge.value) return selectedKnowledge.value.title;
+  if (selectedPlanet.value) return selectedPlanet.value.name;
+  return "";
+});
+
 function planetColor(p: KnowledgePlanetView): string {
   return `#${(p.colorRgb & 0xffffff).toString(16).padStart(6, "0")}`;
 }
@@ -353,6 +424,7 @@ function teardownState() {
   renderMode.value = "2d";
   searchQuery.value = "";
   focusPlanetOnly.value = false;
+  universe3dMode.value = "full";
   selectedPlanetId.value = null;
   selectedKnowledgeId.value = null;
   graphEmpty.value = false;
@@ -602,10 +674,15 @@ function onSearchInput() {
 function selectPlanet(planetId: string) {
   selectedPlanetId.value = planetId;
   selectedKnowledgeId.value = null;
-  applyStarMapFocus();
-  if (mainTab.value === "map" && renderMode.value === "2d") {
-    starMap.centerOnNode(planetId);
+  if (renderMode.value === "2d") {
+    applyStarMapFocus();
+    if (mainTab.value === "map") starMap.centerOnNode(planetId);
+    return;
   }
+  universe3dMode.value = "planet";
+  void syncGraph().then(() => {
+    graph3d.focusPlanet(planetId);
+  });
 }
 
 function selectKnowledge(nodeId: string) {
@@ -619,10 +696,50 @@ function selectKnowledge(nodeId: string) {
 
 function clearPlanetFocus() {
   focusPlanetOnly.value = false;
+  universe3dMode.value = "full";
   selectedPlanetId.value = null;
   selectedKnowledgeId.value = null;
   starMap.setFocusPlanet(null);
   starMap.fitView();
+}
+
+function backToPlanetFromKnowledge() {
+  selectedKnowledgeId.value = null;
+}
+
+function clearMapSelection() {
+  if (renderMode.value === "3d" && universe3dMode.value === "planet") {
+    universe3dMode.value = "full";
+    void syncGraph();
+  }
+  focusPlanetOnly.value = false;
+  selectedPlanetId.value = null;
+  selectedKnowledgeId.value = null;
+  starMap.setFocusPlanet(null);
+  applyStarMapFocus();
+  if (renderMode.value === "2d") starMap.fitView();
+}
+
+function goBackInMap() {
+  if (renderMode.value === "3d" && universe3dMode.value === "planet") {
+    universe3dMode.value = "full";
+    void syncGraph();
+    return;
+  }
+  if (selectedKnowledgeId.value) {
+    backToPlanetFromKnowledge();
+    return;
+  }
+  if (focusPlanetOnly.value) {
+    clearPlanetFocus();
+    return;
+  }
+  if (selectedPlanetId.value) {
+    selectedPlanetId.value = null;
+    selectedKnowledgeId.value = null;
+    applyStarMapFocus();
+    if (renderMode.value === "2d") starMap.fitView();
+  }
 }
 
 function onFocusToggle() {
@@ -637,6 +754,11 @@ function fitStarMap() {
 function setRenderMode(mode: RenderMode) {
   if (renderMode.value === mode) return;
   renderMode.value = mode;
+  if (mode === "2d") {
+    universe3dMode.value = "full";
+  } else if (selectedPlanetId.value) {
+    universe3dMode.value = "planet";
+  }
   void syncGraph();
 }
 
@@ -674,8 +796,14 @@ async function syncGraph() {
       starMap.resizeGraph();
     }
   } else {
-    ok = graph3d.mount(props.universe, "full", null);
-    if (ok) graph3d.resizeGraph();
+    const drillId = universe3dMode.value === "planet" ? selectedPlanetId.value : null;
+    ok = graph3d.mount(props.universe, universe3dMode.value, drillId);
+    if (ok) {
+      graph3d.resizeGraph();
+      if (universe3dMode.value === "planet" && selectedPlanetId.value) {
+        graph3d.focusPlanet(selectedPlanetId.value);
+      }
+    }
   }
 
   graphEmpty.value = !ok;
@@ -783,17 +911,15 @@ onUnmounted(() => {
 }
 
 .kp-exit-fab {
-  position: fixed;
-  top: 18px;
-  left: 18px;
-  z-index: 9010;
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  margin-right: 4px;
   padding: 8px 14px 8px 10px;
-  border: 1px solid rgba(0, 242, 254, 0.35);
+  border: 1px solid rgba(99, 102, 241, 0.35);
   border-radius: 999px;
-  background: rgba(10, 14, 20, 0.82);
+  background: rgba(10, 14, 20, 0.72);
   backdrop-filter: blur(12px);
   color: #e8f4ff;
   font-size: 13px;
@@ -860,9 +986,30 @@ onUnmounted(() => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 16px;
+  gap: 10px 12px;
   padding: 12px 16px 0;
-  padding-left: 120px;
+}
+
+.kp-map-nav {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  margin-left: auto;
+  max-width: min(100%, 520px);
+}
+
+.kp-map-nav-crumb {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(232, 244, 255, 0.92);
+  max-width: min(240px, 36vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 4px;
 }
 
 .kp-tabs {
@@ -922,10 +1069,61 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-.kp-tool-btn--active {
-  border-color: rgba(0, 242, 254, 0.55);
-  background: rgba(0, 242, 254, 0.14);
+.kp-render-toggle {
+  display: inline-flex;
+  align-items: stretch;
+  padding: 2px;
+  border-radius: 9px;
+  border: 1px solid rgba(0, 242, 254, 0.28);
+  background: rgba(0, 0, 0, 0.4);
+  gap: 2px;
+}
+
+.kp-render-toggle__btn {
+  padding: 5px 12px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: rgba(232, 244, 255, 0.72);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.kp-render-toggle__btn:hover:not(.kp-render-toggle__btn--active) {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(232, 244, 255, 0.92);
+}
+
+.kp-render-toggle__btn--active {
+  background: rgba(0, 242, 254, 0.2);
   color: #00f2fe;
+  box-shadow: 0 0 0 1px rgba(0, 242, 254, 0.35);
+}
+
+html.dark .kp-render-toggle {
+  border-color: rgba(99, 102, 241, 0.4);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+html.dark .kp-render-toggle__btn {
+  color: rgba(212, 212, 216, 0.85);
+}
+
+html.dark .kp-render-toggle__btn:hover:not(.kp-render-toggle__btn--active) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e4e4e7;
+}
+
+html.dark .kp-render-toggle__btn--active {
+  background: rgba(99, 102, 241, 0.28);
+  color: #c7d2fe;
+  box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.45);
 }
 
 .kp-focus-toggle {
@@ -940,23 +1138,44 @@ onUnmounted(() => {
 
 .kp-map-hint {
   margin: 8px 16px 0;
-  padding-left: 104px;
+  padding: 0 16px;
   font-size: 12px;
   color: rgba(224, 224, 224, 0.55);
   line-height: 1.45;
+  text-align: right;
 }
 
-.kp-back-map {
-  margin: 6px 16px 0;
-  margin-left: 120px;
-  align-self: flex-start;
-  padding: 5px 12px;
+.kp-map-nav-btn {
+  padding: 6px 14px;
   border-radius: 16px;
-  border: 1px solid rgba(0, 242, 254, 0.35);
-  background: transparent;
+  border: 1px solid rgba(0, 242, 254, 0.45);
+  background: rgba(0, 242, 254, 0.1);
   color: #00f2fe;
   font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.kp-map-nav-btn:hover {
+  background: rgba(0, 242, 254, 0.18);
+  border-color: rgba(0, 242, 254, 0.65);
+}
+
+.kp-map-nav-btn--ghost {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(232, 244, 255, 0.88);
+}
+
+.kp-map-nav-btn--ghost:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #fff;
 }
 
 .kp-graph-wrap {
@@ -1008,11 +1227,40 @@ onUnmounted(() => {
   flex: 1;
   min-height: 0;
   margin: 8px 12px 12px;
-  padding: 12px;
-  overflow: auto;
+  overflow: hidden;
   border-radius: 12px;
   border: 1px solid rgba(0, 242, 254, 0.12);
   background: rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+}
+
+.kp-archive-scroll {
+  flex: 1;
+  min-height: 0;
+}
+
+.kp-archive-scroll :deep(.el-scrollbar__wrap) {
+  overflow-x: hidden;
+}
+
+.kp-archive-scroll :deep(.el-scrollbar__bar.is-vertical) {
+  width: 6px;
+  right: 2px;
+}
+
+.kp-archive-scroll :deep(.el-scrollbar__thumb) {
+  background: rgba(0, 242, 254, 0.32);
+  border-radius: 4px;
+  opacity: 1;
+}
+
+.kp-archive-scroll :deep(.el-scrollbar__thumb:hover) {
+  background: rgba(0, 242, 254, 0.5);
+}
+
+.kp-archive-scroll-inner {
+  padding: 12px;
 }
 
 .kp-archive-empty {
@@ -1075,7 +1323,39 @@ onUnmounted(() => {
   backdrop-filter: blur(16px);
   border-left: 1px solid rgba(0, 242, 254, 0.15);
   color: #e0e0e0;
-  overflow: auto;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.kp-side-scroll {
+  flex: 1;
+  min-height: 0;
+}
+
+.kp-side-scroll :deep(.el-scrollbar__wrap) {
+  overflow-x: hidden;
+}
+
+.kp-side-scroll :deep(.el-scrollbar__bar.is-vertical) {
+  width: 6px;
+  right: 2px;
+}
+
+.kp-side-scroll :deep(.el-scrollbar__thumb) {
+  background: rgba(0, 242, 254, 0.32);
+  border-radius: 4px;
+  opacity: 1;
+}
+
+.kp-side-scroll :deep(.el-scrollbar__thumb:hover) {
+  background: rgba(0, 242, 254, 0.5);
+}
+
+.kp-side-scroll-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 4px;
 }
 
 .kp-side-head {

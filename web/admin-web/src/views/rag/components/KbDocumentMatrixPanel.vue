@@ -82,7 +82,7 @@
                 </div>
               </div>
 
-              <div ref="docsTableWrapRef" class="docs-table-wrap">
+              <div class="docs-table-wrap">
                 <el-table
                   ref="docTableRef"
                   v-loading="loadingDocPage"
@@ -90,7 +90,6 @@
                   class="docs-table"
                   border
                   stripe
-                  :height="docTableBodyHeight"
                   :empty-text="t('views.kbMatrix.emptyDocs')"
                   @selection-change="onDocSelectionChange"
                 >
@@ -541,6 +540,9 @@
           <el-descriptions-item :label="t('views.kbMatrix.retrievalMinCosineLabel')">
             {{ retrievalTestResult.minCosineThreshold ?? emDash }}
           </el-descriptions-item>
+          <el-descriptions-item :label="t('views.kbMatrix.retrievalMaxSimilarityLabel')">
+            {{ formatRetrievalSimilarity(retrievalTestResult.maxMilvusSimilarity) }}
+          </el-descriptions-item>
         </el-descriptions>
         <p
           v-if="retrievalTestResult.diagnosticsHint"
@@ -556,6 +558,24 @@
             </el-table-column>
             <el-table-column :label="t('views.kbMatrix.retrievalColChunk')" width="88" align="center">
               <template #default="{ row }">#{{ row.chunkSeq + 1 }}</template>
+            </el-table-column>
+            <el-table-column
+              :label="t('views.kbMatrix.retrievalColSource')"
+              width="72"
+              align="center"
+            >
+              <template #default="{ row }">
+                {{ retrievalHitSourceLabel(row.hitSource) }}
+              </template>
+            </el-table-column>
+            <el-table-column
+              :label="t('views.kbMatrix.retrievalColSimilarity')"
+              width="108"
+              align="center"
+            >
+              <template #default="{ row }">
+                {{ formatRetrievalHitScore(row) }}
+              </template>
             </el-table-column>
             <el-table-column :label="t('views.kbMatrix.colPreview')" min-width="240" show-overflow-tooltip>
               <template #default="{ row }">{{ row.contentPreview || emDash }}</template>
@@ -611,16 +631,52 @@ import KbWebCrawlProgressDialog from "./KbWebCrawlProgressDialog.vue";
 import type { RagWebCrawlSiteRow } from "../../../api/ragAdmin";
 import { ElMessage, ElMessageBox } from "element-plus";
 import type { UploadFile } from "element-plus";
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import * as ragApi from "../../../api/ragAdmin";
 import type { RagChunkAdminRow, RagDocumentAdminRow, RagDocumentCategoryAdminRow } from "../../../types/admin";
 import type { RagRetrievalTestResult } from "../../../api/ragAdmin";
 import { renderMarkdownToSafeHtml } from "../../../utils/renderMarkdown";
 import { ragDocumentDisplayStatusLabel } from "../../../utils/ragJobDisplay";
+import { confirmMessageBox } from "@/utils/messageBoxI18n";
 
 const { t } = useI18n();
 const emDash = "\u2014";
+
+function formatRetrievalSimilarity(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(value)) {
+    return emDash;
+  }
+  return value.toFixed(4);
+}
+
+function retrievalHitSourceLabel(source: string | null | undefined): string {
+  if (source === "milvus") {
+    return t("views.kbMatrix.retrievalSourceMilvus");
+  }
+  if (source === "es") {
+    return t("views.kbMatrix.retrievalSourceEs");
+  }
+  return emDash;
+}
+
+function formatRetrievalHitScore(row: {
+  hitSource?: string | null;
+  vectorSimilarity?: number | null;
+  keywordScore?: number | null;
+}): string {
+  const vec = formatRetrievalSimilarity(row.vectorSimilarity);
+  const hasKw =
+    row.keywordScore != null && !Number.isNaN(row.keywordScore) && row.hitSource === "es";
+  if (!hasKw) {
+    return vec;
+  }
+  const kw = `ES ${row.keywordScore!.toFixed(2)}`;
+  if (vec === emDash) {
+    return kw;
+  }
+  return `${vec} · ${kw}`;
+}
 
 /** 上传/粘贴入库前：长文档等特征命中时询问是否改用子母分片。 */
 async function resolveUploadChunkStrategy(
@@ -696,10 +752,6 @@ const queryTitle = ref("");
 const queryDisplayStatus = ref<string | undefined>(undefined);
 const selectedDocs = ref<RagDocumentAdminRow[]>([]);
 const docTableRef = ref<{ clearSelection: () => void } | null>(null);
-const docsTableWrapRef = ref<HTMLElement | null>(null);
-/** 渚?el-table 鍥哄畾楂樺害锛屼娇鏃犳暟鎹椂琛ㄤ綋鍖哄煙浠嶅崰婊″墿浣欑┖闂?*/
-const docTableBodyHeight = ref(360);
-let docTableResizeObserver: ResizeObserver | null = null;
 
 const chunksByDoc = ref<Record<number, RagChunkAdminRow[]>>({});
 const chunksDrawerOpen = ref(false);
@@ -925,7 +977,6 @@ async function loadDocPage() {
     ElMessage.error(msg);
   } finally {
     loadingDocPage.value = false;
-    void nextTick().then(() => bindDocTableResize());
   }
 }
 
@@ -1026,9 +1077,7 @@ async function onCategoryRowCommand(cmd: string, c: RagDocumentCategoryAdminRow)
   }
   if (cmd === "delete") {
     try {
-      await ElMessageBox.confirm(t("views.kbMatrix.deleteCatConfirm", { name: c.name }), t("views.menuItems.confirm"), {
-        type: "warning",
-      });
+      await confirmMessageBox(t, t("views.kbMatrix.deleteCatConfirm", { name: c.name }), { type: "warning" });
       await ragApi.deleteRagKbDocumentCategory(kid.value, c.id);
       ElMessage.success(t("views.kbMatrix.deleted"));
       if (selectedCategoryId.value === c.id) {
@@ -1164,9 +1213,7 @@ async function batchRemoveDocs() {
   const rows = selectedDocs.value;
   if (!rows.length) return;
   try {
-    await ElMessageBox.confirm(t("views.kbMatrix.batchDeleteConfirm", { n: rows.length }), t("views.menuItems.confirm"), {
-      type: "warning",
-    });
+    await confirmMessageBox(t, t("views.kbMatrix.batchDeleteConfirm", { n: rows.length }), { type: "warning" });
     for (const d of rows) {
       await ragApi.deleteRagKbDocument(kid.value, d.id);
     }
@@ -1423,11 +1470,9 @@ async function removeDoc(row: RagDocumentAdminRow, incomplete = false) {
       incomplete && row.displayStatus !== "PARSE_FAILED"
         ? "views.kbMatrix.deleteIncompleteDocConfirm"
         : "views.kbMatrix.deleteDocConfirm";
-    await ElMessageBox.confirm(
-      t(confirmKey, { title: row.title || t("views.kbMatrix.noTitle") }),
-      t("views.menuItems.confirm"),
-      { type: "warning" },
-    );
+    await confirmMessageBox(t, t(confirmKey, { title: row.title || t("views.kbMatrix.noTitle") }), {
+      type: "warning",
+    });
     await ragApi.deleteRagKbDocument(kid.value, row.id);
     ElMessage.success(t("views.kbMatrix.deleted"));
     delete chunksByDoc.value[row.id];
@@ -1460,40 +1505,6 @@ async function saveChunk() {
   }
 }
 
-function unbindDocTableResize() {
-  if (docTableResizeObserver) {
-    docTableResizeObserver.disconnect();
-    docTableResizeObserver = null;
-  }
-}
-
-/**
- * 琛ㄩ珮鍙栬嚜銆屾枃妗ｈ〃鏍煎灞傛Ы銆峽@code .docs-table-wrap} 鐨?{@code clientHeight}锛坒lex:1 + min-height:0 涓嬬殑鍙敤楂樺害锛夛紝
- * 鍕跨敤 {@code docs-main} 鐨?{@code getBoundingClientRect().height} 鍙備笌鍥炵畻锛氳〃浣撶暐瓒呭嚭鏃朵細鎶?main 鎾戦珮锛? * ResizeObserver 鍙嶅璇诲埌鏇村ぇ楂樺害 鈫?鏃犻檺澧為珮锛屽垎椤靛櫒琚《鍑鸿鍙ｏ紙鐩磋繛甯??kbId= 杩涘叆鏃舵洿鏄撹Е鍙戯級銆? */
-function bindDocTableResize() {
-  unbindDocTableResize();
-  const wrap = docsTableWrapRef.value;
-  if (!wrap || typeof ResizeObserver === "undefined") {
-    return;
-  }
-  const capByViewport = () =>
-    typeof window !== "undefined" ? Math.max(240, window.innerHeight - 200) : 720;
-
-  const apply = () => {
-    let h = Math.floor(wrap.clientHeight);
-    if (h < 80) {
-      return;
-    }
-    h = Math.min(h, capByViewport());
-    docTableBodyHeight.value = Math.max(200, h);
-  };
-  docTableResizeObserver = new ResizeObserver(() => {
-    window.requestAnimationFrame(apply);
-  });
-  docTableResizeObserver.observe(wrap);
-  requestAnimationFrame(apply);
-}
-
 watch(
   () => props.kbId,
   () => {
@@ -1503,22 +1514,10 @@ watch(
     queryTitle.value = "";
     queryDisplayStatus.value = undefined;
     chunksByDoc.value = {};
-    void refreshDocs().then(() => nextTick()).then(() => bindDocTableResize());
+    void refreshDocs();
   },
   { immediate: true },
 );
-
-watch(docPageSize, () => {
-  void nextTick().then(() => bindDocTableResize());
-});
-
-onMounted(() => {
-  void nextTick().then(() => bindDocTableResize());
-});
-
-onBeforeUnmount(() => {
-  unbindDocTableResize();
-});
 </script>
 
 <style scoped>
@@ -1624,11 +1623,9 @@ onBeforeUnmount(() => {
   --ws-card: var(--el-bg-color);
   --ws-border: var(--el-border-color-lighter);
   --ws-muted: var(--el-text-color-secondary);
-  flex: 1;
-  min-height: 0;
   display: flex;
   flex-direction: column;
-  height: 100%;
+  gap: 12px;
 }
 
 .doc-toolbar {
@@ -1808,17 +1805,14 @@ onBeforeUnmount(() => {
 .docs-matrix {
   display: flex;
   gap: 16px;
-  align-items: stretch;
-  flex: 1;
-  min-height: 0;
+  align-items: flex-start;
 }
 
 .docs-nav {
   flex: 0 0 220px;
-  min-height: 0;
   display: flex;
   flex-direction: column;
-  align-self: stretch;
+  align-self: flex-start;
   padding: 12px;
   border: 1px solid var(--ws-border);
   border-radius: 12px;
@@ -1834,9 +1828,6 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
 }
 
 .cat-row {
@@ -1886,18 +1877,13 @@ onBeforeUnmount(() => {
 .docs-main {
   flex: 1;
   min-width: 0;
-  min-height: 0;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
 .docs-table-wrap {
-  flex: 1;
-  min-height: 0;
   min-width: 0;
-  overflow: hidden;
   border-radius: 12px;
   border: 1px solid var(--ws-border);
   background: var(--ws-card);
