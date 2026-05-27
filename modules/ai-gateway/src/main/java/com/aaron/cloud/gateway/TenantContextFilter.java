@@ -5,6 +5,7 @@ import com.aaron.cloud.common.context.AccessPartyContextHolder;
 import com.aaron.cloud.common.context.LoginUser;
 import com.aaron.cloud.common.context.LoginUserContextHolder;
 import com.aaron.cloud.common.context.TenantContextHolder;
+import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.security.SecUserAccountRepository;
 import com.aaron.cloud.common.security.TenantJwtTmsParser;
 import com.aaron.cloud.common.tenant.SysTenantRepository;
@@ -130,7 +131,7 @@ public class TenantContextFilter extends OncePerRequestFilter {
                 MDC.put("deviceId", deviceId);
             }
             var snap =
-                    TenantContextHolder.TenantSnapshot.builder()
+                    TenantSnapshot.builder()
                             .tenantId(tenantId)
                             .userId(userId)
                             .deviceId(deviceId)

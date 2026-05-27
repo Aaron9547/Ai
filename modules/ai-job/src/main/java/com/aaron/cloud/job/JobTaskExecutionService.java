@@ -11,6 +11,7 @@ import com.aaron.cloud.common.task.LongRunningTaskProgress;
 import com.aaron.cloud.common.task.LongRunningTaskProgressReporter;
 import com.aaron.cloud.common.task.LongRunningTaskProgressSupport;
 import com.aaron.cloud.common.context.TenantContextHolder;
+import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.rag.RagVectorInfrastructure;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -38,7 +39,7 @@ public class JobTaskExecutionService implements JobTaskExecutionPort {
         JobTask task = taskOpt.get();
         try {
             TenantContextHolder.set(
-                    TenantContextHolder.TenantSnapshot.builder()
+                    TenantSnapshot.builder()
                             .tenantId(tenantId)
                             .userId(task.getUserId())
                             .deviceId(task.getDeviceId())

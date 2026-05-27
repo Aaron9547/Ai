@@ -4,6 +4,7 @@ import { http } from "../plugins/http";
 export type ProfileMergeGuestDeviceResult = {
   conversationsReassigned: number;
   memoryChunksReassigned: number;
+  knowledgeNodesReassigned: number;
   ran: boolean;
 };
 

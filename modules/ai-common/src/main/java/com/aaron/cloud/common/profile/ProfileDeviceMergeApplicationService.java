@@ -4,6 +4,7 @@ import com.aaron.cloud.common.api.enums.profile.ProfileTagCode;
 import com.aaron.cloud.common.audit.SysAuditEventRepository;
 import com.aaron.cloud.common.audit.entity.SysAuditEvent;
 import com.aaron.cloud.common.chat.ChatConversationRepository;
+import com.aaron.cloud.common.knowledgeplanet.TenUserKnowledgeNodeRepository;
 import com.aaron.cloud.common.profile.entity.TenProfileTag;
 import com.aaron.cloud.common.profile.entity.TenUserDeviceLink;
 import com.aaron.cloud.common.profile.entity.TenUserMemoryAbstract;
@@ -18,7 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 注册、登录或显式接口 {@code /open/v1/profile/merge-guest-device} 时，将访客设备上的会话、画像标签、分层记忆归并到用户主体，并写入审计。
+ * 注册、登录或显式接口 {@code /open/v1/profile/merge-guest-device} 时，将访客设备上的会话、画像标签、分层记忆、知识星球节点归并到用户主体，并写入审计。
  * 同一用户可对<strong>不同</strong> {@code device_id} 多次归并；库表 {@code ten_user_device_link} 以 {@code (tenant_id, user_id, device_id)} 唯一，允许多条设备绑定。
  */
 @Slf4j
@@ -30,6 +31,7 @@ public class ProfileDeviceMergeApplicationService {
     public static final String AUDIT_RESOURCE_TYPE = "ten_profile_merge";
 
     private final ChatConversationRepository chatConversationRepository;
+    private final TenUserKnowledgeNodeRepository tenUserKnowledgeNodeRepository;
     private final TenProfileTagRepository tenProfileTagRepository;
     private final TenUserMemoryChunkRepository tenUserMemoryChunkRepository;
     private final TenUserMemoryAbstractRepository tenUserMemoryAbstractRepository;
@@ -52,6 +54,7 @@ public class ProfileDeviceMergeApplicationService {
 
         int conversations = chatConversationRepository.attachGuestConversationsToUser(tenantId, deviceId, userId);
         int chunks = tenUserMemoryChunkRepository.reassignSubject(tenantId, dKey, uKey);
+        int knowledgeNodes = tenUserKnowledgeNodeRepository.reassignSubject(tenantId, dKey, uKey);
 
         mergeProfileTags(tenantId, dKey, uKey);
         mergeAbstractRows(tenantId, dKey, uKey);
@@ -63,13 +66,13 @@ public class ProfileDeviceMergeApplicationService {
         link.setDeviceId(deviceId);
         tenUserDeviceLinkRepository.insertIfAbsent(link);
 
-        writeAudit(tenantId, userId, deviceId, conversations, chunks);
+        writeAudit(tenantId, userId, deviceId, conversations, chunks, knowledgeNodes);
         try {
             userMemoryApplicationService.repairMilvusAfterGuestMerge(tenantId, dKey, uKey);
         } catch (Exception ex) {
             log.warn("repairMilvusAfterGuestMerge failed tenantId={} userId={}", tenantId, userId, ex);
         }
-        return new MergeOutcome(conversations, chunks, true);
+        return new MergeOutcome(conversations, chunks, knowledgeNodes, true);
     }
 
     private void mergeProfileTags(long tenantId, String deviceKey, String userKey) {
@@ -161,13 +164,15 @@ public class ProfileDeviceMergeApplicationService {
         }
     }
 
-    private void writeAudit(long tenantId, long userId, String deviceId, int conversations, int chunks) {
+    private void writeAudit(
+            long tenantId, long userId, String deviceId, int conversations, int chunks, int knowledgeNodes) {
         try {
             ObjectNode detail = objectMapper.createObjectNode();
             detail.put("userId", userId);
             detail.put("deviceId", deviceId);
             detail.put("conversationsReassigned", conversations);
             detail.put("memoryChunksReassigned", chunks);
+            detail.put("knowledgeNodesReassigned", knowledgeNodes);
             var ev = new SysAuditEvent();
             ev.setTenantId(tenantId);
             ev.setActorType("USER");
@@ -182,9 +187,10 @@ public class ProfileDeviceMergeApplicationService {
         }
     }
 
-    public record MergeOutcome(int conversationsReassigned, int memoryChunksReassigned, boolean ran) {
+    public record MergeOutcome(
+            int conversationsReassigned, int memoryChunksReassigned, int knowledgeNodesReassigned, boolean ran) {
         public static MergeOutcome skipped() {
-            return new MergeOutcome(0, 0, false);
+            return new MergeOutcome(0, 0, 0, false);
         }
     }
 }

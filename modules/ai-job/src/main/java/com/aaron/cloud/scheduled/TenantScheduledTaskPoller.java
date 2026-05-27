@@ -1,5 +1,6 @@
 package com.aaron.cloud.scheduled;
 
+import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.api.enums.scheduled.ScheduledRunTrigger;
 import com.aaron.cloud.common.config.properties.AiRagProperties;
 import com.aaron.cloud.common.redis.RedisDistributedLockService;
@@ -66,7 +67,7 @@ public class TenantScheduledTaskPoller {
             var prev = com.aaron.cloud.common.context.TenantContextHolder.getOrNull();
             try {
                 com.aaron.cloud.common.context.TenantContextHolder.set(
-                        com.aaron.cloud.common.context.TenantContextHolder.TenantSnapshot.builder()
+                        com.aaron.cloud.common.context.TenantSnapshot.builder()
                                 .tenantId(task.getTenantId())
                                 .build());
                 var result = runOrchestrator.trigger(task.getId(), ScheduledRunTrigger.CRON);

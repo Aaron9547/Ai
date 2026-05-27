@@ -47,6 +47,9 @@ public final class AdminHttpMenuRoutes {
         if (uri.startsWith("/api/v1/admin/llm-models")) {
             return AdminMenuCode.LLM_MODELS;
         }
+        if (uri.startsWith("/api/v1/admin/prompt-templates")) {
+            return AdminMenuCode.PROMPT_TEMPLATES;
+        }
         if (uri.startsWith("/api/v1/admin/mcp-servers")) {
             return AdminMenuCode.MCP_SERVERS;
         }
@@ -58,6 +61,9 @@ public final class AdminHttpMenuRoutes {
         }
         if (uri.startsWith("/api/v1/admin/scheduled-tasks")) {
             return AdminMenuCode.SCHEDULED_TASKS;
+        }
+        if (uri.startsWith("/api/v1/admin/message/")) {
+            return AdminMenuCode.MESSAGE_CENTER;
         }
         if (uri.startsWith("/api/v1/admin/chat/intents")) {
             return AdminMenuCode.CHAT_INTENTS;

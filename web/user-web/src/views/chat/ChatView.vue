@@ -18,12 +18,15 @@
       :collapsible="!isMobile"
       :default-collapsed="isTablet"
       :drawer-open="isMobile && sidebarOpen"
+      :mobile-layout="isMobile"
+      :auth-bump="authBump"
       @select="selectConv"
       @new-conv="newConv"
       @rename="onRenameConv"
       @delete="onDeleteConv"
       @logout="logoutUser"
       @login="authOpen = true"
+      @planet-opened="sidebarOpen = false"
     />
     <UserAuthDialog
       v-model="authOpen"
@@ -912,7 +915,7 @@ const activeToolbarAnchor = computed(() => {
   return toolbarAnchorHeadDesktopRef.value;
 });
 let threadLoadSeq = 0;
-type ThreadPaneAction = { kind: "load"; convId: number } | { kind: "empty" };
+type ThreadPaneAction = { kind: "load"; convId: string } | { kind: "empty" };
 let pendingThreadAction: ThreadPaneAction | null = null;
 
 /** 每次发起新的助手流式回复自增；丢弃代数已过期的 SSE 分帧，避免上一轮 {@code ragDoc} 写入本轮气泡。 */
@@ -1371,7 +1374,7 @@ function stepAssistantVariant(m: Msg, delta: number) {
   syncAssistantActiveToFlat(m);
 }
 
-async function loadMessagesForConv(id: number) {
+async function loadMessagesForConv(id: string) {
   const seq = ++threadLoadSeq;
   threadLoading.value = true;
   clearThread();
@@ -1398,6 +1401,10 @@ async function onThreadPaneAfterLeave() {
   pendingThreadAction = null;
   if (!action) return;
   if (action.kind === "load") {
+    // 首条发送会先 newConv 再本地 push 消息；此处若再拉历史会 clearThread 把流式中的气泡清掉
+    if (sending.value && messages.value.length > 0) {
+      return;
+    }
     await loadMessagesForConv(action.convId);
     return;
   }
@@ -1445,7 +1452,7 @@ function patchMsgMetadataFromServer(local: Msg, server: Msg): void {
   }
 }
 
-async function syncThreadAfterStream(conversationId: number): Promise<void> {
+async function syncThreadAfterStream(conversationId: string): Promise<void> {
   try {
     const rows = await chatApi.listConversationMessages(conversationId);
     const serverMsgs = mapHistoryToMsgs(rows);
@@ -2056,7 +2063,7 @@ const {
   takeSentStarterPrompt,
   syncForConversation: syncRecommendForConversation,
 } = useDailyRecommend();
-const convId = ref<number | null>(null);
+const convId = ref<string | null>(null);
 const input = ref("");
 const messages = ref<Msg[]>([]);
 
@@ -2467,7 +2474,7 @@ function clearThread() {
   messages.value = [];
 }
 
-function selectConv(id: number) {
+function selectConv(id: string) {
   if (convId.value === id) return;
   if (sending.value) {
     cancelActiveStream();
@@ -2482,7 +2489,7 @@ function selectConv(id: number) {
   syncRecommendForConversation();
 }
 
-async function onRenameConv(id: number) {
+async function onRenameConv(id: string) {
   const c = convs.value.find((x) => x.id === id);
   if (!c) return;
   try {
@@ -2503,7 +2510,7 @@ async function onRenameConv(id: number) {
   }
 }
 
-async function onDeleteConv(id: number) {
+async function onDeleteConv(id: string) {
   try {
     await ElMessageBox.confirm(t("chat.deleteConvConfirm"), t("chat.deleteConv"), {
       type: "warning",
@@ -2593,6 +2600,20 @@ function refreshAuthLabel() {
 async function onAuthDone() {
   refreshAuthLabel();
   await loadChatShellForCurrentTenant();
+  const prevConv = convId.value;
+  await refresh();
+  if (prevConv != null && convs.value.some((c) => c.id === prevConv)) {
+    pendingThreadAction = { kind: "load", convId: prevConv };
+    await loadMessagesForConv(prevConv);
+  } else if (prevConv != null) {
+    convId.value = convs.value[0]?.id ?? null;
+    if (convId.value != null) {
+      pendingThreadAction = { kind: "load", convId: convId.value };
+      await loadMessagesForConv(convId.value);
+    } else {
+      clearThread();
+    }
+  }
   authBump.value += 1;
 }
 
@@ -2609,8 +2630,10 @@ async function logoutUser() {
   clearUserSession();
   refreshAuthLabel();
   webSearchEnabled.value = false;
-  void refresh();
+  convId.value = null;
   clearThread();
+  await refresh();
+  authBump.value += 1;
   ElMessage.success(t("chat.loggedOut"));
 }
 
@@ -2693,18 +2716,21 @@ function isCurrentConvUnspoken(): boolean {
 
 let newConvInFlight: Promise<void> | null = null;
 
-async function newConv() {
+type NewConvOptions = { /** 首条提问自动建会话：勿触发 pane 切换后的历史加载，勿 toast */ forSend?: boolean };
+
+async function newConv(options?: NewConvOptions) {
   if (newConvInFlight) {
     await newConvInFlight;
     return;
   }
-  newConvInFlight = newConvInner().finally(() => {
+  const forSend = options?.forSend ?? false;
+  newConvInFlight = newConvInner(forSend).finally(() => {
     newConvInFlight = null;
   });
   await newConvInFlight;
 }
 
-async function newConvInner() {
+async function newConvInner(forSend: boolean) {
   if (isCurrentConvUnspoken()) {
     ElMessage.info(t("chat.alreadyNewConv"));
     webSearchEnabled.value = false;
@@ -2719,7 +2745,9 @@ async function newConvInner() {
   const c = await chatApi.createConversation(
     `${t("chat.newConvPrefix")} ${new Date().toLocaleString(dateLoc, { hour12: false })}`,
   );
-  pendingThreadAction = { kind: "load", convId: c.id };
+  if (!forSend) {
+    pendingThreadAction = { kind: "load", convId: c.id };
+  }
   convId.value = c.id;
   webSearchEnabled.value = false;
   if (isMobile.value) {
@@ -2727,7 +2755,9 @@ async function newConvInner() {
   }
   await refresh();
   syncRecommendForConversation();
-  ElMessage.success(t("chat.convCreated"));
+  if (!forSend) {
+    ElMessage.success(t("chat.convCreated"));
+  }
 }
 
 function onKeydown(e: KeyboardEvent) {
@@ -2757,7 +2787,7 @@ async function send() {
 
   try {
     if (!convId.value) {
-      await newConv();
+      await newConv({ forSend: true });
     }
     if (!convId.value) return;
 

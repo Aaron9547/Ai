@@ -1,0 +1,3 @@
+# Encoding scan report
+
+OK: no issues

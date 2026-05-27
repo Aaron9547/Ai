@@ -1,7 +1,7 @@
 package com.aaron.cloud.common.profile;
 
 import com.aaron.cloud.common.api.enums.profile.ProfileTagCode;
-import com.aaron.cloud.common.context.TenantContextHolder.TenantSnapshot;
+import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.profile.entity.TenProfileTag;
 import java.util.List;
 import java.util.StringJoiner;

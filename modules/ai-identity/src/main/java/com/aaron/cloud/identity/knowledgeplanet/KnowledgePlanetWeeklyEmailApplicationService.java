@@ -1,15 +1,18 @@
 package com.aaron.cloud.identity.knowledgeplanet;
 
+import com.aaron.cloud.common.api.dto.message.MessageSendRequest;
+import com.aaron.cloud.common.api.enums.message.MessageDeliveryStatus;
+import com.aaron.cloud.common.api.enums.message.MessageSceneCode;
 import com.aaron.cloud.common.api.enums.profile.KnowledgeWeeklyInsightStatus;
+import com.aaron.cloud.common.api.ports.MessageSendPort;
 import com.aaron.cloud.common.knowledgeplanet.KnowledgePlanetTenantRuntime;
 import com.aaron.cloud.common.knowledgeplanet.KnowledgeWeeklyPlan;
 import com.aaron.cloud.common.knowledgeplanet.TenUserWeeklyInsightRepository;
 import com.aaron.cloud.common.knowledgeplanet.entity.TenUserWeeklyInsight;
+import com.aaron.cloud.common.message.MessageSceneReadinessQuery;
 import com.aaron.cloud.common.security.SecUserAccountRepository;
 import com.aaron.cloud.common.security.entity.SecUserAccount;
 import com.aaron.cloud.common.tenant.SysTenantRepository;
-import com.aaron.cloud.identity.mail.TenantTemplateEmailSender;
-import com.aaron.cloud.identity.open.AuthRegisterVerificationConfig.EmailChannel;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -26,8 +29,8 @@ import org.springframework.stereotype.Service;
 public class KnowledgePlanetWeeklyEmailApplicationService {
 
     private final KnowledgePlanetTenantRuntime planetRuntime;
-    private final TenantKnowledgePlanetEmailResolver emailResolver;
-    private final TenantTemplateEmailSender templateEmailSender;
+    private final MessageSceneReadinessQuery sceneReadinessQuery;
+    private final MessageSendPort messageSendPort;
     private final TenUserWeeklyInsightRepository insightRepository;
     private final SecUserAccountRepository userAccountRepository;
     private final SysTenantRepository tenantRepository;
@@ -37,8 +40,10 @@ public class KnowledgePlanetWeeklyEmailApplicationService {
         if (!planetRuntime.isEnabled(tenantId)) {
             return new WeeklyEmailResult(0, 0, 0, "租户未启用知识星球");
         }
-        KnowledgePlanetEmailConfig cfg = emailResolver.resolve(tenantId);
-        if (!cfg.isEnabled() || !emailResolver.isDeliveryReady(tenantId)) {
+        if (!planetRuntime.isWeeklyEmailEnabled(tenantId)) {
+            return new WeeklyEmailResult(0, 0, 0, "周报邮件未启用");
+        }
+        if (!sceneReadinessQuery.isSceneConfigured(tenantId, MessageSceneCode.KNOWLEDGE_PLANET_WEEKLY)) {
             return new WeeklyEmailResult(0, 0, 0, "邮件通道未就绪");
         }
 
@@ -48,7 +53,6 @@ public class KnowledgePlanetWeeklyEmailApplicationService {
         int sent = 0;
         int skipped = 0;
         int failed = 0;
-        EmailChannel email = cfg.getEmail();
 
         for (TenUserWeeklyInsight ins : ready) {
             try {
@@ -63,10 +67,26 @@ public class KnowledgePlanetWeeklyEmailApplicationService {
                 }
                 KnowledgeWeeklyPlan plan = parsePlan(ins.getPlanJson());
                 Map<String, String> vars = buildVars(tenantName, user, weekStart, plan);
-                String subject =
-                        TenantTemplateEmailSender.applyTemplate(email.getSubjectTemplate(), vars);
-                String body = TenantTemplateEmailSender.applyTemplate(email.getBodyTemplate(), vars);
-                templateEmailSender.send(email, user.getEmail().trim(), subject, body);
+                var result =
+                        messageSendPort.send(
+                                MessageSendRequest.builder()
+                                        .tenantId(tenantId)
+                                        .sceneCode(MessageSceneCode.KNOWLEDGE_PLANET_WEEKLY)
+                                        .recipient(user.getEmail().trim())
+                                        .templateVars(vars)
+                                        .idempotencyKey(
+                                                "kp-weekly:"
+                                                        + tenantId
+                                                        + ":"
+                                                        + ins.getUserId()
+                                                        + ":"
+                                                        + weekStart)
+                                        .async(true)
+                                        .build());
+                if (result.getStatus() == MessageDeliveryStatus.FAILED) {
+                    throw new IllegalStateException(
+                            result.getErrorMessage() == null ? "send failed" : result.getErrorMessage());
+                }
                 ins.setStatus(KnowledgeWeeklyInsightStatus.SENT);
                 ins.setEmailedAt(LocalDateTime.now());
                 ins.setErrorMessage(null);

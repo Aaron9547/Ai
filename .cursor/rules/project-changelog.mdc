@@ -15,8 +15,9 @@ alwaysApply: true
 - [ ] `PROJECT.md`「变更记录」至少一条 `- **模块**：…`（含 migrate / 已建库手工执行说明）？
 - [ ] `schema_v1.sql` / `migrate_0_1_{patch}_*` / `gw_api_endpoint_catalog_inserts.sql` / `README.md` 已同集更新？
 - [ ] 新能力：`PROJECT.md` 功能索引 + §1.5（若适用）？
-- [ ] `.\scripts\check-project-changelog.ps1 -IncludeUntracked` → **0**
+- [ ] `.\scripts\check-project-changelog.ps1 -IncludeUntracked` → **0**（含 UTF-8 扫描）
+- [ ] 触及中文注释/异常/i18n：`python tools/check_text_encoding.py` → **0**
 
-## 禁止（§0.5）
+## 禁止（§0.5 / §0.6）
 
-只改代码不写变更记录 · 用 `##` 专节代替变更记录 · pom/顶节不一致 · 以为重启即迁库 · 新 API 不写 gw 目录
+只改代码不写变更记录 · 用 `##` 专节代替变更记录 · pom/顶节不一致 · 以为重启即迁库 · 新 API 不写 gw 目录 · **GBK 等非 UTF-8 保存源码** · **PowerShell 管道/重定向覆盖 `.java`/`.vue`/`.ts`**

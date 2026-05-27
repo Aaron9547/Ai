@@ -1,0 +1,15 @@
+modules/ai-chat/src/main/java/com/aaron/cloud/chat/ChatTurnDigestApplicationService.java
+modules/ai-chat/src/main/java/com/aaron/cloud/chat/intent/spi/ChatIntentHandlerPlugin.java
+modules/ai-chat/src/main/java/com/aaron/cloud/chat/recommend/ChatDailyRecommendProfileIngest.java
+modules/ai-chat/src/main/java/com/aaron/cloud/chat/recommend/ChatUserDailyRecommendService.java
+modules/ai-chat/src/main/java/com/aaron/cloud/chat/starter/ChatStarterDailyHotTopicService.java
+modules/ai-chat/src/main/java/com/aaron/cloud/chat/websearch/ChatWebSearchGroundingService.java
+modules/ai-common/src/main/java/com/aaron/cloud/common/context/LoginContextUtils.java
+modules/ai-common/src/main/java/com/aaron/cloud/common/profile/ProfileSubjectKey.java
+modules/ai-gateway/src/main/java/com/aaron/cloud/gateway/TenantContextFilter.java
+modules/ai-identity/src/test/java/com/aaron/cloud/identity/rest/api/AdminUserRestControllerWebMvcTest.java
+modules/ai-model/src/main/java/com/aaron/cloud/model/metering/LlmModelUsageRecorder.java
+modules/ai-chat/src/main/java/com/aaron/cloud/chat/dto/RagCitationView.java
+modules/ai-chat/src/main/java/com/aaron/cloud/chat/rest/api/ChatAdminRestController.java
+modules/ai-rag/src/main/java/com/aaron/cloud/rag/RagIngestOrchestrationService.java
+modules/ai-rag/src/main/java/com/aaron/cloud/rag/RagKbAdminApplicationService.java

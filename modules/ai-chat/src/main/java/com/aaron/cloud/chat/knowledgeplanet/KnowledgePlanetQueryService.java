@@ -5,13 +5,12 @@ import com.aaron.cloud.chat.dto.ChatKnowledgePlanetDtos.SummaryResponse;
 import com.aaron.cloud.chat.dto.ChatKnowledgePlanetDtos.UniverseGraphResponse;
 import com.aaron.cloud.chat.dto.ChatKnowledgePlanetDtos.WeeklyLatestResponse;
 import com.aaron.cloud.common.context.TenantContextHolder;
-import com.aaron.cloud.common.context.TenantContextHolder.TenantSnapshot;
+import com.aaron.cloud.common.context.TenantSnapshot;
+import com.aaron.cloud.common.knowledgeplanet.KnowledgePlanetSubjectQuerySupport;
 import com.aaron.cloud.common.knowledgeplanet.KnowledgePlanetTenantRuntime;
 import com.aaron.cloud.common.knowledgeplanet.KnowledgeWeeklyPlan;
-import com.aaron.cloud.common.knowledgeplanet.TenUserKnowledgeNodeRepository;
 import com.aaron.cloud.common.knowledgeplanet.TenUserWeeklyInsightRepository;
 import com.aaron.cloud.common.knowledgeplanet.entity.TenUserKnowledgeNode;
-import com.aaron.cloud.common.profile.ProfileSubjectKey;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Comparator;
 import java.util.List;
@@ -25,7 +24,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class KnowledgePlanetQueryService {
 
     private final KnowledgePlanetTenantRuntime planetRuntime;
-    private final TenUserKnowledgeNodeRepository nodeRepository;
+    private final KnowledgePlanetSubjectQuerySupport subjectQuerySupport;
     private final TenUserWeeklyInsightRepository insightRepository;
     private final KnowledgePlanetUniverseBuilder universeBuilder;
     private final ObjectMapper objectMapper;
@@ -35,12 +34,12 @@ public class KnowledgePlanetQueryService {
         if (!planetRuntime.isEnabled(snap.getTenantId())) {
             return SummaryResponse.disabled();
         }
-        String subjectKey = requireSubject(snap);
+        requireSubject(snap);
         long tenantId = snap.getTenantId();
-        List<TenUserKnowledgeNode> all = nodeRepository.listRecent(tenantId, subjectKey, 80);
+        List<TenUserKnowledgeNode> all = subjectQuerySupport.listRecent(snap, 80);
         UniverseGraphResponse universe = universeBuilder.build(all);
 
-        List<TenUserKnowledgeNode> recent = nodeRepository.listRecent(tenantId, subjectKey, 5);
+        List<TenUserKnowledgeNode> recent = subjectQuerySupport.listRecent(snap, 5);
         List<NodeSummaryView> nodes =
                 recent.stream()
                         .map(
@@ -91,9 +90,8 @@ public class KnowledgePlanetQueryService {
         if (!planetRuntime.isEnabled(snap.getTenantId())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "knowledge_planet_disabled");
         }
-        String subjectKey = requireSubject(snap);
-        List<TenUserKnowledgeNode> nodes =
-                nodeRepository.listRecent(snap.getTenantId(), subjectKey, 80);
+        requireSubject(snap);
+        List<TenUserKnowledgeNode> nodes = subjectQuerySupport.listRecent(snap, 80);
         return universeBuilder.build(nodes);
     }
 
@@ -125,10 +123,10 @@ public class KnowledgePlanetQueryService {
     }
 
     private String requireSubject(TenantSnapshot snap) {
-        String sk = ProfileSubjectKey.fromSnapshot(snap);
-        if (sk == null) {
+        try {
+            return subjectQuerySupport.requireQuerySubjectKey(snap);
+        } catch (IllegalStateException ex) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "subject_required");
         }
-        return sk;
     }
 }

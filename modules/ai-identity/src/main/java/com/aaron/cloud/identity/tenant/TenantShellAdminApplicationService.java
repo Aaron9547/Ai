@@ -13,9 +13,8 @@ import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationServ
 import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService.PutItem;
 import com.aaron.cloud.common.knowledgeplanet.KnowledgePlanetScheduledTaskSynchronizer;
 import com.aaron.cloud.common.knowledgeplanet.KnowledgePlanetTenantRuntime;
-import com.aaron.cloud.identity.knowledgeplanet.KnowledgePlanetEmailConfig;
-import com.aaron.cloud.identity.knowledgeplanet.TenantKnowledgePlanetEmailResolver;
-import com.aaron.cloud.identity.open.AuthRegisterEmailSupport;
+import com.aaron.cloud.common.api.enums.message.MessageSceneCode;
+import com.aaron.cloud.common.message.MessageSceneReadinessQuery;
 import com.aaron.cloud.identity.open.AuthRegisterVerificationConfig;
 import com.aaron.cloud.identity.open.TenantAuthRegisterVerificationResolver;
 import com.aaron.cloud.common.api.ports.SiteCrawlRuntimePort;
@@ -56,7 +55,7 @@ public class TenantShellAdminApplicationService {
     private final TenantRagRuntimePort tenantRagRuntimePort;
     private final TenantAuthRegisterVerificationResolver authRegisterVerificationResolver;
     private final KnowledgePlanetTenantRuntime knowledgePlanetTenantRuntime;
-    private final TenantKnowledgePlanetEmailResolver knowledgePlanetEmailResolver;
+    private final MessageSceneReadinessQuery messageSceneReadinessQuery;
     private final KnowledgePlanetScheduledTaskSynchronizer knowledgePlanetScheduledTaskSynchronizer;
     private final TenantBrandingResolver tenantBrandingResolver;
 
@@ -180,26 +179,18 @@ public class TenantShellAdminApplicationService {
         return load(tenantId);
     }
 
-    /** 开放注册开关 + 注册验证码邮件（SMTP 与模板）。 */
+    /** 开放注册开关 + 验证码参数（邮件通道见消息中心）。 */
     public ShellConfigResponse saveAuthRegister(long tenantId, ShellAuthRegisterPutBody body) {
         if (body == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "body required");
         }
-        AuthRegisterVerificationConfig.EmailChannel em = new AuthRegisterVerificationConfig.EmailChannel();
-        em.setSmtpHost(trimOrEmpty(body.getEmailSmtpHost()));
-        em.setSmtpPort(body.getEmailSmtpPort() <= 0 ? 465 : body.getEmailSmtpPort());
-        em.setUsername(trimOrEmpty(body.getEmailUsername()));
-        em.setPassword(resolveEmailPassword(tenantId, body.getEmailPassword()));
-        em.setFrom(trimOrEmpty(body.getEmailFrom()));
-        em.setSsl(body.isEmailSsl());
-        em.setSubjectTemplate(trimOrEmpty(body.getEmailSubjectTemplate()));
-        em.setBodyTemplate(body.getEmailBodyTemplate() == null ? "" : body.getEmailBodyTemplate());
-
-        boolean emailReady = AuthRegisterEmailSupport.isDeliveryReady(em);
+        boolean emailReady =
+                messageSceneReadinessQuery.isSceneConfigured(
+                        tenantId, MessageSceneCode.REGISTER_VERIFICATION);
         if (body.isOpenRegistration() && !emailReady) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "开启自助注册须先配置 SMTP 主机、发件人地址、SMTP 用户名与 SMTP 密码（QQ 邮箱须填授权码）");
+                    "开启自助注册须先在「消息发送管理」配置 REGISTER_VERIFICATION 场景模板与 SMTP 通道");
         }
         boolean persistOpen = body.isOpenRegistration() && emailReady;
 
@@ -207,7 +198,6 @@ public class TenantShellAdminApplicationService {
         cfg.setCodeLength(body.getCodeLength() <= 0 ? 6 : body.getCodeLength());
         cfg.setCodeTtlSeconds(body.getCodeTtlSeconds() <= 0 ? 600 : body.getCodeTtlSeconds());
         cfg.setSendCooldownSeconds(body.getSendCooldownSeconds() <= 0 ? 60 : body.getSendCooldownSeconds());
-        cfg.setEmail(em);
 
         List<PutItem> items = new ArrayList<>();
         PutItem openReg = new PutItem();
@@ -224,41 +214,29 @@ public class TenantShellAdminApplicationService {
         return load(tenantId);
     }
 
-    /** 个人知识星球：开关、可选沉淀模型、邮件模板；并同步 {@code ten_scheduled_task} 启停（Cron 由定时任务专管）。 */
+    /** 个人知识星球：开关、可选沉淀模型；周报邮件见消息中心 KNOWLEDGE_PLANET_WEEKLY 模板。 */
     public ShellConfigResponse saveKnowledgePlanet(long tenantId, ShellKnowledgePlanetPutBody body) {
         if (body == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "body required");
         }
         validateOptionalChatModelId(tenantId, body.getDigestModelId(), "知识星球模型");
-
-        KnowledgePlanetEmailConfig emailCfg = knowledgePlanetEmailResolver.resolve(tenantId);
-        emailCfg.setEnabled(body.isEmailEnabled());
-        emailCfg.setReuseRegisterSmtp(body.isReuseRegisterSmtp());
-        var em = emailCfg.getEmail();
-        em.setSmtpHost(trimOrEmpty(body.getEmailSmtpHost()));
-        em.setSmtpPort(body.getEmailSmtpPort() <= 0 ? 465 : body.getEmailSmtpPort());
-        em.setUsername(trimOrEmpty(body.getEmailUsername()));
-        em.setPassword(resolveKnowledgePlanetEmailPassword(tenantId, body.getEmailPassword()));
-        em.setFrom(trimOrEmpty(body.getEmailFrom()));
-        em.setSsl(body.isEmailSsl());
-        em.setSubjectTemplate(trimOrEmpty(body.getEmailSubjectTemplate()));
-        em.setBodyTemplate(body.getEmailBodyTemplate() == null ? "" : body.getEmailBodyTemplate());
-
-        boolean emailReady = AuthRegisterEmailSupport.isDeliveryReady(em);
-        if (body.isEnabled() && body.isEmailEnabled() && !emailReady) {
+        if (body.isEnabled()
+                && body.isEmailEnabled()
+                && !messageSceneReadinessQuery.isSceneConfigured(
+                        tenantId, MessageSceneCode.KNOWLEDGE_PLANET_WEEKLY)) {
             throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST, "开启周报邮件须配置 SMTP（或复用注册邮箱且注册 SMTP 已就绪）");
+                    HttpStatus.BAD_REQUEST,
+                    "开启周报邮件须先在「消息发送管理」配置 KNOWLEDGE_PLANET_WEEKLY 场景模板");
         }
 
         List<PutItem> items = new ArrayList<>();
         items.add(item(TenantRuntimeSettingKey.KNOWLEDGE_PLANET_ENABLED, body.isEnabled() ? "true" : "false"));
+        items.add(
+                item(
+                        TenantRuntimeSettingKey.KNOWLEDGE_PLANET_WEEKLY_EMAIL_ENABLED,
+                        body.isEmailEnabled() ? "true" : "false"));
         String digestId = trimOrEmpty(body.getDigestModelId());
         items.add(item(TenantRuntimeSettingKey.KNOWLEDGE_PLANET_DIGEST_MODEL_ID, digestId));
-        String emailJson = knowledgePlanetEmailResolver.toJson(emailCfg);
-        if (emailJson.length() > RUNTIME_JSON_MAX_CHARS) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "知识星球邮件 JSON 过长");
-        }
-        items.add(item(TenantRuntimeSettingKey.KNOWLEDGE_PLANET_EMAIL_JSON, emailJson));
         tenantRuntimeSettingApplicationService.replace(tenantId, items);
         knowledgePlanetScheduledTaskSynchronizer.syncForTenant(tenantId);
         return load(tenantId);
@@ -266,39 +244,16 @@ public class TenantShellAdminApplicationService {
 
     private KnowledgePlanetRuntimeDto readKnowledgePlanetRuntime(long tenantId) {
         boolean enabled = knowledgePlanetTenantRuntime.isEnabled(tenantId);
-        KnowledgePlanetEmailConfig cfg = knowledgePlanetEmailResolver.resolve(tenantId);
-        var em = cfg.getEmail();
+        boolean emailEnabled = knowledgePlanetTenantRuntime.isWeeklyEmailEnabled(tenantId);
+        boolean emailReady =
+                emailEnabled
+                        && messageSceneReadinessQuery.isSceneConfigured(
+                                tenantId, MessageSceneCode.KNOWLEDGE_PLANET_WEEKLY);
         return new KnowledgePlanetRuntimeDto(
                 enabled,
                 knowledgePlanetTenantRuntime.digestModelId(tenantId).map(String::valueOf).orElse(""),
-                cfg.isEnabled(),
-                cfg.isReuseRegisterSmtp(),
-                knowledgePlanetEmailResolver.isDeliveryReady(tenantId),
-                em.getSmtpHost(),
-                em.getSmtpPort(),
-                em.getUsername(),
-                isPasswordConfigured(em.getPassword()),
-                em.getFrom(),
-                em.isSsl(),
-                em.getSubjectTemplate(),
-                em.getBodyTemplate());
-    }
-
-    private String resolveKnowledgePlanetEmailPassword(long tenantId, String incoming) {
-        if (incoming != null && !incoming.isBlank()) {
-            String t = incoming.trim();
-            if (isAdminPasswordMaskSentinel(t)) {
-                return readKnowledgePlanetStoredPassword(tenantId);
-            }
-            return t;
-        }
-        return readKnowledgePlanetStoredPassword(tenantId);
-    }
-
-    private String readKnowledgePlanetStoredPassword(long tenantId) {
-        KnowledgePlanetEmailConfig existing = knowledgePlanetEmailResolver.resolve(tenantId);
-        String stored = existing.getEmail().getPassword();
-        return stored == null ? "" : stored;
+                emailEnabled,
+                emailReady);
     }
 
     private void validateOptionalChatModelId(long tenantId, String rawId, String label) {
@@ -327,55 +282,15 @@ public class TenantShellAdminApplicationService {
         boolean storedOpen =
                 tenantRuntimeSettingApplicationService.isAuthOpenRegistrationEnabled(tenantId);
         AuthRegisterVerificationConfig cfg = authRegisterVerificationResolver.resolve(tenantId);
-        AuthRegisterVerificationConfig.EmailChannel em = cfg.getEmail();
-        boolean emailReady = AuthRegisterEmailSupport.isDeliveryReady(em);
+        boolean emailReady =
+                messageSceneReadinessQuery.isSceneConfigured(
+                        tenantId, MessageSceneCode.REGISTER_VERIFICATION);
         return new AuthRegisterRuntimeDto(
                 storedOpen && emailReady,
                 emailReady,
                 cfg.getCodeLength(),
                 cfg.getCodeTtlSeconds(),
-                cfg.getSendCooldownSeconds(),
-                em.getSmtpHost(),
-                em.getSmtpPort(),
-                em.getUsername(),
-                isPasswordConfigured(em.getPassword()),
-                em.getFrom(),
-                em.isSsl(),
-                em.getSubjectTemplate(),
-                em.getBodyTemplate());
-    }
-
-    private String resolveEmailPassword(long tenantId, String incoming) {
-        if (incoming != null && !incoming.isBlank()) {
-            String t = incoming.trim();
-            if (isAdminPasswordMaskSentinel(t)) {
-                return readStoredEmailPassword(tenantId);
-            }
-            return t;
-        }
-        return readStoredEmailPassword(tenantId);
-    }
-
-    private String readStoredEmailPassword(long tenantId) {
-        AuthRegisterVerificationConfig existing = authRegisterVerificationResolver.resolve(tenantId);
-        String stored = existing.getEmail().getPassword();
-        return stored == null ? "" : stored;
-    }
-
-    /** 管理端「已配置」占位符误提交时保留库内原密码。 */
-    private static boolean isAdminPasswordMaskSentinel(String value) {
-        if (value == null || value.isBlank()) {
-            return false;
-        }
-        String t = value.trim();
-        if ("********".equals(t) || "••••••••".equals(t)) {
-            return true;
-        }
-        return t.chars().allMatch(ch -> ch == '*' || ch == '•');
-    }
-
-    private static boolean isPasswordConfigured(String password) {
-        return password != null && !password.isBlank();
+                cfg.getSendCooldownSeconds());
     }
 
     private static String trimOrEmpty(String s) {
@@ -518,31 +433,14 @@ public class TenantShellAdminApplicationService {
             boolean enabled,
             String digestModelId,
             boolean emailEnabled,
-            boolean reuseRegisterSmtp,
-            boolean emailDeliveryReady,
-            String emailSmtpHost,
-            int emailSmtpPort,
-            String emailUsername,
-            boolean emailPasswordConfigured,
-            String emailFrom,
-            boolean emailSsl,
-            String emailSubjectTemplate,
-            String emailBodyTemplate) {}
+            boolean emailDeliveryReady) {}
 
     public record AuthRegisterRuntimeDto(
             boolean openRegistration,
             boolean emailDeliveryReady,
             int codeLength,
             int codeTtlSeconds,
-            int sendCooldownSeconds,
-            String emailSmtpHost,
-            int emailSmtpPort,
-            String emailUsername,
-            boolean emailPasswordConfigured,
-            String emailFrom,
-            boolean emailSsl,
-            String emailSubjectTemplate,
-            String emailBodyTemplate) {}
+            int sendCooldownSeconds) {}
 
     public record ModelCallingRuntimeDto(
             String memoryEmbeddingVectorModelId,
@@ -627,16 +525,8 @@ public class TenantShellAdminApplicationService {
     public static class ShellKnowledgePlanetPutBody {
         private boolean enabled;
         private String digestModelId;
+        /** 是否期望发送周报邮件（须消息中心 KNOWLEDGE_PLANET_WEEKLY 模板就绪） */
         private boolean emailEnabled = true;
-        private boolean reuseRegisterSmtp = true;
-        private String emailSmtpHost;
-        private int emailSmtpPort;
-        private String emailUsername;
-        private String emailPassword;
-        private String emailFrom;
-        private boolean emailSsl = true;
-        private String emailSubjectTemplate;
-        private String emailBodyTemplate;
     }
 
     @Data
@@ -645,13 +535,5 @@ public class TenantShellAdminApplicationService {
         private int codeLength;
         private int codeTtlSeconds;
         private int sendCooldownSeconds;
-        private String emailSmtpHost;
-        private int emailSmtpPort;
-        private String emailUsername;
-        private String emailPassword;
-        private String emailFrom;
-        private boolean emailSsl;
-        private String emailSubjectTemplate;
-        private String emailBodyTemplate;
     }
 }

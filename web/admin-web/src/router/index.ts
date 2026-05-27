@@ -96,6 +96,10 @@ const router = createRouter({
           component: () => import("../views/model/llm/LlmModelManageView.vue"),
         },
         {
+          path: "prompt/templates",
+          component: () => import("../views/prompt/PromptTemplatesView.vue"),
+        },
+        {
           path: "mcp/servers",
           component: () => import("../views/mcp/McpServersView.vue"),
         },
@@ -131,6 +135,18 @@ const router = createRouter({
         {
           path: "system/tenant-shell-config",
           component: () => import("../views/system/TenantShellConfigView.vue"),
+        },
+        {
+          path: "system/message-channels",
+          component: () => import("../views/message/MessageCenterView.vue"),
+        },
+        {
+          path: "system/message-templates",
+          component: () => import("../views/message/MessageCenterView.vue"),
+        },
+        {
+          path: "system/message-delivery-logs",
+          component: () => import("../views/message/MessageCenterView.vue"),
         },
       ],
     },

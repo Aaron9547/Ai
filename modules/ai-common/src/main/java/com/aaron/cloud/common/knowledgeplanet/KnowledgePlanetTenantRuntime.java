@@ -20,6 +20,13 @@ public class KnowledgePlanetTenantRuntime {
         return Boolean.parseBoolean(raw == null ? "false" : raw.trim());
     }
 
+    public boolean isWeeklyEmailEnabled(long tenantId) {
+        String raw =
+                runtimeSettings.getEffectiveValueText(
+                        tenantId, TenantRuntimeSettingKey.KNOWLEDGE_PLANET_WEEKLY_EMAIL_ENABLED);
+        return Boolean.parseBoolean(raw == null ? "true" : raw.trim());
+    }
+
     public String weeklyComputeCron(long tenantId) {
         return cronOrDefault(tenantId, TenantRuntimeSettingKey.KNOWLEDGE_PLANET_WEEKLY_COMPUTE_CRON, DEFAULT_COMPUTE_CRON);
     }

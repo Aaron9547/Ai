@@ -4,6 +4,7 @@ import com.aaron.cloud.common.api.dto.model.ModelTokenUsage;
 import com.aaron.cloud.common.api.enums.llm.LlmModelKind;
 import com.aaron.cloud.common.api.enums.metering.MeteringMeterType;
 import com.aaron.cloud.common.context.TenantContextHolder;
+import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
 import com.aaron.cloud.common.modelcfg.quota.LlmTokenQuotaCoordinator;
 import com.aaron.cloud.common.modelcfg.quota.LlmUsageDigestMessage;
@@ -30,7 +31,7 @@ public class LlmModelUsageRecorder {
      * @param conversationId 对话场景传会话 id；非对话编排可传 {@code 0}
      */
     public void recordAfterLlmUsage(
-            TenantContextHolder.TenantSnapshot snap,
+            TenantSnapshot snap,
             SysLlmModel modelCfg,
             String modelAliasTrim,
             long conversationId,

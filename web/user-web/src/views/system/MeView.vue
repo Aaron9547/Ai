@@ -163,13 +163,14 @@ async function mergeOtherGuestDevice() {
       ElMessage.info(t("me.noValidDevice"));
       return;
     }
-    if (r.conversationsReassigned === 0 && r.memoryChunksReassigned === 0) {
+    if (r.conversationsReassigned === 0 && r.memoryChunksReassigned === 0 && r.knowledgeNodesReassigned === 0) {
       ElMessage.success(t("me.mergeNoData"));
     } else {
       ElMessage.success(
         t("me.mergeDone", {
           c: r.conversationsReassigned,
           m: r.memoryChunksReassigned,
+          k: r.knowledgeNodesReassigned,
         }),
       );
     }

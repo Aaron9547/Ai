@@ -230,7 +230,7 @@ export default {
     workspaceDetected: "已识别工作区",
     noValidDevice: "请输入有效的设备码",
     mergeNoData: "未找到该设备的访客记录，或此前已完成合并。",
-    mergeDone: "已归并：会话 {c} 条，记忆片段 {m} 条",
+    mergeDone: "已归并：会话 {c} 条，记忆片段 {m} 条，知识点 {k} 条",
     mergeFail: "合并失败",
     loadFail: "加载失败",
     copied: "已复制到剪贴板",
@@ -341,5 +341,14 @@ export default {
     tourNext: "下一步",
     tourDone: "知道了",
     archiveEmpty: "暂无知识点，继续对话即可自动沉淀。",
+    mobile: {
+      entrySubtitle: "{nodes} 个知识点 · {planets} 颗主题星球",
+      planetCount: "{n} 颗主题星球",
+      allPlanets: "全部",
+      planetLabel: "所属星球：{name}",
+      starMapHint: "双指缩放、拖动浏览星图；点星球或知识点查看下方档案。",
+      planetHint: "正在查看「{name}」— 点上方返回可回到全星图。",
+      knowledgeHint: "正在查看知识点 — 点上方返回可回到主题星球。",
+    },
   },
 };

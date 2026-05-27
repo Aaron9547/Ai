@@ -4,6 +4,7 @@ import com.aaron.cloud.common.gateway.AccessPartyHttpHeaders;
 import com.aaron.cloud.common.context.AccessPartyContextHolder;
 import com.aaron.cloud.common.context.AccessPartySnapshot;
 import com.aaron.cloud.common.context.TenantContextHolder;
+import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.gateway.entity.GwAccessParty;
 import com.aaron.cloud.common.security.crypto.AesSecretCipher;
 import jakarta.servlet.FilterChain;
@@ -91,7 +92,7 @@ public class AccessPartyAuthFilter extends OncePerRequestFilter {
                         .build();
         AccessPartyContextHolder.set(apSnap);
         var tenantSnap =
-                TenantContextHolder.TenantSnapshot.builder()
+                TenantSnapshot.builder()
                         .tenantId(party.getTenantId())
                         .build();
         TenantContextHolder.set(tenantSnap);

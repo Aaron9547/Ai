@@ -6,7 +6,13 @@
         <span class="outbound-card-sub">{{ t("admin.shell.knowledgePlanet.blockSub") }}</span>
       </div>
     </template>
-    <p v-if="!emailDeliveryReady && form.enabled" class="auth-register-warn">
+    <el-alert type="info" :closable="false" show-icon class="message-link-alert">
+      <template #title>{{ t("admin.message.shellWeeklyHint") }}</template>
+      <el-button link type="primary" @click="router.push('/system/message-templates')">
+        {{ t("admin.message.goTemplates") }}
+      </el-button>
+    </el-alert>
+    <p v-if="!emailDeliveryReady && form.enabled && form.emailEnabled" class="auth-register-warn">
       {{ t("admin.shell.knowledgePlanet.emailNotReady") }}
     </p>
     <el-form label-width="auto" class="shell-form auth-register-form">
@@ -34,35 +40,6 @@
       <el-form-item :label="t('admin.shell.knowledgePlanet.emailEnabled')">
         <el-switch v-model="form.emailEnabled" />
       </el-form-item>
-      <el-form-item :label="t('admin.shell.knowledgePlanet.reuseSmtp')">
-        <el-switch v-model="form.reuseRegisterSmtp" />
-      </el-form-item>
-      <template v-if="!form.reuseRegisterSmtp">
-        <el-form-item :label="t('admin.shell.authRegister.emailSmtpHost')">
-          <el-input v-model="form.emailSmtpHost" />
-        </el-form-item>
-        <el-form-item :label="t('admin.shell.authRegister.emailSmtpPort')">
-          <el-input-number v-model="form.emailSmtpPort" :min="1" :max="65535" />
-        </el-form-item>
-        <el-form-item :label="t('admin.shell.authRegister.emailUsername')">
-          <el-input v-model="form.emailUsername" />
-        </el-form-item>
-        <el-form-item :label="t('admin.shell.authRegister.emailPassword')">
-          <el-input v-model="form.emailPassword" type="password" show-password />
-        </el-form-item>
-        <el-form-item :label="t('admin.shell.authRegister.emailFrom')">
-          <el-input v-model="form.emailFrom" />
-        </el-form-item>
-        <el-form-item :label="t('admin.shell.authRegister.emailSsl')">
-          <el-switch v-model="form.emailSsl" />
-        </el-form-item>
-      </template>
-      <el-form-item :label="t('admin.shell.authRegister.emailSubjectTemplate')">
-        <el-input v-model="form.emailSubjectTemplate" />
-      </el-form-item>
-      <el-form-item :label="t('admin.shell.authRegister.emailBodyTemplate')">
-        <el-input v-model="form.emailBodyTemplate" type="textarea" :rows="8" />
-      </el-form-item>
       <el-form-item>
         <el-button type="primary" :loading="saving" @click="save">{{
           t("admin.shell.knowledgePlanet.save")
@@ -76,6 +53,7 @@
 import { ElMessage } from "element-plus";
 import { computed, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
+import { useRouter } from "vue-router";
 import { listLlmModels, type LlmModelAdminView } from "@/api/models";
 import {
   getTenantShellConfig,
@@ -84,6 +62,7 @@ import {
 } from "@/api/tenantShellConfig";
 
 const { t, locale } = useI18n();
+const router = useRouter();
 const saving = ref(false);
 const loadingLanguageModels = ref(false);
 const emailDeliveryReady = ref(false);
@@ -94,15 +73,6 @@ const form = reactive<TenantShellKnowledgePlanetPutBody>({
   enabled: false,
   digestModelId: "",
   emailEnabled: true,
-  reuseRegisterSmtp: true,
-  emailSmtpHost: "",
-  emailSmtpPort: 465,
-  emailUsername: "",
-  emailPassword: "",
-  emailFrom: "",
-  emailSsl: true,
-  emailSubjectTemplate: "",
-  emailBodyTemplate: "",
 });
 
 const digestModelSelectOptions = computed(() => {
@@ -146,16 +116,7 @@ function applyFromConfig(kp: NonNullable<Awaited<ReturnType<typeof getTenantShel
   digestModelId.value = parseDigestModelId(kp.digestModelId);
   form.digestModelId = digestModelId.value != null ? String(digestModelId.value) : "";
   form.emailEnabled = kp.emailEnabled;
-  form.reuseRegisterSmtp = kp.reuseRegisterSmtp;
   emailDeliveryReady.value = kp.emailDeliveryReady;
-  form.emailSmtpHost = kp.emailSmtpHost;
-  form.emailSmtpPort = kp.emailSmtpPort;
-  form.emailUsername = kp.emailUsername;
-  form.emailFrom = kp.emailFrom;
-  form.emailSsl = kp.emailSsl;
-  form.emailSubjectTemplate = kp.emailSubjectTemplate;
-  form.emailBodyTemplate = kp.emailBodyTemplate;
-  form.emailPassword = "";
 }
 
 async function loadLanguageModels(): Promise<void> {
@@ -188,6 +149,16 @@ async function save(): Promise<void> {
 </script>
 
 <style scoped>
+.message-link-alert {
+  margin-bottom: 16px;
+}
+
+.auth-register-warn {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--el-color-warning);
+}
+
 .kp-digest-model-select {
   width: 100%;
   max-width: 480px;

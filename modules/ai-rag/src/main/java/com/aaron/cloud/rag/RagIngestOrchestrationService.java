@@ -232,7 +232,7 @@ public class RagIngestOrchestrationService {
                                         categoryId));
     }
 
-    /** 绠＄悊绔悓姝ヤ笂浼狅細涓庡紓姝ヤ换鍔′竴鑷寸殑鍒嗙墖涓庡悜閲忓崰浣嶅啓鍏ャ€?*/
+    /** 管理端同步上传：与异步任务一致的分片与向量占位写入。 */
     public PersistResult ingestUploadedMarkdownSync(
             long tenantId,
             long kbId,

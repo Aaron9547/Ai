@@ -3,7 +3,10 @@
     <div
       v-if="isPresent"
       class="kp-overlay"
-      :class="{ 'kp-overlay--closing': isClosing }"
+      :class="{
+        'kp-overlay--closing': isClosing,
+        'kp-overlay--mobile': isMobileLayout,
+      }"
       role="dialog"
       aria-modal="true"
       :aria-label="t('knowledgePlanet.overlayTitle')"
@@ -21,6 +24,17 @@
         <div class="kp-main">
           <header class="kp-toolbar">
             <button
+              v-if="isMobileLayout"
+              type="button"
+              class="kp-mobile-back"
+              :disabled="isClosing"
+              :aria-label="t('knowledgePlanet.close')"
+              @click="requestClose"
+            >
+              <el-icon :size="20"><ArrowLeft /></el-icon>
+            </button>
+            <button
+              v-else
               ref="exitFab"
               type="button"
               class="kp-exit-fab"
@@ -31,6 +45,32 @@
               <span>{{ t("knowledgePlanet.exit") }}</span>
               <kbd class="kp-exit-kbd">Esc</kbd>
             </button>
+            <h2 v-if="isMobileLayout" class="kp-mobile-title">{{ t("knowledgePlanet.overlayTitle") }}</h2>
+            <div
+              v-if="isMobileLayout && mainTab === 'map'"
+              class="kp-render-toggle kp-render-toggle--head"
+              role="group"
+              :aria-label="t('knowledgePlanet.renderModeAria')"
+            >
+              <button
+                type="button"
+                class="kp-render-toggle__btn"
+                :class="{ 'kp-render-toggle__btn--active': renderMode === '2d' }"
+                :aria-pressed="renderMode === '2d'"
+                @click="setRenderMode('2d')"
+              >
+                {{ t("knowledgePlanet.view2d") }}
+              </button>
+              <button
+                type="button"
+                class="kp-render-toggle__btn"
+                :class="{ 'kp-render-toggle__btn--active': renderMode === '3d' }"
+                :aria-pressed="renderMode === '3d'"
+                @click="setRenderMode('3d')"
+              >
+                {{ t("knowledgePlanet.view3d") }}
+              </button>
+            </div>
             <nav class="kp-tabs" role="tablist">
               <button
                 type="button"
@@ -54,7 +94,11 @@
               </button>
             </nav>
 
-            <div v-if="mainTab === 'map'" class="kp-toolbar-actions">
+            <div
+              v-if="mainTab === 'map'"
+              class="kp-toolbar-actions"
+              :class="{ 'kp-toolbar-actions--mobile': isMobileLayout }"
+            >
               <input
                 v-model="searchQuery"
                 type="search"
@@ -62,10 +106,11 @@
                 :placeholder="t('knowledgePlanet.searchPlaceholder')"
                 @input="onSearchInput"
               />
-              <button type="button" class="kp-tool-btn" @click="fitStarMap">
+              <button v-if="!isMobileLayout" type="button" class="kp-tool-btn" @click="fitStarMap">
                 {{ t("knowledgePlanet.fitMap") }}
               </button>
               <div
+                v-if="!isMobileLayout"
                 class="kp-render-toggle"
                 role="group"
                 :aria-label="t('knowledgePlanet.renderModeAria')"
@@ -89,7 +134,7 @@
                   {{ t("knowledgePlanet.view3d") }}
                 </button>
               </div>
-              <label v-if="selectedPlanet" class="kp-focus-toggle">
+              <label v-if="selectedPlanet && !isMobileLayout" class="kp-focus-toggle">
                 <input v-model="focusPlanetOnly" type="checkbox" @change="onFocusToggle" />
                 {{ t("knowledgePlanet.focusPlanetOnly") }}
               </label>
@@ -98,10 +143,16 @@
             <nav
               v-if="mainTab === 'map' && mapCanGoBack"
               class="kp-map-nav"
+              :class="{ 'kp-map-nav--mobile': isMobileLayout }"
               :aria-label="t('knowledgePlanet.mapNavAria')"
             >
               <span v-if="mapBackCrumb" class="kp-map-nav-crumb">{{ mapBackCrumb }}</span>
-              <template v-if="selectedKnowledge">
+              <template v-if="isMobileLayout">
+                <button type="button" class="kp-map-nav-btn" @click="goBackInMap">
+                  {{ mapBackLabel }}
+                </button>
+              </template>
+              <template v-else-if="selectedKnowledge">
                 <button type="button" class="kp-map-nav-btn" @click="backToPlanetFromKnowledge">
                   {{ t("knowledgePlanet.backToPlanet") }}
                 </button>
@@ -124,15 +175,7 @@
           </header>
 
           <p v-if="mainTab === 'map'" class="kp-map-hint">
-            {{
-              selectedKnowledge
-                ? t("knowledgePlanet.knowledgeNodeHint")
-                : focusPlanetOnly && selectedPlanet
-                  ? t("knowledgePlanet.focusPlanetHint", { name: selectedPlanet.name })
-                  : universe3dMode === "planet" && selectedPlanet
-                    ? t("knowledgePlanet.drillPlanetHint", { name: selectedPlanet.name })
-                    : t("knowledgePlanet.starMapHint")
-            }}
+            {{ mapHintText }}
           </p>
 
           <div v-show="mainTab === 'map'" class="kp-graph-wrap">
@@ -164,7 +207,7 @@
         </div>
 
         <aside class="kp-side">
-          <header class="kp-side-head">
+          <header v-if="!isMobileLayout" class="kp-side-head">
             <h2>{{ t("knowledgePlanet.overlayTitle") }}</h2>
           </header>
 
@@ -232,7 +275,7 @@
             <p class="kp-summary">{{ weekly.plan.summary }}</p>
           </section>
 
-          <div v-if="tourOpen" class="kp-tour">
+          <div v-if="tourOpen && !isMobileLayout" class="kp-tour">
             <p>{{ tourSteps[tourIndex] }}</p>
             <div class="kp-tour-actions">
               <button
@@ -257,6 +300,7 @@
 </template>
 
 <script setup lang="ts">
+import { ArrowLeft } from "@element-plus/icons-vue";
 import gsap from "gsap";
 import { computed, nextTick, onUnmounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
@@ -277,18 +321,23 @@ import { useRandomDotNetwork } from "../../composables/useRandomDotNetwork";
 
 const TOUR_STORAGE_KEY = "kp-tour-v1";
 
-const props = defineProps<{
-  visible: boolean;
-  universe: KnowledgePlanetUniverse | null;
-  weekly: KnowledgePlanetWeeklyLatest | null;
-  originRect?: KnowledgePlanetWarpOrigin | null;
-}>();
+const props = withDefaults(
+  defineProps<{
+    visible: boolean;
+    universe: KnowledgePlanetUniverse | null;
+    weekly: KnowledgePlanetWeeklyLatest | null;
+    originRect?: KnowledgePlanetWarpOrigin | null;
+    layout?: "desktop" | "mobile";
+  }>(),
+  { layout: "desktop" },
+);
 
 const emit = defineEmits<{
   close: [];
 }>();
 
 const { t } = useI18n();
+const isMobileLayout = computed(() => props.layout === "mobile");
 const warpBg = shallowRef<HTMLElement | null>(null);
 const overlayRoot = shallowRef<HTMLElement | null>(null);
 const graphHost = shallowRef<HTMLElement | null>(null);
@@ -320,9 +369,9 @@ const tourSteps = computed(() => [
 ]);
 
 useRandomDotNetwork(randomDotCanvas, introDotsActive, {
-  dotCount: 80,
+  dotCount: isMobileLayout.value ? 56 : 80,
   linkDistance: 55,
-  mouseRadius: 100,
+  mouseRadius: isMobileLayout.value ? 72 : 100,
   minColor: 80,
   baseStroke: "rgba(0, 242, 254, 0.1)",
 });
@@ -376,6 +425,26 @@ const mapBackCrumb = computed(() => {
   if (selectedKnowledge.value) return selectedKnowledge.value.title;
   if (selectedPlanet.value) return selectedPlanet.value.name;
   return "";
+});
+
+const mapHintText = computed(() => {
+  if (isMobileLayout.value) {
+    if (selectedKnowledge.value) {
+      return t("knowledgePlanet.mobile.knowledgeHint");
+    }
+    if (universe3dMode.value === "planet" && selectedPlanet.value) {
+      return t("knowledgePlanet.mobile.planetHint", { name: selectedPlanet.value.name });
+    }
+    return t("knowledgePlanet.mobile.starMapHint");
+  }
+  if (selectedKnowledge.value) return t("knowledgePlanet.knowledgeNodeHint");
+  if (focusPlanetOnly.value && selectedPlanet.value) {
+    return t("knowledgePlanet.focusPlanetHint", { name: selectedPlanet.value.name });
+  }
+  if (universe3dMode.value === "planet" && selectedPlanet.value) {
+    return t("knowledgePlanet.drillPlanetHint", { name: selectedPlanet.value.name });
+  }
+  return t("knowledgePlanet.starMapHint");
 });
 
 function planetColor(p: KnowledgePlanetView): string {
@@ -636,6 +705,7 @@ function startIntroDots() {
 }
 
 function maybeOpenTour() {
+  if (isMobileLayout.value) return;
   try {
     if (localStorage.getItem(TOUR_STORAGE_KEY) === "1") return;
     tourIndex.value = 0;
@@ -804,6 +874,9 @@ async function syncGraph() {
   }
 
   graphEmpty.value = !ok;
+  if (ok && renderMode.value === "2d" && isMobileLayout.value) {
+    starMap.fitView();
+  }
 }
 
 starMap.setPlanetClickHandler((planetId) => selectPlanet(planetId));
@@ -1480,6 +1553,108 @@ html.dark .kp-render-toggle__btn--active {
 .kp-knowledge-btn span {
   font-size: 11px;
   color: rgba(224, 224, 240, 0.7);
+}
+
+/* —— 移动端：上下分栏，精简顶栏 —— */
+.kp-overlay--mobile .kp-universe-root {
+  flex-direction: column;
+  height: 100dvh;
+  padding-top: env(safe-area-inset-top, 0);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  box-sizing: border-box;
+}
+
+.kp-overlay--mobile .kp-main {
+  flex: 1;
+  min-height: 0;
+}
+
+.kp-overlay--mobile .kp-toolbar {
+  padding: 8px 12px 0;
+  gap: 8px;
+}
+
+.kp-overlay--mobile .kp-mobile-back {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.35);
+  color: #e8f4ff;
+  cursor: pointer;
+}
+
+.kp-overlay--mobile .kp-mobile-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #e8f4ff;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kp-overlay--mobile .kp-tabs {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.kp-overlay--mobile .kp-render-toggle--head {
+  flex-shrink: 0;
+}
+
+.kp-overlay--mobile .kp-toolbar-actions--mobile {
+  flex-basis: 100%;
+  max-width: 100%;
+}
+
+.kp-overlay--mobile .kp-search {
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+}
+
+.kp-overlay--mobile .kp-render-toggle {
+  flex-shrink: 0;
+}
+
+.kp-overlay--mobile .kp-map-hint {
+  padding: 6px 12px 0;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.kp-overlay--mobile .kp-map-nav--mobile {
+  flex-basis: 100%;
+  margin-left: 0;
+  justify-content: flex-start;
+}
+
+.kp-overlay--mobile .kp-graph-wrap {
+  flex: 1;
+  min-height: 36vh;
+}
+
+.kp-overlay--mobile .kp-side {
+  width: 100%;
+  max-height: min(42vh, 360px);
+  flex-shrink: 0;
+  border-left: none;
+  border-top: 1px solid rgba(0, 242, 254, 0.15);
+  padding: 12px 14px 16px;
+}
+
+.kp-overlay--mobile .kp-archive {
+  max-height: min(42vh, 360px);
 }
 
 .kp-weekly {

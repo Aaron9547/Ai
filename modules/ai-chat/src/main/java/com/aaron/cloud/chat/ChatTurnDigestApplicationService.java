@@ -9,6 +9,7 @@ import com.aaron.cloud.common.chat.ChatMessageRepository;
 import com.aaron.cloud.common.chat.entity.ChatConversation;
 import com.aaron.cloud.common.chat.entity.ChatMessage;
 import com.aaron.cloud.common.context.TenantContextHolder;
+import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.modelcfg.LlmModelKindPolicy;
 import com.aaron.cloud.common.modelcfg.SysLlmModelRepository;
 import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
@@ -54,7 +55,7 @@ public class ChatTurnDigestApplicationService {
     private final SysLlmModelRepository sysLlmModelRepository;
 
     public void scheduleTurnDigest(
-            TenantContextHolder.TenantSnapshot snap,
+            TenantSnapshot snap,
             long conversationId,
             long assistantMessageId,
             String userQuestionPlain,
@@ -84,7 +85,7 @@ public class ChatTurnDigestApplicationService {
     }
 
     private void runTurnDigest(
-            TenantContextHolder.TenantSnapshot snap,
+            TenantSnapshot snap,
             long conversationId,
             long assistantMessageId,
             String userQuestionPlain,

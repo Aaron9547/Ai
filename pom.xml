@@ -13,7 +13,7 @@
 
     <groupId>com.aaron.cloud</groupId>
     <artifactId>Ai</artifactId>
-    <version>0.1.255-SNAPSHOT</version>
+    <version>0.1.258-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>Ai</name>
     <description>Ai platform (multi-tenant AI middleware)</description>
@@ -30,6 +30,7 @@
         <module>modules/ai-chat</module>
         <module>modules/ai-mcp</module>
         <module>modules/ai-notification</module>
+        <module>modules/ai-prompt</module>
         <module>modules/ai-eval</module>
         <module>modules/ai-bootstrap</module>
     </modules>
@@ -113,6 +114,11 @@
             </dependency>
             <dependency>
                 <groupId>com.aaron.cloud</groupId>
+                <artifactId>ai-prompt</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.aaron.cloud</groupId>
                 <artifactId>ai-eval</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -145,6 +151,21 @@
                 <groupId>org.apache.rocketmq</groupId>
                 <artifactId>rocketmq-spring-boot-starter</artifactId>
                 <version>${rocketmq-spring.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.aliyun</groupId>
+                <artifactId>dysmsapi20170525</artifactId>
+                <version>3.0.0</version>
+            </dependency>
+            <dependency>
+                <groupId>com.tencentcloudapi</groupId>
+                <artifactId>tencentcloud-sdk-java-common</artifactId>
+                <version>3.1.1179</version>
+            </dependency>
+            <dependency>
+                <groupId>com.tencentcloudapi</groupId>
+                <artifactId>tencentcloud-sdk-java-sms</artifactId>
+                <version>3.1.1179</version>
             </dependency>
             <dependency>
                 <groupId>io.milvus</groupId>

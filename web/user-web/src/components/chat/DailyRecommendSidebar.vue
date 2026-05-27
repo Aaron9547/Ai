@@ -188,21 +188,14 @@ watch(
     if (n > 0 && n !== prev) {
       void reloadAfterLogin();
       void loadPlanetSummary();
+      if (planetOpen.value) {
+        void reloadPlanetUniverse();
+      }
     }
   },
 );
 
-async function loadPlanetSummary(): Promise<void> {
-  try {
-    planetSummary.value = await fetchKnowledgePlanetSummary();
-  } catch {
-    planetSummary.value = null;
-  }
-}
-
-async function openPlanet(origin: KnowledgePlanetWarpOrigin): Promise<void> {
-  planetOriginRect.value = origin;
-  planetOpen.value = true;
+async function reloadPlanetUniverse(): Promise<void> {
   try {
     const [u, w] = await Promise.all([
       fetchKnowledgePlanetUniverse(),
@@ -217,6 +210,20 @@ async function openPlanet(origin: KnowledgePlanetWarpOrigin): Promise<void> {
   } catch {
     planetUniverse.value = { planets: [], nodes: [], links: [] };
   }
+}
+
+async function loadPlanetSummary(): Promise<void> {
+  try {
+    planetSummary.value = await fetchKnowledgePlanetSummary();
+  } catch {
+    planetSummary.value = null;
+  }
+}
+
+async function openPlanet(origin: KnowledgePlanetWarpOrigin): Promise<void> {
+  planetOriginRect.value = origin;
+  planetOpen.value = true;
+  await reloadPlanetUniverse();
 }
 
 void loadPlanetSummary();

@@ -202,6 +202,18 @@ INSERT IGNORE INTO gw_api_endpoint (path_pattern, http_method, display_name, rem
 -- ---------- API：MCP 工具、通知、文件、内部模型 ----------
 ('/api/v1/mcp/tools/*/invoke', 'POST', 'MCP 工具调用', '路径段为工具名', 1, 5000, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/notifications/webhooks', 'POST', 'Webhook 投递', NULL, 1, 5010, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/message/channels', 'GET', '消息通道列表', NULL, 1, 5011, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/message/channels', 'POST', '新建消息通道', NULL, 1, 5012, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/message/channels/*', 'PUT', '更新消息通道', NULL, 1, 5013, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/message/channels/*', 'DELETE', '删除消息通道', NULL, 1, 5014, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/message/channels/*/test', 'POST', '测试消息通道', NULL, 1, 5015, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/message/templates', 'GET', '消息模板列表', NULL, 1, 5016, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/message/templates', 'POST', '新建消息模板', NULL, 1, 5017, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/message/templates/*', 'PUT', '更新消息模板', NULL, 1, 5018, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/message/templates/*', 'DELETE', '删除消息模板', NULL, 1, 5019, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/message/delivery-logs', 'GET', '消息发送记录分页', NULL, 1, 5021, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/message/delivery-logs/*', 'GET', '消息发送记录详情', NULL, 1, 5022, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/internal/v1/message/send', 'POST', '内部消息发送', 'Feign/跨进程', 1, 5023, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/file/presign-upload', 'POST', '预签名上传', NULL, 1, 5020, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/internal/model/completion', 'POST', '内部模型补全', '聚合/Feign 非对外主路径', 1, 5030, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 -- ---------- API：接入方与开发者网关（0.1.251） ----------
@@ -223,4 +235,10 @@ INSERT IGNORE INTO gw_api_endpoint (path_pattern, http_method, display_name, rem
 ('/api/v1/admin/gateway-access-party-grants', 'PUT', '批量保存接入方授权', NULL, 1, 5131, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/gateway-access-party-audit/summary', 'GET', '接入方审计汇总', NULL, 1, 5140, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/gateway-access-party-audit', 'GET', '接入方审计分页', NULL, 1, 5141, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
-('/api/v1/admin/gateway-access-party-audit/*', 'GET', '接入方审计详情', NULL, 1, 5142, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
+('/api/v1/admin/gateway-access-party-audit/*', 'GET', '接入方审计详情', NULL, 1, 5142, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/prompt-templates', 'GET', '管理端提示词模板列表', NULL, 1, 4380, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/prompt-templates', 'POST', '管理端新建提示词模板', NULL, 1, 4381, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/prompt-templates/*', 'PUT', '管理端更新提示词模板', NULL, 1, 4382, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/prompt-templates/*', 'DELETE', '管理端删除提示词模板', NULL, 1, 4383, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/prompt-templates/cache-stats', 'GET', '管理端提示词缓存统计', NULL, 1, 4384, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/prompt-templates/cache/evict', 'POST', '管理端提示词缓存失效', NULL, 1, 4385, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));

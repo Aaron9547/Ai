@@ -1,6 +1,7 @@
 package com.aaron.cloud.chat.rest.open;
 
 import com.aaron.cloud.chat.ChatApplicationService;
+import com.aaron.cloud.chat.dto.ChatConversationOpenView;
 import com.aaron.cloud.chat.dto.ChatMessageFeedbackRequest;
 import com.aaron.cloud.chat.dto.ChatMessageView;
 import com.aaron.cloud.chat.dto.ChatRegenerateRequest;
@@ -39,53 +40,63 @@ public class ChatConversationController extends OpenV1ControllerBases.Chat {
     }
 
     @PostMapping("/conversations")
-    public com.aaron.cloud.common.chat.entity.ChatConversation create(@RequestBody CreateConversationBody body) {
-        return chatApplicationService.createConversation(body.getTitle());
+    public ChatConversationOpenView create(@RequestBody CreateConversationBody body) {
+        return ChatConversationOpenView.from(chatApplicationService.createConversation(body.getTitle()));
     }
 
     @GetMapping("/conversations")
-    public List<com.aaron.cloud.common.chat.entity.ChatConversation> list() {
-        return chatApplicationService.listConversations();
+    public List<ChatConversationOpenView> list() {
+        return chatApplicationService.listConversations().stream()
+                .map(ChatConversationOpenView::from)
+                .toList();
     }
 
-    @GetMapping("/conversations/{id}/messages")
-    public List<ChatMessageView> listMessages(@PathVariable("id") long id) {
+    @GetMapping("/conversations/{conversationId}/messages")
+    public List<ChatMessageView> listMessages(@PathVariable("conversationId") String conversationId) {
+        long id = chatApplicationService.requireOpenConversationId(conversationId);
         return chatApplicationService.listConversationMessages(id);
     }
 
-    @PatchMapping("/conversations/{id}")
-    public com.aaron.cloud.common.chat.entity.ChatConversation rename(
-            @PathVariable("id") long id, @Valid @RequestBody RenameConversationBody body) {
-        return chatApplicationService.renameConversation(id, body.getTitle());
+    @PatchMapping("/conversations/{conversationId}")
+    public ChatConversationOpenView rename(
+            @PathVariable("conversationId") String conversationId,
+            @Valid @RequestBody RenameConversationBody body) {
+        long id = chatApplicationService.requireOpenConversationId(conversationId);
+        return ChatConversationOpenView.from(chatApplicationService.renameConversation(id, body.getTitle()));
     }
 
-    @DeleteMapping("/conversations/{id}")
-    public void archive(@PathVariable("id") long id) {
+    @DeleteMapping("/conversations/{conversationId}")
+    public void archive(@PathVariable("conversationId") String conversationId) {
+        long id = chatApplicationService.requireOpenConversationId(conversationId);
         chatApplicationService.archiveConversation(id);
     }
 
-    @PostMapping(value = "/conversations/{id}/messages", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter send(@PathVariable("id") long id, @Valid @RequestBody ChatSendPayload body) {
+    @PostMapping(value = "/conversations/{conversationId}/messages", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter send(
+            @PathVariable("conversationId") String conversationId, @Valid @RequestBody ChatSendPayload body) {
+        long id = chatApplicationService.requireOpenConversationId(conversationId);
         return chatApplicationService.streamUserMessage(id, body);
     }
 
-    @PostMapping("/conversations/{id}/messages/{messageId}/feedback")
+    @PostMapping("/conversations/{conversationId}/messages/{messageId}/feedback")
     public void feedback(
-            @PathVariable("id") long conversationId,
+            @PathVariable("conversationId") String conversationId,
             @PathVariable("messageId") long messageId,
             @Valid @RequestBody ChatMessageFeedbackRequest body) {
-        chatApplicationService.setAssistantMessageFeedback(conversationId, messageId, body.getVote());
+        long id = chatApplicationService.requireOpenConversationId(conversationId);
+        chatApplicationService.setAssistantMessageFeedback(id, messageId, body.getVote());
     }
 
-    /** 鍒犻櫎鏈€鍚庝竴鏉″姪鎵嬫秷鎭苟鍩轰簬鍓嶄竴鏉＄敤鎴锋秷鎭噸鏂版祦寮忕敓鎴愶紙SSE 涓?{@code POST .../messages} 涓€鑷达級銆?*/
+    /** 删除最后一条助手消息并基于前一条用户消息重新流式生成（SSE 与 {@code POST .../messages} 一致）。 */
     @PostMapping(
-            value = "/conversations/{id}/messages/{assistantMessageId}/retry",
+            value = "/conversations/{conversationId}/messages/{assistantMessageId}/retry",
             produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter retryAssistant(
-            @PathVariable("id") long conversationId,
+            @PathVariable("conversationId") String conversationId,
             @PathVariable("assistantMessageId") long assistantMessageId,
             @RequestBody(required = false) ChatRegenerateRequest body) {
-        return chatApplicationService.regenerateAssistantStream(conversationId, assistantMessageId, body);
+        long id = chatApplicationService.requireOpenConversationId(conversationId);
+        return chatApplicationService.regenerateAssistantStream(id, assistantMessageId, body);
     }
 
     @Data

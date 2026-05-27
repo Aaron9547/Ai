@@ -24,6 +24,7 @@ import com.aaron.cloud.common.chat.entity.ChatIntentKeyword;
 import com.aaron.cloud.common.chat.entity.ChatMessage;
 import com.aaron.cloud.common.chat.entity.LnkChatConversationMessage;
 import com.aaron.cloud.common.context.TenantContextHolder;
+import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.profile.UserMemoryApplicationService;
 import com.aaron.cloud.common.tenant.runtime.TravelCozeRuntimeConfig;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -299,7 +300,7 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
     @Override
     public SseEmitter openStream(
             long conversationId,
-            TenantContextHolder.TenantSnapshot snap,
+            TenantSnapshot snap,
             ChatSendPayload payload,
             List<ChatAttachment> attachments,
             ChatIntentDefinition def,
@@ -319,7 +320,7 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
     @Override
     public SseEmitter openStream(
             long conversationId,
-            TenantContextHolder.TenantSnapshot snap,
+            TenantSnapshot snap,
             ChatSendPayload payload,
             List<ChatAttachment> attachments,
             ChatIntentDefinition def,
@@ -712,7 +713,7 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
             IntentFlowSession session,
             String flowId,
             long ttlMs,
-            TenantContextHolder.TenantSnapshot snap,
+            TenantSnapshot snap,
             ChatSendPayload payload,
             long conversationId,
             TravelCozeRuntimeConfig cozeCfg)
@@ -953,7 +954,7 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
     }
 
     private void finishPersist(
-            TenantContextHolder.TenantSnapshot snap,
+            TenantSnapshot snap,
             long conversationId,
             ChatSendPayload payload,
             ChatIntentDefinition def,
@@ -1010,7 +1011,7 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
     }
 
     private void finishPersistWithFlow(
-            TenantContextHolder.TenantSnapshot snap,
+            TenantSnapshot snap,
             long conversationId,
             ChatSendPayload payload,
             ChatIntentDefinition def,

@@ -11,6 +11,7 @@ import com.aaron.cloud.common.chat.ChatIntentKeywordRepository;
 import com.aaron.cloud.common.chat.entity.ChatAttachment;
 import com.aaron.cloud.common.chat.entity.ChatIntentDefinition;
 import com.aaron.cloud.common.context.TenantContextHolder;
+import com.aaron.cloud.common.context.TenantSnapshot;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -34,7 +35,7 @@ public class ChatIntentStreamRouter {
 
     public Optional<IntentSseRoute> maybeRouteIntentStream(
             long conversationId,
-            TenantContextHolder.TenantSnapshot snap,
+            TenantSnapshot snap,
             ChatSendPayload payload,
             List<ChatAttachment> attachments) {
         List<ChatIntentDefinition> defs = intentDefinitionRepository.listEnabledForRuntime(snap.getTenantId());

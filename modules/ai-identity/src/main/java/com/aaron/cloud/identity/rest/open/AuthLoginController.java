@@ -16,11 +16,11 @@ import com.aaron.cloud.common.web.LoginRegionResolver;
 import com.aaron.cloud.common.web.ApiErrorResponse;
 import com.aaron.cloud.common.web.rest.OpenV1ControllerBases;
 import com.aaron.cloud.identity.jwt.JwtLocalAdminTokenService;
-import com.aaron.cloud.identity.open.AuthRegisterEmailSupport;
+import com.aaron.cloud.common.api.enums.message.MessageSceneCode;
+import com.aaron.cloud.common.message.MessageSceneReadinessQuery;
 import com.aaron.cloud.identity.open.OpenRegistrationEmailSupport;
 import com.aaron.cloud.identity.open.OpenRegistrationEmailVerificationService;
 import com.aaron.cloud.identity.open.OpenRegistrationVerificationSender;
-import com.aaron.cloud.identity.open.TenantAuthRegisterVerificationResolver;
 import com.aaron.cloud.identity.service.OpenRegistrationApplicationService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
@@ -52,7 +52,7 @@ public class AuthLoginController extends OpenV1ControllerBases.Auth {
     private final OpenRegistrationApplicationService openRegistrationApplicationService;
     private final OpenRegistrationEmailVerificationService emailVerificationService;
     private final OpenRegistrationVerificationSender registrationVerificationSender;
-    private final TenantAuthRegisterVerificationResolver authRegisterVerificationResolver;
+    private final MessageSceneReadinessQuery messageSceneReadinessQuery;
     private final ProfileDeviceMergeApplicationService profileDeviceMergeApplicationService;
 
     @Value("${ai.tenant.default-id:1}")
@@ -258,8 +258,8 @@ public class AuthLoginController extends OpenV1ControllerBases.Auth {
         if (!tenantRuntimeSettingApplicationService.isAuthOpenRegistrationEnabled(tenantId)) {
             return false;
         }
-        return AuthRegisterEmailSupport.isDeliveryReady(
-                authRegisterVerificationResolver.resolve(tenantId).getEmail());
+        return messageSceneReadinessQuery.isSceneConfigured(
+                tenantId, MessageSceneCode.REGISTER_VERIFICATION);
     }
 
     /** 登录/注册成功后写入 {@code sec_user_account.last_login_*}（管理端成员列表与数据概览埋点）。 */

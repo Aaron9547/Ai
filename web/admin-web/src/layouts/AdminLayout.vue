@@ -31,7 +31,12 @@
         </el-menu-item>
         <!-- 1. 模型、工具与知识数据（中台能力） -->
         <el-sub-menu
-          v-if="menuAllowed('LLM_MODELS') || menuAllowed('MCP_SERVERS') || menuAllowed('RAG_KBS')"
+          v-if="
+            menuAllowed('LLM_MODELS') ||
+            menuAllowed('PROMPT_TEMPLATES') ||
+            menuAllowed('MCP_SERVERS') ||
+            menuAllowed('RAG_KBS')
+          "
           index="grp-model-knowledge"
         >
           <template #title>
@@ -41,6 +46,10 @@
           <el-menu-item v-if="menuAllowed('LLM_MODELS')" index="/model/llm-models">
             <el-icon><Setting /></el-icon>
             <span>{{ t("admin.menu.llmModels") }}</span>
+          </el-menu-item>
+          <el-menu-item v-if="menuAllowed('PROMPT_TEMPLATES')" index="/prompt/templates">
+            <el-icon><Document /></el-icon>
+            <span>{{ t("admin.menu.promptTemplates") }}</span>
           </el-menu-item>
           <el-menu-item v-if="menuAllowed('MCP_SERVERS')" index="/mcp/servers">
             <el-icon><Connection /></el-icon>
@@ -140,7 +149,7 @@
 
         <!-- 6. 本租户业务开关类参数（与平台级菜单/租户 CRUD 区分） -->
         <el-sub-menu
-          v-if="menuAllowed('SYSTEM_SETTINGS') || menuAllowed('SCHEDULED_TASKS')"
+          v-if="menuAllowed('SYSTEM_SETTINGS') || menuAllowed('SCHEDULED_TASKS') || menuAllowed('MESSAGE_CENTER')"
           index="grp-tenant-settings"
         >
           <template #title>
@@ -154,6 +163,10 @@
           <el-menu-item index="/system/tenant-shell-config">
             <el-icon><Picture /></el-icon>
             <span>{{ t("admin.menu.tenantShell") }}</span>
+          </el-menu-item>
+          <el-menu-item v-if="menuAllowed('MESSAGE_CENTER')" index="/system/message-channels">
+            <el-icon><Message /></el-icon>
+            <span>{{ t("admin.menu.messageSend") }}</span>
           </el-menu-item>
           <el-menu-item v-if="menuAllowed('SCHEDULED_TASKS')" index="/system/scheduled-tasks">
             <el-icon><Timer /></el-icon>
@@ -248,6 +261,7 @@ import {
   Histogram,
   House,
   Link,
+  Message,
   Menu as MenuIcon,
   Monitor,
   Odometer,

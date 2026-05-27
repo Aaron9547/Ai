@@ -40,52 +40,24 @@ export type TenantShellModelCallingRuntime = {
 
 export type TenantShellAuthRegisterRuntime = {
   openRegistration: boolean;
-  /** 后端判定 SMTP 主机、发件人、用户名是否已配齐 */
   emailDeliveryReady: boolean;
   codeLength: number;
   codeTtlSeconds: number;
   sendCooldownSeconds: number;
-  emailSmtpHost: string;
-  emailSmtpPort: number;
-  emailUsername: string;
-  /** 保存时可传；读取时不回显，见 emailPasswordConfigured */
-  emailPassword?: string;
-  emailPasswordConfigured: boolean;
-  emailFrom: string;
-  emailSsl: boolean;
-  emailSubjectTemplate: string;
-  emailBodyTemplate: string;
 };
 
-export type TenantShellAuthRegisterPutBody = Omit<
-  TenantShellAuthRegisterRuntime,
-  "emailDeliveryReady" | "emailPasswordConfigured"
-> & {
-  emailPassword?: string;
-};
+/** 保存请求体；{@link #emailDeliveryReady} 仅 GET 响应只读 */
+export type TenantShellAuthRegisterPutBody = Omit<TenantShellAuthRegisterRuntime, "emailDeliveryReady">;
 
 export type TenantShellKnowledgePlanetRuntime = {
   enabled: boolean;
   digestModelId: string;
   emailEnabled: boolean;
-  reuseRegisterSmtp: boolean;
   emailDeliveryReady: boolean;
-  emailSmtpHost: string;
-  emailSmtpPort: number;
-  emailUsername: string;
-  emailPasswordConfigured: boolean;
-  emailFrom: string;
-  emailSsl: boolean;
-  emailSubjectTemplate: string;
-  emailBodyTemplate: string;
 };
 
-export type TenantShellKnowledgePlanetPutBody = Omit<
-  TenantShellKnowledgePlanetRuntime,
-  "emailDeliveryReady" | "emailPasswordConfigured"
-> & {
-  emailPassword?: string;
-};
+/** 保存请求体；{@link #emailDeliveryReady} 仅 GET 响应只读 */
+export type TenantShellKnowledgePlanetPutBody = Omit<TenantShellKnowledgePlanetRuntime, "emailDeliveryReady">;
 
 export type TenantShellConfig = {
   branding: TenantShellBranding;

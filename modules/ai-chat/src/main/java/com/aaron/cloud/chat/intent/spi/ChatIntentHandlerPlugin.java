@@ -10,6 +10,7 @@ import com.aaron.cloud.common.chat.entity.ChatAttachment;
 import com.aaron.cloud.common.chat.entity.ChatIntentDefinition;
 import com.aaron.cloud.common.chat.entity.ChatIntentKeyword;
 import com.aaron.cloud.common.context.TenantContextHolder;
+import com.aaron.cloud.common.context.TenantSnapshot;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -49,7 +50,7 @@ public interface ChatIntentHandlerPlugin {
 
     SseEmitter openStream(
             long conversationId,
-            TenantContextHolder.TenantSnapshot snap,
+            TenantSnapshot snap,
             ChatSendPayload payload,
             List<ChatAttachment> attachments,
             ChatIntentDefinition def,
@@ -59,7 +60,7 @@ public interface ChatIntentHandlerPlugin {
     /** 带流上下文；默认回退到无上下文版本。 */
     default SseEmitter openStream(
             long conversationId,
-            TenantContextHolder.TenantSnapshot snap,
+            TenantSnapshot snap,
             ChatSendPayload payload,
             List<ChatAttachment> attachments,
             ChatIntentDefinition def,

@@ -11,6 +11,7 @@ import com.aaron.cloud.chat.websearch.cache.WebSearchQueryNormalizer;
 import com.aaron.cloud.common.api.dto.model.ModelTokenUsage;
 import com.aaron.cloud.common.api.enums.llm.LlmWebSearchProvider;
 import com.aaron.cloud.common.context.TenantContextHolder;
+import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService;
 import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
 import com.aaron.cloud.common.security.crypto.AesSecretCipher;
@@ -55,7 +56,7 @@ public class ChatWebSearchGroundingService {
      * @param onCumulativeReferences 可为 null；每次入参为当前已累积的引用列表副本（只增不减）。
      */
     public WebGroundingBundle groundMultiRoundsWithRaw(
-            TenantContextHolder.TenantSnapshot snap,
+            TenantSnapshot snap,
             SysLlmModel webSearchModel,
             String userQueryPlaintext,
             long conversationId,
@@ -163,7 +164,7 @@ public class ChatWebSearchGroundingService {
     }
 
     private WebGroundingBundle finalizeGrounding(
-            TenantContextHolder.TenantSnapshot snap,
+            TenantSnapshot snap,
             long modelId,
             String configScope,
             String normalized,
@@ -183,7 +184,7 @@ public class ChatWebSearchGroundingService {
      * 对话流式：首轮（或缓存命中）同步返回以尽快注入主模型；配置多轮时其余轮在虚拟线程中补全并通过 {@code onCumulativeReferences} 渐进下发。
      */
     public WebSearchStreamGroundingSession groundForChatStream(
-            TenantContextHolder.TenantSnapshot snap,
+            TenantSnapshot snap,
             SysLlmModel webSearchModel,
             String userQueryPlaintext,
             long conversationId,
@@ -315,7 +316,7 @@ public class ChatWebSearchGroundingService {
     }
 
     public WebSearchExecutionResult groundWithRaw(
-            TenantContextHolder.TenantSnapshot snap,
+            TenantSnapshot snap,
             SysLlmModel webSearchModel,
             String userQueryPlaintext,
             long conversationId) {
@@ -326,7 +327,7 @@ public class ChatWebSearchGroundingService {
 
     private WebGroundingBundle executeRounds(
             WebSearchExecutionContext ctx,
-            TenantContextHolder.TenantSnapshot snap,
+            TenantSnapshot snap,
             SysLlmModel webSearchModel,
             String base,
             List<String> roundSuffixes,
@@ -384,7 +385,7 @@ public class ChatWebSearchGroundingService {
     }
 
     private WebSearchExecutionResult executeSingleRound(
-            TenantContextHolder.TenantSnapshot snap,
+            TenantSnapshot snap,
             SysLlmModel webSearchModel,
             WebSearchModelProvider provider,
             LlmWebSearchProvider webProv,
@@ -429,7 +430,7 @@ public class ChatWebSearchGroundingService {
     }
 
     private WebSearchExecutionContext resolveExecutionContext(
-            TenantContextHolder.TenantSnapshot snap, SysLlmModel webSearchModel) {
+            TenantSnapshot snap, SysLlmModel webSearchModel) {
         if (webSearchModel.getApiKeyCipher() == null || webSearchModel.getApiKeyCipher().isBlank()) {
             throw new IllegalStateException("联网搜索模型未配置 API Key");
         }
@@ -468,7 +469,7 @@ public class ChatWebSearchGroundingService {
     }
 
     void recordUsageIfPresent(
-            TenantContextHolder.TenantSnapshot snap,
+            TenantSnapshot snap,
             SysLlmModel webSearchModel,
             String rawJson,
             long conversationId,

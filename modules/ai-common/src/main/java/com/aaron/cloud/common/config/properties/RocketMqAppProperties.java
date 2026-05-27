@@ -28,4 +28,7 @@ public class RocketMqAppProperties {
 
     private String memoryAbstractTopic = "ai-memory-abstract-refresh";
     private String memoryAbstractConsumerGroup = "ai-memory-abstract-consumer";
+
+    private String messageTopic = "ai-message-dispatch";
+    private String messageConsumerGroup = "ai-message-consumer";
 }

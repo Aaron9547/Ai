@@ -1,5 +1,6 @@
 package com.aaron.cloud.chat.rest.open;
 
+import com.aaron.cloud.chat.ChatApplicationService;
 import com.aaron.cloud.chat.ChatConversationShareService;
 import com.aaron.cloud.chat.dto.ChatShareCreateView;
 import com.aaron.cloud.chat.dto.ChatSharePublicView;
@@ -17,12 +18,15 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class ChatShareController extends OpenV1ControllerBases.Chat {
 
+    private final ChatApplicationService chatApplicationService;
     private final ChatConversationShareService chatConversationShareService;
 
-    @PostMapping("/conversations/{id}/shares")
+    @PostMapping("/conversations/{conversationId}/shares")
     public ChatShareCreateView createShare(
-            @PathVariable("id") long conversationId, @Valid @RequestBody CreateChatShareRequest body) {
-        return chatConversationShareService.createShare(conversationId, body);
+            @PathVariable("conversationId") String conversationId,
+            @Valid @RequestBody CreateChatShareRequest body) {
+        long id = chatApplicationService.requireOpenConversationId(conversationId);
+        return chatConversationShareService.createShare(id, body);
     }
 
     @GetMapping("/shares/{code}")

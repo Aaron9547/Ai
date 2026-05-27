@@ -9,7 +9,7 @@ import com.aaron.cloud.common.api.identity.AccountPrincipalRef;
 import com.aaron.cloud.common.audit.SysAuditEventRepository;
 import com.aaron.cloud.common.audit.entity.SysAuditEvent;
 import com.aaron.cloud.common.context.TenantContextHolder;
-import com.aaron.cloud.common.context.TenantContextHolder.TenantSnapshot;
+import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.security.SecUserAccountRepository;
 import com.aaron.cloud.common.security.SysTenantMemberRepository;
 import com.aaron.cloud.common.security.entity.SecUserAccount;

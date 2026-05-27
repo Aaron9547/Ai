@@ -1,0 +1,20 @@
+# Ai 仓库 — 全项目 UTF-8 硬约束（EditorConfig 插件 / IDEA 均会读取）
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{java,kt,ts,tsx,vue,js,jsx,json,css,scss,less,html,sql,md,yml,yaml,xml,properties,py,ps1,sh}]
+charset = utf-8
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.bat]
+end_of_line = crlf
+
+[*.cmd]
+end_of_line = crlf

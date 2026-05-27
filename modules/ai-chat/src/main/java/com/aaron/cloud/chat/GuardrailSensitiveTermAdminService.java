@@ -5,6 +5,7 @@ import com.aaron.cloud.chat.dto.ChatSensitiveTermAdminDtos.SensitiveTermImportRe
 import com.aaron.cloud.chat.dto.ChatSensitiveTermAdminDtos.SensitiveTermRow;
 import com.aaron.cloud.common.api.enums.guardrail.GuardrailSensitivePoolType;
 import com.aaron.cloud.common.context.TenantContextHolder;
+import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.guardrail.GuardrailSensitiveTermRepository;
 import com.aaron.cloud.common.guardrail.entity.GuardrailSensitiveTerm;
 import com.aaron.cloud.common.security.AdminQueryTenantSupport;
@@ -151,14 +152,14 @@ public class GuardrailSensitiveTermAdminService {
     }
 
     private static long resolveDataTenantForWrite(
-            GuardrailSensitivePoolType pool, Long targetTenantId, TenantContextHolder.TenantSnapshot snap) {
+            GuardrailSensitivePoolType pool, Long targetTenantId, TenantSnapshot snap) {
         if (pool == GuardrailSensitivePoolType.PLATFORM) {
             return snap.getTenantId();
         }
         return AdminQueryTenantSupport.resolveSensitiveTermsDataTenantId(targetTenantId);
     }
 
-    private static void assertPlatformWriteAllowed(GuardrailSensitivePoolType pool, TenantContextHolder.TenantSnapshot snap) {
+    private static void assertPlatformWriteAllowed(GuardrailSensitivePoolType pool, TenantSnapshot snap) {
         if (pool == GuardrailSensitivePoolType.PLATFORM) {
             if (snap.getMemberRole() == null || !snap.getMemberRole().isFounder()) {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "仅创始人可维护平台强制默认词库");

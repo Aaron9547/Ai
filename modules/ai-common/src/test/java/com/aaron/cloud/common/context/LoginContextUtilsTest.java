@@ -26,7 +26,7 @@ class LoginContextUtilsTest {
                         .status(UserAccountStatus.ACTIVE)
                         .build();
         TenantContextHolder.set(
-                TenantContextHolder.TenantSnapshot.builder()
+                TenantSnapshot.builder()
                         .tenantId(7L)
                         .userId(42L)
                         .memberRole(TenantMemberRole.ADMIN)
@@ -42,7 +42,7 @@ class LoginContextUtilsTest {
     @Test
     void requireUserIdFailsWhenGuest() {
         TenantContextHolder.set(
-                TenantContextHolder.TenantSnapshot.builder().tenantId(1L).deviceId("d-1").build());
+                TenantSnapshot.builder().tenantId(1L).deviceId("d-1").build());
         assertThrows(IllegalStateException.class, LoginContextUtils::requireUserId);
     }
 }

@@ -16,6 +16,9 @@ public class ChatConversation {
     @TableId(type = IdType.AUTO)
     private Long id;
 
+    /** 开放 API / URL 使用的会话标识（非自增）。 */
+    private String publicId;
+
     private Long tenantId;
     private Long userId;
     private String deviceId;

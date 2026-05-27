@@ -1,6 +1,6 @@
 package com.aaron.cloud.common.profile;
 
-import com.aaron.cloud.common.context.TenantContextHolder.TenantSnapshot;
+import com.aaron.cloud.common.context.TenantSnapshot;
 
 /** 画像与记忆表使用的 {@code subject_key}：已登录 {@code u:{id}}，访客 {@code d:{deviceId}}。 */
 public final class ProfileSubjectKey {

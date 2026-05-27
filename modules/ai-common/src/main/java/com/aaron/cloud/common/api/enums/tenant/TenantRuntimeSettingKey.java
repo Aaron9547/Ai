@@ -172,6 +172,13 @@ public enum TenantRuntimeSettingKey {
             SettingValueKind.BOOLEAN,
             "false",
             false),
+    /** 是否启用知识星球周报邮件推送（通道见消息中心 KNOWLEDGE_PLANET_WEEKLY）。 */
+    KNOWLEDGE_PLANET_WEEKLY_EMAIL_ENABLED(
+            "KNOWLEDGE_PLANET_WEEKLY_EMAIL_ENABLED",
+            "知识星球周报邮件开关",
+            SettingValueKind.BOOLEAN,
+            "true",
+            false),
     /** 迁移/默认种子；Cron 以管理端「定时任务」为准，Shell 不再编辑。 */
     KNOWLEDGE_PLANET_WEEKLY_COMPUTE_CRON(
             "KNOWLEDGE_PLANET_WEEKLY_COMPUTE_CRON",
@@ -240,6 +247,7 @@ public enum TenantRuntimeSettingKey {
                     CHAT_STARTER_DAILY_HOT_ENABLED,
                     CHAT_STARTER_DAILY_HOT_CRON,
                     KNOWLEDGE_PLANET_ENABLED,
+                    KNOWLEDGE_PLANET_WEEKLY_EMAIL_ENABLED,
                     KNOWLEDGE_PLANET_WEEKLY_COMPUTE_CRON,
                     KNOWLEDGE_PLANET_WEEKLY_EMAIL_CRON,
                     KNOWLEDGE_PLANET_EMAIL_JSON,

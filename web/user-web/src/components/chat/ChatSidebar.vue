@@ -20,6 +20,12 @@
       </div>
       <div class="sidebar-divider" aria-hidden="true" />
 
+      <KnowledgePlanetMobileEntry
+        v-if="mobileLayout"
+        :auth-bump="authBump"
+        @opened="emit('planetOpened')"
+      />
+
       <el-scrollbar class="conv-scroll">
         <div v-if="!convs.length" class="conv-empty">
           <el-icon class="conv-empty-icon" :size="40"><ChatLineRound /></el-icon>
@@ -159,6 +165,7 @@ import {
   User,
 } from "@element-plus/icons-vue";
 import BrandMark from "@/components/BrandMark.vue";
+import KnowledgePlanetMobileEntry from "./KnowledgePlanetMobileEntry.vue";
 import SidebarCollapseTab from "./SidebarCollapseTab.vue";
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
@@ -171,7 +178,7 @@ type ConvGroup = { key: string; label: string; items: ConvListItem[] };
 const props = withDefaults(
   defineProps<{
     convs: ConvListItem[];
-    convId: number | null;
+    convId: string | null;
     loggedInUsername: string | null;
     mePagePath: string;
     drawerOpen?: boolean;
@@ -179,8 +186,10 @@ const props = withDefaults(
     brandLogoUrl?: string | null;
     collapsible?: boolean;
     defaultCollapsed?: boolean;
+    mobileLayout?: boolean;
+    authBump?: number;
   }>(),
-  { brandLabel: "Ai", collapsible: true, defaultCollapsed: false },
+  { brandLabel: "Ai", collapsible: true, defaultCollapsed: false, mobileLayout: false, authBump: 0 },
 );
 
 const emit = defineEmits<{
@@ -190,6 +199,7 @@ const emit = defineEmits<{
   login: [];
   rename: [id: number];
   delete: [id: number];
+  planetOpened: [];
 }>();
 
 const { t, locale } = useI18n();

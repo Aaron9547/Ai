@@ -34,6 +34,22 @@ class AdminHttpMenuRoutesTest {
     }
 
     @Test
+    void messageCenterPathsRequireMessageCenterMenu() {
+        assertEquals(AdminMenuCode.MESSAGE_CENTER, AdminHttpMenuRoutes.resolve("/api/v1/admin/message/channels"));
+        assertEquals(AdminMenuCode.MESSAGE_CENTER, AdminHttpMenuRoutes.resolve("/api/v1/admin/message/templates/1"));
+    }
+
+    @Test
+    void promptTemplatePathsRequirePromptTemplatesMenu() {
+        assertEquals(
+                AdminMenuCode.PROMPT_TEMPLATES,
+                AdminHttpMenuRoutes.resolve("/api/v1/admin/prompt-templates"));
+        assertEquals(
+                AdminMenuCode.PROMPT_TEMPLATES,
+                AdminHttpMenuRoutes.resolve("/api/v1/admin/prompt-templates/cache/evict"));
+    }
+
+    @Test
     void unknownAdminPathReturnsNull() {
         assertNull(AdminHttpMenuRoutes.resolve("/api/v1/admin/unknown-resource"));
     }

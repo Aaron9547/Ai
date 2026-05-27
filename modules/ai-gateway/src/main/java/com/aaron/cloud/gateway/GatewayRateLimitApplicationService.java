@@ -3,7 +3,7 @@ package com.aaron.cloud.gateway;
 import com.aaron.cloud.common.api.enums.tenant.TenantMemberRole;
 import com.aaron.cloud.common.api.enums.gateway.ToggleState;
 import com.aaron.cloud.common.context.TenantContextHolder;
-import com.aaron.cloud.common.context.TenantContextHolder.TenantSnapshot;
+import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.gateway.GwApiRateLimitRuleRepository;
 import com.aaron.cloud.common.gateway.entity.GwApiRateLimitRule;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;

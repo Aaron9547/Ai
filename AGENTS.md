@@ -6,7 +6,7 @@
 
 1. **版本**：大改 → `pom.xml` 补丁 +1 + `PROJECT.md` **新开**顶节 `###`；小改 → 仅当前顶节追加条目。
 2. **`PROJECT.md`「变更记录」**：顶节 `###` = `pom.xml` `<version>`；至少一条 `- **模块**：…`（含表名、REST、关键类）；有库表则写明 **已建库须手工执行 migrate**。
-3. **DB**：`schema_v1.sql` + `migrate_0_1_{patch}_*.sql`（`{patch}` = pom 补丁位）+ `gw_api_endpoint_catalog_inserts.sql` + `db/mysql/README.md`。
+3. **DB**：`schema_v1.sql`（含平台种子）+ `db/mysql/migrate/migrate_0_1_{patch}_*.sql`（`{patch}` = pom 补丁位）+ `gw_api_endpoint_catalog_inserts.sql` + `db/mysql/README.md`。
 4. **大改可选**：`PROJECT.md` 功能模块索引 `##` + `.cursorrules` §1.5 一行。
 5. **完成前**：`.\scripts\check-project-changelog.ps1 -IncludeUntracked` → 退出码 **0**。
 
@@ -14,7 +14,22 @@
 
 ## 当前开发线
 
-以 **`pom.xml`** 为准（**`0.1.255-SNAPSHOT`**）。详见 **`PROJECT.md` 顶节 `### 0.1.255-SNAPSHOT`**。
+以 **`pom.xml`** 为准（**`0.1.258-SNAPSHOT`**）。详见 **`PROJECT.md` 顶节 `### 0.1.258-SNAPSHOT`**。
+
+## 源码编码（UTF-8）— 全项目硬约束
+
+**只允许 UTF-8。** 严禁用 GBK / GB2312 / GB18030 / Windows-1252 打开或保存源码。
+
+| 动作 | 命令 / 文件 |
+|------|-------------|
+| 仓库声明 | **`.editorconfig`**、**`.gitattributes`** |
+| IDE 一键配置 | **`.\scripts\setup-ide-encoding.ps1`**（**`config/idea/encodings.xml`**、**`config/vscode/settings.json`**） |
+| 提交前扫描 | **`python tools/check_text_encoding.py`** 或 **`.\scripts\check-encoding.ps1`**（已接入变更记录门禁） |
+| 从 Git 恢复 | **`python tools/restore_utf8_from_git.py <path>`**（勿用 **`Out-File`**） |
+| 去 BOM | **`python tools/strip_java_bom.py`** |
+| 权威细则 | **`.cursorrules` §0.6** |
+
+IDEA：**Settings → Editor → File Encodings** → Global/Project **UTF-8**；**Transparent native-to-ascii for properties** 建议 UTF-8。Windows 控制台：**`application.yml`** **`logging.charset.console: UTF-8`**。
 
 ## 相关文件
 

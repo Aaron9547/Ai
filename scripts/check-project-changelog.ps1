@@ -123,4 +123,14 @@ if ($pomVer -and $docVer -and $pomVer -ne $docVer) {
 }
 
 Write-Host "OK: PROJECT.md updated; changelog top matches pom.xml ($pomVer)."
+
+$encScript = Join-Path $repoRoot 'scripts\check-encoding.ps1'
+if (Test-Path $encScript) {
+    & $encScript
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host 'FAIL: UTF-8 encoding check failed (see tools/encoding-report.txt).' -ForegroundColor Red
+        exit 1
+    }
+}
+
 exit 0

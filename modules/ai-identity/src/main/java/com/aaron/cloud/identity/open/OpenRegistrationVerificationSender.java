@@ -1,6 +1,9 @@
 package com.aaron.cloud.identity.open;
 
-import com.aaron.cloud.identity.mail.TenantTemplateEmailSender;
+import com.aaron.cloud.common.api.dto.message.MessageSendRequest;
+import com.aaron.cloud.common.api.enums.message.MessageSceneCode;
+import com.aaron.cloud.common.api.ports.MessageSendPort;
+import com.aaron.cloud.common.message.MessageSceneReadinessQuery;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,34 +15,29 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class OpenRegistrationVerificationSender {
 
-    private final TenantAuthRegisterVerificationResolver verificationResolver;
-    private final TenantTemplateEmailSender templateEmailSender;
+    private final MessageSceneReadinessQuery sceneReadinessQuery;
+    private final MessageSendPort messageSendPort;
 
     public void sendRegisterCode(
             long tenantId, String tenantName, String toEmail, String code, long ttlMinutes) {
-        AuthRegisterVerificationConfig cfg = verificationResolver.resolve(tenantId);
-        AuthRegisterVerificationConfig.EmailChannel email = cfg.getEmail();
-        if (!AuthRegisterEmailSupport.isDeliveryReady(email)) {
+        if (!sceneReadinessQuery.isSceneConfigured(tenantId, MessageSceneCode.REGISTER_VERIFICATION)) {
             throw new IllegalStateException("register_email_delivery_not_configured");
         }
-        sendEmail(email, tenantName, toEmail, code, ttlMinutes);
-    }
-
-    private void sendEmail(
-            AuthRegisterVerificationConfig.EmailChannel email,
-            String tenantName,
-            String toEmail,
-            String code,
-            long ttlMinutes) {
         Map<String, String> vars =
                 Map.of(
                         "code", code,
                         "ttlMinutes", String.valueOf(ttlMinutes),
                         "tenantName", tenantName == null ? "" : tenantName,
                         "email", toEmail);
-        String subject = TenantTemplateEmailSender.applyTemplate(email.getSubjectTemplate(), vars);
-        String body = TenantTemplateEmailSender.applyTemplate(email.getBodyTemplate(), vars);
-        templateEmailSender.send(email, toEmail, subject, body);
-        log.debug("注册验证码邮件已发送 target={}", toEmail);
+        messageSendPort.send(
+                MessageSendRequest.builder()
+                        .tenantId(tenantId)
+                        .sceneCode(MessageSceneCode.REGISTER_VERIFICATION)
+                        .recipient(toEmail)
+                        .templateVars(vars)
+                        .idempotencyKey("reg:" + tenantId + ":" + toEmail + ":" + code)
+                        .async(true)
+                        .build());
+        log.debug("注册验证码邮件已投递 target={}", toEmail);
     }
 }

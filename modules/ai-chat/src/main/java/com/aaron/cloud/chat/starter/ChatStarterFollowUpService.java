@@ -7,6 +7,8 @@ import com.aaron.cloud.common.api.enums.chat.ChatStarterPromptScene;
 import com.aaron.cloud.common.api.enums.chat.ChatStarterPromptSource;
 import com.aaron.cloud.common.api.enums.llm.LlmModelKind;
 import com.aaron.cloud.common.api.ports.ModelInvokePort;
+import com.aaron.cloud.common.api.ports.PromptTemplateResolvePort;
+import com.aaron.cloud.chat.prompt.ChatPromptTemplateSupport;
 import com.aaron.cloud.common.chat.ChatConversationRepository;
 import com.aaron.cloud.common.chat.ChatMessageRepository;
 import com.aaron.cloud.common.chat.LnkChatConversationMessageRepository;
@@ -36,15 +38,6 @@ import org.springframework.web.server.ResponseStatusException;
 @RequiredArgsConstructor
 public class ChatStarterFollowUpService {
 
-    private static final String FOLLOW_UP_SYSTEM =
-            """
-            根据用户问题与助手回复，生成 2～3 条用户可能继续追问的短句。
-            只输出 JSON 数组，不要 markdown。每项中文 8～36 字，与上文强相关、不重复。
-            """;
-
-    private static final List<String> BUILTIN_FOLLOW_UP_FALLBACK =
-            List.of("能再具体说说吗？", "还有其他需要注意的吗？", "请举一个实际例子");
-
     /** 流式结束前与联网收尾并行等待 LLM 追问的最长时间（毫秒）。 */
     private static final long STREAM_FOLLOW_UP_WAIT_MS = 500L;
 
@@ -57,6 +50,8 @@ public class ChatStarterFollowUpService {
     private final ModelInvokePort modelInvokePort;
     private final ChatStarterPromptJsonSupport jsonSupport;
     private final ChatStarterPromptApplicationService starterPromptApplicationService;
+    private final PromptTemplateResolvePort promptTemplates;
+    private final ChatPromptTemplateSupport chatPromptTemplateSupport;
 
     /** REST 拉取时等待流式并行追问写入缓存的最长时间。 */
     private static final long FOLLOW_UP_CACHE_WAIT_MS = 60_000L;
@@ -70,7 +65,7 @@ public class ChatStarterFollowUpService {
 
         var cached = cacheRepository.findByAssistantMessage(tenantId, assistantMessageId);
         if (cached.isPresent()) {
-            return ensureNonEmpty(fromJson(cached.get().getQuestionsJson(), limit), limit);
+            return ensureNonEmpty(tenantId, fromJson(cached.get().getQuestionsJson(), limit), limit);
         }
 
         ChatMessage assistant =
@@ -92,7 +87,7 @@ public class ChatStarterFollowUpService {
 
         Optional<String> waitedJson = waitForCachedQuestionsJson(tenantId, assistantMessageId);
         if (waitedJson.isPresent()) {
-            return ensureNonEmpty(fromJson(waitedJson.get(), limit), limit);
+            return ensureNonEmpty(tenantId, fromJson(waitedJson.get(), limit), limit);
         }
 
         List<String> generated =
@@ -104,7 +99,7 @@ public class ChatStarterFollowUpService {
 
         persistFollowUpCache(tenantId, assistantMessageId, generated);
         syncFollowUpPool(tenantId, generated);
-        return ensureNonEmpty(fromJson(jsonSupport.toJson(generated), limit), limit);
+        return ensureNonEmpty(tenantId, fromJson(jsonSupport.toJson(generated), limit), limit);
     }
 
     /**
@@ -217,6 +212,7 @@ public class ChatStarterFollowUpService {
     private ChatStarterPromptDtos.StarterPromptListView poolFallback(
             long tenantId, Long userId, String deviceId, int limit) {
         return ensureNonEmpty(
+                tenantId,
                 starterPromptApplicationService.listForTenant(
                         tenantId,
                         userId,
@@ -276,16 +272,17 @@ public class ChatStarterFollowUpService {
     }
 
     private ChatStarterPromptDtos.StarterPromptListView ensureNonEmpty(
-            ChatStarterPromptDtos.StarterPromptListView view, int limit) {
+            long tenantId, ChatStarterPromptDtos.StarterPromptListView view, int limit) {
         if (view != null && view.items() != null && !view.items().isEmpty()) {
             return view;
         }
         int cap = Math.max(1, Math.min(limit, 6));
+        List<String> fallbacks = chatPromptTemplateSupport.followUpFallbacks(tenantId);
         List<ChatStarterPromptDtos.StarterPromptItem> items = new ArrayList<>();
-        for (int i = 0; i < Math.min(cap, BUILTIN_FOLLOW_UP_FALLBACK.size()); i++) {
+        for (int i = 0; i < Math.min(cap, fallbacks.size()); i++) {
             items.add(
                     new ChatStarterPromptDtos.StarterPromptItem(
-                            null, BUILTIN_FOLLOW_UP_FALLBACK.get(i), "BUILTIN_FOLLOW_UP"));
+                            null, fallbacks.get(i), "BUILTIN_FOLLOW_UP"));
         }
         return new ChatStarterPromptDtos.StarterPromptListView(items, false);
     }
@@ -322,7 +319,7 @@ public class ChatStarterFollowUpService {
         }
         var sys = new ModelChatRequest.MessageTurn();
         sys.setRole("system");
-        sys.setContent(FOLLOW_UP_SYSTEM);
+        sys.setContent(promptTemplates.resolveSystem("follow_up_system", tenantId, "zh-CN"));
         var user = new ModelChatRequest.MessageTurn();
         user.setRole("user");
         user.setContent(

@@ -1,5 +1,6 @@
 package com.aaron.cloud.chat.rest.open;
 
+import com.aaron.cloud.chat.ChatApplicationService;
 import com.aaron.cloud.chat.dto.ChatStarterPromptDtos;
 import com.aaron.cloud.chat.starter.ChatStarterFollowUpService;
 import com.aaron.cloud.chat.starter.ChatStarterPromptApplicationService;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class ChatStarterPromptController extends OpenV1ControllerBases.Chat {
 
+    private final ChatApplicationService chatApplicationService;
     private final ChatStarterPromptApplicationService starterPromptApplicationService;
     private final ChatStarterFollowUpService followUpService;
 
@@ -50,9 +52,10 @@ public class ChatStarterPromptController extends OpenV1ControllerBases.Chat {
 
     @GetMapping("/conversations/{conversationId}/messages/{messageId}/follow-up-prompts")
     public ChatStarterPromptDtos.StarterPromptListView listFollowUpPrompts(
-            @PathVariable long conversationId,
+            @PathVariable String conversationId,
             @PathVariable long messageId,
             @RequestParam(defaultValue = "3") int limit) {
-        return followUpService.listFollowUp(conversationId, messageId, limit);
+        long convId = chatApplicationService.requireOpenConversationId(conversationId);
+        return followUpService.listFollowUp(convId, messageId, limit);
     }
 }

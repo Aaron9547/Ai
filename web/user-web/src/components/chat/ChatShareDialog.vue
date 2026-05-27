@@ -122,7 +122,7 @@ export type ShareDialogMsg = {
 
 const props = defineProps<{
   modelValue: boolean;
-  conversationId: number | null;
+  conversationId: string | null;
   conversationTitle: string;
   messages: ShareDialogMsg[];
   /** 点击分享时对应的助手消息下标 */

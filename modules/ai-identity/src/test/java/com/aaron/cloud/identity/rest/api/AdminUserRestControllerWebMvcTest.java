@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.aaron.cloud.common.context.TenantContextHolder;
+import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.security.SecUserAccountRepository;
 import com.aaron.cloud.common.security.SysTenantMemberRepository;
 import com.aaron.cloud.identity.admin.UserAdminMenuApplicationService;
@@ -48,7 +49,7 @@ class AdminUserRestControllerWebMvcTest {
     @BeforeEach
     void tenantContext() {
         TenantContextHolder.set(
-                TenantContextHolder.TenantSnapshot.builder().tenantId(1L).userId(1L).build());
+                TenantSnapshot.builder().tenantId(1L).userId(1L).build());
     }
 
     @AfterEach

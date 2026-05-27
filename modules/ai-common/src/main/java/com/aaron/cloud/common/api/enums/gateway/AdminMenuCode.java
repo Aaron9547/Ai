@@ -20,10 +20,14 @@ public enum AdminMenuCode {
     AUDIT_EVENTS("AUDIT_EVENTS"),
     METERING("METERING"),
     LLM_MODELS("LLM_MODELS"),
+    /** LLM 提示词模板（prompt_template） */
+    PROMPT_TEMPLATES("PROMPT_TEMPLATES"),
     MCP_SERVERS("MCP_SERVERS"),
     RAG_KBS("RAG_KBS"),
     /** 租户通用定时任务（网页爬取等；执行记录在入库任务） */
     SCHEDULED_TASKS("SCHEDULED_TASKS"),
+    /** 消息通道、场景模板与发送记录 */
+    MESSAGE_CENTER("MESSAGE_CENTER"),
     FILE_OBJECTS("FILE_OBJECTS"),
     NOTIFICATIONS("NOTIFICATIONS"),
     EVAL_RUNS("EVAL_RUNS"),

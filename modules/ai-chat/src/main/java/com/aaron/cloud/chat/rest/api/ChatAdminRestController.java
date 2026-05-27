@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 绠＄悊绔細褰撳墠绉熸埛鍐呭璇濅笌娑堟伅鍙鎶芥锛堥渶鑿滃崟 {@code CHAT}锛夈€?*/
+/** 管理端：当前租户内对话与消息只读抽查（需菜单 {@code CHAT}）。 */
 @RestController
 @RequiredArgsConstructor
 public class ChatAdminRestController extends ApiV1ControllerBases.AdminChat {

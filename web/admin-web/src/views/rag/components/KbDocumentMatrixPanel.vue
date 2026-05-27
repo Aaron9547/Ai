@@ -1022,7 +1022,7 @@ async function runRetrievalTest() {
   }
 }
 
-/** 浠呮枃妗ｄ笌鍒嗙被锛堜富鍖哄煙銆屽埛鏂般€嶏級銆?*/
+/** 仅文档与分类（主区域「刷新」）。 */
 async function refreshDocs() {
   await Promise.all([loadCategories(), loadDocPage()]);
 }

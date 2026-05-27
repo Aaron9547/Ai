@@ -236,7 +236,7 @@ export default {
     workspaceDetected: "Workspace detected",
     noValidDevice: "Enter a valid device code",
     mergeNoData: "No guest records found for that device, or they were already merged.",
-    mergeDone: "Merged: {c} conversations, {m} memory chunks",
+    mergeDone: "Merged: {c} conversations, {m} memory chunks, {k} knowledge points",
     mergeFail: "Merge failed",
     loadFail: "Load failed",
     copied: "Copied to clipboard",
@@ -347,5 +347,14 @@ export default {
     tourNext: "Next",
     tourDone: "Got it",
     archiveEmpty: "No knowledge points yet — keep chatting to build your planet.",
+    mobile: {
+      entrySubtitle: "{nodes} knowledge points · {planets} topic planets",
+      planetCount: "{n} topic planets",
+      allPlanets: "All",
+      planetLabel: "Planet: {name}",
+      starMapHint: "Pinch to zoom and drag the star map; tap a planet or point for details below.",
+      planetHint: "Viewing “{name}” — use Back above to return to the full map.",
+      knowledgeHint: "Viewing a knowledge point — use Back above to return to its planet.",
+    },
   },
 };

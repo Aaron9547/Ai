@@ -5,6 +5,7 @@ import com.aaron.cloud.common.api.enums.scheduled.ScheduledRunTrigger;
 import com.aaron.cloud.common.api.enums.scheduled.TenantScheduledExecutorCode;
 import com.aaron.cloud.common.config.properties.AiRagProperties;
 import com.aaron.cloud.common.context.TenantContextHolder;
+import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.redis.RedisDistributedLockService;
 import com.aaron.cloud.common.scheduled.TenantScheduledRunRepository;
 import com.aaron.cloud.common.scheduled.TenantScheduledTaskRepository;
@@ -71,7 +72,7 @@ public class TenantScheduledRunOrchestrator {
         runRepository.insert(run);
 
         long runId = run.getId();
-        TenantContextHolder.TenantSnapshot snap = TenantContextHolder.require();
+        TenantSnapshot snap = TenantContextHolder.require();
         RUN_EXECUTOR.execute(
                 () -> {
                     try {

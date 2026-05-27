@@ -120,7 +120,7 @@ public class RagKbAdminApplicationService {
         return ragKnowledgeBaseRepository.listByTenant(tenantId).stream().map(this::toView).toList();
     }
 
-    /** 绠＄悊绔睍绀猴細鏄惁宸叉帴鍏?Milvus锛堜笌 {@code ai.providers.vector-store} 涓€鑷达級銆?*/
+    /** 管理端展示：是否已接入 Milvus（与 {@code ai.providers.vector-store} 一致）。 */
     public boolean ragCapabilitiesVectorMilvus() {
         return ragVectorInfrastructure.isMilvusVectorStore();
     }

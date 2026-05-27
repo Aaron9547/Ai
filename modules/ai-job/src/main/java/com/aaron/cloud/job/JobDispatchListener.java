@@ -3,6 +3,7 @@ package com.aaron.cloud.job;
 import com.aaron.cloud.common.api.dto.job.JobDispatchMessage;
 import com.aaron.cloud.common.api.ports.JobTaskExecutionPort;
 import com.aaron.cloud.common.context.TenantContextHolder;
+import com.aaron.cloud.common.context.TenantSnapshot;
 import lombok.RequiredArgsConstructor;
 import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
 import org.apache.rocketmq.spring.core.RocketMQListener;
@@ -23,7 +24,7 @@ public class JobDispatchListener implements RocketMQListener<JobDispatchMessage>
     public void onMessage(JobDispatchMessage message) {
         try {
             TenantContextHolder.set(
-                    TenantContextHolder.TenantSnapshot.builder()
+                    TenantSnapshot.builder()
                             .tenantId(message.getTenantId())
                             .userId(message.getUserId())
                             .deviceId(message.getDeviceId())

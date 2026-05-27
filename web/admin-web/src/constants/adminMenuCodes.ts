@@ -11,6 +11,7 @@ export const ALL_ADMIN_MENU_CODES = [
   "AUDIT_EVENTS",
   "METERING",
   "LLM_MODELS",
+  "PROMPT_TEMPLATES",
   "MCP_SERVERS",
   "RAG_KBS",
   "FILE_OBJECTS",
@@ -20,6 +21,7 @@ export const ALL_ADMIN_MENU_CODES = [
   "CHAT_INTENTS",
   "SYSTEM_SETTINGS",
   "SCHEDULED_TASKS",
+  "MESSAGE_CENTER",
   "MENU_CATALOG",
   "GATEWAY_API",
 ] as const;
@@ -36,7 +38,7 @@ export const ADMIN_MENU_TENANT_GROUPS: readonly AdminMenuTenantGroupSpec[] = [
   { titleI18nKey: "views.tenants.menuGroups.overview", codes: ["DASHBOARD"] },
   {
     titleI18nKey: "views.tenants.menuGroups.modelKnowledge",
-    codes: ["LLM_MODELS", "MCP_SERVERS", "RAG_KBS"],
+    codes: ["LLM_MODELS", "PROMPT_TEMPLATES", "MCP_SERVERS", "RAG_KBS"],
   },
   { titleI18nKey: "views.tenants.menuGroups.members", codes: ["USERS", "USER_PROFILES"] },
   { titleI18nKey: "views.tenants.menuGroups.chat", codes: ["CHAT", "CHAT_INTENTS"] },
@@ -44,7 +46,7 @@ export const ADMIN_MENU_TENANT_GROUPS: readonly AdminMenuTenantGroupSpec[] = [
   { titleI18nKey: "views.tenants.menuGroups.auditMetering", codes: ["AUDIT_EVENTS", "METERING"] },
   {
     titleI18nKey: "views.tenants.menuGroups.tenantCapabilities",
-    codes: ["SYSTEM_SETTINGS", "SCHEDULED_TASKS", "FILE_OBJECTS", "NOTIFICATIONS", "EVAL_RUNS"],
+    codes: ["SYSTEM_SETTINGS", "SCHEDULED_TASKS", "MESSAGE_CENTER", "FILE_OBJECTS", "NOTIFICATIONS", "EVAL_RUNS"],
   },
   { titleI18nKey: "views.tenants.menuGroups.platform", codes: ["TENANTS", "MENU_CATALOG"] },
 ] as const;
@@ -58,6 +60,7 @@ export const ADMIN_MENU_LABELS: Record<string, string> = {
   AUDIT_EVENTS: "操作审计",
   METERING: "用量明细",
   LLM_MODELS: "大模型配置",
+  PROMPT_TEMPLATES: "提示词工程",
   MCP_SERVERS: "MCP 服务",
   RAG_KBS: "知识库",
   FILE_OBJECTS: "文件对象",
@@ -67,6 +70,7 @@ export const ADMIN_MENU_LABELS: Record<string, string> = {
   CHAT_INTENTS: "对话意图",
   SYSTEM_SETTINGS: "运行时参数",
   SCHEDULED_TASKS: "定时任务",
+  MESSAGE_CENTER: "消息发送",
   MENU_CATALOG: "后台菜单",
   GATEWAY_API: "API 限流",
 };

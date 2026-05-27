@@ -6,7 +6,7 @@
     <parent>
         <groupId>com.aaron.cloud</groupId>
         <artifactId>Ai</artifactId>
-        <version>0.1.255-SNAPSHOT</version>
+        <version>0.1.258-SNAPSHOT</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>
     <artifactId>ai-bootstrap</artifactId>
@@ -56,6 +56,10 @@
         <dependency>
             <groupId>com.aaron.cloud</groupId>
             <artifactId>ai-notification</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.aaron.cloud</groupId>
+            <artifactId>ai-prompt</artifactId>
         </dependency>
         <dependency>
             <groupId>com.aaron.cloud</groupId>

@@ -27,6 +27,17 @@ public class ChatConversationRepository {
                                 .eq(ChatConversation::getTenantId, tenantId)));
     }
 
+    public Optional<ChatConversation> findByPublicId(long tenantId, String publicId) {
+        if (publicId == null || publicId.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(
+                mapper.selectOne(
+                        Wrappers.<ChatConversation>lambdaQuery()
+                                .eq(ChatConversation::getTenantId, tenantId)
+                                .eq(ChatConversation::getPublicId, publicId.trim())));
+    }
+
     /** 管理端按主键加载（不按租户），调用方须再做租户/角色授权校验。 */
     public Optional<ChatConversation> findByIdForAdmin(long id) {
         return Optional.ofNullable(
@@ -98,6 +109,9 @@ public class ChatConversationRepository {
     }
 
     public int insert(ChatConversation row) {
+        if (row.getPublicId() == null || row.getPublicId().isBlank()) {
+            row.setPublicId(ChatConversationPublicIds.generate());
+        }
         return mapper.insert(row);
     }
 
@@ -139,5 +153,27 @@ public class ChatConversationRepository {
                         .set(ChatConversation::getUserId, userId)
                         .set(ChatConversation::getDeviceId, null)
                         .set(ChatConversation::getUpdatedAt, BeijingTime.nowLocal()));
+    }
+
+    /**
+     * 已登录用户访问仍挂在访客设备上的单条会话时，幂等归并到当前用户（与 {@link #attachGuestConversationsToUser} 条件一致）。
+     */
+    public boolean attachGuestConversationToUser(
+            long tenantId, long conversationId, String deviceId, long userId) {
+        if (deviceId == null || deviceId.isBlank()) {
+            return false;
+        }
+        int updated =
+                mapper.update(
+                        null,
+                        new LambdaUpdateWrapper<ChatConversation>()
+                                .eq(ChatConversation::getId, conversationId)
+                                .eq(ChatConversation::getTenantId, tenantId)
+                                .eq(ChatConversation::getDeviceId, deviceId.trim())
+                                .isNull(ChatConversation::getUserId)
+                                .set(ChatConversation::getUserId, userId)
+                                .set(ChatConversation::getDeviceId, null)
+                                .set(ChatConversation::getUpdatedAt, BeijingTime.nowLocal()));
+        return updated > 0;
     }
 }

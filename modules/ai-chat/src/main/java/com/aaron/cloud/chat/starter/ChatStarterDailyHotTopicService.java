@@ -12,6 +12,7 @@ import com.aaron.cloud.common.chat.ChatStarterPromptRepository;
 import com.aaron.cloud.common.chat.entity.ChatStarterDailyBatch;
 import com.aaron.cloud.common.chat.entity.ChatStarterPrompt;
 import com.aaron.cloud.common.context.TenantContextHolder;
+import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.modelcfg.LlmModelKindPolicy;
 import com.aaron.cloud.common.modelcfg.SysLlmModelRepository;
 import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
@@ -86,7 +87,7 @@ public class ChatStarterDailyHotTopicService {
         }
 
         var snap =
-                TenantContextHolder.TenantSnapshot.builder().tenantId(tenantId).build();
+                TenantSnapshot.builder().tenantId(tenantId).build();
         TenantContextHolder.set(snap);
         try {
             var grounding =

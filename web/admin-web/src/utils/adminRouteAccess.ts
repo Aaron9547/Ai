@@ -6,6 +6,7 @@ export type AdminRouteRequirement = string | "FOUNDER_ONLY";
 const FALLBACK_PATH_ORDER = [
   "/dashboard",
   "/model/llm-models",
+  "/prompt/templates",
   "/mcp/servers",
   "/knowledge-center/knowledge-bases",
   "/users",
@@ -18,6 +19,7 @@ const FALLBACK_PATH_ORDER = [
   "/system/runtime-settings",
   "/system/tenant-shell-config",
   "/system/scheduled-tasks",
+  "/system/message-channels",
   "/gateway/api-rate-limits",
   "/gateway/cors-origins",
   "/tenant/tenants",
@@ -39,9 +41,11 @@ export function requiredMenuForAdminPath(path: string): AdminRouteRequirement | 
   if (p.startsWith("/chat/intents")) return "CHAT_INTENTS";
   if (p.startsWith("/chat/")) return "CHAT";
   if (p.startsWith("/model/llm-models")) return "LLM_MODELS";
+  if (p.startsWith("/prompt/templates")) return "PROMPT_TEMPLATES";
   if (p.startsWith("/mcp/servers")) return "MCP_SERVERS";
   if (p.startsWith("/knowledge-center")) return "RAG_KBS";
   if (p.startsWith("/system/scheduled-tasks")) return "SCHEDULED_TASKS";
+  if (p.startsWith("/system/message-")) return "MESSAGE_CENTER";
   if (p.startsWith("/system/runtime-settings") || p.startsWith("/system/tenant-shell-config")) {
     return "SYSTEM_SETTINGS";
   }

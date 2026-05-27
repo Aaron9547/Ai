@@ -1,32 +1,59 @@
-"""Remove UTF-8 BOM (EF BB BF) from all .java files under ./src. Idempotent."""
+"""Remove UTF-8 BOM (EF BB BF) from text sources under modules/, web/, db/mysql/, tools/, scripts/. Idempotent."""
 from __future__ import annotations
 
-import os
 import sys
+from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
 BOM = b"\xef\xbb\xbf"
+
+SCAN_ROOTS = (
+    ROOT / "modules",
+    ROOT / "web",
+    ROOT / "db" / "mysql",
+    ROOT / "tools",
+    ROOT / "scripts",
+)
+
+TEXT_SUFFIXES = {
+    ".java",
+    ".ts",
+    ".tsx",
+    ".vue",
+    ".js",
+    ".jsx",
+    ".json",
+    ".sql",
+    ".md",
+    ".yml",
+    ".yaml",
+    ".xml",
+    ".properties",
+    ".py",
+    ".ps1",
+    ".sh",
+    ".css",
+    ".scss",
+    ".html",
+}
 
 
 def main() -> int:
-    root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
-    if not os.path.isdir(root):
-        print("src not found:", root, file=sys.stderr)
-        return 1
     stripped: list[str] = []
-    for dirpath, _, filenames in os.walk(root):
-        for name in filenames:
-            if not name.endswith(".java"):
+    for root in SCAN_ROOTS:
+        if not root.is_dir():
+            continue
+        for path in root.rglob("*"):
+            if not path.is_file() or path.suffix.lower() not in TEXT_SUFFIXES:
                 continue
-            path = os.path.join(dirpath, name)
-            with open(path, "rb") as f:
-                data = f.read()
-            if data.startswith(BOM):
-                with open(path, "wb") as f:
-                    f.write(data[len(BOM) :])
-                stripped.append(path)
+            data = path.read_bytes()
+            if not data.startswith(BOM):
+                continue
+            path.write_bytes(data[len(BOM) :])
+            stripped.append(str(path.relative_to(ROOT)))
     print(f"stripped BOM from {len(stripped)} file(s)")
-    for p in stripped:
-        print(p)
+    for rel in stripped:
+        print(rel)
     return 0
 
 

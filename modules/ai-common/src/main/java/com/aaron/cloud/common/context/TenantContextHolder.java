@@ -1,9 +1,5 @@
 package com.aaron.cloud.common.context;
 
-import com.aaron.cloud.common.api.enums.tenant.TenantMemberRole;
-import lombok.Builder;
-import lombok.Value;
-
 /**
  * 当前请求的租户/用户 id 快照。业务代码优先用 {@link LoginContextUtils} 读取租户与用户实体。
  */
@@ -38,16 +34,5 @@ public final class TenantContextHolder {
     public static void clear() {
         HOLDER.remove();
         LoginUserContextHolder.clear();
-    }
-
-    @Value
-    @Builder
-    public static class TenantSnapshot {
-        Long tenantId;
-        Long userId;
-        String deviceId;
-        /** 来自 JWT {@code tmr}，开放接口可能为 null */
-        @Builder.Default
-        TenantMemberRole memberRole = null;
     }
 }

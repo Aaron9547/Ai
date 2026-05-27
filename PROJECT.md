@@ -131,7 +131,7 @@ flowchart TD
 - **配置入口**：每日热点 Cron 与启停为 **`ten_scheduled_task`** 执行器 **`CHAT_STARTER_DAILY_HOT`**（管理端 **「定时任务」**）；运营池与热点批次、手动重抓在 **「推荐问题与猜你想问」**（**`/chat/starter-prompts`**）。统一调度 tick 与 RAG 共用 **`ai.rag.scheduled-tasks`**（**`TenantScheduledTaskPoller`**）。
 - **编排位置**：**`ChatStarterPromptApplicationService`**（抽样）、**`ChatStarterDailyHotTopicService`** + **`ChatStarterDailyHotJobHandler`**（热点）、**`ChatStarterFollowUpService`**（追问）；包 **`com.aaron.cloud.chat.starter`** / **`com.aaron.cloud.scheduled.handler`**。
 - **Open API**：**`GET /open/v1/chat/starter-prompts`**、**`POST …/starter-prompts/events`**、**`GET …/conversations/{id}/messages/{msgId}/follow-up-prompts`**。
-- **已建库运维**：**必须**手工执行 **`db/mysql/migrate_0_1_240_chat_starter_prompt.sql`**（应用**不会**自动建表）；迭代明细见 **「变更记录」** **`### 0.1.240-SNAPSHOT`**。
+- **已建库运维**：**必须**手工执行 **`db/mysql/migrate/migrate_0_1_240_chat_starter_prompt.sql`**（应用**不会**自动建表）；迭代明细见 **「变更记录」** **`### 0.1.240-SNAPSHOT`**。
 
 **空会话推荐 vs 猜你想问（数据从哪来）**
 
@@ -270,7 +270,7 @@ flowchart TB
 | 触发 | 每轮助手落库后 | 文档入库/爬站 | 每轮 user/assistant 片段 | 每日/空会话 |
 | C 端入口 | 右侧栏「知识星球」卡片 | 无（管理端知识库） | 注入 system，无独立 UI | 同栏「今日画像推荐」 |
 
-**已建库运维**：**必须**手工执行 **`db/mysql/migrate_0_1_254_knowledge_planet.sql`**（含表、定时任务种子、网关 **`INSERT IGNORE`**）；新库以 **`schema_v1.sql`** + **`gw_api_endpoint_catalog_inserts.sql`** 为准可跳过迁移主体 DDL。迭代明细见 **「变更记录」** **`### 0.1.254-SNAPSHOT`**。
+**已建库运维**：**必须**手工执行 **`db/mysql/migrate/migrate_0_1_254_knowledge_planet.sql`**（含表、定时任务种子、网关 **`INSERT IGNORE`**）；新库以 **`schema_v1.sql`** + **`gw_api_endpoint_catalog_inserts.sql`** 为准可跳过迁移主体 DDL。迭代明细见 **「变更记录」** **`### 0.1.254-SNAPSHOT`**。
 
 **迭代写在哪里**：功能边界与索引见**本节**；版本差异见 **「变更记录」** 顶节 **`### 0.1.254-SNAPSHOT`**。
 
@@ -363,6 +363,38 @@ flowchart TB
 
 ## 变更记录
 
+### 0.1.258-SNAPSHOT
+
+- **UTF-8 文案修复与编码门禁**：新增 **`tools/check_text_encoding.py`**、**`tools/restore_utf8_from_git.py`**、**`scripts/check-encoding.ps1`**（已接入变更记录门禁）；**`.editorconfig`** / **`.gitattributes`**；扩展 **`tools/strip_java_bom.py`** 至 **`modules/**`** / **`web/**`**；废弃 **`scripts/fix-truncated-java-strings.py`**（应急逻辑迁至 **`tools/_deprecated_fix_truncated_strings.py`**）。从 **HEAD** 恢复并手工校正注释/异常文案：**`TenantMemberRoleApplicationService`**、**`UserProfileApplicationService`**（含访客 **`buildPromptAddendum`** 三参数）、**`ChatApplicationService`** / **`ChatAdminRestController`** / **`RagCitationView`**、**`RagKbAdminApplicationService`** / **`RagIngestOrchestrationService`** 及批量 **`invalid_utf8`** 文件；**`web/admin-web`** **`KbDocumentMatrixPanel.vue`**。**无 DB migrate**。
+- **UTF-8 全项目硬约束（§0.6）**：**`config/idea/encodings.xml`**、**`config/vscode/settings.json`**、**`scripts/setup-ide-encoding.ps1`**；**`.editorconfig` / `.gitattributes`** 扩展至 json/css/py/ps1 等；编码扫描扩至 **properties / yml / db/mysql SQL / locales**；**`.cursorrules` §0.7**、**`AGENTS.md`**、**`project-changelog.mdc`** 禁止 GBK 与非 UTF-8 保存。
+- **开放会话标识**：**`chat_conversation.public_id`**（16 位随机字符串，全局唯一）；开放 API 路径 **`/open/v1/chat/conversations/{id}`** 与 JSON **`id`** 均使用 **`public_id`**，不再暴露自增主键；**`ChatConversationOpenView`**、**`requireOpenConversation`** / **`requireOpenConversationId`**；**`user-web`** 会话 id 改为 **`string`**；**`ai-chat`** 显式依赖 **`spring-boot-starter-web`**。**`TenantSnapshot`** 恢复为 **`com.aaron.cloud.common.context`** 顶层类（修复与 **`TenantContextHolder` 内部类** 混用导致的编译 classpath 冲突）。
+- **ai-chat**：补全 **`ChatApplicationService.requireOpenConversation`** / **`requireOpenConversationId`**（按 **`public_id`** 查库、访客会话登录归并、**`assertConversationAccess`**）。
+- **已建库须手工执行** **`db/mysql/migrate/migrate_0_1_258_chat_conversation_public_id.sql`**（回填历史行 **`public_id`**）；新库 **`schema_v1.sql`** 已含列与唯一索引。
+- **版本**：**`pom.xml`** bump **0.1.257 → 0.1.258-SNAPSHOT**。
+
+### 0.1.257-SNAPSHOT
+
+- **访客归并 · 知识星球**：**`ProfileDeviceMergeApplicationService`** 登录/注册/ **`merge-guest-device`** 时同步 **`ten_user_knowledge_node`**（**`d:{deviceId}` → `u:{userId}`**）；**`KnowledgePlanetSubjectQuerySupport`** 在查询/沉淀前幂等自愈归并（登录后读 **`u:`** 仍可见访客期数据）；**`MergeOutcome.knowledgeNodesReassigned`**。**`KnowledgePlanetMobilePage`** 复用 **`KnowledgePlanetOverlay`**（**`layout=mobile`**）：保留 **2D/3D 星图**、星图/档案 Tab、搜索与下方档案区；**与 PC 同款**圆形转场、粒子与背景点阵（锚点为侧栏入口 **`originRect`**）；精简顶栏（无「适应星图/仅看此星」、导航合并为单一返回）；打开时收起抽屉。
+- **提示词工程**：新建模块 **`ai-prompt`**；表 **`prompt_template`**（`prompt_code` 查表，租户覆盖 + 平台 `tenant_id=0` 默认）；**`PromptTemplateResolvePort`** 解析（DB → 代码 **`PromptTemplateBuiltinCatalog`** 兜底）；Redis 读穿缓存与管理端失效 API。
+- **全量抽取**：约 30 条平台种子（`follow_up_system`、`memory_abstract_*`、`websearch_*_header`、`starter_empty_fallback_*` 等），**`PromptTemplateSeedGenerator`** / **`scripts/generate-prompt-seed-sql.py`** 与 BuiltinCatalog 同集维护并同步 **`schema_v1.sql`**。
+- **调用改造**：**`ChatApplicationService`**、追问/每日推荐/热点/归档/知识星球/记忆抽象等改为按 code 取模板；**`ChatPromptTemplateSupport`** 封装对话片段；**`UserMemoryAbstractLlmWorker`** 修正 **`ObjectProvider#getIfAvailable()`** 用法（非 Optional，不可链式 `.map`）。
+- **管理端**：**`/prompt/templates`**（菜单 **`PROMPT_TEMPLATES`**）；列表筛选、编辑抽屉（字段说明）、用途侧栏、缓存面板；API **`/api/v1/admin/prompt-templates`**。
+- **已建库须手工执行** **`db/mysql/migrate/migrate_0_1_257_prompt_template.sql`**（含 DDL + 平台种子 + 菜单 + gw 目录；新库 **`schema_v1.sql`** 已含表与平台种子，可只补菜单/gw）。
+- **DB 目录**：全部增量脚本迁至 **`db/mysql/migrate/`**；**`schema_v1.sql`** 补登 **`prompt_template` 平台默认种子**（与 BuiltinCatalog 同集）；移除冗余 **`_prompt_seeds.sql`** 维护片段。
+- **管理端提示词列表**：**`listForAdminWorkspace`** 合并展示 **`tenant_id=0` 平台默认** + 当前工作区租户行（修复仅查租户导致种子不显示）；列表 UI 重排（统计、归属筛选、详情侧栏）；语种/用途文案 **i18n**；解析缓存区说明「改库后失效」与 **`redisEnabled`**（无 Redis 或尚无解析时不再误导显示 0/0/0）。
+- **版本**：**`pom.xml`** bump **0.1.256 → 0.1.257-SNAPSHOT**。
+- **访客会话 · 登录/登出**：**`ChatConversationRepository#attachGuestConversationToUser`** + **`assertConversationAccess`** 懒归并（已登录访问同设备访客会话不再 **`conversation not found`**）；**`ChatView`** 登录后 **`refresh`** 并重载当前会话、登出清空 **`convId`** 并 **`authBump`** 刷新知识星球。
+
+### 0.1.256-SNAPSHOT
+
+- **消息发送中心**：扩展 **`ai-notification`**；表 **`msg_channel`** / **`msg_template`** / **`msg_delivery_log`**；**`MessageSendPort`** + **`LocalMessageSendAdapter`** / **`RemoteMessageSendAdapter`**（Feign **`/internal/v1/message/send`**）；RocketMQ **`ai-message-dispatch`**，无 MQ 时同步 **`MessageDispatchService`** 降级；通道 **SMTP / 阿里云短信 / 腾讯云短信**。
+- **业务迁移**：注册验证码、知识星球周报改经 **`MessageSendPort`**（场景 **`REGISTER_VERIFICATION`**、**`KNOWLEDGE_PLANET_WEEKLY`**）；Shell 移除 SMTP 表单项，改 **「消息发送管理」**；**`KNOWLEDGE_PLANET_EMAIL_JSON`** 删除，开关 **`KNOWLEDGE_PLANET_WEEKLY_EMAIL_ENABLED`**。
+- **管理端**：**「租户配置」** 下 **「消息发送」**；短信通道/模板/发送记录展示**消息正文、模板变量、云平台签名·模板号**及发送预览；派发后 **`requestJson`** 写入渲染 **`subject`/`body`**。通道表单分项（SMTP/短信）替代 JSON 文本框；模板 **一键插入 `{变量名}`**（与 **`MessageTemplateSupport`** 一致）；**`messageDisplay.ts`** 枚举中英展示（场景/类型/启用与发送状态）；场景与通道类型联动筛选；API **`/api/v1/admin/message/*`**（**`AdminHttpMenuRoutes`** 鉴权 **`MESSAGE_CENTER`**）。
+- **已建库须手工执行** **`db/mysql/migrate/migrate_0_1_256_message_center_menu.sql`**（补菜单种子与租户/ admin 链接；新库以 **`schema_v1.sql`** 为准可跳过）。
+- **已建库须手工执行** **`db/mysql/migrate/migrate_0_1_256_message_center.sql`**（含旧 SMTP JSON 迁移与清理；**无 JSON 函数**环境用 **`SUBSTRING_INDEX`**，兼容 MySQL 5.6）。
+- **版本**：**`pom.xml`** bump **0.1.255 → 0.1.256-SNAPSHOT**。
+- **依赖修复**：腾讯云短信 SDK 版本 **3.1.1045**（Maven Central 不存在）改为 **3.1.1179**，并显式引入 **`tencentcloud-sdk-java-common`** 同版本，避免 **`com.tencentcloudapi.common`** 包缺失。
+
 ### 0.1.255-SNAPSHOT
 
 - **猜你想问**：**`ChatStarterFollowUpService`** 有语言模型时仅等 LLM（SSE 未完成则空列表 + REST 轮询缓存/同步生成），**不再**经相似度从运营池抢答；运营池/内置兜底仅在无模型或生成失败时；**`ChatStarterFollowUpTextSupport`** 过滤不可展示文案。
@@ -371,7 +403,7 @@ flowchart TB
 - **联网知识库沉淀**：`chat_starter_prompt` 增 **`query_normalized`**、**`query_norm_hash`**（SHA256，索引用）、**`grounding_json`**、**`hit_count`**；场景 **`WEB_KNOWLEDGE`**、来源 **`WEB_SEARCH_GROUNDING`**。**不对问句建 UNIQUE**（utf8mb4 长字段超 767 字节上限，且同一问句需多版本容纳资讯更新）。**`freshHours` 内**合并更新同一条；**超过 `freshHours`** 外呼后**插入新版本**；本地命中仅取 **`staleHours` 内**最新版（与 **`WEB_SEARCH_GROUNDING_CACHE_JSON`** 分档对齐）。**`ChatWebSearchKnowledgeService`** 异步沉淀；外呼前本地精确/语义命中。**WEB_KNOWLEDGE** 仅联网检索命中，不作「猜你想问」chip（**`ChatStarterFollowUpService`** 不再走运营池相似度捷径）。
 - **管理端**：**「推荐问题与猜你想问」** 新增 **「联网知识库」** Tab（**`WebSearchKnowledgeTable`**）：摘要预览、**引用数可点开弹窗**（**`GET …/starter-prompts/{id}/web-grounding`**）、本地命中次数、启停与删除（同问句可多行版本）。
 - **枚举**：**`ChatStarterPromptScene.WEB_KNOWLEDGE`**、**`ChatStarterPromptSource.WEB_SEARCH_GROUNDING`**。
-- **已建库须手工执行** **`db/mysql/migrate_0_1_255_web_search_knowledge.sql`**；若曾误跑旧版 UNIQUE 或缺 **`query_norm_hash`**，补 **`migrate_0_1_255_web_search_knowledge_index_fix.sql`**。
+- **已建库须手工执行** **`db/mysql/migrate/migrate_0_1_255_web_search_knowledge.sql`**；若曾误跑旧版 UNIQUE 或缺 **`query_norm_hash`**，补 **`migrate_0_1_255_web_search_knowledge_index_fix.sql`**。
 - **版本**：**`pom.xml`** bump **0.1.254 → 0.1.255-SNAPSHOT**。
 - **user-web 对话页修补**：**`sidebar-collapse.css`** 侧栏 **0.42s** 宽度过渡（`flex-basis`/`width` 统一由全局驱动，内层 opacity 渐隐）；**`ChatView`** 会话 Token 徽章紧贴标题；深色：**折叠钮 hover**（靛紫而非白闪）、**侧栏底栏用户区**、**分享弹窗**、**点赞/点踩激活态**；左侧栏 **rail/新建/折叠钮** hover 改 **`--sidebar-*`** 令牌（对齐右侧 **`--rec-hover-bg`**，去除 `#eef4fa` 硬编码）。
 - **admin-web 知识星球 Shell**：移除 **周一方案/邮件 Cron**（改 **定时任务**）；沉淀模型改 **LANGUAGE 下拉**（可选，留空默认）；**`KnowledgePlanetScheduledTaskSynchronizer`** 更新任务时保留已有 Cron。
@@ -391,7 +423,7 @@ flowchart TB
 
 ### 0.1.254-SNAPSHOT
 
-- **个人知识星球**：表 **`ten_user_knowledge_node`**、**`ten_user_weekly_insight`**；对话后 **`KnowledgePlanetIngestService`** 沉淀节点；定时 **`KNOWLEDGE_PLANET_WEEKLY_COMPUTE`**（默认周一 03:00）、**`KNOWLEDGE_PLANET_WEEKLY_EMAIL`**（默认周一 09:00）；租户 Shell Tab「知识星球」+ **`KNOWLEDGE_PLANET_*`** 运行时键；Open API **`/open/v1/chat/knowledge-planet/*`**；user-web 侧栏 Three.js 预览 + Canvas/GSAP 全屏。**已建库须手工执行** **`db/mysql/migrate_0_1_254_knowledge_planet.sql`**。
+- **个人知识星球**：表 **`ten_user_knowledge_node`**、**`ten_user_weekly_insight`**；对话后 **`KnowledgePlanetIngestService`** 沉淀节点；定时 **`KNOWLEDGE_PLANET_WEEKLY_COMPUTE`**（默认周一 03:00）、**`KNOWLEDGE_PLANET_WEEKLY_EMAIL`**（默认周一 09:00）；租户 Shell Tab「知识星球」+ **`KNOWLEDGE_PLANET_*`** 运行时键；Open API **`/open/v1/chat/knowledge-planet/*`**；user-web 侧栏 Three.js 预览 + Canvas/GSAP 全屏。**已建库须手工执行** **`db/mysql/migrate/migrate_0_1_254_knowledge_planet.sql`**。
 - **邮件**：**`TenantTemplateEmailSender`** 抽取；周报走 **`KNOWLEDGE_PLANET_EMAIL_JSON`**（可复用注册 SMTP）。
 - **文档**：**`PROJECT.md`** 新增 **「个人知识星球（功能模块索引）」** 专节（稳定边界、配置表、Open API、与 RAG/记忆/今日推荐对照、运维说明）。
 - **三级钻取 UI**：**`KnowledgePlanetUniverseBuilder`** + **`GET …/knowledge-planet/universe`**；C 端 **3d-force-graph** 实体星球 + 钻取 + 侧栏摘要；沉淀 Prompt 强调 `topicTags[0]` 为主题分类。
@@ -402,7 +434,7 @@ flowchart TB
 
 ### 0.1.253-SNAPSHOT
 
-- **gw_api_endpoint 入参/出参**：**`request_spec_json`**、**`response_spec_json`**（JSON 数组）；**`GwApiEndpointSpecSupport`** 渲染 Markdown 表格；**`AccessPartyIntegrationDocBuilder`** 新增 **§5 接口明细（入参/出参）**；**已建库须手工执行** **`db/mysql/migrate_0_1_253_gw_api_endpoint_spec.sql`**。
+- **gw_api_endpoint 入参/出参**：**`request_spec_json`**、**`response_spec_json`**（JSON 数组）；**`GwApiEndpointSpecSupport`** 渲染 Markdown 表格；**`AccessPartyIntegrationDocBuilder`** 新增 **§5 接口明细（入参/出参）**；**已建库须手工执行** **`db/mysql/migrate/migrate_0_1_253_gw_api_endpoint_spec.sql`**。
 - **接入方授权向导**：**`GET …/gateway-access-parties/{id}/grant-wizard`** + **`GatewayAccessPartyGrantWizardApplicationService`**；管理端 **「授权绑定」** 独立页 **`AccessPartyGrantWizardView`**（按 API 模块分步、步骤条过渡、最后一步提交）；Hub 页移除 **「配额与授权」** Tab。
 - **admin-web**：**`GatewayRateLimitsView`** 接口表单可编辑入参/出参 JSON；**`gatewayApiEndpoints.ts`** CRUD 扩展 spec 字段；路由 **`/gateway/access-parties/:partyId/grant`**；i18n **`bindGrant`** / **`grantWizard*`**；**`AccessPartyGrantWizardView`** 授权页 UI 简化为 **`el-card` + `el-steps` + 列表式接口勾选**。
 - **OpenAPI spec 自动化**：**`GwApiOpenApiLookupResult`** 区分 **未匹配**（无 OpenAPI 操作）与 **无字段**（有操作但无 schema，如 SSE/204）；**`batchNoSchema`** / **`openApiPathCount`**；修复将「空 schema」误计为未匹配导致 **209 条全未匹配**；**Map/allOf** schema 提取增强；管理端汇总展示四类计数。
@@ -410,7 +442,7 @@ flowchart TB
 
 ### 0.1.252-SNAPSHOT
 
-- **用户账号档案（`sec_user_account`）**：新增 **`account_no`**（对外正式账号编号，管理端路径推荐 **`ac:`**）、**`email`**（**`VARCHAR(191)`**，避免 utf8mb4 唯一索引 **Error 1071**）、**`phone`**、**`registration_channel`**（**`UserRegistrationChannel`**：ADMIN/EMAIL/PHONE/USERNAME/OAUTH）、**`registered_at`**；库内仍用雪花 **`id`** 做 FK。**已建库须手工执行** **`db/mysql/migrate_0_1_252_sec_user_account_profile.sql`**；若索引已失败则 **`migrate_0_1_252_sec_user_account_email_index_fix.sql`**。
+- **用户账号档案（`sec_user_account`）**：新增 **`account_no`**（对外正式账号编号，管理端路径推荐 **`ac:`**）、**`email`**（**`VARCHAR(191)`**，避免 utf8mb4 唯一索引 **Error 1071**）、**`phone`**、**`registration_channel`**（**`UserRegistrationChannel`**：ADMIN/EMAIL/PHONE/USERNAME/OAUTH）、**`registered_at`**；库内仍用雪花 **`id`** 做 FK。**已建库须手工执行** **`db/mysql/migrate/migrate_0_1_252_sec_user_account_profile.sql`**；若索引已失败则 **`migrate_0_1_252_sec_user_account_email_index_fix.sql`**。
 - **账号主体**：**`AccountPrincipalKind`** 扩展 **ACCOUNT_NO / EMAIL / PHONE**；**`AccountPrincipalResolver`**、开放登录 **`findByLoginIdentifier`**（邮箱/手机/账号编号/登录名）；C 端注册写入 **`email`** 列；管理端创建可填 **`email`/`phone`**。
 - **管理端 API**：**`UserView`** / **`TenantMemberRow`** 返回 **`accountNo`**、联系方式与注册途径；路径仍用 **`/{account}`**（**`ac:`** 优先）。
 - **版本**：**`pom.xml`** bump **0.1.251 → 0.1.252-SNAPSHOT**；各 **`modules/*/pom.xml`** 父版本与根 POM 对齐（修复 IDEA/Maven 无法解析父 POM、**`AiApplication`** 未编译）。
@@ -423,7 +455,7 @@ flowchart TB
 
 ### 0.1.251-SNAPSHOT
 
-- **接入方底层限流与授权（多模块）**：**`ai-common`** 新增 **`gw_access_party`**、**`gw_api_module`**、**`lnk_gw_module_endpoint`**、**`gw_access_party_grant`**、**`gw_access_party_call_log`** 表/Entity/Repository；扩展 **`gw_api_endpoint`**（**`module_id`**、**`global_rpm_cap`**、**`interface_kind`** / **`GwApiInterfaceKind`**）；**`AccessPartySnapshot`**、**`AccessPartyContextHolder`**、**`AccessPartyHttpHeaders`**；**`AbstractPartnerV1Controller`**（**`/partner/v1`**）；错误码 **`ACCESS_PARTY_*`**。**已建库须手工执行** **`db/mysql/migrate_0_1_251_gw_access_party.sql`**。
+- **接入方底层限流与授权（多模块）**：**`ai-common`** 新增 **`gw_access_party`**、**`gw_api_module`**、**`lnk_gw_module_endpoint`**、**`gw_access_party_grant`**、**`gw_access_party_call_log`** 表/Entity/Repository；扩展 **`gw_api_endpoint`**（**`module_id`**、**`global_rpm_cap`**、**`interface_kind`** / **`GwApiInterfaceKind`**）；**`AccessPartySnapshot`**、**`AccessPartyContextHolder`**、**`AccessPartyHttpHeaders`**；**`AbstractPartnerV1Controller`**（**`/partner/v1`**）；错误码 **`ACCESS_PARTY_*`**。**已建库须手工执行** **`db/mysql/migrate/migrate_0_1_251_gw_access_party.sql`**。
 - **ai-gateway Filter 链**：**`AccessPartyFilterSkipPolicy`**（**`/api/**`**、无签名 **`/open/**`**、JWT 等 skip）；**`AccessPartyAuthFilter`**（HMAC-SHA256 + Redis nonce）、**`AccessPartyAuthzFilter`**、**`AccessPartyRateLimitFilter`**（Redis RPM 单接口/总桶）、**`AccessPartyCallLogFilter`**；**`/partner/v1/**`** 强制接入方链；**`ApiRateLimitFilter`** 跳过 **`/partner/v1/**`**。**`GET /partner/v1/health`** 联调探针。
 - **管理端 API**：**`AdminGwAccessPartyRestController`**、**`AdminGwApiModuleRestController`**、**`AdminGwAccessPartyGrantRestController`**（Σ **`granted_rpm`** ≤ **`total_rpm_cap`** / **`global_rpm_cap`**）、**`AdminGwAccessPartyAuditRestController`**；**`gw_api_endpoint_catalog_inserts.sql`** 追加目录行。
 - **ai-remoting**：**`FeignTenantContextInterceptor`** 透传 **`X-Access-Party-Id`**、**`X-Access-Party-App-Id`**。
@@ -600,7 +632,7 @@ flowchart TB
 
 ### 0.1.230-SNAPSHOT
 
-- **对话分享（快照短链，后端与初版前端）**：表 **`chat_conversation_share`**（迁移 **`db/mysql/migrate_0_1_230_chat_conversation_share.sql`**，全量见 **`schema_v1.sql`** 对话分享节）；**`snapshot_json`** 存标题与消息列表，**`share_code`** 全局唯一，**`expires_at`** 可空）；持久化 **`ChatConversationShare`** / **`ChatConversationShareRepository`**（**`common.chat`**）。**`ChatConversationShareService`**：创建时校验会话归属与 **`messageIds`**，生成短码；公开读取按租户上下文 + 过期校验。**`ChatShareController`**（**`rest.open`**）：**`POST /open/v1/chat/conversations/{id}/shares`** → **`sharePath`** 形如 **`/{tenantCode}/share/{code}`**；**`GET /open/v1/chat/shares/{code}`** 只读。**`ai.chat.share-expire-days`** 默认 **90**（**`@Value`**）。**`web/user-web`** 初版：**`ChatShareDialog`**、**`ChatShareCaptureCard`**、**`ChatShareView`**；路由 **`/{租户编码}/share/:shareCode`**（见 **「★ 用户端路由」**）；**`chat.ts`** **`createConversationShare` / `getPublicShare`**；**`chatShareTurns` / `chatShareImage`**。弹窗交互与复制文案见 **0.1.231**。
+- **对话分享（快照短链，后端与初版前端）**：表 **`chat_conversation_share`**（迁移 **`db/mysql/migrate/migrate_0_1_230_chat_conversation_share.sql`**，全量见 **`schema_v1.sql`** 对话分享节）；**`snapshot_json`** 存标题与消息列表，**`share_code`** 全局唯一，**`expires_at`** 可空）；持久化 **`ChatConversationShare`** / **`ChatConversationShareRepository`**（**`common.chat`**）。**`ChatConversationShareService`**：创建时校验会话归属与 **`messageIds`**，生成短码；公开读取按租户上下文 + 过期校验。**`ChatShareController`**（**`rest.open`**）：**`POST /open/v1/chat/conversations/{id}/shares`** → **`sharePath`** 形如 **`/{tenantCode}/share/{code}`**；**`GET /open/v1/chat/shares/{code}`** 只读。**`ai.chat.share-expire-days`** 默认 **90**（**`@Value`**）。**`web/user-web`** 初版：**`ChatShareDialog`**、**`ChatShareCaptureCard`**、**`ChatShareView`**；路由 **`/{租户编码}/share/:shareCode`**（见 **「★ 用户端路由」**）；**`chat.ts`** **`createConversationShare` / `getPublicShare`**；**`chatShareTurns` / `chatShareImage`**。弹窗交互与复制文案见 **0.1.231**。
 - **回复语种（`responseLocale`）**：**`ChatResponseLocalePrompt`** 归一化 **`zh-CN` / `en-US`** 并在 system 追加语种约束；**`ChatSendPayload` / `ChatRegenerateRequest`** 校验 **`responseLocale`**；**`ChatApplicationService`** 写入用户消息 **`meta_json.responseLocale`**，重试可覆盖。**`web/user-web`**：**`chatResponseLocale.ts`** 与 UI **`locale`** 同步出站。
 - **用户端对话壳**：**`ChatSidebar`** 抽离侧栏；**`styles/chat-theme.css`** 与 **`global.css`** 主题变量；**`ChatView.vue`** 布局与消息操作条（分享接 **`ChatShareDialog`**）；**`plugins/elementPlusIcons.ts`**、**`utils/isAbortError.ts`**；**`MeView` / `LocaleThemeToolbar`** 与 **`zh-CN` / `en-US`** **`chat.*`、`me.*`** 文案补充。
 - **多库 RAG 检索并行**：**`RagQueryBridgeService`** 对多 **`kbId`** 按嵌入模型分组，组内共享一次 embed 后以虚拟线程 **并行** Milvus/ES，再按入参 **`kbIds`** 顺序合并 snippets/citations（替代逐库串行）。
@@ -718,7 +750,7 @@ flowchart TB
 
 ### 0.1.209-SNAPSHOT
 
-- **意图关键词命中可追溯与统计**：用户/助手消息 **`meta_json`** 写入 **`intentHitKeywordId`**、**`intentHitPhrase`**、**`intentHitKeywordKind`**、**`intentMatchSource`** 等（与 **`ChatIntentMatchSource`** 对齐）；**`GET /open/v1/chat/conversations/{id}/messages`** 响应 **`ChatMessageView`** 增加 **`intentTurnHit`**。**`chat_intent_keyword.hit_count`** 在带库关键词 id 的意图 SSE 完成后 **`+1`**（内置续办/DOC 无 id 不计）；存量库可执行 **`db/mysql/migrate_0_1_209_chat_intent_keyword_hit_count.sql`**。**管理端** 关键词列表 **`KeywordRow.hitCount`** 与 **`IntentManageView`**「命中次数」列；**用户端** 历史加载后在用户气泡下展示简短命中说明（短语 + 来源中文）。
+- **意图关键词命中可追溯与统计**：用户/助手消息 **`meta_json`** 写入 **`intentHitKeywordId`**、**`intentHitPhrase`**、**`intentHitKeywordKind`**、**`intentMatchSource`** 等（与 **`ChatIntentMatchSource`** 对齐）；**`GET /open/v1/chat/conversations/{id}/messages`** 响应 **`ChatMessageView`** 增加 **`intentTurnHit`**。**`chat_intent_keyword.hit_count`** 在带库关键词 id 的意图 SSE 完成后 **`+1`**（内置续办/DOC 无 id 不计）；存量库可执行 **`db/mysql/migrate/migrate_0_1_209_chat_intent_keyword_hit_count.sql`**。**管理端** 关键词列表 **`KeywordRow.hitCount`** 与 **`IntentManageView`**「命中次数」列；**用户端** 历史加载后在用户气泡下展示简短命中说明（短语 + 来源中文）。
 
 ### 0.1.208-SNAPSHOT
 
@@ -730,11 +762,11 @@ flowchart TB
 
 ### 0.1.206-SNAPSHOT
 
-- **MySQL 767 字节索引与意图关键词表**：**`chat_intent_keyword.phrase`** 由 **`VARCHAR(255)`** 改为 **`VARCHAR(128)`**，保证 **`UNIQUE KEY uk_chat_intent_kw_intent_phrase (intent_id, phrase)`** 在 **`utf8mb4`** + 旧 **`innodb_large_prefix`/行格式** 下不超过 **767** 字节，避免 **`SQL 错误 [1071]`**。**`schema_v1.sql`** 与 **`migrate_0_1_205_chat_intent.sql`** 已同步；若曾用旧 DDL 仅 **`CREATE TABLE chat_intent_keyword`** 失败，可重跑更新后的 **`migrate_0_1_205`**（**`IF NOT EXISTS`** 跳过已建表）。若库中已是 **`VARCHAR(255)`** 且需保留数据，执行 **`db/mysql/migrate_0_1_206_chat_intent_keyword_phrase_len.sql`**（短语须均 **≤128** 字符）。**`ChatIntentAdminDtos`** 关键词 **`phrase`** 增加 **`@Size(max = 128)`**。
+- **MySQL 767 字节索引与意图关键词表**：**`chat_intent_keyword.phrase`** 由 **`VARCHAR(255)`** 改为 **`VARCHAR(128)`**，保证 **`UNIQUE KEY uk_chat_intent_kw_intent_phrase (intent_id, phrase)`** 在 **`utf8mb4`** + 旧 **`innodb_large_prefix`/行格式** 下不超过 **767** 字节，避免 **`SQL 错误 [1071]`**。**`schema_v1.sql`** 与 **`migrate_0_1_205_chat_intent.sql`** 已同步；若曾用旧 DDL 仅 **`CREATE TABLE chat_intent_keyword`** 失败，可重跑更新后的 **`migrate_0_1_205`**（**`IF NOT EXISTS`** 跳过已建表）。若库中已是 **`VARCHAR(255)`** 且需保留数据，执行 **`db/mysql/migrate/migrate_0_1_206_chat_intent_keyword_phrase_len.sql`**（短语须均 **≤128** 字符）。**`ChatIntentAdminDtos`** 关键词 **`phrase`** 增加 **`@Size(max = 128)`**。
 
 ### 0.1.205-SNAPSHOT
 
-- **对话意图识别（可扩展 + 管理端配置）**：库表 **`chat_intent_definition`**、**`chat_intent_keyword`**；管理端菜单 **`CHAT_INTENTS`**（**`/chat/intents`**）、**`/api/v1/admin/chat/intents`** CRUD 与关键词维护；**`ChatIntentStreamRouter`** 在用户消息后优先匹配启用意图，命中则由 **`TravelReimbursementIntentRunner`**（当前为与 ly 对齐的**演示用分段状态机**，**`extra_config_json`** 预留接真实编排）经 SSE 推送 **`workflowStage`** 帧；助手消息 **`meta_json`** 含 **`workflowSegments`** 供历史恢复。**用户端** **`ChatView.vue`** 工作流卡片样式（分阶段 **loading / streaming / done**）；**重新生成** 流同样合并 **`workflowStage`**。存量环境执行 **`db/mysql/migrate_0_1_205_chat_intent.sql`**；网关目录见 **`gw_api_endpoint_catalog_inserts.sql`**。
+- **对话意图识别（可扩展 + 管理端配置）**：库表 **`chat_intent_definition`**、**`chat_intent_keyword`**；管理端菜单 **`CHAT_INTENTS`**（**`/chat/intents`**）、**`/api/v1/admin/chat/intents`** CRUD 与关键词维护；**`ChatIntentStreamRouter`** 在用户消息后优先匹配启用意图，命中则由 **`TravelReimbursementIntentRunner`**（当前为与 ly 对齐的**演示用分段状态机**，**`extra_config_json`** 预留接真实编排）经 SSE 推送 **`workflowStage`** 帧；助手消息 **`meta_json`** 含 **`workflowSegments`** 供历史恢复。**用户端** **`ChatView.vue`** 工作流卡片样式（分阶段 **loading / streaming / done**）；**重新生成** 流同样合并 **`workflowStage`**。存量环境执行 **`db/mysql/migrate/migrate_0_1_205_chat_intent.sql`**；网关目录见 **`gw_api_endpoint_catalog_inserts.sql`**。
 
 ### 0.1.204-SNAPSHOT
 
@@ -750,7 +782,7 @@ flowchart TB
 
 ### 0.1.201-SNAPSHOT
 
-- **知识库级对话向量阈值**：表 **`rag_knowledge_base.chat_vector_min_cosine_score`**（默认 **0.65**，**0**=关闭该库过滤）；**`RagKbAdminDtos` / `RagKbAdminApplicationService`** 与 **`web/admin-web` 高级设置** 可读写；新建库 **`RagApplicationService.createKb`** 显式 **0.65**。存量库执行 **`db/mysql/migrate_0_1_201_rag_kb_chat_vector_min_cosine.sql`**（新库整跑 **`schema_v1.sql`** 已含列则不必）。**0.1.202** 起不再使用全局 yml 兜底，仅以库列为准。
+- **知识库级对话向量阈值**：表 **`rag_knowledge_base.chat_vector_min_cosine_score`**（默认 **0.65**，**0**=关闭该库过滤）；**`RagKbAdminDtos` / `RagKbAdminApplicationService`** 与 **`web/admin-web` 高级设置** 可读写；新建库 **`RagApplicationService.createKb`** 显式 **0.65**。存量库执行 **`db/mysql/migrate/migrate_0_1_201_rag_kb_chat_vector_min_cosine.sql`**（新库整跑 **`schema_v1.sql`** 已含列则不必）。**0.1.202** 起不再使用全局 yml 兜底，仅以库列为准。
 
 ### 0.1.200-SNAPSHOT
 
@@ -858,7 +890,7 @@ flowchart TB
 
 ### 0.1.172-SNAPSHOT
 
-- **向量嵌入路径策略**：**`llm_model.vector_backend`**（**`LlmVectorBackend`**）落地实体与 **`LlmModelAdminApplicationService`**；**`OPENAI_COMPATIBLE`** 按内网统一嵌入网关常见形态拼接 **`{base}/v1/embeddings`**（Base 已以 **`/v1`** 结尾则只补 **`/embeddings`**），修复 **`…/rag` + `/embeddings`** 误拼导致的 **404**；**`VOLCENGINE_ARK`** 为兼容根仅追加 **`/embeddings`**（与官方向量化 API 路径一致）。**`VectorEmbeddingsUrl`** + **`VectorEmbeddingsUrlTest`**；**`RagEmbeddingService`** 中性 **400** 文案、解析 Spring **`error`+`path`** 错误体。存量库缺列执行 **`db/mysql/migrate_0_1_172_llm_model_vector_backend.sql`**（脚本内将已有 **`VECTOR`** 行 **`vector_backend`** 置为 **`VOLCENGINE_ARK`** 以保持原「仅追加 **`/embeddings`**」行为；内网统一网关（服务根下 **`/v1/embeddings`**）请在管理端改为 **`OPENAI_COMPATIBLE`**）；**`schema_v1.sql`** 列注释同步。**管理端**模型表单向量类型可选嵌入路径策略。
+- **向量嵌入路径策略**：**`llm_model.vector_backend`**（**`LlmVectorBackend`**）落地实体与 **`LlmModelAdminApplicationService`**；**`OPENAI_COMPATIBLE`** 按内网统一嵌入网关常见形态拼接 **`{base}/v1/embeddings`**（Base 已以 **`/v1`** 结尾则只补 **`/embeddings`**），修复 **`…/rag` + `/embeddings`** 误拼导致的 **404**；**`VOLCENGINE_ARK`** 为兼容根仅追加 **`/embeddings`**（与官方向量化 API 路径一致）。**`VectorEmbeddingsUrl`** + **`VectorEmbeddingsUrlTest`**；**`RagEmbeddingService`** 中性 **400** 文案、解析 Spring **`error`+`path`** 错误体。存量库缺列执行 **`db/mysql/migrate/migrate_0_1_172_llm_model_vector_backend.sql`**（脚本内将已有 **`VECTOR`** 行 **`vector_backend`** 置为 **`VOLCENGINE_ARK`** 以保持原「仅追加 **`/embeddings`**」行为；内网统一网关（服务根下 **`/v1/embeddings`**）请在管理端改为 **`OPENAI_COMPATIBLE`**）；**`schema_v1.sql`** 列注释同步。**管理端**模型表单向量类型可选嵌入路径策略。
 
 ### 0.1.171-SNAPSHOT
 
@@ -923,7 +955,7 @@ flowchart TB
 ### 0.1.157-SNAPSHOT
 
 - **RAG 嵌入（BGE-M3 / 兼容端）**：Milvus 路径下向量化统一为 **OpenAI 兼容 `POST {openaiBaseUrl}/embeddings`**，由知识库 **`assigned_embedding_model_id`** 绑定租户 **`llm_model`**（**`model_kind=VECTOR`**）；与常见 BGE-M3 网关及后续豆包、千问等「兼容嵌入」形态一致。**`RagEmbeddingPort#embed(tenantId, kbId, text)`**；**`RagKbVectorModelGuard`** 在爬取/文件入队、入库、分片写向量、对话检索开启等处强制校验。
-- **库表**：**`rag_knowledge_base.assigned_embedding_model_id`**（迁移 **`db/mysql/migrate_0_1_157_rag_kb_assigned_embedding_model.sql`**）；**`schema_v1.sql`** 同步。
+- **库表**：**`rag_knowledge_base.assigned_embedding_model_id`**（迁移 **`db/mysql/migrate/migrate_0_1_157_rag_kb_assigned_embedding_model.sql`**）；**`schema_v1.sql`** 同步。
 - **管理端**：知识库「高级设置」分列「对话绑定（语言）」与「向量模型（嵌入）」；**`LlmModelKind.VECTOR`** 文案调整为嵌入/RAG；知识库列表开启对话检索前校验已绑定向量模型。
 - **新建知识库**：**`chat_retrieval_enabled`** 默认 **OFF**（先绑定向量模型再手动开启对话检索，与「无 Milvus 不参与检索」产品语义一致）。
 
@@ -981,7 +1013,7 @@ flowchart TB
 ### 0.1.145-SNAPSHOT
 
 - **RAG 词法检索 SQL**：`RagChunkRepository` 中 `EXISTS` 子查询原先在 **`INNER JOIN rag_document ... ON`** 里写 `d.tenant_id = rag_chunk.tenant_id`；在部分 MySQL 上会报 **`Unknown column 'rag_chunk.tenant_id' in 'on clause'`**。已改为 **`ON` 仅关联主键**，**`d.tenant_id`** 放在子查询 **`WHERE`**，与外层 **`.eq(tenantId)`** 同参绑定。
-- **对话 RAG 编排**：`rag_knowledge_base` 增加 **`chat_retrieval_enabled`**（`ToggleState`，默认 **ON**）；租户内**凡开启的库**每轮合并检索并注入上下文，**全部关闭**时不走 RAG。移除 **`com.aaron.cloud.chat.rag.attach-always`** 与正文关键词触发；**`RagQueryPort`** 增加 **`searchSnippetsAcrossKnowledgeBases` / `searchCitationHitsAcrossKnowledgeBases`**（多库合并，受 **`com.aaron.cloud.rag.retrieval-mode`** 路由）。存量库执行 **`db/mysql/migrate_0_1_145_rag_kb_chat_retrieval_enabled.sql`**。
+- **对话 RAG 编排**：`rag_knowledge_base` 增加 **`chat_retrieval_enabled`**（`ToggleState`，默认 **ON**）；租户内**凡开启的库**每轮合并检索并注入上下文，**全部关闭**时不走 RAG。移除 **`com.aaron.cloud.chat.rag.attach-always`** 与正文关键词触发；**`RagQueryPort`** 增加 **`searchSnippetsAcrossKnowledgeBases` / `searchCitationHitsAcrossKnowledgeBases`**（多库合并，受 **`com.aaron.cloud.rag.retrieval-mode`** 路由）。存量库执行 **`db/mysql/migrate/migrate_0_1_145_rag_kb_chat_retrieval_enabled.sql`**。
 
 ### 0.1.144-SNAPSHOT
 
@@ -997,7 +1029,7 @@ flowchart TB
 
 ### 0.1.141-SNAPSHOT
 
-- **RAG 命中统计**：`rag_document` / `rag_chunk` 增加 **`hit_count`**（`schema_v1.sql` 与存量库可选执行 **`db/mysql/migrate_0_1_141_rag_hit_count.sql`**）；对话在 **RAG 意图** 下词法召回后把引用写入助手 **`meta_json#ragCitations`**，落库成功后按引用**逐分片、逐文档**累加计数。
+- **RAG 命中统计**：`rag_document` / `rag_chunk` 增加 **`hit_count`**（`schema_v1.sql` 与存量库可选执行 **`db/mysql/migrate/migrate_0_1_141_rag_hit_count.sql`**）；对话在 **RAG 意图** 下词法召回后把引用写入助手 **`meta_json#ragCitations`**，落库成功后按引用**逐分片、逐文档**累加计数。
 - **`RagQueryPort`**：新增 **`searchCitationHits`**（桥接层当前统一走 MySQL 词法，与片段拼装同源条件）；**`ChatMessageView`** 增加 **`ragCitations`** 供开放接口与管理端消息列表解析。
 - **管理端**：知识库文档矩阵表增加**文档命中**列；分片抽屉与**分片管理页**展示分片/文档命中；**对话日志**抽屉对助手消息展示可点击的**知识引用标签**，弹窗拉取对应分片正文。
 
@@ -1099,7 +1131,7 @@ flowchart TB
 
 ### 0.1.119-SNAPSHOT
 
-- **网关接口目录与限流（后端 + 管理端）**：新增表 **`gw_api_endpoint`** 与 **`/api/v1/admin/gateway-api-endpoints`**（分页、picker、增删改）；**限流分页**支持创始人 **`rateScope=GLOBAL`**（仅 `tenant_id` 为空）或 **`rateScope=TENANT` + `tenantId`**，非创始人仍固定当前 JWT 租户。**`接口与限流`** 页改为 **Tab：接口管理 / 限流控制**；限流表单支持从目录 **快捷选择**路径与方法；**`db/mysql/migrate_0_1_119_gw_api_endpoint.sql`** 供存量库增量。
+- **网关接口目录与限流（后端 + 管理端）**：新增表 **`gw_api_endpoint`** 与 **`/api/v1/admin/gateway-api-endpoints`**（分页、picker、增删改）；**限流分页**支持创始人 **`rateScope=GLOBAL`**（仅 `tenant_id` 为空）或 **`rateScope=TENANT` + `tenantId`**，非创始人仍固定当前 JWT 租户。**`接口与限流`** 页改为 **Tab：接口管理 / 限流控制**；限流表单支持从目录 **快捷选择**路径与方法；**`db/mysql/migrate/migrate_0_1_119_gw_api_endpoint.sql`** 供存量库增量。
 - **修订说明（文档与脚本）**：**`.cursorrules` §4.1.3** 增加 **`gw_api_endpoint`** 维护约定；新增 **`db/mysql/gw_api_endpoint_catalog_inserts.sql`** 为全项目对外 REST 的 **`INSERT IGNORE`** 清单与后续追加真源；**`db/mysql/README.md`** 已索引该文件。
 
 ### 0.1.118-SNAPSHOT
@@ -1230,13 +1262,13 @@ flowchart TB
 
 ### 0.1.91-SNAPSHOT
 
-- **数据库**：**`llm_model`** 增加 **`model_kind`**（`LANGUAGE` / `SPEECH` / `VISION` / `VECTOR` / `SMART_ROUTING`，默认 `LANGUAGE`）；已上线库执行 **`db/mysql/migrate_0_1_91_llm_model_kind.sql`**，空库以 **`schema_v1.sql`** 为准。
+- **数据库**：**`llm_model`** 增加 **`model_kind`**（`LANGUAGE` / `SPEECH` / `VISION` / `VECTOR` / `SMART_ROUTING`，默认 `LANGUAGE`）；已上线库执行 **`db/mysql/migrate/migrate_0_1_91_llm_model_kind.sql`**，空库以 **`schema_v1.sql`** 为准。
 - **枚举与策略**：**`LlmModelKind`**；**`LlmModelKindPolicy`** 约束 **OpenAI Chat 流式 / C 端发消息** 仅 **`LANGUAGE`**；**`listForCatalog`** 仅列出语言模型；**`RagKbAdminApplicationService.patchSettings`** 绑定知识库模型时仅允许语言模型。
 - **管理端**：**`LlmModelAdminView`** 与表单支持模型类型；**`web/admin-web`** 模型页展示类型下拉；知识库工作台模型下拉仅展示语言模型（与后端校验一致）。
 
 ### 0.1.90-SNAPSHOT
 
-- **数据库**：**`rag_knowledge_base`** 增加默认分片策略、固定字数、滑动重叠、**`assigned_llm_model_id`**；**`rag_document`** / **`rag_chunk`** 增加逻辑删除与来源、长度、文件名等元数据；已上线库执行 **`db/mysql/migrate_0_1_90_rag_knowledge_workspace.sql`**，空库以 **`schema_v1.sql`** 为准。
+- **数据库**：**`rag_knowledge_base`** 增加默认分片策略、固定字数、滑动重叠、**`assigned_llm_model_id`**；**`rag_document`** / **`rag_chunk`** 增加逻辑删除与来源、长度、文件名等元数据；已上线库执行 **`db/mysql/migrate/migrate_0_1_90_rag_knowledge_workspace.sql`**，空库以 **`schema_v1.sql`** 为准。
 - **枚举与分片**：**`RagChunkStrategy`**（不分片 / 固定字数 / 语义段落 / 滑动窗口 / 自定义预留）、**`RagDocumentSourceType`**；**`RagChunkSplitter`** + **`RagIngestOrchestrationService`**：网页 **HTTP 拉取 → Jsoup 近似 Markdown → 分片 → MySQL 落库 → `RagEmbeddingPort` 向量化 → `VectorStorePort` 写入 Milvus（`kb_{kbId}`）**；文件任务支持 **`markdownContent`** 正文；**`JobTaskExecutionService`** 委托编排，**`result_json`** 含 **`steps`** 时间线。
 - **检索**：**`RagChunkRepository`** 词法路径 **排除** 已逻辑删除文档与分片，避免「删了仍命中」。
 - **向量删除**：**`VectorStorePort#deleteChunkVectors`**：`NoOp` 为空实现；**`MilvusVectorStore`** 按 `chunk_ref` 表达式删除。
@@ -1267,7 +1299,7 @@ flowchart TB
 
 - **RAG 检索模式**（`com.aaron.cloud.rag.retrieval-mode` / `RagRetrievalMode`）：**`milvus`**（Milvus 近似检索 + MySQL 分片元数据拼装）、**`milvus_es_hybrid`**（Milvus + Elasticsearch `match` 关键词合并去重；引用侧 ES 命中需索引含 **`chunk_id`** 等字段，见 **`ElasticsearchRagSearchClient#searchCitationHits`**）。向量化由 **`RagEmbeddingPort`**（`hash` 或 **`openai_compatible`**）与 **`com.aaron.cloud.providers.milvus.vector-dimension`** 对齐。统一由 **`RagQueryBridgeService`** 实现 **`RagQueryPort`**。
 - **Elasticsearch（可选）**：依赖 **`co.elastic.clients:elasticsearch-java`**；`com.aaron.cloud.rag.elasticsearch.enabled=true` 且 **`config.host-ports` 非空** 时启用（见 **0.1.86** 条件类，**0.1.198** 起无 **`uris`**）；索引字段约定 **`tenant_id`、`kb_id`、`content`**（默认索引名 **`rag_agent_documents`**，与对端默认一致）。产品路径仍以 **Milvus** 为唯一向量库；ES 仅作 **BM25/全文** 侧车，与 `.cursorrules` 中「禁止并列第二套向量库」不冲突。
-- **用户画像与对话**：表 **`ten_profile_tag`**（迁移脚本 **`db/mysql/migrate_0_1_85_ten_profile_tag_rag_modes.sql`**）；**`UserProfileApplicationService`** 在用户发言落库后更新轮次与最近摘要，**`ChatApplicationService`** 在首条 system 前注入 **「【用户画像…】」** 追加段。
+- **用户画像与对话**：表 **`ten_profile_tag`**（迁移脚本 **`db/mysql/migrate/migrate_0_1_85_ten_profile_tag_rag_modes.sql`**）；**`UserProfileApplicationService`** 在用户发言落库后更新轮次与最近摘要，**`ChatApplicationService`** 在首条 system 前注入 **「【用户画像…】」** 追加段。
 
 ### 0.1.84-SNAPSHOT
 
@@ -1289,7 +1321,7 @@ flowchart TB
 
 ### 0.1.80-SNAPSHOT
 
-- **`sec_user_account`**：**`username`** 列重命名为 **`login_name`**（登录名）；**`display_name`** 注释明确为昵称/展示名；**`id`** 改为应用侧 **MyBatis-Plus `ASSIGN_ID`（雪花 `Long`）**，库表不再 **`AUTO_INCREMENT`**。已上线库执行 **`db/mysql/migrate_0_1_80_sec_user_account_login_name_assign_id.sql`** 一次。
+- **`sec_user_account`**：**`username`** 列重命名为 **`login_name`**（登录名）；**`display_name`** 注释明确为昵称/展示名；**`id`** 改为应用侧 **MyBatis-Plus `ASSIGN_ID`（雪花 `Long`）**，库表不再 **`AUTO_INCREMENT`**。已上线库执行 **`db/mysql/migrate/migrate_0_1_80_sec_user_account_login_name_assign_id.sql`** 一次。
 - **API**：管理端 **`UserView`**、**`TenantMemberRow`**、**`AdminMeView`** 与开放 **`/open/v1/auth/login`、`/register`** 请求体字段为 **`loginName`**（无旧 **`username`** 别名）。冲突异常 **`ErrorCodes.EX_MSG_LOGIN_NAME_CONFLICT`** → **`LOGIN_NAME_CONFLICT`**（409，中文「该登录名已被占用」）。
 - **前端**：管理端与用户端登录/注册与用户列表文案改为「登录名 / 昵称」；**`jwtSubject`** 注释与 **`adminMe`** 类型同步。
 

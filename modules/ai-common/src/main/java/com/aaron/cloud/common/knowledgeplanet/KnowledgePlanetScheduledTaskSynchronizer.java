@@ -29,7 +29,7 @@ public class KnowledgePlanetScheduledTaskSynchronizer {
                 TenantScheduledExecutorCode.KNOWLEDGE_PLANET_WEEKLY_EMAIL,
                 "知识星球·周一邮件推送",
                 planetRuntime.weeklyEmailCron(tenantId),
-                enabled,
+                enabled && planetRuntime.isWeeklyEmailEnabled(tenantId),
                 true);
     }
 

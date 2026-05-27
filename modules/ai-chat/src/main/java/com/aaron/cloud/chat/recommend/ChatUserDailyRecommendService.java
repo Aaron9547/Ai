@@ -13,7 +13,7 @@ import com.aaron.cloud.common.api.ports.ModelInvokePort;
 import com.aaron.cloud.common.chat.ChatUserDailyRecommendRepository;
 import com.aaron.cloud.common.chat.entity.ChatUserDailyRecommend;
 import com.aaron.cloud.common.context.TenantContextHolder;
-import com.aaron.cloud.common.context.TenantContextHolder.TenantSnapshot;
+import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.modelcfg.LlmModelKindPolicy;
 import com.aaron.cloud.common.modelcfg.SysLlmModelRepository;
 import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;

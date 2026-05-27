@@ -2,6 +2,7 @@ package com.aaron.cloud.common.knowledgeplanet;
 
 import com.aaron.cloud.common.knowledgeplanet.entity.TenUserKnowledgeNode;
 import com.aaron.cloud.common.knowledgeplanet.mapper.TenUserKnowledgeNodeMapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -43,6 +44,16 @@ public class TenUserKnowledgeNodeRepository {
                 Wrappers.<TenUserKnowledgeNode>lambdaQuery()
                         .eq(TenUserKnowledgeNode::getTenantId, tenantId)
                         .eq(TenUserKnowledgeNode::getSubjectKey, subjectKey));
+    }
+
+    /** 访客设备归并登录用户：{@code d:{deviceId}} → {@code u:{userId}}。 */
+    public int reassignSubject(long tenantId, String fromSubjectKey, String toSubjectKey) {
+        return mapper.update(
+                null,
+                new LambdaUpdateWrapper<TenUserKnowledgeNode>()
+                        .eq(TenUserKnowledgeNode::getTenantId, tenantId)
+                        .eq(TenUserKnowledgeNode::getSubjectKey, fromSubjectKey)
+                        .set(TenUserKnowledgeNode::getSubjectKey, toSubjectKey));
     }
 
     /** 过去一段时间内有节点的登录用户 subject_key（{@code u:*}）去重。 */

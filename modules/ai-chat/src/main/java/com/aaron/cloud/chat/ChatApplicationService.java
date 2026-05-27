@@ -49,6 +49,7 @@ import com.aaron.cloud.common.config.properties.AiProvidersProperties;
 import com.aaron.cloud.common.api.ports.TenantRagRuntimePort;
 import com.aaron.cloud.common.api.enums.infra.VectorStoreProviderMode;
 import com.aaron.cloud.common.context.TenantContextHolder;
+import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.tenant.SysTenantRepository;
 import com.aaron.cloud.common.security.AdminQueryTenantSupport;
 import com.aaron.cloud.common.security.SecUserAccountRepository;
@@ -166,6 +167,37 @@ public class ChatApplicationService {
                 snap.getTenantId(), snap.getUserId(), snap.getDeviceId(), 50);
     }
 
+    /** 开放 API：按 {@code public_id} 解析会话并校验租户与主体访问。 */
+    public ChatConversation requireOpenConversation(String publicConversationId) {
+        var snap = TenantContextHolder.require();
+        if (publicConversationId == null || publicConversationId.isBlank()) {
+            throw new IllegalArgumentException("conversation not found");
+        }
+        var conv =
+                conversationRepository
+                        .findByPublicId(snap.getTenantId(), publicConversationId.trim())
+                        .orElseThrow(() -> new IllegalArgumentException("conversation not found"));
+        if (snap.getUserId() != null
+                && conv.getUserId() == null
+                && snap.getDeviceId() != null
+                && !snap.getDeviceId().isBlank()) {
+            if (conversationRepository.attachGuestConversationToUser(
+                    snap.getTenantId(), conv.getId(), snap.getDeviceId(), snap.getUserId())) {
+                conv =
+                        conversationRepository
+                                .findById(conv.getId(), snap.getTenantId())
+                                .orElseThrow(() -> new IllegalArgumentException("conversation not found"));
+            }
+        }
+        assertConversationAccess(conv);
+        return conv;
+    }
+
+    /** 开放 API：按 {@code public_id} 解析会话，返回内部主键供既有 long 型业务方法复用。 */
+    public long requireOpenConversationId(String publicConversationId) {
+        return requireOpenConversation(publicConversationId).getId();
+    }
+
     public ChatConversation renameConversation(long conversationId, String title) {
         if (title == null || title.isBlank()) {
             throw new IllegalArgumentException("title required");
@@ -205,7 +237,7 @@ public class ChatApplicationService {
         return listConversationMessagesInternal(snap.getTenantId(), conversationId);
     }
 
-    /** 绠＄悊绔細鎸変細璇濈湡瀹炵鎴锋媺娑堟伅锛涢潪鍒涘浜轰粎鍏佽鏈細璇濇墍灞炵鎴枫€?*/
+    /** 管理端：按会话真实租户拉取消息；非创始人仅允许本会话所属租户。 */
     public List<ChatMessageView> listConversationMessagesForAdmin(long conversationId) {
         var snap = TenantContextHolder.require();
         var conv =
@@ -506,7 +538,7 @@ public class ChatApplicationService {
      */
     private SseEmitter openAssistantSseStream(
             long conversationId,
-            TenantContextHolder.TenantSnapshot snap,
+            TenantSnapshot snap,
             ChatSendPayload payload,
             String augmentedUserText,
             SysLlmModel modelCfg,
@@ -1195,7 +1227,7 @@ public class ChatApplicationService {
      * 杈撳叆鎶ゆ爮鍛戒腑锛氫粛钀藉簱<strong>鐢ㄦ埛鍘熸枃</strong>锛堜究浜庝細璇濈暀瀛樹笌瀹¤锛夛紝{@code meta_json} 鍚?{@code inputGuardBlocked}锛涗笉璋冪敤妯″瀷锛屼粎杩藉姞鍥哄畾鍔濆璇姪鎵嬭锛屽苟浠?     * SSE 涓嬪彂锛堝惈 {@code inputBlocked} 甯т究浜庡墠绔尯鍒嗭級銆傞噸鏂扮敓鎴愭椂浼氬璇ョ敤鎴疯鍐嶆璺戞姢鏍忥紝浠嶅懡涓垯鎷掔粷銆?     */
     private SseEmitter streamInputGuardRejected(
             long conversationId,
-            TenantContextHolder.TenantSnapshot snap,
+            TenantSnapshot snap,
             ChatSendPayload payload,
             ChatInputGuardService.InputGuardOutcome outcome) {
         SseEmitter emitter = new SseEmitter(120_000L);
@@ -1287,8 +1319,9 @@ public class ChatApplicationService {
     }
 
     /**
-     * 鍔╂墜娑堟伅鐢ㄦ埛璇勪环锛堝啓鍏?{@code meta_json#userFeedback}锛寋@link ChatMessageUserFeedback#LIKE} /
-     * {@link ChatMessageUserFeedback#DISLIKE} 浜掓枼锛夛紱浠呮湰浼氳瘽鍐呭姪鎵嬭鍙啓銆?     */
+     * 助手消息用户评价（写入 {@code meta_json#userFeedback}；{@link ChatMessageUserFeedback#LIKE} /
+     * {@link ChatMessageUserFeedback#DISLIKE} 互斥）；仅本会话内助手行可写。
+     */
     public void setAssistantMessageFeedback(long conversationId, long messageId, ChatMessageUserFeedback vote) {
         var snap = TenantContextHolder.require();
         var convOpt = conversationRepository.findById(conversationId, snap.getTenantId());

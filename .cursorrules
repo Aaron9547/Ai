@@ -22,7 +22,7 @@
 
 - **`modules/**/src/main/java/**`**、**`modules/**/src/test/java/**`**（Maven 子模块源码；历史单模块路径 **`src/main/java/**`** 若仍存在亦触发）
 - **`web/user-web/**`**、**`web/admin-web/**`**
-- **`db/mysql/**`**（含 **`schema_v1.sql`**、**`migrate_*.sql`**、**`gw_api_endpoint_catalog_inserts.sql`**）
+- **`db/mysql/**`**（含 **`schema_v1.sql`**、**`migrate/migrate_*.sql`**、**`gw_api_endpoint_catalog_inserts.sql`**）
 - **`pom.xml`**（含根 parent 与 **`modules/*/pom.xml`** 的 **`<version>`** 与生产依赖）
 - **`modules/ai-bootstrap/src/main/resources/application*.yml`**（及等价 **`bootstrap*.yml`**）
 
@@ -39,11 +39,11 @@
 2. **`PROJECT.md` → `## 变更记录`**  
    - 顶节 **`###`** 文案**必须**与 **`pom.xml` `<version>`** 完全一致（含 `-SNAPSHOT`）。  
    - 至少一条 **`- **模块**：…`**，写清：行为、REST 路径、**表名**、关键类/包。  
-   - 涉及库表时，条目中**显式**写：**已建库须手工执行 `migrate_0_1_{patch}_*.sql`**（本仓库**无** Flyway/Liquibase，**启动不会建表**）。
+   - 涉及库表时，条目中**显式**写：**已建库须手工执行 `db/mysql/migrate/migrate_0_1_{patch}_*.sql`**（本仓库**无** Flyway/Liquibase，**启动不会建表**）。
 
 3. **数据库与网关（与 Java 同集）**  
-   - **新表/改表**：合入 **`db/mysql/schema_v1.sql`**（新库真源，列/表 `COMMENT` 齐全）。  
-   - **已上线库**：新增 **`db/mysql/migrate_0_1_{patch}_{slug}.sql`**，且 **`{patch}` = `pom` 补丁位**（例：`0.1.240-SNAPSHOT` → **`migrate_0_1_240_*.sql`**）。  
+   - **新表/改表**：合入 **`db/mysql/schema_v1.sql`**（新库真源，列/表 `COMMENT` 齐全；平台 **`prompt_template` 种子**等同集维护）。  
+   - **已上线库**：新增 **`db/mysql/migrate/migrate_0_1_{patch}_{slug}.sql`**，且 **`{patch}` = `pom` 补丁位**（例：`0.1.240-SNAPSHOT` → **`migrate/migrate_0_1_240_*.sql`**）。  
    - **新对外 REST**：在 **`db/mysql/gw_api_endpoint_catalog_inserts.sql` 末尾**追加 **`INSERT IGNORE`**（**禁止**只改 Controller 不写目录）。  
    - 登记 **`db/mysql/README.md`** 运维附录（一行说明即可）。
 
@@ -52,8 +52,8 @@
    - 在 **§1.5** 能力表补一行（及 **§3.5** 前后端映射若需要）。
 
 5. **自检脚本（宣布完成前，退出码 0）**  
-   **`.\scripts\check-project-changelog.ps1 -IncludeUntracked`**  
-   可选：仓库 **`scripts/install-git-pre-commit-hook.ps1`** 装 **pre-commit**，避免提交时遗漏。
+   **`.\scripts\check-project-changelog.ps1 -IncludeUntracked`**（内含 **UTF-8 编码扫描**）。  
+   可选：**`.\scripts\setup-ide-encoding.ps1`** 同步 IDEA/VS Code 为 UTF-8；**`scripts/install-git-pre-commit-hook.ps1`** 装 **pre-commit**，避免提交时遗漏。
 
 ### 0.4 版本 bump 判定（与 `PROJECT.md`「版本策略」一致）
 
@@ -71,8 +71,23 @@
 - 新增 **`migrate_0_1_{patch}_*`** 但 **`{patch}` ≠ `pom` 补丁位**。
 - 假定**重启应用**即完成库表升级（**必须**提醒/执行增量 SQL）。
 - 新 REST **不**更新 **`gw_api_endpoint_catalog_inserts.sql`**。
+- 用 **GBK / GB2312 / GB18030 / Windows-1252** 等非 **UTF-8** 编码打开或保存 **§0.2** 路径内源码（见 **§0.6**）。
+- 用 **PowerShell `Out-File`、管道或 `>` 重定向** 生成/覆盖 **`.java` / `.vue` / `.ts` / `.sql`** 源文件。
 
-### 0.6 与其它章节的关系
+### 0.6 源码编码：UTF-8 硬约束（全仓库）
+
+**唯一允许的文本编码：UTF-8（无 BOM 为佳）。** Java / Vue / TS / SQL / 配置与中文注释、异常文案、i18n 均按 UTF-8 维护。
+
+| 层级 | 要求 |
+|------|------|
+| **仓库** | **`.editorconfig`**、**`.gitattributes`** 声明 `charset=utf-8`、`eol=lf`；**禁止**将 GBK 等编码保存的源文件提交。 |
+| **IDE** | IntelliJ：**Settings → Editor → File Encodings** → Global + Project = **UTF-8**（可运行 **`.\scripts\setup-ide-encoding.ps1`**）。VS Code / Cursor：**`files.encoding=utf8`**，**`files.autoGuessEncoding=false`**（模板 **`config/vscode/settings.json`**）。 |
+| **Agent / 脚本** | **禁止** PowerShell **`Out-File`**、**`>`** 重定向或管道生成/覆盖源码；从 Git 取内容用 **`git restore`** 或 **`python tools/restore_utf8_from_git.py`**。 |
+| **修复乱码** | **`python tools/check_text_encoding.py --write-report`** → 恢复中文基线 + 回放逻辑 diff；**禁止**常规使用 **`tools/_deprecated_fix_truncated_strings.py`**。 |
+| **门禁** | **`python tools/check_text_encoding.py`** 或 **`.\scripts\check-encoding.ps1`** 须 **0**；已接入 **`check-project-changelog.ps1`** 与 **pre-commit**。 |
+| **BOM** | 执行 **`python tools/strip_java_bom.py`**（扫描 **`modules/`、`web/`、`db/mysql/`、`tools/`、`scripts/`** 文本后缀）。 |
+
+### 0.7 与其它章节的关系
 
 - **表结构、枚举、`migrate` 命名**：技术细则见 **§4.1.3**；**交付动作**以 **§0.3** 为准。  
 - **重点逻辑注释、专节表格**：见 **§7.2**；改逻辑时仍须满足 **§0.3 第 2 步**。  
@@ -100,7 +115,7 @@
 | **知识中心** | 租户内文档检索，结果可注入对话引用（citation） | **`rag`** + **`chat`**；元数据与权限 **`common`** |
 | **长记忆** | 跨会话摘要、主题记忆、与向量检索结合的「慢记忆」层 | **`common.memory`**（或等价子包）：指针、摘要、版本；具体召回逻辑在 **`chat`** + **`rag`**/`model` |
 | **用户画像（含未登录）** | 未登录也可对话；**`deviceId`** 为前端 UUID + **`X-Device-Id`**（见 **§4.0**）；注册时绑定设备，画像与会话归并到用户 | **`common.profile`**（或 **`common.tenant`** 下子域）：设备主体、画像片段、合并策略；**`chat`** 消费画像上下文 |
-| **对话推荐问题** | 空会话推荐问句、运营池、可选每日联网热点兜底、助手后「猜你想问」；埋点 IMPRESSION/CLICK/SEND | **`chat.starter`** + 表 **`chat_starter_*`**；租户 **`CHAT_STARTER_DAILY_HOT_*`**；索引见 **`PROJECT.md`「对话推荐问题」**；**已建库**须 **`migrate_0_1_240_chat_starter_prompt.sql`** |
+| **对话推荐问题** | 空会话推荐问句、运营池、可选每日联网热点兜底、助手后「猜你想问」；埋点 IMPRESSION/CLICK/SEND | **`chat.starter`** + 表 **`chat_starter_*`**；租户 **`CHAT_STARTER_DAILY_HOT_*`**；索引见 **`PROJECT.md`「对话推荐问题」**；**已建库**须 **`db/mysql/migrate/migrate_0_1_240_chat_starter_prompt.sql`** |
 | **智能体中心与定制智能体** | 可配置智能体（系统提示、工具集、知识库绑定、模型路由别名） | **`chat`**（智能体编排与运行态）+ **`mcp`**（工具/MCP 接入）+ **`common`**（智能体定义、版本、租户可见性）；**不**单独新增 `agent` 顶层包 |
 
 **合规与质量（爬取与对公网）**：爬取须尊重 **`robots.txt`**、站点速率、**目标站点服务条款（ToS）与著作权**；**禁止**在未经授权下抓取需登录方可访问的第三方非公开内容、**禁止**突破付费墙或鉴权；**默认**仅同注册域（含子域策略在配置中显式定义）；失败与跳过原因写入任务日志（**`common.jobmeta`**），供管理端 **`job`** 分块展示。
@@ -113,7 +128,7 @@
 - **跨进程协作（写死）**：**Spring Cloud Netflix Eureka Client** 做服务注册与发现；**OpenFeign** 声明式 HTTP 客户端；**Spring Cloud LoadBalancer** 做客户端负载均衡；**Resilience4j**（`spring-cloud-starter-circuitbreaker-resilience4j`）做 Feign 超时、重试与熔断；**禁止**在本项目中使用 gRPC 作为服务间主协议。
 - **异步消息（写死）**：跨模块异步事件与削峰使用 **Apache RocketMQ**，通过 **`rocketmq-spring-boot-starter`** 接入。
 - **RAG 向量库（写死）**：向量检索与写入统一使用 **Milvus**（官方 Java SDK / 项目统一封装），**禁止**在同一产品路径下并列引入第二套向量库（如 Elasticsearch 向量、PGVector）除非经 ADR 迁移。
-- 编码：**UTF-8**；时间/时区：**UTC 存储 + 明确时区策略**（API 文档中说明）。
+- 编码：**UTF-8**（细则见 **§0.6**）；提交前 **`python tools/check_text_encoding.py`**；去除 BOM **`python tools/strip_java_bom.py`**。**禁止** GBK 等非 UTF-8 打开/保存源码；**禁止** PowerShell 管道/重定向生成源码。时间/时区：**UTC 存储 + 明确时区策略**（API 文档中说明）。
 
 ### 前端（Vue）
 - **Vue 3**；默认 **`<script setup>` + Composition API**。
@@ -286,13 +301,13 @@
     - **`gw_`**：**本地网关**侧持久化（限流规则、路由/策略元数据等），与 **`gateway`** Java 包语义对齐；**禁止**用 **`sys_`** 承载网关域独占表。
   - **关联表**：**唯一前缀 `lnk_`**，格式 **`lnk_{左简}_{右简}`**（如 **`lnk_rag_kb_document`**、`lnk_chat_conversation_message`）；**禁止**用物理外键替代 **`lnk_*`** 语义。
   - **索引名**：**`uk_{表简或全名}_{列简}`**（唯一）、**`idx_{表简}_{列简}`**（非唯一）；须与表同文件 DDL 注释说明用途。
-  - **存量表**：与上列不一致的，以 **`db/mysql/migrate_*.sql`**（若确需单次增量）渐进重命名并在 **`PROJECT.md`** 记录，或**直接修正 `schema_v1.sql`** 作为新库真源；**Java `@TableName` 与实体须同步**，禁止代码与库长期分裂。
+  - **存量表**：与上列不一致的，以 **`db/mysql/migrate/migrate_*.sql`**（若确需单次增量）渐进重命名并在 **`PROJECT.md`** 记录，或**直接修正 `schema_v1.sql`** 作为新库真源；**Java `@TableName` 与实体须同步**，禁止代码与库长期分裂。
 - **`db/mysql` 脚本体系（写死）**：
   - **`schema_v1.sql`（权威全量）**：**新库初始化**与**结构文档对齐**的首选唯一文件；须含 **`CREATE TABLE` 每列 `COMMENT`**、**表级 `COMMENT`**，以及**幂等**种子（`INSERT IGNORE` 等）。**禁止**长期维持多份分散 **`seed_*.sql`** 与 **`schema_v1` 真源漂移**；新增/调整表结构应合入 **`schema_v1.sql`** 并在 **`PROJECT.md`** 说明。
   - **`README.md`**：位于 **`db/mysql/README.md`**，说明空库执行方式、**勿对已有数据整文件重跑**、以及附录运维语句位置。
-  - **增量 `migrate_*`（可选）**：仅当**已上线库**必须在两次发布间做单次 **`ALTER`/数据修正**、且不宜回头改 **`schema_v1`** 时使用；命名、登记、`PROJECT.md` 留痕、**已建库手工执行**等**交付动作**见 **§0.3 第 3、2 步**（**`{patch}` = `pom` 补丁位**；应用**不会**自动跑迁移）。
+  - **增量 `migrate/`（可选）**：仅当**已上线库**必须在两次发布间做单次 **`ALTER`/数据修正**、且不宜回头改 **`schema_v1`** 时使用；脚本放在 **`db/mysql/migrate/`**，命名、登记、`PROJECT.md` 留痕、**已建库手工执行**等**交付动作**见 **§0.3 第 3、2 步**（**`{patch}` = `pom` 补丁位**；应用**不会**自动跑迁移）。
   - **接口目录 `gw_api_endpoint`（管理端「接口与限流」快捷选择）**：对外 REST 路径变更时，除 **`schema_v1.sql`** 中表结构/必要幂等种子外，须在固定文件 **`db/mysql/gw_api_endpoint_catalog_inserts.sql` 末尾追加**一行 **`INSERT IGNORE INTO gw_api_endpoint (...)`**（`path_pattern` / `http_method` 与运行时 **Ant** 匹配一致，`display_name` 为简短中文业务名，`enabled` 默认 ON，`sort_order` 取未占用递增值）；**禁止**仅改 Java 而不留可执行的目录增量。全量接口清单以该文件为协作真源；新库可执行该文件补全与 **`schema_v1.sql`** 种子重复的 **`INSERT IGNORE`** 安全跳过。
-  - **执行顺序（推荐）**：**`schema_v1.sql`** 为设计真源；存量环境 **按需执行 `migrate_*`（若有）** 或摘取片段手工对齐。
+  - **执行顺序（推荐）**：**`schema_v1.sql`** 为设计真源；存量环境 **按需执行 `db/mysql/migrate/migrate_*`（若有）** 或摘取片段手工对齐。
   - **新表前缀**：除存量历史表外，**新建表名**只能从本条「域前缀 / `lnk_*`」清单择一，**禁止**再造无前缀或与既有前缀同义的第三套命名；网关域独占数据一律 **`gw_*`**。
 
 #### 4.1.4 依赖方向（固定，禁止循环）

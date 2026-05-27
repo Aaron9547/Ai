@@ -9,6 +9,7 @@ import com.aaron.cloud.common.chat.entity.ChatStarterEvent;
 import com.aaron.cloud.common.chat.entity.ChatStarterPrompt;
 import com.aaron.cloud.common.context.TenantContextHolder;
 import com.aaron.cloud.common.modelcfg.SysLlmModelRepository;
+import com.aaron.cloud.chat.prompt.ChatPromptTemplateSupport;
 import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService;
 import com.aaron.cloud.common.time.BeijingTime;
 import java.util.HashSet;
@@ -22,17 +23,12 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ChatStarterPromptApplicationService {
 
-    private static final List<String> CODE_FALLBACK =
-            List.of(
-                    "写一首关于春天的诗",
-                    "用通俗语言解释量子纠缠",
-                    "帮我生成一份周报模板");
-
     private final ChatStarterPromptRepository promptRepository;
     private final ChatStarterEventRepository eventRepository;
     private final SysLlmModelRepository llmModelRepository;
     private final TenantRuntimeSettingApplicationService tenantRuntimeSettingApplicationService;
     private final ChatStarterDailyHotTopicService dailyHotTopicService;
+    private final ChatPromptTemplateSupport chatPromptTemplateSupport;
 
     public ChatStarterPromptDtos.StarterPromptListView listForOpen(
             ChatStarterPromptScene scene,
@@ -90,7 +86,9 @@ public class ChatStarterPromptApplicationService {
 
         if (picked.isEmpty()) {
             List<String> fallbackTexts =
-                    CODE_FALLBACK.stream().limit(cap).collect(Collectors.toList());
+                    chatPromptTemplateSupport.starterEmptyFallbacks(tenantId).stream()
+                            .limit(cap)
+                            .collect(Collectors.toList());
             List<ChatStarterPromptDtos.StarterPromptItem> items =
                     fallbackTexts.stream()
                             .map(

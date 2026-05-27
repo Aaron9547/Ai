@@ -11,6 +11,7 @@ import com.aaron.cloud.common.knowledgeplanet.entity.TenUserWeeklyInsight;
 import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
 import com.aaron.cloud.common.profile.ProfileSubjectKey;
 import com.aaron.cloud.common.profile.TenUserMemoryAbstractRepository;
+import com.aaron.cloud.common.api.ports.PromptTemplateResolvePort;
 import com.aaron.cloud.common.profile.TenUserMemoryChunkRepository;
 import com.aaron.cloud.common.time.BeijingTime;
 import com.aaron.cloud.common.util.TextClamp;
@@ -29,14 +30,6 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class KnowledgePlanetWeeklyComputeService {
 
-    private static final String WEEKLY_SYSTEM =
-            """
-            你是个人成长教练。根据用户过去一周的对话知识节点与记忆摘要，生成本周成长方案。
-            只输出严格 JSON（不要 markdown）：
-            {"summary":"一句话总览","thinkDirections":["方向1"],"gapAreas":["不足1"],"bookRecommendations":[{"title":"书名","reason":"理由"}]}
-            thinkDirections 3～5 条；gapAreas 2～4 条；bookRecommendations 2～4 本。
-            """;
-
     private final KnowledgePlanetTenantRuntime planetRuntime;
     private final TenUserKnowledgeNodeRepository nodeRepository;
     private final TenUserMemoryChunkRepository memoryChunkRepository;
@@ -44,6 +37,7 @@ public class KnowledgePlanetWeeklyComputeService {
     private final TenUserWeeklyInsightRepository insightRepository;
     private final KnowledgePlanetLlmSupport llmSupport;
     private final ObjectMapper objectMapper;
+    private final PromptTemplateResolvePort promptTemplates;
 
     public WeeklyComputeResult computeForTenant(long tenantId) {
         if (!planetRuntime.isEnabled(tenantId)) {
@@ -108,7 +102,12 @@ public class KnowledgePlanetWeeklyComputeService {
                                 body.append("\n【记忆抽象】\n")
                                         .append(TextClamp.ellipsis(a.getBodyJson(), 3000)));
 
-        String raw = llmSupport.invokeJson(tenantId, model, WEEKLY_SYSTEM, body.toString());
+        String raw =
+                llmSupport.invokeJson(
+                        tenantId,
+                        model,
+                        promptTemplates.resolveSystem("planet_weekly_system", tenantId, "zh-CN"),
+                        body.toString());
         KnowledgeWeeklyPlan plan = llmSupport.parseJson(raw, KnowledgeWeeklyPlan.class);
         if (plan == null) {
             return false;

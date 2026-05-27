@@ -3,7 +3,7 @@ package com.aaron.cloud.common.profile;
 import com.aaron.cloud.common.config.properties.AiMemoryProperties;
 import com.aaron.cloud.common.config.properties.AiProvidersProperties;
 import com.aaron.cloud.common.api.enums.infra.VectorStoreProviderMode;
-import com.aaron.cloud.common.context.TenantContextHolder.TenantSnapshot;
+import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.profile.entity.TenUserMemoryChunk;
 import com.aaron.cloud.common.profile.memory.MemoryAbstractAsyncPublisher;
 import com.aaron.cloud.common.profile.memory.MemoryAbstractRefreshMessage;

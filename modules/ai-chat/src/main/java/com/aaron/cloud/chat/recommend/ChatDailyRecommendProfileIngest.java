@@ -1,7 +1,7 @@
 package com.aaron.cloud.chat.recommend;
 
 import com.aaron.cloud.common.api.enums.profile.ProfileTagCode;
-import com.aaron.cloud.common.context.TenantContextHolder.TenantSnapshot;
+import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.profile.ProfileSubjectKey;
 import com.aaron.cloud.common.profile.TenProfileTagRepository;
 import com.aaron.cloud.common.profile.UserMemoryApplicationService;

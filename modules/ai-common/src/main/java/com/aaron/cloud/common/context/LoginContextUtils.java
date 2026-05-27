@@ -1,7 +1,7 @@
 package com.aaron.cloud.common.context;
 
 import com.aaron.cloud.common.api.enums.tenant.TenantMemberRole;
-import com.aaron.cloud.common.context.TenantContextHolder.TenantSnapshot;
+import com.aaron.cloud.common.context.TenantSnapshot;
 import java.util.Optional;
 
 /**

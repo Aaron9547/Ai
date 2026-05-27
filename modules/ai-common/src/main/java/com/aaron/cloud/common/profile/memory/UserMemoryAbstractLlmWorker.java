@@ -3,6 +3,7 @@ package com.aaron.cloud.common.profile.memory;
 import com.aaron.cloud.common.api.dto.model.ModelChatRequest;
 import com.aaron.cloud.common.api.enums.llm.LlmModelKind;
 import com.aaron.cloud.common.api.ports.ModelInvokePort;
+import com.aaron.cloud.common.api.ports.PromptTemplateResolvePort;
 import com.aaron.cloud.common.modelcfg.SysLlmModelRepository;
 import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
 import com.aaron.cloud.common.profile.TenUserMemoryAbstractRepository;
@@ -14,6 +15,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import org.springframework.beans.factory.ObjectProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -33,6 +36,7 @@ public class UserMemoryAbstractLlmWorker {
     private final ModelInvokePort modelInvokePort;
     private final ObjectMapper objectMapper;
     private final TenantRuntimeSettingApplicationService tenantRuntimeSettingApplicationService;
+    private final ObjectProvider<PromptTemplateResolvePort> promptTemplates;
 
     public void runRefresh(MemoryAbstractRefreshMessage msg) {
         if (msg == null || msg.getSubjectKey() == null || msg.getSubjectKey().isBlank()) {
@@ -68,14 +72,12 @@ public class UserMemoryAbstractLlmWorker {
                         .map(TenUserMemoryAbstract::getBodyJson)
                         .orElse("");
         String chunkBlock = buildChunkTranscript(recent);
-        String userPayload =
-                UserMemoryAbstractPrompts.userPayload(
-                        subjectKey, oldAbstract == null ? "" : oldAbstract, chunkBlock, msg.getTrigger());
+        String userPayload = resolveMemoryUserPayload(tenantId, subjectKey, oldAbstract, chunkBlock, msg.getTrigger());
 
         var turns = new ArrayList<ModelChatRequest.MessageTurn>();
         var sys = new ModelChatRequest.MessageTurn();
         sys.setRole("system");
-        sys.setContent(UserMemoryAbstractPrompts.SYSTEM);
+        sys.setContent(resolveMemorySystem(tenantId));
         turns.add(sys);
         var user = new ModelChatRequest.MessageTurn();
         user.setRole("user");
@@ -134,6 +136,44 @@ public class UserMemoryAbstractLlmWorker {
             list = sysLlmModelRepository.listForCatalog(msg.getTenantId(), true);
         }
         return list.isEmpty() ? "" : list.getFirst().getAlias();
+    }
+
+    private String resolveMemorySystem(long tenantId) {
+        PromptTemplateResolvePort port = promptTemplates.getIfAvailable();
+        if (port == null) {
+            return UserMemoryAbstractPrompts.SYSTEM;
+        }
+        String resolved = port.resolveSystem("memory_abstract_system", tenantId, "zh-CN");
+        if (resolved == null || resolved.isBlank()) {
+            return UserMemoryAbstractPrompts.SYSTEM;
+        }
+        return resolved;
+    }
+
+    private String resolveMemoryUserPayload(
+            long tenantId, String subjectKey, String oldAbstract, String chunkBlock, String trigger) {
+        PromptTemplateResolvePort port = promptTemplates.getIfAvailable();
+        if (port == null) {
+            return UserMemoryAbstractPrompts.userPayload(subjectKey, oldAbstract, chunkBlock, trigger);
+        }
+        String rendered =
+                port.renderUser(
+                        "memory_abstract_user",
+                        tenantId,
+                        "*",
+                        Map.of(
+                                "subject_key",
+                                subjectKey == null ? "" : subjectKey,
+                                "trigger",
+                                trigger == null ? "" : trigger,
+                                "old_abstract_json",
+                                oldAbstract == null || oldAbstract.isBlank() ? "{}" : oldAbstract,
+                                "chunk_transcript",
+                                chunkBlock == null || chunkBlock.isBlank() ? "（无）" : chunkBlock));
+        if (rendered == null || rendered.isBlank()) {
+            return UserMemoryAbstractPrompts.userPayload(subjectKey, oldAbstract, chunkBlock, trigger);
+        }
+        return rendered;
     }
 
     private static String buildChunkTranscript(List<TenUserMemoryChunk> recent) {

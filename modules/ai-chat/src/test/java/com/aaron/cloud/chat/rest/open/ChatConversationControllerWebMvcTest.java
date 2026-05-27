@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.aaron.cloud.chat.ChatApplicationService;
 import com.aaron.cloud.chat.dto.ChatMessageView;
 import com.aaron.cloud.common.context.TenantContextHolder;
+import com.aaron.cloud.common.context.TenantSnapshot;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
@@ -24,6 +25,8 @@ import org.springframework.test.web.servlet.MockMvc;
 @AutoConfigureMockMvc(addFilters = false)
 class ChatConversationControllerWebMvcTest {
 
+    private static final String PUBLIC_CONV_ID = "k7m2n9p4q1w8x5y3";
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -33,7 +36,7 @@ class ChatConversationControllerWebMvcTest {
     @BeforeEach
     void tenant() {
         TenantContextHolder.set(
-                TenantContextHolder.TenantSnapshot.builder()
+                TenantSnapshot.builder()
                         .tenantId(1L)
                         .userId(null)
                         .deviceId("d1")
@@ -47,6 +50,7 @@ class ChatConversationControllerWebMvcTest {
 
     @Test
     void listMessagesAtOpenV1Path() throws Exception {
+        when(chatApplicationService.requireOpenConversationId(eq(PUBLIC_CONV_ID))).thenReturn(9L);
         when(chatApplicationService.listConversationMessages(eq(9L)))
                 .thenReturn(
                         List.of(
@@ -70,7 +74,7 @@ class ChatConversationControllerWebMvcTest {
                                         null,
                                         List.of()));
         mockMvc.perform(
-                        get("/open/v1/chat/conversations/9/messages")
+                        get("/open/v1/chat/conversations/" + PUBLIC_CONV_ID + "/messages")
                                 .header("X-Tenant-Id", "1")
                                 .header("X-Device-Id", "d1"))
                 .andExpect(status().isOk())

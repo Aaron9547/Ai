@@ -1,12 +1,14 @@
 package com.aaron.cloud.chat.knowledgeplanet;
 
-import com.aaron.cloud.common.context.TenantContextHolder.TenantSnapshot;
+import com.aaron.cloud.common.context.TenantSnapshot;
+import com.aaron.cloud.common.knowledgeplanet.KnowledgePlanetSubjectQuerySupport;
 import com.aaron.cloud.common.knowledgeplanet.KnowledgePlanetTenantRuntime;
 import com.aaron.cloud.common.knowledgeplanet.TenUserKnowledgeNodeRepository;
 import com.aaron.cloud.common.knowledgeplanet.entity.TenUserKnowledgeNode;
 import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
 import com.aaron.cloud.common.profile.ProfileSubjectKey;
 import com.aaron.cloud.common.profile.TenUserMemoryAbstractRepository;
+import com.aaron.cloud.common.api.ports.PromptTemplateResolvePort;
 import com.aaron.cloud.common.profile.UserProfileApplicationService;
 import com.aaron.cloud.common.util.TextClamp;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -26,26 +28,14 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class KnowledgePlanetIngestService {
 
-    private static final String INGEST_SYSTEM =
-            """
-            你是对话知识沉淀助手。根据本轮用户问题与助手回复，判断是否值得沉淀为一条「知识节点」。
-            只输出严格 JSON（不要 markdown），格式：
-            {"skip":true}
-            或
-            {"skip":false,"title":"不超过24字标题","summary":"1～3句摘要","topicTags":["主题分类","子标签1","子标签2"]}
-            topicTags 第一项为「知识星球」主题名（如：排序算法、Java、前端工程化），决定星系中的星球；第 2 项起为子标签（技术名、语言、算法名等，便于与历史节点关联）。
-            规则：
-            1. 若用户消息中给出【已有主题星球】，且本轮属于同一技术领域，topicTags[0] 必须与列表中某一项完全一致，勿为相近话题另造新名（如已有「排序算法」则勿写「Java排序」「算法」）。
-            2. 同一对话内的追问、换语言实现、对比、延伸（如「五种语言冒泡排序」接在「十大排序」后）应沉淀，skip 仅用于纯寒暄或完全无新信息的重复。
-            3. 子标签尽量包含能串联历史节点的关键词（如：排序、冒泡、Java、多语言）。
-            """;
-
     private final KnowledgePlanetTenantRuntime planetRuntime;
     private final KnowledgePlanetLlmSupport llmSupport;
+    private final KnowledgePlanetSubjectQuerySupport subjectQuerySupport;
     private final TenUserKnowledgeNodeRepository nodeRepository;
     private final UserProfileApplicationService userProfileApplicationService;
     private final TenUserMemoryAbstractRepository memoryAbstractRepository;
     private final ObjectMapper objectMapper;
+    private final PromptTemplateResolvePort promptTemplates;
 
     public void scheduleAfterTurn(
             TenantSnapshot snap,
@@ -85,6 +75,7 @@ public class KnowledgePlanetIngestService {
             String assistantText,
             String modelAlias)
             throws Exception {
+        subjectQuerySupport.mergeGuestNodesIfNeeded(snap);
         String subjectKey = ProfileSubjectKey.fromSnapshot(snap);
         if (subjectKey == null) {
             return;
@@ -119,7 +110,12 @@ public class KnowledgePlanetIngestService {
         }
         appendPlanetContext(userPayload, tenantId, subjectKey, conversationId);
 
-        String raw = llmSupport.invokeJson(tenantId, model.get(), INGEST_SYSTEM, userPayload.toString());
+        String raw =
+                llmSupport.invokeJson(
+                        tenantId,
+                        model.get(),
+                        promptTemplates.resolveSystem("planet_ingest_system", tenantId, "zh-CN"),
+                        userPayload.toString());
         IngestLlmResult parsed = llmSupport.parseJson(raw, IngestLlmResult.class);
         if (parsed == null || parsed.isSkip()) {
             return;

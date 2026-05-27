@@ -16,11 +16,11 @@ function sseOutboundTenantHeaders(): Record<string, string> {
 
 export async function createConversation(title?: string) {
   const { data } = await http.post("/open/v1/chat/conversations", { title });
-  return data as { id: number };
+  return data as { id: string };
 }
 
 export type ConversationListItem = {
-  id: number;
+  id: string;
   title: string;
   updatedAt?: string | null;
 };
@@ -30,15 +30,15 @@ export async function listConversations() {
   return data as ConversationListItem[];
 }
 
-export async function renameConversation(id: number, title: string) {
-  const { data } = await http.patch<ConversationListItem>(`/open/v1/chat/conversations/${id}`, {
+export async function renameConversation(id: string, title: string) {
+  const { data } = await http.patch<ConversationListItem>(`/open/v1/chat/conversations/${encodeURIComponent(id)}`, {
     title,
   });
   return data;
 }
 
-export async function archiveConversation(id: number) {
-  await http.delete(`/open/v1/chat/conversations/${id}`);
+export async function archiveConversation(id: string) {
+  await http.delete(`/open/v1/chat/conversations/${encodeURIComponent(id)}`);
 }
 
 /** 与后端 {@code priorVersions} 数组项一致，重新生成前的助手快照 */
@@ -131,9 +131,9 @@ export interface ChatHistoryMessage {
   attachments?: ChatAttachmentMessage[] | null;
 }
 
-export async function listConversationMessages(conversationId: number): Promise<ChatHistoryMessage[]> {
+export async function listConversationMessages(conversationId: string): Promise<ChatHistoryMessage[]> {
   const { data } = await http.get<ChatHistoryMessage[]>(
-    `/open/v1/chat/conversations/${conversationId}/messages`,
+    `/open/v1/chat/conversations/${encodeURIComponent(conversationId)}/messages`,
   );
   return data;
 }
@@ -145,11 +145,11 @@ export interface ChatShareCreateResult {
 }
 
 export async function createConversationShare(
-  conversationId: number,
+  conversationId: string,
   body: { messageIds: number[] },
 ): Promise<ChatShareCreateResult> {
   const { data } = await http.post<ChatShareCreateResult>(
-    `/open/v1/chat/conversations/${conversationId}/shares`,
+    `/open/v1/chat/conversations/${encodeURIComponent(conversationId)}/shares`,
     body,
   );
   return data;
@@ -191,7 +191,7 @@ export interface UploadAttResponse {
 }
 
 export async function uploadChatAttachments(
-  conversationId: number,
+  conversationId: string,
   files: File[],
 ): Promise<UploadAttResponse[]> {
   const fd = new FormData();
@@ -199,7 +199,7 @@ export async function uploadChatAttachments(
     fd.append("files", f);
   }
   const { data } = await http.post<UploadAttResponse[]>(
-    `/open/v1/chat/conversations/${conversationId}/attachments`,
+    `/open/v1/chat/conversations/${encodeURIComponent(conversationId)}/attachments`,
     fd,
   );
   return data;
@@ -379,11 +379,14 @@ function parseSsePayload(raw: string): StreamPart | null {
 export type ChatAssistantFeedbackVote = "LIKE" | "DISLIKE" | "NONE";
 
 export async function submitAssistantFeedback(
-  conversationId: number,
+  conversationId: string,
   messageId: number,
   vote: ChatAssistantFeedbackVote,
 ): Promise<void> {
-  await http.post(`/open/v1/chat/conversations/${conversationId}/messages/${messageId}/feedback`, { vote });
+  await http.post(
+    `/open/v1/chat/conversations/${encodeURIComponent(conversationId)}/messages/${messageId}/feedback`,
+    { vote },
+  );
 }
 
 /** 重新生成时可选覆盖（与后端 {@link ChatRegenerateRequest} 对齐） */
@@ -482,7 +485,7 @@ function streamFetchHeaders(): Record<string, string> {
 
 /** 删除最后一条助手消息并基于前一条用户消息重新流式生成（SSE 帧与 {@link streamAssistantReply} 相同）。 */
 export async function streamRegenerateAssistantReply(
-  conversationId: number,
+  conversationId: string,
   assistantMessageId: number,
   body: ChatRegenerateBody | undefined,
   onPart: (p: StreamPart) => void,
@@ -490,7 +493,7 @@ export async function streamRegenerateAssistantReply(
 ): Promise<void> {
   const base = resolveApiBaseForBrowser();
   const res = await fetch(
-    `${base}/open/v1/chat/conversations/${conversationId}/messages/${assistantMessageId}/retry`,
+    `${base}/open/v1/chat/conversations/${encodeURIComponent(conversationId)}/messages/${assistantMessageId}/retry`,
     {
       method: "POST",
       headers: streamFetchHeaders(),
@@ -533,12 +536,12 @@ export async function recordStarterPromptEvent(body: {
 }
 
 export async function fetchFollowUpPrompts(
-  conversationId: number,
+  conversationId: string,
   messageId: number,
   limit = 3,
 ): Promise<StarterPromptList> {
   const { data } = await http.get(
-    `/open/v1/chat/conversations/${conversationId}/messages/${messageId}/follow-up-prompts`,
+    `/open/v1/chat/conversations/${encodeURIComponent(conversationId)}/messages/${messageId}/follow-up-prompts`,
     { params: { limit } },
   );
   return data as StarterPromptList;
@@ -546,17 +549,20 @@ export async function fetchFollowUpPrompts(
 
 /** 使用 fetch 读取 SSE（携带 {@code X-Tenant-Id} 或 {@code X-Tenant-Code} 与 {@code X-Device-Id}）。data 行为 JSON 分帧：content / reasoning / ragDoc / webSearchRefs / webSearchStatus / end */
 export async function streamAssistantReply(
-  conversationId: number,
+  conversationId: string,
   payload: ChatSendPayload,
   onPart: (p: StreamPart) => void,
   options?: ChatStreamOptions,
 ): Promise<void> {
   const base = resolveApiBaseForBrowser();
-  const res = await fetch(`${base}/open/v1/chat/conversations/${conversationId}/messages`, {
-    method: "POST",
-    headers: streamFetchHeaders(),
-    body: JSON.stringify(payload),
-    signal: options?.signal,
-  });
+  const res = await fetch(
+    `${base}/open/v1/chat/conversations/${encodeURIComponent(conversationId)}/messages`,
+    {
+      method: "POST",
+      headers: streamFetchHeaders(),
+      body: JSON.stringify(payload),
+      signal: options?.signal,
+    },
+  );
   await readSseStream(res, onPart, options?.signal);
 }

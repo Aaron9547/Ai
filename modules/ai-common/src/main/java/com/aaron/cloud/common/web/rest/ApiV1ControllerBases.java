@@ -70,6 +70,18 @@ public final class ApiV1ControllerBases {
     @RequestMapping(AbstractApiV1Controller.PREFIX + "/notifications")
     public static abstract class Notifications extends AbstractApiV1Controller {}
 
+    @RequestMapping(AbstractApiV1Controller.PREFIX + "/admin/message/channels")
+    public static abstract class AdminMessageChannels extends AbstractApiV1Controller {}
+
+    @RequestMapping(AbstractApiV1Controller.PREFIX + "/admin/message/templates")
+    public static abstract class AdminMessageTemplates extends AbstractApiV1Controller {}
+
+    @RequestMapping(AbstractApiV1Controller.PREFIX + "/admin/message/delivery-logs")
+    public static abstract class AdminMessageDeliveryLogs extends AbstractApiV1Controller {}
+
+    @RequestMapping(AbstractApiV1Controller.PREFIX + "/admin/prompt-templates")
+    public static abstract class AdminPromptTemplates extends AbstractApiV1Controller {}
+
     @RequestMapping(AbstractApiV1Controller.PREFIX + "/file")
     public static abstract class FileRoot extends AbstractApiV1Controller {}
 
