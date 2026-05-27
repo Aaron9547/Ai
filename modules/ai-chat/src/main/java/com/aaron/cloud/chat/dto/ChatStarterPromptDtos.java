@@ -16,6 +16,9 @@ public final class ChatStarterPromptDtos {
     public record StarterEventBody(
             Long promptId, @NotBlank String scene, @NotBlank String eventType) {}
 
+    public record PromptPageResult(
+            List<PromptRow> records, long total, long page, long size) {}
+
     public record PromptRow(
             long id,
             String scene,
@@ -69,7 +72,12 @@ public final class ChatStarterPromptDtos {
 
     /** 联网知识库条目：引用明细（管理端弹窗）。 */
     public record WebGroundingReferenceItem(
-            String title, String url, String snippet, String siteName, String publishTime) {}
+            String title,
+            String url,
+            String snippet,
+            String siteName,
+            String publishTime,
+            String sourceKey) {}
 
     public record WebGroundingDetailView(
             String promptText,

@@ -22,8 +22,12 @@ public class ChatStarterPromptAdminRestController extends ApiV1ControllerBases.A
     private final ChatStarterPromptAdminApplicationService adminService;
 
     @GetMapping("/starter-prompts")
-    public List<ChatStarterPromptDtos.PromptRow> list() {
-        return adminService.listPrompts();
+    public ChatStarterPromptDtos.PromptPageResult list(
+            @RequestParam String scene,
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "20") long size,
+            @RequestParam(required = false) String source) {
+        return adminService.pagePrompts(scene, source, page, size);
     }
 
     @PostMapping("/starter-prompts")

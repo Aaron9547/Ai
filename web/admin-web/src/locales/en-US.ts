@@ -536,9 +536,22 @@ export default {
         memoryEmbeddingPh: "Unset uses server defaults",
         memoryEmbeddingOrphan: "Configured id={id} is not in the current model list (keep or pick another)",
         vectorModelsLoadFailed: "Failed to load VECTOR models; refresh the page later",
-        webSearchModel: "Web search model (WEB_SEARCH)",
-        webSearchModelPlaceholder: "Select the tenant-bound web search instance",
+        webSearchArkModel: "Volcengine web model (Ark Bot, optional)",
+        webSearchArkPlaceholder: "Leave empty to use only built-in fixed sources below",
+        webSearchFixedSources: "Built-in fixed sources (parallel)",
+        webSearchFixedOutbound: "Fixed-source HTTP proxy (overseas sites)",
+        webSearchFixedOutboundEnabled: "Enable proxy",
+        webSearchFixedOutboundHost: "Proxy host",
+        webSearchFixedOutboundPort: "Port",
+        webSearchFixedOutboundType: "Type",
         webSearchModelOrphan: "Configured id={id} is not in the current model list (keep or pick another)",
+        webSearchModelsEmpty: "Create and enable a Volcengine Ark WEB_SEARCH row under Model admin → Web search first",
+        fixedSources: {
+          DUCKDUCKGO_HTML: "DuckDuckGo HTML",
+          WIKIPEDIA_REST: "Wikipedia API",
+          GOOGLE_NEWS_RSS: "Google News RSS",
+          BAIDU_NEWS_HTML: "Baidu News HTML",
+        },
         webSearchModelsLoadFailed: "Failed to load WEB_SEARCH models; refresh the page later",
         webSearchRounds: "Web search rounds (1–10)",
         roundSuffixRound: "Suffix for round {n}",
@@ -570,6 +583,8 @@ export default {
           regexPatterns: "Injection regex (one per line)",
         },
         hints: {
+          webSearchFixedOutbound:
+            "WEB_SEARCH_FIXED_SOURCE_OUTBOUND_JSON. Outbound for DDG / Google News / Wikipedia / Baidu fixed sources only (not Volcengine Ark).\nFor local Clash use HTTP type and the HTTP proxy host/port from the dashboard (often 127.0.0.1:7890, not SOCKS). When off, uses application.yml or direct.",
           webSearchCache:
             "WEB_SEARCH_GROUNDING_CACHE_JSON. Requires Redis; semantic match uses the memory embedding model above. Saving {} applies server defaults.",
           sensitiveWords: "One phrase per line; substring match blocks.",
@@ -580,6 +595,7 @@ export default {
             "Spring 6-field cron (sec min hour day month dow). The process ticks every minute; this tenant runs only when the expression matches that minute.",
         },
         placeholders: {
+          webSearchFixedOutboundHost: "127.0.0.1",
           starterDailyHotCron: "0 0 6 * * *",
           blockedReplyTemplate: "e.g. Sorry, I can't continue with that—please rephrase your request.",
           sensitiveWords: "One phrase per line, e.g.:\ncredential harvesting\nbypass paywall",
@@ -588,11 +604,17 @@ export default {
         validation: {
           embeddingId: "Embedding model id must be numeric or empty",
           webSearchModelId: "Web search model id must be numeric or empty",
+          webSearchGrounding: "Enable the Ark web model and/or at least one built-in fixed source",
+          webSearchFixedOutbound: "When proxy is enabled, host is required; port 1–65535",
           guardRange: "Min must be ≥1 and max must be ≥ min",
         },
         tooltips: {
-          webSearchModel:
-            "WEB_SEARCH_GROUNDING_MODEL_ID.\nUsed for chat web search and daily hot-topic retrieval; pick from Model admin → Web search.\nClear: falls back to the enabled WEB_SEARCH row with the lowest sort_order (legacy default).\nOn save, the row must be WEB_SEARCH and active.",
+          webSearchArkModel:
+            "WEB_SEARCH_GROUNDING_MODEL_ID.\nVolcengine Ark Bot only (WEB_SEARCH row, integration_backend=VOLCENGINE_ARK_BOT); optional.",
+          webSearchFixedSources:
+            "WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON.\nDDG / Wikipedia / Google News / Baidu News are built into the server—no extra model rows. Runs in parallel with Ark per round; enable Ark and/or at least one fixed source.",
+          webSearchFixedOutbound:
+            "WEB_SEARCH_FIXED_SOURCE_OUTBOUND_JSON. Enable for local proxy when calling overseas fixed sources; use Clash HTTP port (often 7890).",
           memoryEmbedding:
             "MEMORY_EMBEDDING_VECTOR_MODEL_ID.\nVECTOR model used when layered user memory is embedded into Milvus; options come from Model admin (VECTOR).\nClear: no upstream embedding call—the server uses RagQueryEmbeddingHasher to build a deterministic placeholder vector from the text and configured vector dimension so background indexing keeps running (not a real semantic embedding; recall is weaker than a proper VECTOR).\nSame hash fallback also applies if the id is missing, not VECTOR/inactive, key decrypt fails, or the upstream embedding call errors.",
           ragVectorDimension:

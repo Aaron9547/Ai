@@ -5,6 +5,7 @@ import com.aaron.cloud.common.api.enums.chat.ChatStarterPromptSource;
 import com.aaron.cloud.common.chat.entity.ChatStarterPrompt;
 import com.aaron.cloud.common.chat.mapper.ChatStarterPromptMapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -32,6 +33,26 @@ public class ChatStarterPromptRepository {
                         .orderByDesc(ChatStarterPrompt::getSortOrder)
                         .orderByDesc(ChatStarterPrompt::getWeight)
                         .orderByAsc(ChatStarterPrompt::getId));
+    }
+
+    /** 管理端：按场景（及可选来源）分页列表。 */
+    public Page<ChatStarterPrompt> pageByTenant(
+            long tenantId,
+            ChatStarterPromptScene scene,
+            ChatStarterPromptSource source,
+            long pageNo,
+            long pageSize) {
+        var q =
+                Wrappers.<ChatStarterPrompt>lambdaQuery()
+                        .eq(ChatStarterPrompt::getTenantId, tenantId)
+                        .eq(ChatStarterPrompt::getScene, scene)
+                        .orderByDesc(ChatStarterPrompt::getSortOrder)
+                        .orderByDesc(ChatStarterPrompt::getWeight)
+                        .orderByAsc(ChatStarterPrompt::getId);
+        if (source != null) {
+            q.eq(ChatStarterPrompt::getSource, source);
+        }
+        return mapper.selectPage(new Page<>(pageNo, pageSize), q);
     }
 
     public List<ChatStarterPrompt> listEnabledForRuntime(

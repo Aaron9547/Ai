@@ -2,6 +2,8 @@ package com.aaron.cloud.chat.starter;
 
 import com.aaron.cloud.chat.websearch.WebGroundingBundle;
 import com.aaron.cloud.chat.websearch.WebSearchReference;
+import com.aaron.cloud.chat.websearch.WebSearchSummarySupport;
+import com.aaron.cloud.chat.websearch.cache.WebSearchGroundingMergeSupport;
 import com.aaron.cloud.chat.websearch.cache.WebSearchQueryNormalizer;
 import com.aaron.cloud.chat.websearch.cache.WebSearchVectorSimilarity;
 import com.aaron.cloud.common.api.enums.chat.ChatStarterPromptScene;
@@ -27,8 +29,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
- * 将每次成功的对话联网检索沉淀到 {@code chat_starter_prompt}（scene=WEB_KNOWLEDGE），
+ * 将用户对话中成功的联网检索沉淀到 {@code chat_starter_prompt}（scene=WEB_KNOWLEDGE），
  * 供管理端「推荐问题与猜你想问」维护，并在后续相似问句时优先本地命中以减少外呼。
+ *
+ * <p>今日推荐、每日热点等系统任务虽共用 {@link com.aaron.cloud.chat.websearch.ChatWebSearchGroundingService}，
+ * 但 {@code conversationId<=0} 时不写入本表（见 {@code finalizeGrounding}）。
  *
  * <p>同一问句允许多版本：{@code freshHours} 内合并更新同一条；超过后外呼产生的新结果插入新行，
  * 以便资讯更新后仍能保留历史并在命中时取最新有效版本。
@@ -39,6 +44,8 @@ import org.springframework.stereotype.Service;
 public class ChatWebSearchKnowledgeService {
 
     private static final int PROMPT_TEXT_MAX = 256;
+    /** 知识库摘要仅用引用要点列表，不存 Ark 整篇回答。 */
+    private static final int KNOWLEDGE_SUMMARY_MAX_BULLETS = 12;
     private static final int SEMANTIC_SCAN_CAP = 200;
     private static final double SEMANTIC_MIN_SCORE = 0.82;
 
@@ -94,7 +101,7 @@ public class ChatWebSearchKnowledgeService {
         WebSearchGroundingCachePolicy policy =
                 tenantRuntimeSettingApplicationService.webSearchGroundingCachePolicy(tenantId);
         String hash = WebSearchQueryNormalizer.sha256Hex(normalizedQuery);
-        String json = writeGroundingJson(bundle);
+        String json = writeGroundingJson(bundleForKnowledgePersistence(bundle));
         String promptText = truncatePromptText(rawQuery, normalizedQuery);
         int refs = bundle.references() == null ? 0 : bundle.references().size();
         int weight = Math.min(200, 80 + refs * 5);
@@ -254,10 +261,29 @@ public class ChatWebSearchKnowledgeService {
         return t.substring(0, PROMPT_TEXT_MAX);
     }
 
+    /**
+     * 联网知识库只沉淀「规范化问句 + 检索引用」；摘要用引用要点列表，不写入火山 Ark 的整段生成文。
+     * 对话主流程仍使用外呼返回的完整 {@link WebGroundingBundle}。
+     */
+    static WebGroundingBundle bundleForKnowledgePersistence(WebGroundingBundle live) {
+        if (live == null) {
+            return new WebGroundingBundle("", List.of());
+        }
+        List<WebSearchReference> refs =
+                WebSearchGroundingMergeSupport.dedupeReferences(live.references());
+        String summary =
+                WebSearchSummarySupport.bulletsFromReferences(
+                        refs, KNOWLEDGE_SUMMARY_MAX_BULLETS);
+        return new WebGroundingBundle(summary == null ? "" : summary, refs);
+    }
+
     private String writeGroundingJson(WebGroundingBundle bundle) {
         try {
             ObjectNode root = objectMapper.createObjectNode();
-            root.put("summaryText", bundle.summaryText() == null ? "" : bundle.summaryText());
+            String summary =
+                    WebSearchSummarySupport.joinSummaryPieces(
+                            WebSearchSummarySupport.splitSummaryPieces(bundle.summaryText()));
+            root.put("summaryText", summary);
             ArrayNode refs = root.putArray("references");
             if (bundle.references() != null) {
                 for (WebSearchReference r : bundle.references()) {
@@ -276,6 +302,9 @@ public class ChatWebSearchKnowledgeService {
                     }
                     if (r.extraJson() != null) {
                         o.put("extraJson", r.extraJson());
+                    }
+                    if (r.sourceKey() != null) {
+                        o.put("sourceKey", r.sourceKey());
                     }
                 }
             }
@@ -304,7 +333,8 @@ public class ChatWebSearchKnowledgeService {
                                     textOrNull(n, "siteName"),
                                     textOrNull(n, "logoUrl"),
                                     textOrNull(n, "publishTime"),
-                                    textOrNull(n, "extraJson")));
+                                    textOrNull(n, "extraJson"),
+                                    textOrNull(n, "sourceKey")));
                 }
             }
             if (summary.isBlank() && refs.isEmpty()) {

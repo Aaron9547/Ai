@@ -53,7 +53,7 @@ public class LlmModelAdminApplicationService {
         row.setModelKind(kind);
         row.setIntegrationBackend(normalizeIntegrationBackendForCreate(kind, req.getIntegrationBackend()));
         String apiKeyRaw = req.getApiKey() == null ? "" : req.getApiKey().trim();
-        if (kind != LlmModelKind.VECTOR && apiKeyRaw.isEmpty()) {
+        if (kind != LlmModelKind.VECTOR && apiKeyRaw.isEmpty() && !allowsEmptyWebSearchApiKey(kind, row.getIntegrationBackend())) {
             throw new IllegalArgumentException("API Key 不能为空");
         }
         row.setApiKeyCipher(apiKeyRaw.isEmpty() ? null : aesSecretCipher.encryptToBase64(apiKeyRaw));
@@ -256,10 +256,22 @@ public class LlmModelAdminApplicationService {
                 if (p == null) {
                     throw new IllegalArgumentException("不支持的联网检索实现码：" + s);
                 }
+                if (p != LlmWebSearchProvider.VOLCENGINE_ARK_BOT) {
+                    throw new IllegalArgumentException(
+                            "联网搜索模型仅支持火山 Ark Bot（VOLCENGINE_ARK_BOT）；免费固定源在租户 Shell 勾选");
+                }
                 yield p.getCode();
             }
             default -> LlmVectorBackend.OPENAI_COMPATIBLE.getCode();
         };
+    }
+
+    private static boolean allowsEmptyWebSearchApiKey(LlmModelKind kind, String integrationBackend) {
+        if (kind != LlmModelKind.WEB_SEARCH) {
+            return false;
+        }
+        LlmWebSearchProvider p = LlmWebSearchProvider.fromCode(integrationBackend);
+        return p != null && !p.isRequiresApiKey();
     }
 
     private static void validateAlias(String alias) {

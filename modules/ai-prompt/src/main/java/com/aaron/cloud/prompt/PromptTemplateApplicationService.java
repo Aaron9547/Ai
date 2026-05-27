@@ -45,6 +45,18 @@ public class PromptTemplateApplicationService implements PromptTemplateResolvePo
     }
 
     @Override
+    public String renderSystem(String promptCode, long tenantId, String locale, Map<String, String> variables) {
+        String raw = resolveRaw(promptCode, tenantId, locale, PromptTemplateKind.SYSTEM);
+        return renderVariables(raw, variables);
+    }
+
+    @Override
+    public String renderQuery(String promptCode, long tenantId, Map<String, String> variables) {
+        String raw = resolveRaw(promptCode, tenantId, "*", PromptTemplateKind.QUERY);
+        return renderVariables(raw, variables);
+    }
+
+    @Override
     public List<String> resolveFragmentSeries(String codePrefix, long tenantId, String locale) {
         String prefix = codePrefix == null ? "" : codePrefix.trim();
         List<String> out = new ArrayList<>();

@@ -21,6 +21,18 @@
         </template>
       </el-table-column>
     </el-table>
+    <div v-if="total > 0" class="pager">
+      <el-pagination
+        background
+        layout="total, sizes, prev, pager, next"
+        :total="total"
+        :page-size="pageSize"
+        :current-page="page"
+        :page-sizes="[10, 20, 50, 100]"
+        @current-change="onPage"
+        @size-change="onPageSize"
+      />
+    </div>
 
     <el-dialog
       v-model="dlg"
@@ -52,24 +64,29 @@
 
 <script setup lang="ts">
 import { ElMessage } from "element-plus";
-import { reactive, ref } from "vue";
+import { reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import {
   createStarterPrompt,
   deleteStarterPrompt,
+  listStarterPrompts,
   updateStarterPrompt,
   type StarterPromptRow,
 } from "@/api/chatStarterPrompt";
 
 const props = defineProps<{
   scene: "EMPTY" | "FOLLOW_UP";
-  rows: StarterPromptRow[];
-  loading?: boolean;
+  refreshToken?: number;
 }>();
 
 const emit = defineEmits<{ changed: [] }>();
 
 const { t } = useI18n();
+const loading = ref(false);
+const rows = ref<StarterPromptRow[]>([]);
+const total = ref(0);
+const page = ref(1);
+const pageSize = ref(20);
 const dlg = ref(false);
 const saving = ref(false);
 const editId = ref<number | null>(null);
@@ -88,6 +105,36 @@ function sourceLabel(src: string) {
     WEB_SEARCH_GROUNDING: t("views.chatStarter.sourceWebKnowledge"),
   };
   return map[src] ?? src;
+}
+
+async function load() {
+  loading.value = true;
+  try {
+    const res = await listStarterPrompts({
+      scene: props.scene,
+      page: page.value,
+      size: pageSize.value,
+    });
+    rows.value = res.records;
+    total.value = res.total;
+    page.value = res.page;
+    pageSize.value = res.size;
+  } catch {
+    ElMessage.error(t("views.chatStarter.loadFailed"));
+  } finally {
+    loading.value = false;
+  }
+}
+
+function onPage(p: number) {
+  page.value = p;
+  void load();
+}
+
+function onPageSize(s: number) {
+  pageSize.value = s;
+  page.value = 1;
+  void load();
 }
 
 function openCreate() {
@@ -139,6 +186,7 @@ async function save() {
     dlg.value = false;
     ElMessage.success(t("views.chatStarter.saved"));
     emit("changed");
+    await load();
   } catch {
     ElMessage.error(t("views.chatStarter.saveFailed"));
   } finally {
@@ -155,14 +203,39 @@ async function remove(row: StarterPromptRow) {
     await deleteStarterPrompt(row.id);
     ElMessage.success(t("views.chatStarter.deleted"));
     emit("changed");
+    if (rows.value.length <= 1 && page.value > 1) {
+      page.value -= 1;
+    }
+    await load();
   } catch {
     ElMessage.error(t("views.chatStarter.saveFailed"));
   }
 }
+
+watch(
+  () => props.refreshToken,
+  () => {
+    void load();
+  },
+);
+
+watch(
+  () => props.scene,
+  () => {
+    page.value = 1;
+    void load();
+  },
+  { immediate: true },
+);
 </script>
 
 <style scoped>
 .pool-toolbar {
   margin-bottom: 12px;
+}
+.pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
 }
 </style>

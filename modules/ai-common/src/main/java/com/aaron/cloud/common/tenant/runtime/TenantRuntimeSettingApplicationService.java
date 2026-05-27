@@ -51,6 +51,20 @@ public class TenantRuntimeSettingApplicationService {
         return parseOptionalLlmModelId(tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MODEL_ID);
     }
 
+    /** 租户启用的内置固定联网源（代码注册，非 {@code llm_model} 行）。 */
+    public List<com.aaron.cloud.common.api.enums.llm.WebSearchFixedSource> webSearchGroundingFixedSources(
+            long tenantId) {
+        String raw =
+                effectiveValueText(tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON)
+                        .trim();
+        List<com.aaron.cloud.common.api.enums.llm.WebSearchFixedSource> parsed =
+                parseWebSearchFixedSourcesJson(raw, false);
+        if (!parsed.isEmpty()) {
+            return parsed;
+        }
+        return List.of();
+    }
+
     private java.util.Optional<Long> parseOptionalLlmModelId(long tenantId, TenantRuntimeSettingKey key) {
         String raw = effectiveValueText(tenantId, key).trim();
         if (raw.isEmpty()) {
@@ -91,6 +105,40 @@ public class TenantRuntimeSettingApplicationService {
     public WebSearchGroundingCachePolicy webSearchGroundingCachePolicy(long tenantId) {
         String raw = effectiveValueText(tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_CACHE_JSON);
         return parseWebSearchGroundingCachePolicy(raw);
+    }
+
+    /** 内置固定联网源出站代理（{@link TenantRuntimeSettingKey#WEB_SEARCH_FIXED_SOURCE_OUTBOUND_JSON}）。 */
+    public WebSearchFixedSourceOutboundRuntime webSearchFixedSourceOutbound(long tenantId) {
+        String raw =
+                effectiveValueText(tenantId, TenantRuntimeSettingKey.WEB_SEARCH_FIXED_SOURCE_OUTBOUND_JSON);
+        return parseWebSearchFixedSourceOutboundJson(raw);
+    }
+
+    private WebSearchFixedSourceOutboundRuntime parseWebSearchFixedSourceOutboundJson(String raw) {
+        WebSearchFixedSourceOutboundRuntime d = WebSearchFixedSourceOutboundRuntime.disabled();
+        if (raw == null || raw.isBlank() || "{}".equals(raw.trim())) {
+            return d;
+        }
+        try {
+            JsonNode n = objectMapper.readTree(raw.trim());
+            if (!n.isObject()) {
+                return d;
+            }
+            boolean enabled = n.path("enabled").asBoolean(false);
+            String host = n.path("host").asText("").trim();
+            int port = clampProxyPort(n.path("port").asInt(7890));
+            String type = n.path("type").asText(WebSearchFixedSourceOutboundRuntime.TYPE_HTTP).trim();
+            return new WebSearchFixedSourceOutboundRuntime(enabled, host, port, type);
+        } catch (Exception e) {
+            return d;
+        }
+    }
+
+    private static int clampProxyPort(int port) {
+        if (port < 1) {
+            return 1;
+        }
+        return Math.min(port, 65535);
     }
 
     private WebSearchGroundingCachePolicy parseWebSearchGroundingCachePolicy(String raw) {
@@ -319,6 +367,116 @@ public class TenantRuntimeSettingApplicationService {
         return fromDb;
     }
 
+    private List<com.aaron.cloud.common.api.enums.llm.WebSearchFixedSource> parseWebSearchFixedSourcesJson(
+            String raw, boolean strict) {
+        if (raw == null || raw.isBlank() || "[]".equals(raw.trim())) {
+            if (strict) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST, "WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON 须为非空 JSON 数组");
+            }
+            return List.of();
+        }
+        try {
+            JsonNode node = objectMapper.readTree(raw.trim());
+            if (!node.isArray()) {
+                if (strict) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST, "WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON 须为 JSON 数组");
+                }
+                return List.of();
+            }
+            List<com.aaron.cloud.common.api.enums.llm.WebSearchFixedSource> out = new ArrayList<>();
+            for (JsonNode n : node) {
+                if (!n.isTextual()) {
+                    if (strict) {
+                        throw new ResponseStatusException(
+                                HttpStatus.BAD_REQUEST,
+                                "WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON 数组元素须为源代码字符串");
+                    }
+                    continue;
+                }
+                com.aaron.cloud.common.api.enums.llm.WebSearchFixedSource src =
+                        com.aaron.cloud.common.api.enums.llm.WebSearchFixedSource.fromCode(n.asText());
+                if (src == null) {
+                    if (strict) {
+                        throw new ResponseStatusException(
+                                HttpStatus.BAD_REQUEST,
+                                "未知固定联网源代码：" + n.asText());
+                    }
+                    continue;
+                }
+                if (!out.contains(src)) {
+                    out.add(src);
+                }
+            }
+            if (strict && out.isEmpty()) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST, "WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON 须至少包含一个有效代码");
+            }
+            return List.copyOf(out);
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            if (strict) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST, "WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON 非法 JSON");
+            }
+            return List.of();
+        }
+    }
+
+    private List<Long> parseLlmModelIdArrayJson(String raw, boolean strict) {
+        if (raw == null || raw.isBlank() || "[]".equals(raw.trim())) {
+            if (strict) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST, "WEB_SEARCH_GROUNDING_MODEL_IDS_JSON 须为非空 JSON 数组");
+            }
+            return List.of();
+        }
+        try {
+            JsonNode node = objectMapper.readTree(raw.trim());
+            if (!node.isArray()) {
+                if (strict) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST, "WEB_SEARCH_GROUNDING_MODEL_IDS_JSON 须为 JSON 数组");
+                }
+                return List.of();
+            }
+            List<Long> out = new ArrayList<>();
+            for (JsonNode n : node) {
+                long id;
+                if (n.isIntegralNumber()) {
+                    id = n.asLong();
+                } else if (n.isTextual() && n.asText().trim().matches("[0-9]{1,19}")) {
+                    id = Long.parseLong(n.asText().trim());
+                } else {
+                    if (strict) {
+                        throw new ResponseStatusException(
+                                HttpStatus.BAD_REQUEST,
+                                "WEB_SEARCH_GROUNDING_MODEL_IDS_JSON 数组元素须为模型数字主键");
+                    }
+                    continue;
+                }
+                if (id > 0L && !out.contains(id)) {
+                    out.add(id);
+                }
+            }
+            if (strict && out.isEmpty()) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST, "WEB_SEARCH_GROUNDING_MODEL_IDS_JSON 须至少包含一个模型 id");
+            }
+            return List.copyOf(out);
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            if (strict) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST, "WEB_SEARCH_GROUNDING_MODEL_IDS_JSON 非法 JSON");
+            }
+            return List.of();
+        }
+    }
+
     private String validateAndNormalize(TenantRuntimeSettingKey key, String valueText) {
         if (key.getValueKind() == SettingValueKind.BOOLEAN) {
             if (valueText == null || valueText.isBlank()) {
@@ -341,6 +499,14 @@ public class TenantRuntimeSettingApplicationService {
                 throw new ResponseStatusException(
                         HttpStatus.BAD_REQUEST, key.getStorage() + " 须为数字主键或留空");
             }
+            return t;
+        }
+        if (key == TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON) {
+            if (valueText == null || valueText.isBlank()) {
+                return "[]";
+            }
+            String t = valueText.trim();
+            parseWebSearchFixedSourcesJson(t, true);
             return t;
         }
         if (key == TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT) {
@@ -421,6 +587,48 @@ public class TenantRuntimeSettingApplicationService {
             }
             String t = valueText.trim();
             SiteCrawlRuntimeValidator.parseObject(t, objectMapper);
+            return t;
+        }
+        if (key == TenantRuntimeSettingKey.WEB_SEARCH_FIXED_SOURCE_OUTBOUND_JSON) {
+            if (valueText == null || valueText.isBlank()) {
+                return "{}";
+            }
+            String t = valueText.trim();
+            if (t.length() > RUNTIME_JSON_MAX_CHARS) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "WEB_SEARCH_FIXED_SOURCE_OUTBOUND_JSON 过长（上限 " + RUNTIME_JSON_MAX_CHARS + " 字符）");
+            }
+            try {
+                JsonNode n = objectMapper.readTree(t);
+                if (!n.isObject()) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST, "WEB_SEARCH_FIXED_SOURCE_OUTBOUND_JSON 须为 JSON 对象");
+                }
+                if (n.path("enabled").asBoolean(false)) {
+                    String host = n.path("host").asText("").trim();
+                    if (host.isEmpty()) {
+                        throw new ResponseStatusException(
+                                HttpStatus.BAD_REQUEST, "启用固定源代理时 host 不能为空");
+                    }
+                    int port = n.path("port").asInt(7890);
+                    if (port < 1 || port > 65535) {
+                        throw new ResponseStatusException(
+                                HttpStatus.BAD_REQUEST, "port 须在 1～65535");
+                    }
+                    String type = n.path("type").asText("HTTP").trim();
+                    if (!WebSearchFixedSourceOutboundRuntime.TYPE_HTTP.equalsIgnoreCase(type)
+                            && !WebSearchFixedSourceOutboundRuntime.TYPE_SOCKS.equalsIgnoreCase(type)) {
+                        throw new ResponseStatusException(
+                                HttpStatus.BAD_REQUEST, "type 须为 HTTP 或 SOCKS");
+                    }
+                }
+            } catch (ResponseStatusException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST, "WEB_SEARCH_FIXED_SOURCE_OUTBOUND_JSON 非法 JSON");
+            }
             return t;
         }
         if (key == TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_CACHE_JSON) {

@@ -14,7 +14,9 @@ public record WebSearchReference(
         String siteName,
         String logoUrl,
         String publishTime,
-        String extraJson) {
+        String extraJson,
+        /** 检索源码（如 {@code BAIDU_NEWS_HTML}、{@code VOLCENGINE_ARK_BOT}），供知识库按源分组。 */
+        String sourceKey) {
 
     /** 三字段兼容（旧 Provider / 单测）。 */
     public static WebSearchReference ofTitleUrlSnippet(String title, String url, String snippet) {
@@ -22,6 +24,7 @@ public record WebSearchReference(
                 title == null ? "" : title,
                 url == null ? "" : url,
                 snippet == null ? "" : snippet,
+                null,
                 null,
                 null,
                 null,

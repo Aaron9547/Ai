@@ -16,7 +16,7 @@
     <span class="rec-card-action" aria-hidden="true">
       <el-icon :size="14"><TopRight /></el-icon>
     </span>
-    <span v-if="showTodayBadge" class="rec-card-badge">{{ t("dailyRecommend.todayBadge") }}</span>
+    <span v-if="isRecommendToday" class="rec-card-badge">{{ t("dailyRecommend.todayBadge") }}</span>
   </a>
 </template>
 
@@ -28,10 +28,11 @@ import type { DailyRecommendItem } from "../../api/dailyRecommend";
 import { trackDailyRecommendClick } from "../../api/dailyRecommend";
 import { isHttpExternalUrl, normalizeExternalUrl } from "../../utils/externalUrl";
 
-const props = withDefaults(
-  defineProps<{ item: DailyRecommendItem; showTodayBadge?: boolean }>(),
-  { showTodayBadge: true },
-);
+const props = defineProps<{
+  item: DailyRecommendItem;
+  /** 服务端推荐批次日期（yyyy-MM-dd），用于「今日」角标 */
+  recommendDate?: string;
+}>();
 
 const { t } = useI18n();
 const clicked = ref(false);
@@ -44,6 +45,18 @@ const safeUrl = computed(() => {
 const metaDate = computed(() => {
   const d = props.item.date?.trim() ?? "";
   return d && d !== "—" ? d : "";
+});
+
+const isRecommendToday = computed(() => {
+  const batch = props.recommendDate?.trim();
+  if (!batch) {
+    return false;
+  }
+  const d = metaDate.value;
+  if (!d) {
+    return false;
+  }
+  return d === batch;
 });
 
 const metaSource = computed(() => {

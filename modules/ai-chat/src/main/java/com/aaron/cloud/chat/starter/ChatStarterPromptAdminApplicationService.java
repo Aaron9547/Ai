@@ -29,9 +29,29 @@ public class ChatStarterPromptAdminApplicationService {
     private final ChatStarterPromptJsonSupport jsonSupport;
     private final ObjectMapper objectMapper;
 
-    public List<ChatStarterPromptDtos.PromptRow> listPrompts() {
+    public ChatStarterPromptDtos.PromptPageResult pagePrompts(
+            String sceneCode, String sourceCode, long page, long size) {
         long tid = AdminQueryTenantSupport.resolveIntentAdminDataTenantId(null);
-        return promptRepository.listByTenant(tid).stream().map(this::toRow).toList();
+        long pageNo = Math.max(1, page);
+        long pageSize = Math.min(100, Math.max(1, size));
+        ChatStarterPromptScene scene;
+        try {
+            scene = ChatStarterPromptScene.fromCode(sceneCode);
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "scene 无效");
+        }
+        ChatStarterPromptSource source = null;
+        if (sourceCode != null && !sourceCode.isBlank()) {
+            try {
+                source = ChatStarterPromptSource.fromCode(sourceCode);
+            } catch (IllegalArgumentException ex) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "source 无效");
+            }
+        }
+        var p = promptRepository.pageByTenant(tid, scene, source, pageNo, pageSize);
+        List<ChatStarterPromptDtos.PromptRow> rows =
+                p.getRecords().stream().map(this::toRow).toList();
+        return new ChatStarterPromptDtos.PromptPageResult(rows, p.getTotal(), pageNo, pageSize);
     }
 
     public ChatStarterPromptDtos.PromptRow create(ChatStarterPromptDtos.PromptCreateBody body) {
@@ -210,7 +230,8 @@ public class ChatStarterPromptAdminApplicationService {
                                         n.path("url").asText(""),
                                         n.path("snippet").asText(""),
                                         textOrNull(n, "siteName"),
-                                        textOrNull(n, "publishTime")));
+                                        textOrNull(n, "publishTime"),
+                                        textOrNull(n, "sourceKey")));
                     }
                 }
             } catch (Exception ignored) {

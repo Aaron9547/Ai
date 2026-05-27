@@ -244,6 +244,40 @@ export function parseWebSearchGroundingModelId(raw: string | undefined | null): 
   return parseBoundLlmModelId(raw);
 }
 
+export const WEB_SEARCH_FIXED_SOURCE_CODES = [
+  "DUCKDUCKGO_HTML",
+  "WIKIPEDIA_REST",
+  "GOOGLE_NEWS_RSS",
+  "BAIDU_NEWS_HTML",
+] as const;
+
+export type WebSearchFixedSourceCode = (typeof WEB_SEARCH_FIXED_SOURCE_CODES)[number];
+
+/** 解析 {@code WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON}。 */
+export function parseWebSearchFixedSourcesJson(raw: string | undefined | null): WebSearchFixedSourceCode[] {
+  const allowed = new Set<string>(WEB_SEARCH_FIXED_SOURCE_CODES);
+  const rawStr = String(raw ?? "").trim();
+  if (!rawStr || rawStr === "[]") {
+    return [];
+  }
+  try {
+    const parsed: unknown = JSON.parse(rawStr);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    const out: WebSearchFixedSourceCode[] = [];
+    for (const item of parsed) {
+      const code = String(item ?? "").trim();
+      if (allowed.has(code) && !out.includes(code as WebSearchFixedSourceCode)) {
+        out.push(code as WebSearchFixedSourceCode);
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 function parseBoundLlmModelId(raw: string | undefined | null): number | undefined {
   const s = String(raw ?? "").trim();
   if (!s) return undefined;
@@ -268,6 +302,59 @@ export type WebSearchCacheForm = {
   indexMaxEntries: number;
   conversationReuseHours: number;
 };
+
+/** 与 {@code WEB_SEARCH_FIXED_SOURCE_OUTBOUND_JSON} 对齐 */
+export type WebSearchFixedOutboundForm = {
+  enabled: boolean;
+  host: string;
+  port: number;
+  type: "HTTP" | "SOCKS";
+};
+
+export const WEB_SEARCH_FIXED_OUTBOUND_DEFAULT: WebSearchFixedOutboundForm = {
+  enabled: false,
+  host: "127.0.0.1",
+  port: 7890,
+  type: "HTTP",
+};
+
+function clampProxyPort(n: number, fallback: number): number {
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(1, Math.min(65535, Math.floor(n)));
+}
+
+export function parseWebSearchFixedOutboundJson(
+  raw: string | undefined | null,
+): WebSearchFixedOutboundForm {
+  const d = { ...WEB_SEARCH_FIXED_OUTBOUND_DEFAULT };
+  const t = String(raw ?? "").trim();
+  if (!t || t === "{}") return d;
+  try {
+    const o = JSON.parse(t) as Record<string, unknown>;
+    if (typeof o.enabled === "boolean") d.enabled = o.enabled;
+    if (typeof o.host === "string") d.host = o.host.trim();
+    d.port = clampProxyPort(Number(o.port), d.port);
+    const ty = String(o.type ?? "HTTP").trim().toUpperCase();
+    d.type = ty === "SOCKS" ? "SOCKS" : "HTTP";
+    return d;
+  } catch {
+    return d;
+  }
+}
+
+export function serializeWebSearchFixedOutboundJson(form: WebSearchFixedOutboundForm): string {
+  return JSON.stringify({
+    enabled: form.enabled,
+    host: form.host.trim(),
+    port: clampProxyPort(form.port, 7890),
+    type: form.type === "SOCKS" ? "SOCKS" : "HTTP",
+  });
+}
+
+export function validateWebSearchFixedOutbound(form: WebSearchFixedOutboundForm): boolean {
+  if (!form.enabled) return true;
+  return form.host.trim().length > 0 && form.port >= 1 && form.port <= 65535;
+}
 
 export const WEB_SEARCH_CACHE_DEFAULT: WebSearchCacheForm = {
   enabled: true,

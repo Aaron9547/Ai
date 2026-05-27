@@ -2,6 +2,7 @@ package com.aaron.cloud.chat.websearch.cache;
 
 import com.aaron.cloud.chat.websearch.WebGroundingBundle;
 import com.aaron.cloud.chat.websearch.WebSearchReference;
+import com.aaron.cloud.chat.websearch.WebSearchSummarySupport;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -25,7 +26,9 @@ public final class WebSearchGroundingMergeSupport {
         }
         List<WebSearchReference> refs = dedupeReferences(
                 concatLists(base.references(), incremental.references()));
-        String sum = joinSummary(base.summaryText(), incremental.summaryText());
+        String sum =
+                WebSearchSummarySupport.joinSummaryText(
+                        base.summaryText(), incremental.summaryText());
         return new WebGroundingBundle(sum, refs);
     }
 
@@ -46,21 +49,6 @@ public final class WebSearchGroundingMergeSupport {
             }
         }
         return List.copyOf(byUrl.values());
-    }
-
-    private static String joinSummary(String a, String b) {
-        String x = a == null ? "" : a.trim();
-        String y = b == null ? "" : b.trim();
-        if (x.isEmpty()) {
-            return y;
-        }
-        if (y.isEmpty()) {
-            return x;
-        }
-        if (x.contains(y) || y.contains(x)) {
-            return x.length() >= y.length() ? x : y;
-        }
-        return x + "\n\n---\n\n" + y;
     }
 
     private static List<WebSearchReference> concatLists(

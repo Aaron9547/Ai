@@ -7,28 +7,24 @@
       </div>
       <div class="head-actions">
         <el-button @click="router.push('/system/scheduled-tasks')">{{ t("views.chatStarter.goScheduled") }}</el-button>
-        <el-button type="primary" plain :loading="loading" @click="reload">{{ t("common.refresh") }}</el-button>
+        <el-button type="primary" plain :loading="refreshing" @click="onGlobalRefresh">{{ t("common.refresh") }}</el-button>
       </div>
     </header>
 
     <el-tabs v-model="activeTab" class="tabs" @tab-change="onTabChange">
-      <el-tab-pane :label="t('views.chatStarter.tabEmpty')" name="empty">
-        <starter-prompt-pool-table scene="EMPTY" :rows="emptyRows" :loading="loading" @changed="reload" />
+      <el-tab-pane lazy :label="t('views.chatStarter.tabEmpty')" name="empty">
+        <starter-prompt-pool-table scene="EMPTY" :refresh-token="refreshToken" />
       </el-tab-pane>
-      <el-tab-pane :label="t('views.chatStarter.tabFollowUp')" name="followUp">
+      <el-tab-pane lazy :label="t('views.chatStarter.tabFollowUp')" name="followUp">
         <el-alert type="info" :closable="false" show-icon class="follow-hint">
           {{ t("views.chatStarter.followUpHint") }}
         </el-alert>
-        <starter-prompt-pool-table scene="FOLLOW_UP" :rows="followUpRows" :loading="loading" @changed="reload" />
+        <starter-prompt-pool-table scene="FOLLOW_UP" :refresh-token="refreshToken" />
       </el-tab-pane>
-      <el-tab-pane :label="t('views.chatStarter.tabWebKnowledge')" name="webKnowledge">
-        <web-search-knowledge-table
-          :rows="webKnowledgeRows"
-          :loading="loading"
-          @changed="reload"
-        />
+      <el-tab-pane lazy :label="t('views.chatStarter.tabWebKnowledge')" name="webKnowledge">
+        <web-search-knowledge-table :refresh-token="refreshToken" />
       </el-tab-pane>
-      <el-tab-pane :label="t('views.chatStarter.tabDailyHot')" name="dailyHot">
+      <el-tab-pane lazy :label="t('views.chatStarter.tabDailyHot')" name="dailyHot">
         <el-card shadow="never" class="panel">
           <template #header>
             <div class="panel-hdr">
@@ -63,15 +59,13 @@
 
 <script setup lang="ts">
 import { ElMessage } from "element-plus";
-import { computed, onMounted, ref } from "vue";
+import { ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import {
   listDailyBatches,
-  listStarterPrompts,
   refreshDailyHot,
   type DailyBatchRow,
-  type StarterPromptRow,
 } from "@/api/chatStarterPrompt";
 import StarterPromptPoolTable from "./components/StarterPromptPoolTable.vue";
 import WebSearchKnowledgeTable from "./components/WebSearchKnowledgeTable.vue";
@@ -80,17 +74,10 @@ const { t } = useI18n();
 const router = useRouter();
 
 const activeTab = ref("empty");
-const loading = ref(false);
+const refreshToken = ref(0);
 const batchLoading = ref(false);
 const refreshing = ref(false);
-const allPrompts = ref<StarterPromptRow[]>([]);
 const batches = ref<DailyBatchRow[]>([]);
-
-const emptyRows = computed(() => allPrompts.value.filter((r) => r.scene === "EMPTY"));
-const followUpRows = computed(() => allPrompts.value.filter((r) => r.scene === "FOLLOW_UP"));
-const webKnowledgeRows = computed(() =>
-  allPrompts.value.filter((r) => r.scene === "WEB_KNOWLEDGE" && r.source === "WEB_SEARCH_GROUNDING"),
-);
 
 function batchStatusType(status: string) {
   if (status === "OK") return "success";
@@ -99,14 +86,14 @@ function batchStatusType(status: string) {
   return "info";
 }
 
-async function loadPrompts() {
-  loading.value = true;
-  try {
-    allPrompts.value = await listStarterPrompts();
-  } catch {
-    ElMessage.error(t("views.chatStarter.loadFailed"));
-  } finally {
-    loading.value = false;
+function bumpRefreshToken() {
+  refreshToken.value += 1;
+}
+
+function onGlobalRefresh() {
+  bumpRefreshToken();
+  if (activeTab.value === "dailyHot") {
+    void loadBatches();
   }
 }
 
@@ -118,13 +105,6 @@ async function loadBatches() {
     ElMessage.error(t("views.chatStarter.loadFailed"));
   } finally {
     batchLoading.value = false;
-  }
-}
-
-async function reload() {
-  await loadPrompts();
-  if (activeTab.value === "dailyHot") {
-    await loadBatches();
   }
 }
 
@@ -144,17 +124,13 @@ async function onRefreshDailyHot() {
       ElMessage.warning(res.message || t("views.chatStarter.refreshFailed"));
     }
     await loadBatches();
-    await loadPrompts();
+    bumpRefreshToken();
   } catch {
     ElMessage.error(t("views.chatStarter.refreshFailed"));
   } finally {
     refreshing.value = false;
   }
 }
-
-onMounted(() => {
-  void reload();
-});
 </script>
 
 <style scoped>

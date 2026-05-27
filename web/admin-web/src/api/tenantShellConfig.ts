@@ -17,8 +17,10 @@ export type TenantShellOutbound = {
 /** 与 {@code ten_runtime_setting} 中对话/记忆/联网相关键一致 */
 export type TenantShellModelCallingRuntime = {
   memoryEmbeddingVectorModelId: string;
-  /** WEB_SEARCH_GROUNDING_MODEL_ID；空则 sort_order 默认 */
+  /** WEB_SEARCH_GROUNDING_MODEL_ID；火山 Ark（可留空） */
   webSearchGroundingModelId: string;
+  /** WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON；内置固定源代码数组 */
+  webSearchGroundingFixedSourcesJson: string;
   chatPromptLimitsJson: string;
   memoryPolicyJson: string;
   chatInputGuardJson: string;
@@ -26,6 +28,8 @@ export type TenantShellModelCallingRuntime = {
   webSearchGroundingRoundSuffixesJson: string;
   /** WEB_SEARCH_GROUNDING_CACHE_JSON */
   webSearchGroundingCacheJson: string;
+  /** WEB_SEARCH_FIXED_SOURCE_OUTBOUND_JSON */
+  webSearchFixedSourceOutboundJson: string;
   siteCrawlPreset: string;
   siteCrawlRuntimeJson: string;
   /** RAG_VECTOR_DIMENSION；空=未锁定、走进程默认 */
@@ -88,12 +92,14 @@ export type TenantShellModelCallingPutBody = Pick<
   TenantShellModelCallingRuntime,
   | "memoryEmbeddingVectorModelId"
   | "webSearchGroundingModelId"
+  | "webSearchGroundingFixedSourcesJson"
   | "chatPromptLimitsJson"
   | "memoryPolicyJson"
   | "chatInputGuardJson"
   | "webSearchGroundingMultiRoundCount"
   | "webSearchGroundingRoundSuffixesJson"
   | "webSearchGroundingCacheJson"
+  | "webSearchFixedSourceOutboundJson"
   | "siteCrawlPreset"
   | "siteCrawlRuntimeJson"
   | "ragVectorDimension"

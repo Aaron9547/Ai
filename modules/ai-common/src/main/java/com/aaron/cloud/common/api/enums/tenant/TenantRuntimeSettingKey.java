@@ -45,6 +45,26 @@ public enum TenantRuntimeSettingKey {
             "",
             false),
     /**
+     * 启用的内置固定联网源：JSON 字符串数组，元素为 {@link com.aaron.cloud.common.api.enums.llm.WebSearchFixedSource#getCode()}。
+     * 与 {@link #WEB_SEARCH_GROUNDING_MODEL_ID}（火山 Ark）组合；至少启用一类源由专页保存校验。
+     */
+    WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON(
+            "WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON",
+            "内置联网检索源（JSON 数组）",
+            SettingValueKind.STRING,
+            "[]",
+            false),
+    /**
+     * 已改为 {@link #WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON} + 单 Ark {@link #WEB_SEARCH_GROUNDING_MODEL_ID}；仅作读兼容。
+     */
+    @Deprecated
+    WEB_SEARCH_GROUNDING_MODEL_IDS_JSON(
+            "WEB_SEARCH_GROUNDING_MODEL_IDS_JSON",
+            "（已废弃）联网模型 id 列表",
+            SettingValueKind.STRING,
+            "[]",
+            false),
+    /**
      * 主对话 RAG/联网注入及短期记忆预算（JSON 对象，键见 {@link ChatPromptLimitsRuntime}，含 {@code historyMaxMessages}
      * / {@code historyMaxCharsPerMessage} / {@code historyTotalMaxChars}；空对象表示代码默认）。
      */
@@ -107,6 +127,16 @@ public enum TenantRuntimeSettingKey {
     WEB_SEARCH_GROUNDING_CACHE_JSON(
             "WEB_SEARCH_GROUNDING_CACHE_JSON",
             "联网检索缓存（JSON）",
+            SettingValueKind.STRING,
+            "{}",
+            false),
+    /**
+     * 内置固定联网源出站代理（JSON）：{@code enabled}、{@code host}、{@code port}、{@code type}（HTTP/SOCKS）；
+     * 未启用时走进程 {@code ai.websearch.fixed.*} 或直连。租户 Shell「外观与模型调用」配置。
+     */
+    WEB_SEARCH_FIXED_SOURCE_OUTBOUND_JSON(
+            "WEB_SEARCH_FIXED_SOURCE_OUTBOUND_JSON",
+            "固定联网源出站代理（JSON）",
             SettingValueKind.STRING,
             "{}",
             false),
@@ -236,12 +266,15 @@ public enum TenantRuntimeSettingKey {
                     RAG_RETRIEVAL_MODE,
                     MEMORY_EMBEDDING_VECTOR_MODEL_ID,
                     WEB_SEARCH_GROUNDING_MODEL_ID,
+                    WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON,
+                    WEB_SEARCH_GROUNDING_MODEL_IDS_JSON,
                     CHAT_PROMPT_LIMITS_JSON,
                     MEMORY_POLICY_JSON,
                     CHAT_INPUT_GUARD_JSON,
                     WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT,
                     WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON,
                     WEB_SEARCH_GROUNDING_CACHE_JSON,
+                    WEB_SEARCH_FIXED_SOURCE_OUTBOUND_JSON,
                     SITE_CRAWL_PRESET,
                     SITE_CRAWL_RUNTIME_JSON,
                     CHAT_STARTER_DAILY_HOT_ENABLED,

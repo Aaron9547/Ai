@@ -130,7 +130,9 @@ public class TenantShellAdminApplicationService {
         String mem = body.getMemoryEmbeddingVectorModelId() == null ? "" : body.getMemoryEmbeddingVectorModelId().trim();
         String webModelId =
                 body.getWebSearchGroundingModelId() == null ? "" : body.getWebSearchGroundingModelId().trim();
-        validateOptionalWebSearchModelId(tenantId, webModelId);
+        String fixedSourcesJson =
+                jsonArrayOrDefault(body.getWebSearchGroundingFixedSourcesJson(), "[]");
+        validateWebSearchGroundingSelection(tenantId, webModelId, fixedSourcesJson);
         String limits = jsonOrDefault(body.getChatPromptLimitsJson(), "{}");
         String memPol = jsonOrDefault(body.getMemoryPolicyJson(), "{}");
         String guard = jsonOrDefault(body.getChatInputGuardJson(), "{}");
@@ -141,6 +143,7 @@ public class TenantShellAdminApplicationService {
                         : body.getWebSearchGroundingMultiRoundCount().trim();
         String suffixes = jsonArrayOrDefault(body.getWebSearchGroundingRoundSuffixesJson(), "[]");
         String cacheJson = jsonOrDefault(body.getWebSearchGroundingCacheJson(), "{}");
+        String fixedOutboundJson = jsonOrDefault(body.getWebSearchFixedSourceOutboundJson(), "{}");
         String crawlPreset =
                 body.getSiteCrawlPreset() == null || body.getSiteCrawlPreset().isBlank()
                         ? SiteCrawlPreset.BALANCED.name()
@@ -157,18 +160,21 @@ public class TenantShellAdminApplicationService {
                 || guard.length() > RUNTIME_JSON_MAX_CHARS
                 || suffixes.length() > RUNTIME_JSON_MAX_CHARS
                 || cacheJson.length() > RUNTIME_JSON_MAX_CHARS
+                || fixedOutboundJson.length() > RUNTIME_JSON_MAX_CHARS
                 || crawlRuntimeJson.length() > RUNTIME_JSON_MAX_CHARS) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "JSON 字段过长");
         }
         List<PutItem> items = new ArrayList<>();
         items.add(item(TenantRuntimeSettingKey.MEMORY_EMBEDDING_VECTOR_MODEL_ID, mem));
         items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MODEL_ID, webModelId));
+        items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON, fixedSourcesJson));
         items.add(item(TenantRuntimeSettingKey.CHAT_PROMPT_LIMITS_JSON, limits));
         items.add(item(TenantRuntimeSettingKey.MEMORY_POLICY_JSON, memPol));
         items.add(item(TenantRuntimeSettingKey.CHAT_INPUT_GUARD_JSON, guard));
         items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT, rounds));
         items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON, suffixes));
         items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_CACHE_JSON, cacheJson));
+        items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_FIXED_SOURCE_OUTBOUND_JSON, fixedOutboundJson));
         items.add(item(TenantRuntimeSettingKey.SITE_CRAWL_PRESET, crawlPreset));
         items.add(item(TenantRuntimeSettingKey.SITE_CRAWL_RUNTIME_JSON, crawlRuntimeJson));
         if (ragDimPersist != null) {
@@ -318,6 +324,32 @@ public class TenantShellAdminApplicationService {
         return raw.trim();
     }
 
+    private void validateWebSearchGroundingSelection(
+            long tenantId, String arkModelId, String fixedSourcesJson) {
+        boolean hasArk = arkModelId != null && !arkModelId.isBlank();
+        if (hasArk) {
+            validateOptionalWebSearchModelId(tenantId, arkModelId);
+        }
+        boolean hasFixed = hasNonEmptyFixedSourcesJson(fixedSourcesJson);
+        if (!hasArk && !hasFixed) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "请至少启用火山联网模型或一个内置固定源");
+        }
+    }
+
+    private boolean hasNonEmptyFixedSourcesJson(String json) {
+        if (json == null || json.isBlank() || "[]".equals(json.trim())) {
+            return false;
+        }
+        try {
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(json.trim());
+            return node.isArray() && !node.isEmpty();
+        } catch (Exception e) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON 非法 JSON");
+        }
+    }
+
     private void validateOptionalWebSearchModelId(long tenantId, String rawId) {
         if (rawId == null || rawId.isBlank()) {
             return;
@@ -357,6 +389,8 @@ public class TenantShellAdminApplicationService {
                 tenantRuntimeSettingApplicationService.getEffectiveValueText(
                         tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MODEL_ID),
                 tenantRuntimeSettingApplicationService.getEffectiveValueText(
+                        tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON),
+                tenantRuntimeSettingApplicationService.getEffectiveValueText(
                         tenantId, TenantRuntimeSettingKey.CHAT_PROMPT_LIMITS_JSON),
                 tenantRuntimeSettingApplicationService.getEffectiveValueText(
                         tenantId, TenantRuntimeSettingKey.MEMORY_POLICY_JSON),
@@ -368,6 +402,8 @@ public class TenantShellAdminApplicationService {
                         tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON),
                 tenantRuntimeSettingApplicationService.getEffectiveValueText(
                         tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_CACHE_JSON),
+                tenantRuntimeSettingApplicationService.getEffectiveValueText(
+                        tenantId, TenantRuntimeSettingKey.WEB_SEARCH_FIXED_SOURCE_OUTBOUND_JSON),
                 tenantRuntimeSettingApplicationService.getEffectiveValueText(
                         tenantId, TenantRuntimeSettingKey.SITE_CRAWL_PRESET),
                 tenantRuntimeSettingApplicationService.getEffectiveValueText(
@@ -445,12 +481,14 @@ public class TenantShellAdminApplicationService {
     public record ModelCallingRuntimeDto(
             String memoryEmbeddingVectorModelId,
             String webSearchGroundingModelId,
+            String webSearchGroundingFixedSourcesJson,
             String chatPromptLimitsJson,
             String memoryPolicyJson,
             String chatInputGuardJson,
             String webSearchGroundingMultiRoundCount,
             String webSearchGroundingRoundSuffixesJson,
             String webSearchGroundingCacheJson,
+            String webSearchFixedSourceOutboundJson,
             String siteCrawlPreset,
             String siteCrawlRuntimeJson,
             String ragVectorDimension,
@@ -501,8 +539,10 @@ public class TenantShellAdminApplicationService {
     @Data
     public static class ShellModelCallingPutBody {
         private String memoryEmbeddingVectorModelId;
-        /** {@link TenantRuntimeSettingKey#WEB_SEARCH_GROUNDING_MODEL_ID}；留空则按 sort_order 默认 */
+        /** {@link TenantRuntimeSettingKey#WEB_SEARCH_GROUNDING_MODEL_ID}；火山 Ark，可留空 */
         private String webSearchGroundingModelId;
+        /** {@link TenantRuntimeSettingKey#WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON}；内置固定源代码数组 */
+        private String webSearchGroundingFixedSourcesJson;
         private String chatPromptLimitsJson;
         private String memoryPolicyJson;
         private String chatInputGuardJson;
@@ -511,6 +551,8 @@ public class TenantShellAdminApplicationService {
         private String webSearchGroundingRoundSuffixesJson;
         /** {@link TenantRuntimeSettingKey#WEB_SEARCH_GROUNDING_CACHE_JSON}；{@code {}} 表示服务端内置默认 */
         private String webSearchGroundingCacheJson;
+        /** {@link TenantRuntimeSettingKey#WEB_SEARCH_FIXED_SOURCE_OUTBOUND_JSON} */
+        private String webSearchFixedSourceOutboundJson;
         /** {@link TenantRuntimeSettingKey#SITE_CRAWL_PRESET} */
         private String siteCrawlPreset;
         /** {@link TenantRuntimeSettingKey#SITE_CRAWL_RUNTIME_JSON} */

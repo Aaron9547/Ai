@@ -5,7 +5,15 @@ import { adminUiNegotiationHeaders, adminUiNegotiationParams, type AdminUiLocale
 export type LlmModelKindCode = "LANGUAGE" | "SPEECH" | "VISION" | "VECTOR" | "SMART_ROUTING" | "WEB_SEARCH";
 
 /** 与后端 `LlmWebSearchProvider` 一致；写入 {@code llm_model.integration_backend}（WEB_SEARCH 行）。 */
+/** 仅火山 Ark；内置固定源见 {@link WebSearchFixedSourceCode}，不在模型表配置。 */
 export type LlmWebSearchProviderCode = "VOLCENGINE_ARK_BOT";
+
+/** 与后端 {@code WebSearchFixedSource} 一致；租户 Shell 勾选，非 llm_model 行。 */
+export type WebSearchFixedSourceCode =
+  | "DUCKDUCKGO_HTML"
+  | "WIKIPEDIA_REST"
+  | "GOOGLE_NEWS_RSS"
+  | "BAIDU_NEWS_HTML";
 
 /** 与后端 `LlmVectorBackend` 一致；写入 {@code llm_model.integration_backend}（VECTOR 行）。 */
 export type LlmVectorBackendCode =

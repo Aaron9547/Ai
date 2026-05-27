@@ -249,26 +249,99 @@
             <el-form-item class="outbound-field-span">
               <template #label>
                 <ShellFieldLabel
-                  :label="t('admin.shell.modelCalling.webSearchModel')"
-                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.webSearchModel"
+                  :label="t('admin.shell.modelCalling.webSearchArkModel')"
+                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.webSearchArkModel"
                 />
               </template>
               <el-select
                 v-model="webSearchGroundingModelId"
-                filterable
                 clearable
+                filterable
                 class="outbound-line-input"
+                :placeholder="t('admin.shell.modelCalling.webSearchArkPlaceholder')"
                 :loading="loadingWebSearchModels"
-                :placeholder="t('admin.shell.modelCalling.webSearchModelPlaceholder')"
               >
                 <el-option
-                  v-for="opt in webSearchModelSelectOptions"
+                  v-for="opt in webSearchArkSelectOptions"
                   :key="opt.id"
                   :label="opt.label"
                   :value="opt.id"
                   :disabled="opt.disabled"
                 />
               </el-select>
+              <p v-if="!loadingWebSearchModels && webSearchArkSelectOptions.length === 0" class="field-hint">
+                {{ t("admin.shell.modelCalling.webSearchModelsEmpty") }}
+              </p>
+            </el-form-item>
+            <el-form-item class="outbound-field-span">
+              <template #label>
+                <ShellFieldLabel
+                  :label="t('admin.shell.modelCalling.webSearchFixedSources')"
+                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.webSearchFixedSources"
+                />
+              </template>
+              <el-checkbox-group v-model="webSearchFixedSources" class="web-search-source-group">
+                <el-checkbox
+                  v-for="code in webSearchFixedSourceCodes"
+                  :key="code"
+                  :label="code"
+                >
+                  {{ t(`admin.shell.modelCalling.fixedSources.${code}`) }}
+                </el-checkbox>
+              </el-checkbox-group>
+            </el-form-item>
+            <el-form-item class="outbound-field-span">
+              <template #label>
+                <ShellFieldLabel
+                  :label="t('admin.shell.modelCalling.webSearchFixedOutbound')"
+                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.webSearchFixedOutbound"
+                />
+              </template>
+              <div class="web-search-outbound-panel">
+                <div class="web-search-outbound-panel-head">
+                  <el-switch
+                    v-model="webSearchFixedOutboundForm.enabled"
+                    :active-text="t('admin.shell.modelCalling.webSearchFixedOutboundEnabled')"
+                  />
+                </div>
+                <p class="field-hint web-search-outbound-intro">
+                  {{ t("admin.shell.modelCalling.hints.webSearchFixedOutbound") }}
+                </p>
+                <div v-show="webSearchFixedOutboundForm.enabled" class="web-search-outbound-fields">
+                  <div class="web-search-outbound-field">
+                    <label class="web-search-outbound-label">
+                      {{ t("admin.shell.modelCalling.webSearchFixedOutboundHost") }}
+                    </label>
+                    <el-input
+                      v-model="webSearchFixedOutboundForm.host"
+                      class="outbound-line-input"
+                      :placeholder="t('admin.shell.modelCalling.placeholders.webSearchFixedOutboundHost')"
+                    />
+                  </div>
+                  <div class="web-search-outbound-field web-search-outbound-field--narrow">
+                    <label class="web-search-outbound-label">
+                      {{ t("admin.shell.modelCalling.webSearchFixedOutboundPort") }}
+                    </label>
+                    <el-input-number
+                      v-model="webSearchFixedOutboundForm.port"
+                      :min="1"
+                      :max="65535"
+                      :step="1"
+                      controls-position="right"
+                      class="num-wide web-search-outbound-port"
+                    />
+                  </div>
+                  <div class="web-search-outbound-field web-search-outbound-field--narrow">
+                    <label class="web-search-outbound-label">
+                      {{ t("admin.shell.modelCalling.webSearchFixedOutboundType") }}
+                    </label>
+                    <el-select v-model="webSearchFixedOutboundForm.type" class="outbound-line-input">
+                      <el-option label="HTTP" value="HTTP" />
+                      <el-option label="SOCKS" value="SOCKS" />
+                    </el-select>
+                  </div>
+                </div>
+              </div>
             </el-form-item>
             <el-form-item>
               <template #label>
@@ -678,10 +751,17 @@ import {
   validateInputGuard,
   parseMemoryEmbeddingModelId,
   parseWebSearchGroundingModelId,
+  parseWebSearchFixedSourcesJson,
+  WEB_SEARCH_FIXED_SOURCE_CODES,
   validateMemoryEmbeddingId,
+  type WebSearchFixedSourceCode,
   WEB_SEARCH_CACHE_DEFAULT,
   parseWebSearchCacheJson,
   serializeWebSearchCacheJson,
+  WEB_SEARCH_FIXED_OUTBOUND_DEFAULT,
+  parseWebSearchFixedOutboundJson,
+  serializeWebSearchFixedOutboundJson,
+  validateWebSearchFixedOutbound,
   normalizeSiteCrawlPreset,
   type SiteCrawlPresetValue,
 } from "@/views/system/modelCallingRuntimeFormModel";
@@ -743,6 +823,8 @@ const ragVectorDimensionOptions = [512, 768, 1024, 1536, 2048, 3072, 4096];
 const ragRetrievalMode = ref("");
 const ragRetrievalModeEffective = ref("milvus_es_hybrid");
 const webSearchGroundingModelId = ref<number | undefined>(undefined);
+const webSearchFixedSources = ref<WebSearchFixedSourceCode[]>([]);
+const webSearchFixedSourceCodes = WEB_SEARCH_FIXED_SOURCE_CODES;
 const vectorModelsForMemory = ref<LlmModelAdminView[]>([]);
 const webSearchModelsForBinding = ref<LlmModelAdminView[]>([]);
 const loadingVectorModels = ref(false);
@@ -802,10 +884,11 @@ const memoryEmbeddingSelectOptions = computed(() => {
   return rows;
 });
 
-const webSearchModelSelectOptions = computed(() => {
+const webSearchArkSelectOptions = computed(() => {
   void locale.value;
   const selected = webSearchGroundingModelId.value;
   const rows = webSearchModelsForBinding.value
+    .filter((m) => (m.integrationBackend ?? "").toUpperCase() === "VOLCENGINE_ARK_BOT")
     .slice()
     .sort((a, b) => {
       if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
@@ -816,7 +899,7 @@ const webSearchModelSelectOptions = computed(() => {
     })
     .map((m) => ({
       id: m.id,
-      label: `${m.displayName} (${m.alias}) · ${m.openaiModelId}`,
+      label: `${m.displayName} (${m.alias})`,
       disabled: !m.enabled && m.id !== selected,
     }));
   if (typeof selected === "number" && !rows.some((r) => r.id === selected)) {
@@ -838,6 +921,7 @@ const inputGuardForm = reactive({ ...INPUT_GUARD_DEFAULT });
 const webSearchRounds = ref(3);
 const suffixSlots = ref<string[]>([""]);
 const webSearchCacheForm = reactive({ ...WEB_SEARCH_CACHE_DEFAULT });
+const webSearchFixedOutboundForm = reactive({ ...WEB_SEARCH_FIXED_OUTBOUND_DEFAULT });
 const siteCrawlPreset = ref<SiteCrawlPresetValue>("BALANCED");
 const siteCrawlForm = reactive<SiteCrawlRuntimeForm>({ ...SITE_CRAWL_RUNTIME_DEFAULT });
 const siteCrawlPresetApplying = ref(false);
@@ -918,6 +1002,7 @@ async function applyModelCallingFromApi(mc: TenantShellModelCallingRuntime | und
   }
   memoryEmbeddingModelId.value = parseMemoryEmbeddingModelId(mc.memoryEmbeddingVectorModelId);
   webSearchGroundingModelId.value = parseWebSearchGroundingModelId(mc.webSearchGroundingModelId);
+  webSearchFixedSources.value = parseWebSearchFixedSourcesJson(mc.webSearchGroundingFixedSourcesJson);
   Object.assign(promptLimitsForm, parseChatPromptLimitsJson(mc.chatPromptLimitsJson ?? "{}"));
   Object.assign(memoryPolicyForm, parseMemoryPolicyJson(mc.memoryPolicyJson ?? "{}"));
   Object.assign(inputGuardForm, parseInputGuardJson(mc.chatInputGuardJson ?? "{}"));
@@ -930,6 +1015,10 @@ async function applyModelCallingFromApi(mc: TenantShellModelCallingRuntime | und
   Object.assign(
     webSearchCacheForm,
     parseWebSearchCacheJson(mc.webSearchGroundingCacheJson ?? "{}"),
+  );
+  Object.assign(
+    webSearchFixedOutboundForm,
+    parseWebSearchFixedOutboundJson(mc.webSearchFixedSourceOutboundJson ?? "{}"),
   );
   siteCrawlPresetApplying.value = true;
   const preset = normalizeSiteCrawlPreset(mc.siteCrawlPreset);
@@ -1070,18 +1159,24 @@ async function saveOutbound() {
 
 async function saveModelCalling() {
   const embStr = memoryEmbeddingModelId.value != null ? String(memoryEmbeddingModelId.value) : "";
-  const webModelStr =
-    webSearchGroundingModelId.value != null ? String(webSearchGroundingModelId.value) : "";
   if (!validateMemoryEmbeddingId(embStr)) {
     ElMessage.error(t("admin.shell.modelCalling.validation.embeddingId"));
     return;
   }
-  if (!validateMemoryEmbeddingId(webModelStr)) {
-    ElMessage.error(t("admin.shell.modelCalling.validation.webSearchModelId"));
+  const hasArk = webSearchGroundingModelId.value != null;
+  const hasFixed = webSearchFixedSources.value.length > 0;
+  if (!hasArk && !hasFixed) {
+    ElMessage.error(t("admin.shell.modelCalling.validation.webSearchGrounding"));
     return;
   }
+  const webModelStr = hasArk ? String(webSearchGroundingModelId.value) : "";
+  const fixedSourcesJson = JSON.stringify(webSearchFixedSources.value);
   if (!validateInputGuard(inputGuardForm)) {
     ElMessage.error(t("admin.shell.modelCalling.validation.guardRange"));
+    return;
+  }
+  if (!validateWebSearchFixedOutbound(webSearchFixedOutboundForm)) {
+    ElMessage.error(t("admin.shell.modelCalling.validation.webSearchFixedOutbound"));
     return;
   }
   savingModelCalling.value = true;
@@ -1089,12 +1184,14 @@ async function saveModelCalling() {
     const body: tenantShellApi.TenantShellModelCallingPutBody = {
       memoryEmbeddingVectorModelId: embStr.trim(),
       webSearchGroundingModelId: webModelStr.trim(),
+      webSearchGroundingFixedSourcesJson: fixedSourcesJson,
       chatPromptLimitsJson: serializeChatPromptLimitsJson(promptLimitsForm),
       memoryPolicyJson: serializeMemoryPolicyJson(memoryPolicyForm),
       chatInputGuardJson: serializeInputGuardJson(inputGuardForm),
       webSearchGroundingMultiRoundCount: String(webSearchRounds.value),
       webSearchGroundingRoundSuffixesJson: serializeSuffixJson(suffixSlots.value, webSearchRounds.value),
       webSearchGroundingCacheJson: serializeWebSearchCacheJson(webSearchCacheForm),
+      webSearchFixedSourceOutboundJson: serializeWebSearchFixedOutboundJson(webSearchFixedOutboundForm),
       siteCrawlPreset: siteCrawlPreset.value,
       siteCrawlRuntimeJson:
         siteCrawlPreset.value === "CUSTOM" ? serializeSiteCrawlRuntimeJson(siteCrawlForm) : "{}",
@@ -1555,5 +1652,58 @@ onMounted(() => {
   line-height: 1.5;
   word-break: break-word;
   font-variant-numeric: tabular-nums;
+}
+
+.web-search-outbound-panel {
+  width: 100%;
+  max-width: min(640px, 100%);
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-blank);
+  box-sizing: border-box;
+}
+
+.web-search-outbound-panel-head {
+  margin-bottom: 8px;
+}
+
+.web-search-outbound-intro {
+  margin: 0 0 12px;
+  padding: 0;
+}
+
+.web-search-outbound-fields {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px 14px;
+  align-items: end;
+}
+
+@media (max-width: 720px) {
+  .web-search-outbound-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+.web-search-outbound-field {
+  min-width: 0;
+}
+
+.web-search-outbound-field--narrow {
+  min-width: 120px;
+}
+
+.web-search-outbound-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--el-text-color-secondary);
+  line-height: 1.4;
+}
+
+.web-search-outbound-port {
+  width: 100%;
 }
 </style>

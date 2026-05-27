@@ -37,7 +37,8 @@ public final class WebSearchGroundingMetaSupport {
                                 textOrNull(c, "siteName"),
                                 textOrNull(c, "logoUrl"),
                                 textOrNull(c, "publishTime"),
-                                textOrNull(c, "extraJson")));
+                                textOrNull(c, "extraJson"),
+                                textOrNull(c, "sourceKey")));
             }
             return List.copyOf(out);
         } catch (Exception e) {

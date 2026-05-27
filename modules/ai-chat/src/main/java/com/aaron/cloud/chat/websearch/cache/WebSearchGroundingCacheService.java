@@ -43,12 +43,22 @@ public class WebSearchGroundingCacheService {
         return tenantRuntimeSettingApplicationService.webSearchGroundingCachePolicy(tenantId);
     }
 
-    public String configScopeHash(int configuredRounds, List<String> suffixes) {
+    public String configScopeHash(
+            int configuredRounds, List<String> suffixes, List<String> sortedFixedSourceCodes, Long arkModelId) {
         StringBuilder sb = new StringBuilder();
         sb.append(configuredRounds).append('|');
         if (suffixes != null) {
             for (String s : suffixes) {
                 sb.append(s == null ? "" : s).append('\u0001');
+            }
+        }
+        sb.append('|');
+        if (arkModelId != null && arkModelId > 0L) {
+            sb.append("ark:").append(arkModelId).append(',');
+        }
+        if (sortedFixedSourceCodes != null) {
+            for (String code : sortedFixedSourceCodes) {
+                sb.append(code == null ? "" : code).append(',');
             }
         }
         return WebSearchQueryNormalizer.sha256Hex(sb.toString()).substring(0, 16);
@@ -300,7 +310,8 @@ public class WebSearchGroundingCacheService {
                             textOrNull(c, "siteName"),
                             textOrNull(c, "logoUrl"),
                             textOrNull(c, "publishTime"),
-                            textOrNull(c, "extraJson")));
+                            textOrNull(c, "extraJson"),
+                            textOrNull(c, "sourceKey")));
         }
         return List.copyOf(out);
     }
@@ -339,6 +350,9 @@ public class WebSearchGroundingCacheService {
             }
             if (r.extraJson() != null) {
                 o.put("extraJson", r.extraJson());
+            }
+            if (r.sourceKey() != null) {
+                o.put("sourceKey", r.sourceKey());
             }
         }
     }

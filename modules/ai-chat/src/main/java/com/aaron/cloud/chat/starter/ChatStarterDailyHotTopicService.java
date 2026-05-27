@@ -1,6 +1,7 @@
 package com.aaron.cloud.chat.starter;
 
 import com.aaron.cloud.chat.websearch.ChatWebSearchGroundingService;
+import com.aaron.cloud.chat.websearch.WebSearchGroundingPlanResolver;
 import com.aaron.cloud.common.api.dto.model.ModelChatRequest;
 import com.aaron.cloud.common.api.enums.chat.ChatStarterDailyBatchStatus;
 import com.aaron.cloud.common.api.enums.chat.ChatStarterPromptScene;
@@ -45,6 +46,7 @@ public class ChatStarterDailyHotTopicService {
     private final SysLlmModelRepository llmModelRepository;
     private final TenantRuntimeSettingApplicationService tenantRuntimeSettingApplicationService;
     private final ChatWebSearchGroundingService webSearchGroundingService;
+    private final WebSearchGroundingPlanResolver webSearchGroundingPlanResolver;
     private final ModelInvokePort modelInvokePort;
     private final ChatStarterDailyBatchRepository dailyBatchRepository;
     private final ChatStarterPromptRepository promptRepository;
@@ -75,14 +77,8 @@ public class ChatStarterDailyHotTopicService {
                             return row;
                         });
 
-        SysLlmModel webModel =
-                llmModelRepository
-                        .resolveWebSearchModel(
-                                tenantId,
-                                tenantRuntimeSettingApplicationService.webSearchGroundingModelId(tenantId))
-                        .orElse(null);
-        if (webModel == null) {
-            failBatch(batch, "租户未配置可用的联网搜索模型");
+        if (!webSearchGroundingPlanResolver.isAvailable(tenantId)) {
+            failBatch(batch, "租户未配置联网检索（火山模型或内置固定源）");
             return;
         }
 
@@ -91,8 +87,7 @@ public class ChatStarterDailyHotTopicService {
         TenantContextHolder.set(snap);
         try {
             var grounding =
-                    webSearchGroundingService.groundWithRaw(
-                            snap, webModel, HOT_SEARCH_QUERY, 0L);
+                    webSearchGroundingService.groundWithRaw(snap, HOT_SEARCH_QUERY, 0L);
             String summary =
                     grounding.bundle().summaryText() == null
                             ? ""

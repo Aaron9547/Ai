@@ -14,6 +14,10 @@ public interface PromptTemplateResolvePort {
 
     String renderUser(String promptCode, long tenantId, String locale, Map<String, String> variables);
 
+    String renderSystem(String promptCode, long tenantId, String locale, Map<String, String> variables);
+
+    String renderQuery(String promptCode, long tenantId, Map<String, String> variables);
+
     /** 按 {@code codePrefix_1}、{@code codePrefix_2} … 顺序收集 FRAGMENT，遇缺失即停。 */
     List<String> resolveFragmentSeries(String codePrefix, long tenantId, String locale);
 }

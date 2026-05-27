@@ -171,7 +171,8 @@ public class VolcArkBotWebSearchProvider implements WebSearchModelProvider {
                 blankToNull(siteName),
                 blankToNull(logoUrl),
                 blankToNull(publishTime),
-                extraJson);
+                extraJson,
+                null);
     }
 
     private List<WebSearchReference> parseBotUsageReferences(JsonNode root) {
@@ -220,7 +221,8 @@ public class VolcArkBotWebSearchProvider implements WebSearchModelProvider {
                 blankToNull(siteName),
                 blankToNull(logoUrl),
                 blankToNull(publishTime),
-                extraJson);
+                extraJson,
+                null);
     }
 
     private String buildExtraJson(JsonNode extra, JsonNode pluginData) {

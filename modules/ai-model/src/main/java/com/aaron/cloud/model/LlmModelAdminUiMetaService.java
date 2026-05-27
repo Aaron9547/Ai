@@ -23,6 +23,8 @@ import org.springframework.context.MessageSource;
 import org.springframework.context.NoSuchMessageException;
 import org.springframework.stereotype.Service;
 
+import static com.aaron.cloud.common.api.enums.llm.WebSearchFixedSource.*;
+
 /**
  * 管理端可配置模型 UI 元数据：Tab、列表列、表单字段与下拉选项均由本服务从枚举/注册表生成；新增 {@link LlmModelKind} 或对接枚举时在此补全描述即可驱动前端。
  *
@@ -106,9 +108,7 @@ public class LlmModelAdminUiMetaService {
     }
 
     private static String webSearchProviderMessageKey(LlmWebSearchProvider p) {
-        return switch (p) {
-            case VOLCENGINE_ARK_BOT -> "llm.meta.webSearchProvider.VOLCENGINE_ARK_BOT";
-        };
+        return "llm.meta.webSearchProvider." + p.name();
     }
 
     private List<EnumOption> connectorKindOptions(Locale locale) {

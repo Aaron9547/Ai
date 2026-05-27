@@ -5,17 +5,17 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 联网搜索模型（{@link LlmModelKind#WEB_SEARCH}）的对接实现；WEB_SEARCH 行在 {@code llm_model.integration_backend} 存本枚举 {@link #code}。
+ * {@link LlmModelKind#WEB_SEARCH} 行在 {@code llm_model.integration_backend} 存的对接实现（仅火山 Ark Bot 联网模型）。
  *
- * <p>{@link #VOLCENGINE_ARK_BOT}：对 {@link com.aaron.cloud.common.modelcfg.entity.SysLlmModel#getOpenaiBaseUrl()} 规范化后 POST Ark
- * Bot Chat Completions；{@code openai_model_id} 存 Bot ID；{@code api_key_cipher} 存 Ark API Key。
+ * <p>DDG / 维基 / Google News RSS / 百度新闻等见 {@link WebSearchFixedSource}，由代码注册，不在模型表配置。
  */
 @Getter
 @RequiredArgsConstructor
 public enum LlmWebSearchProvider {
-    VOLCENGINE_ARK_BOT("VOLCENGINE_ARK_BOT");
+    VOLCENGINE_ARK_BOT("VOLCENGINE_ARK_BOT", true);
 
     @EnumValue private final String code;
+    private final boolean requiresApiKey;
 
     public static LlmWebSearchProvider fromCode(String raw) {
         if (raw == null || raw.isBlank()) {

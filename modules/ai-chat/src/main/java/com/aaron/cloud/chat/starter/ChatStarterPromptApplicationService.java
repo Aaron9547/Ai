@@ -8,6 +8,7 @@ import com.aaron.cloud.common.chat.ChatStarterPromptRepository;
 import com.aaron.cloud.common.chat.entity.ChatStarterEvent;
 import com.aaron.cloud.common.chat.entity.ChatStarterPrompt;
 import com.aaron.cloud.common.context.TenantContextHolder;
+import com.aaron.cloud.chat.websearch.WebSearchGroundingPlanResolver;
 import com.aaron.cloud.common.modelcfg.SysLlmModelRepository;
 import com.aaron.cloud.chat.prompt.ChatPromptTemplateSupport;
 import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService;
@@ -27,6 +28,7 @@ public class ChatStarterPromptApplicationService {
     private final ChatStarterEventRepository eventRepository;
     private final SysLlmModelRepository llmModelRepository;
     private final TenantRuntimeSettingApplicationService tenantRuntimeSettingApplicationService;
+    private final WebSearchGroundingPlanResolver webSearchGroundingPlanResolver;
     private final ChatStarterDailyHotTopicService dailyHotTopicService;
     private final ChatPromptTemplateSupport chatPromptTemplateSupport;
 
@@ -71,11 +73,7 @@ public class ChatStarterPromptApplicationService {
 
         List<ChatStarterPrompt> pool =
                 promptRepository.listEnabledForRuntime(tenantId, scene, BeijingTime.today());
-        boolean webAvail =
-                llmModelRepository
-                        .resolveWebSearchModel(
-                                tenantId, tenantRuntimeSettingApplicationService.webSearchGroundingModelId(tenantId))
-                        .isPresent();
+        boolean webAvail = webSearchGroundingPlanResolver.isAvailable(tenantId);
         List<ChatStarterPrompt> filtered =
                 pool.stream()
                         .filter(p -> matchesCaps(p, thinkingEnabled, webSearchEnabled, webAvail))

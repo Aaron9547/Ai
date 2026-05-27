@@ -12,6 +12,7 @@ import com.aaron.cloud.chat.dto.ChatRegenerateRequest;
 import com.aaron.cloud.chat.dto.ChatSendPayload;
 import com.aaron.cloud.chat.websearch.ChatWebSearchGroundingService;
 import com.aaron.cloud.chat.websearch.WebGroundingBundle;
+import com.aaron.cloud.chat.websearch.WebSearchGroundingPlanResolver;
 import com.aaron.cloud.chat.websearch.WebSearchStreamGroundingSession;
 import com.aaron.cloud.chat.dto.ChatStarterPromptDtos;
 import com.aaron.cloud.chat.knowledgeplanet.KnowledgePlanetIngestService;
@@ -125,6 +126,7 @@ public class ChatApplicationService {
     private final MemoryAbstractAsyncPublisher memoryAbstractAsyncPublisher;
     private final TenantRuntimeSettingApplicationService tenantRuntimeSettingApplicationService;
     private final ChatWebSearchGroundingService chatWebSearchGroundingService;
+    private final WebSearchGroundingPlanResolver webSearchGroundingPlanResolver;
     private final ChatTurnDigestApplicationService chatTurnDigestApplicationService;
     private final KnowledgePlanetIngestService knowledgePlanetIngestService;
     private final ChatStarterFollowUpService chatStarterFollowUpService;
@@ -367,15 +369,17 @@ public class ChatApplicationService {
         return out;
     }
 
-    /** C 端是否展示「联网」开关：租户可解析出联网检索模型（绑定 id 或 {@code sort_order} 默认）。 */
+    /** C 端是否展示「联网」开关：租户已启用火山 Ark 和/或内置固定源。 */
     public boolean isWebSearchAvailableForCurrentTenant() {
         var snap = TenantContextHolder.require();
-        return resolveWebSearchModelForTenant(snap.getTenantId()).isPresent();
+        return webSearchGroundingPlanResolver.isAvailable(snap.getTenantId());
     }
 
-    private java.util.Optional<SysLlmModel> resolveWebSearchModelForTenant(long tenantId) {
-        return llmModelRepository.resolveWebSearchModel(
-                tenantId, tenantRuntimeSettingApplicationService.webSearchGroundingModelId(tenantId));
+    private void assertWebSearchQuotaAllowsSend(long tenantId) {
+        webSearchGroundingPlanResolver
+                .resolve(tenantId)
+                .arkModel()
+                .ifPresent(llmTokenQuotaCoordinator::assertQuotaAllowsSend);
     }
 
     public SseEmitter streamUserMessage(long conversationId, ChatSendPayload payload) {
@@ -411,14 +415,12 @@ public class ChatApplicationService {
         }
 
         if (payload.isWebSearchEnabled()) {
-            SysLlmModel webRel =
-                    resolveWebSearchModelForTenant(snap.getTenantId())
-                            .orElseThrow(
-                                    () ->
-                                            new ResponseStatusException(
-                                                    HttpStatus.BAD_REQUEST,
-                                                    "租户未配置可用的联网搜索模型，请在「外观与模型调用」绑定或在「大模型管理」启用联网搜索实例"));
-            llmTokenQuotaCoordinator.assertQuotaAllowsSend(webRel);
+            if (!webSearchGroundingPlanResolver.isAvailable(snap.getTenantId())) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "租户未配置联网检索，请在「外观与模型调用」启用火山联网模型和/或内置固定源");
+            }
+            assertWebSearchQuotaAllowsSend(snap.getTenantId());
         }
 
         List<Long> attIds = payload.getAttachmentIds() == null ? List.of() : payload.getAttachmentIds();
@@ -711,11 +713,12 @@ public class ChatApplicationService {
                 snap.getTenantId(),
                 conversationId,
                 millisSince(openT0));
-        final SysLlmModel webSearchModelForStream =
+        final boolean webSearchActiveForStream =
                 payload.isWebSearchEnabled()
-                        ? resolveWebSearchModelForTenant(snap.getTenantId())
-                                .orElseThrow(() -> new IllegalStateException("联网搜索模型不可用"))
-                        : null;
+                        && webSearchGroundingPlanResolver.isAvailable(snap.getTenantId());
+        if (payload.isWebSearchEnabled() && !webSearchActiveForStream) {
+            throw new IllegalStateException("联网检索不可用");
+        }
         final ArrayList<WebSearchReference> webSearchRefsForStream = new ArrayList<>();
         if (!attachments.isEmpty()) {
             var attSys = new ModelChatRequest.MessageTurn();
@@ -775,7 +778,7 @@ public class ChatApplicationService {
                                 conversationId,
                                 millisSince(openAssistantWallMs));
                         long streamStartedAt = System.currentTimeMillis();
-                        if (payload.isWebSearchEnabled() && webSearchModelForStream != null) {
+                        if (webSearchActiveForStream) {
                             log.info(
                                     "[对话] ⑰ 开始联网搜索增强：租户 {}，会话 {}，距开放助手开始 {}ms",
                                     snap.getTenantId(),
@@ -786,7 +789,6 @@ public class ChatApplicationService {
                             WebSearchStreamGroundingSession webSession =
                                     chatWebSearchGroundingService.groundForChatStream(
                                             snap,
-                                            webSearchModelForStream,
                                             augmentedUserText,
                                             conversationId,
                                             cumulative ->
@@ -1082,14 +1084,12 @@ public class ChatApplicationService {
         }
 
         if (payload.isWebSearchEnabled()) {
-            SysLlmModel webRel =
-                    resolveWebSearchModelForTenant(snap.getTenantId())
-                            .orElseThrow(
-                                    () ->
-                                            new ResponseStatusException(
-                                                    HttpStatus.BAD_REQUEST,
-                                                    "租户未配置可用的联网搜索模型，请在「外观与模型调用」绑定或在「大模型管理」启用联网搜索实例"));
-            llmTokenQuotaCoordinator.assertQuotaAllowsSend(webRel);
+            if (!webSearchGroundingPlanResolver.isAvailable(snap.getTenantId())) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "租户未配置联网检索，请在「外观与模型调用」启用火山联网模型和/或内置固定源");
+            }
+            assertWebSearchQuotaAllowsSend(snap.getTenantId());
         }
 
         List<Long> attIds = payload.getAttachmentIds() == null ? List.of() : payload.getAttachmentIds();

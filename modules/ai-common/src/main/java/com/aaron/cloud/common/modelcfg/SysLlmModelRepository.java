@@ -6,6 +6,7 @@ import com.aaron.cloud.common.api.enums.llm.LlmModelStatus;
 import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
 import com.aaron.cloud.common.modelcfg.mapper.SysLlmModelMapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -152,18 +153,32 @@ public class SysLlmModelRepository {
      * 解析租户联网检索模型：优先 {@code configuredId}（须为本租户启用且 {@link LlmModelKind#WEB_SEARCH}），否则 {@link #pickDefaultWebSearchModel}。
      */
     public Optional<SysLlmModel> resolveWebSearchModel(long tenantId, Optional<Long> configuredId) {
-        if (configuredId != null && configuredId.isPresent()) {
-            Optional<SysLlmModel> bound =
-                    findById(tenantId, configuredId.get())
-                            .filter(
-                                    m ->
-                                            m.getModelKind() == LlmModelKind.WEB_SEARCH
-                                                    && m.getStatus() == LlmModelStatus.ACTIVE);
-            if (bound.isPresent()) {
-                return bound;
+        List<SysLlmModel> list = resolveWebSearchModels(tenantId, configuredId.map(List::of).orElse(List.of()));
+        return list.isEmpty() ? Optional.empty() : Optional.of(list.get(0));
+    }
+
+    /**
+     * 解析并行联网源：按 {@code configuredIds} 顺序返回本租户启用且 {@link LlmModelKind#WEB_SEARCH} 的行；列表为空时回退 {@link #pickDefaultWebSearchModel} 单条。
+     */
+    public List<SysLlmModel> resolveWebSearchModels(long tenantId, List<Long> configuredIds) {
+        if (configuredIds != null && !configuredIds.isEmpty()) {
+            List<SysLlmModel> out = new ArrayList<>();
+            for (Long id : configuredIds) {
+                if (id == null || id <= 0L) {
+                    continue;
+                }
+                findById(tenantId, id)
+                        .filter(
+                                m ->
+                                        m.getModelKind() == LlmModelKind.WEB_SEARCH
+                                                && m.getStatus() == LlmModelStatus.ACTIVE)
+                        .ifPresent(out::add);
+            }
+            if (!out.isEmpty()) {
+                return List.copyOf(out);
             }
         }
-        return pickDefaultWebSearchModel(tenantId);
+        return pickDefaultWebSearchModel(tenantId).map(List::of).orElse(List.of());
     }
 
     /** 默认对话语言模型：{@code sort_order} 升序后 {@code id} 升序第一条。 */

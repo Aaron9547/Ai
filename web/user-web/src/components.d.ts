@@ -10,6 +10,8 @@ declare module 'vue' {
   export interface GlobalComponents {
     AnchorMotionToolbar: typeof import('./components/motion/AnchorMotionToolbar.vue')['default']
     AppRouteTransition: typeof import('./components/motion/AppRouteTransition.vue')['default']
+    AuthEmailInput: typeof import('./components/auth/AuthEmailInput.vue')['default']
+    AuthEmailSuffixChips: typeof import('./components/auth/AuthEmailSuffixChips.vue')['default']
     BrandMark: typeof import('./components/BrandMark.vue')['default']
     ChatBrandRail: typeof import('./components/chat/ChatBrandRail.vue')['default']
     ChatQuickPromptBar: typeof import('./components/chat/ChatQuickPromptBar.vue')['default']
@@ -21,6 +23,7 @@ declare module 'vue' {
     DailyRecommendSidebar: typeof import('./components/chat/DailyRecommendSidebar.vue')['default']
     DailyRecommendSkeleton: typeof import('./components/chat/DailyRecommendSkeleton.vue')['default']
     ElAlert: typeof import('element-plus/es')['ElAlert']
+    ElAutocomplete: typeof import('element-plus/es')['ElAutocomplete']
     ElButton: typeof import('element-plus/es')['ElButton']
     ElConfigProvider: typeof import('element-plus/es')['ElConfigProvider']
     ElDialog: typeof import('element-plus/es')['ElDialog']

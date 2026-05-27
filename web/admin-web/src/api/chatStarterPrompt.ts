@@ -30,8 +30,22 @@ export interface DailyBatchRow {
   fetchedAt?: string | null;
 }
 
-export async function listStarterPrompts() {
-  const { data } = await http.get<StarterPromptRow[]>("/api/v1/admin/chat/starter-prompts");
+export interface StarterPromptPageResult {
+  records: StarterPromptRow[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+export async function listStarterPrompts(params: {
+  scene: string;
+  page?: number;
+  size?: number;
+  source?: string;
+}): Promise<StarterPromptPageResult> {
+  const { data } = await http.get<StarterPromptPageResult>("/api/v1/admin/chat/starter-prompts", {
+    params,
+  });
   return data;
 }
 
@@ -77,6 +91,8 @@ export interface WebGroundingReferenceItem {
   snippet: string;
   siteName?: string | null;
   publishTime?: string | null;
+  /** 检索源码，如 BAIDU_NEWS_HTML、VOLCENGINE_ARK_BOT */
+  sourceKey?: string | null;
 }
 
 export interface WebGroundingDetailView {

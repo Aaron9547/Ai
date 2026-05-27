@@ -38,10 +38,23 @@ public final class PromptTemplateBuiltinCatalog {
                 你是资讯推荐编辑。根据联网检索摘要与用户画像，输出今日个性化资讯卡片列表。
                 只输出 JSON 数组，不要 markdown，不要解释。每项字段：
                 tag（领域标签，2～8字）、title（标题，12～48字）、summary（摘要，24～120字）、
-                source（来源媒体名）、date（发布日期 yyyy-MM-dd，未知可写今日）、            url（可点击链接，须 http/https，且必须从【联网引用列表】中原样选取，禁止编造域名）。
-                共 5～8 条，内容不重复、与画像相关；若无画像则输出通用热点资讯。
-                示例：[{"tag":"科技","title":"…","summary":"…","source":"新华网","date":"2026-05-21","url":"https://…"}]
+                source（来源媒体名）、date（发布日期 yyyy-MM-dd，不得晚于今日 ${today}；须来自检索摘要中的发布时间，无法判断时写 ${today}）、
+                url（可点击链接，须 http/https，且必须从【联网引用列表】中原样选取，禁止编造域名）。
+                共 5～8 条，内容须为近期真实资讯，禁止编造未来日期或虚构事件；若无画像则输出通用热点资讯。
+                示例：[{"tag":"科技","title":"…","summary":"…","source":"新华网","date":"${today}","url":"https://…"}]
                 """);
+        register(
+                "daily_recommend_search_query",
+                PromptTemplateKind.QUERY,
+                PromptTemplateDomain.WEB,
+                "*",
+                "今日中国 科技 财经 教育 社会 校园 热点资讯 最新 ${year}");
+        register(
+                "daily_recommend_search_query_profile",
+                PromptTemplateKind.QUERY,
+                PromptTemplateDomain.WEB,
+                "*",
+                "今日最新资讯 热点新闻 与以下用户兴趣相关：${profile_excerpt} ${year}");
         register(
                 "starter_hot_topic_structure",
                 PromptTemplateKind.SYSTEM,
@@ -220,6 +233,39 @@ public final class PromptTemplateBuiltinCatalog {
                 PromptTemplateDomain.RAG,
                 "zh-CN",
                 "（若与当前问题无关请忽略，并优先依据联网检索结果作答）");
+        register(
+                "web_search_query_rewrite_system",
+                PromptTemplateKind.SYSTEM,
+                PromptTemplateDomain.WEB,
+                "zh-CN",
+                """
+                你是搜索引擎检索词专家。把用户的聊天内容压缩成一行「检索查询词」，供新闻站、RSS、HTML 搜索等抓取；不是写给 AI 的回答。
+
+                规则：
+                1. 只输出一行检索词，≤ 60 个汉字（或等价英文词）；禁止解释、markdown、引号、编号、换行。
+                2. 保留：主题词、专有名词、地域（如中国/上海）、时间意图（今日/本周/最近/${year}年）；多主题用空格分隔，不要写成完整问句。
+                3. 删除：对 AI 的称呼与指令、礼貌用语（请/帮我）、「联网/搜索/查一下」等动作词、与检索无关的格式要求。
+                4. 热点/资讯类可保留「热点 资讯 最新」等检索常用词；用户已列出关键词时做去重与归一化，勿擅自编造具体日期（除非用户写明）。
+                5. 禁止拒答或说明无法联网；只做关键词抽取。
+
+                示例：
+                用户：请联网搜今天中国科技财经教育热点
+                检索词：中国 科技 财经 教育 热点 资讯 今日 最新
+
+                用户：2026年6G进展
+                检索词：6G 进展 中国 ${year} 最新
+                """);
+        register(
+                "web_search_query_rewrite_user",
+                PromptTemplateKind.USER,
+                PromptTemplateDomain.WEB,
+                "zh-CN",
+                """
+                当前日期：${today}（${year} 年）
+                将下列用户消息改写为一行检索查询词（仅输出检索词本身）：
+
+                ${user_message}
+                """);
         register(
                 "websearch_summary_header",
                 PromptTemplateKind.FRAGMENT,

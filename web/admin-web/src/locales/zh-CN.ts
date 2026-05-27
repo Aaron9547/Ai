@@ -533,9 +533,22 @@ export default {
         memoryEmbeddingPh: "不选择则按服务端默认",
         memoryEmbeddingOrphan: "已配置 id={id}，列表中无此模型（可保留或另选）",
         vectorModelsLoadFailed: "VECTOR 模型列表加载失败，请稍后刷新页面",
-        webSearchModel: "联网检索模型（WEB_SEARCH）",
-        webSearchModelPlaceholder: "请选择租户绑定的联网实例",
+        webSearchArkModel: "火山联网模型（Ark Bot，可选）",
+        webSearchArkPlaceholder: "不选则仅使用下方内置固定源",
+        webSearchFixedSources: "内置固定源（可多选并行）",
+        webSearchFixedOutbound: "固定源 HTTP 代理（访问境外站）",
+        webSearchFixedOutboundEnabled: "启用代理",
+        webSearchFixedOutboundHost: "代理主机",
+        webSearchFixedOutboundPort: "端口",
+        webSearchFixedOutboundType: "类型",
         webSearchModelOrphan: "已配置 id={id}，列表中无此模型（可保留或另选）",
+        webSearchModelsEmpty: "请先在「大模型管理 → 联网搜索」创建并启用火山 Ark WEB_SEARCH 实例",
+        fixedSources: {
+          DUCKDUCKGO_HTML: "DuckDuckGo HTML",
+          WIKIPEDIA_REST: "维基百科 API",
+          GOOGLE_NEWS_RSS: "Google News RSS",
+          BAIDU_NEWS_HTML: "百度新闻 HTML",
+        },
         webSearchModelsLoadFailed: "WEB_SEARCH 模型列表加载失败，请稍后刷新页面",
         webSearchRounds: "联网检索轮数（1～10）",
         roundSuffixRound: "第 {n} 轮问句后缀",
@@ -567,6 +580,8 @@ export default {
           regexPatterns: "越狱正则（每行一条）",
         },
         hints: {
+          webSearchFixedOutbound:
+            "对应 WEB_SEARCH_FIXED_SOURCE_OUTBOUND_JSON。仅影响 DDG / Google News / 维基 / 百度等内置固定源出站；火山 Ark 不受影响。\n本地 Clash 请选 HTTP、填面板「HTTP 代理」主机与端口（常见 127.0.0.1:7890，非 SOCKS）。未启用时直连或走 application.yml 进程默认。",
           webSearchCache:
             "对应 WEB_SEARCH_GROUNDING_CACHE_JSON。需 Redis；语义近邻依赖上方「记忆嵌入模型」。{} 保存后按服务端内置默认生效。",
           sensitiveWords: "每行一个词或短语；子串命中即拦截。",
@@ -577,6 +592,7 @@ export default {
             "Spring 6 字段 Cron（秒 分 时 日 月 周）。进程每分钟 tick 一次，仅在与本表达式同一分钟触发该租户的联网热点生成。",
         },
         placeholders: {
+          webSearchFixedOutboundHost: "127.0.0.1",
           starterDailyHotCron: "0 0 6 * * *",
           blockedReplyTemplate: "示例：抱歉，该内容无法继续处理，请调整表述后重试。",
           sensitiveWords: "每行一条，示例：\n赌博网站\n代写论文",
@@ -585,11 +601,17 @@ export default {
         validation: {
           embeddingId: "记忆嵌入模型 id 须为数字主键或留空",
           webSearchModelId: "联网检索模型 id 须为数字主键或留空",
+          webSearchGrounding: "请至少启用火山联网模型或一个内置固定源",
+          webSearchFixedOutbound: "启用代理时须填写主机，端口 1～65535",
           guardRange: "最短字符须 ≥1，且最长 ≥ 最短",
         },
         tooltips: {
-          webSearchModel:
-            "写入 WEB_SEARCH_GROUNDING_MODEL_ID。\n对话开启「联网」、每日热点等前置检索均使用此 WEB_SEARCH 实例；选项来自「大模型管理 → 联网搜索」。\n留空：按该 Tab 内 sort_order 最小且启用的实例作为默认（与旧行为一致）。\n保存时须为启用状态的 WEB_SEARCH 行。",
+          webSearchArkModel:
+            "写入 WEB_SEARCH_GROUNDING_MODEL_ID。\n仅火山 Ark Bot 联网大模型（WEB_SEARCH 行，integration_backend=VOLCENGINE_ARK_BOT）；可留空。",
+          webSearchFixedSources:
+            "写入 WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON。\nDDG / 维基 / Google News / 百度新闻等由代码内置，无需在大模型管理建模型行；与 Ark 同轮并行检索；至少启用 Ark 或一项固定源。\n国内网络建议勾选「百度新闻」；境外源连不通时会快速失败并记 WARN，不阻断其它源。",
+          webSearchFixedOutbound:
+            "写入 WEB_SEARCH_FIXED_SOURCE_OUTBOUND_JSON。本地梯子访问境外固定源时启用并填写 Clash HTTP 代理口（常见 7890）。",
           memoryEmbedding:
             "写入 MEMORY_EMBEDDING_VECTOR_MODEL_ID。\n用户分层记忆写入 Milvus 时使用的嵌入模型，选项来自「模型管理」中 VECTOR。\n清空：不调用上游嵌入接口，服务端用 RagQueryEmbeddingHasher 按用户正文与当前向量维数生成确定性占位向量，避免异步写入因嵌入失败而中断（非真实语义向量，检索效果弱于配置好的 VECTOR）。\n此外：配置的 id 不存在、类型非 VECTOR、模型未启用、API Key 解密失败或上游嵌入异常时，也会回退到同一套占位向量逻辑。",
           ragVectorDimension:

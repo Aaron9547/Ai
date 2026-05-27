@@ -63,7 +63,7 @@
 
           <ul v-else class="rec-list" role="list">
             <li v-for="item in recommendations" :key="item.id" role="listitem">
-              <DailyRecommendCard :item="item" />
+              <DailyRecommendCard :item="item" :recommend-date="recommendDate" />
             </li>
           </ul>
         </div>
@@ -147,6 +147,7 @@ const planetWeekly = ref<KnowledgePlanetWeeklyLatest | null>(null);
 const {
   status,
   recommendations,
+  recommendDate,
   errorMessage,
   retryAllowed,
   refreshAllowed,

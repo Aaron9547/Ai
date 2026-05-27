@@ -53,11 +53,9 @@
                 <div v-show="tab === 'login'" class="auth-panel auth-panel--login">
                   <el-form class="auth-form" label-position="top" @submit.prevent="onLogin">
                     <el-form-item :label="t('auth.email')" required>
-                      <el-input
+                      <AuthEmailInput
                         v-model="loginUser"
-                        type="email"
                         autocomplete="username"
-                        maxlength="128"
                         :placeholder="t('auth.emailPh')"
                       />
                     </el-form-item>
@@ -83,11 +81,9 @@
                 <div v-show="tab === 'reg'" class="auth-panel auth-panel--reg">
                   <el-form class="auth-form" label-position="top" @submit.prevent="onRegister">
                     <el-form-item :label="t('auth.email')" required>
-                      <el-input
+                      <AuthEmailInput
                         v-model="regEmail"
-                        type="email"
                         autocomplete="email"
-                        maxlength="128"
                         :placeholder="t('auth.emailPh')"
                       />
                     </el-form-item>
@@ -168,6 +164,7 @@ import {
   openAuthSendCodeErrorMessage,
 } from "../utils/openAuthHttpErrors";
 import { saveUserMemberships } from "../utils/userMembershipStorage";
+import AuthEmailInput from "./auth/AuthEmailInput.vue";
 import BrandMark from "./BrandMark.vue";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

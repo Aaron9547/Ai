@@ -5,11 +5,13 @@ import com.aaron.cloud.chat.dto.ChatDailyRecommendDtos.DailyRecommendItemView;
 import com.aaron.cloud.chat.dto.ChatDailyRecommendDtos.DailyRecommendResponse;
 import com.aaron.cloud.chat.recommend.ChatDailyRecommendJsonSupport.DailyRecommendItemRecord;
 import com.aaron.cloud.chat.websearch.ChatWebSearchGroundingService;
+import com.aaron.cloud.chat.websearch.WebSearchGroundingPlanResolver;
 import com.aaron.cloud.chat.websearch.WebSearchReference;
 import com.aaron.cloud.common.api.dto.model.ModelChatRequest;
 import com.aaron.cloud.common.api.enums.chat.ChatStarterDailyBatchStatus;
 import com.aaron.cloud.common.api.enums.llm.LlmModelKind;
 import com.aaron.cloud.common.api.ports.ModelInvokePort;
+import com.aaron.cloud.common.api.ports.PromptTemplateResolvePort;
 import com.aaron.cloud.common.chat.ChatUserDailyRecommendRepository;
 import com.aaron.cloud.common.chat.entity.ChatUserDailyRecommend;
 import com.aaron.cloud.common.context.TenantContextHolder;
@@ -26,6 +28,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
@@ -38,24 +41,16 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ChatUserDailyRecommendService {
 
-    private static final String STRUCTURE_SYSTEM =
-            """
-            你是资讯推荐编辑。根据联网检索摘要与用户画像，输出今日个性化资讯卡片列表。
-            只输出 JSON 数组，不要 markdown，不要解释。每项字段：
-            tag（领域标签，2～8字）、title（标题，12～48字）、summary（摘要，24～120字）、
-            source（来源媒体名）、date（发布日期 yyyy-MM-dd，未知可写今日）、            url（可点击链接，须 http/https，且必须从【联网引用列表】中原样选取，禁止编造域名）。
-            共 5～8 条，内容不重复、与画像相关；若无画像则输出通用热点资讯。
-            示例：[{"tag":"科技","title":"…","summary":"…","source":"新华网","date":"2026-05-21","url":"https://…"}]
-            """;
-
     private final ChatUserDailyRecommendRepository recommendRepository;
     private final ChatDailyRecommendJsonSupport jsonSupport;
     private final SysLlmModelRepository llmModelRepository;
     private final TenantRuntimeSettingApplicationService tenantRuntimeSettingApplicationService;
     private final ChatWebSearchGroundingService webSearchGroundingService;
+    private final WebSearchGroundingPlanResolver webSearchGroundingPlanResolver;
     private final ModelInvokePort modelInvokePort;
     private final UserProfileApplicationService userProfileApplicationService;
     private final ChatDailyRecommendProfileIngest profileIngest;
+    private final PromptTemplateResolvePort promptTemplates;
 
     private final ConcurrentHashMap<String, Object> generationLocks = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Boolean> generationInflight = new ConcurrentHashMap<>();
@@ -218,23 +213,17 @@ public class ChatUserDailyRecommendService {
 
     private void generateAndPersist(TenantSnapshot snap, String subjectKey, ChatUserDailyRecommend batch) {
         long tenantId = snap.getTenantId();
-        SysLlmModel webModel =
-                llmModelRepository
-                        .resolveWebSearchModel(
-                                tenantId,
-                                tenantRuntimeSettingApplicationService.webSearchGroundingModelId(tenantId))
-                        .orElse(null);
-        if (webModel == null) {
-            failBatch(batch, "租户未配置可用的联网搜索模型");
+        if (!webSearchGroundingPlanResolver.isAvailable(tenantId)) {
+            failBatch(batch, "租户未配置联网检索（火山模型或内置固定源）");
             return;
         }
 
         String profileHint =
                 userProfileApplicationService.buildPromptAddendum(snap, "今日资讯推荐", false);
-        String searchQuery = buildSearchQuery(profileHint);
+        String searchQuery = buildSearchQuery(tenantId, profileHint);
         try {
             var grounding =
-                    webSearchGroundingService.groundWithRaw(snap, webModel, searchQuery, 0L);
+                    webSearchGroundingService.groundWithRaw(snap, searchQuery, 0L);
             String summary =
                     grounding.bundle().summaryText() == null
                             ? ""
@@ -251,6 +240,7 @@ public class ChatUserDailyRecommendService {
                             summary,
                             grounding.bundle().references());
             items = ChatDailyRecommendUrlSupport.attachReferenceUrls(items, grounding.bundle().references());
+            items = normalizeItemDates(items, BeijingTime.today());
             if (items.isEmpty()) {
                 failBatch(batch, "语言模型未解析出有效推荐条目");
                 return;
@@ -293,9 +283,15 @@ public class ChatUserDailyRecommendService {
             return List.of();
         }
 
+        LocalDate today = BeijingTime.today();
         var sys = new ModelChatRequest.MessageTurn();
         sys.setRole("system");
-        sys.setContent(STRUCTURE_SYSTEM);
+        sys.setContent(
+                promptTemplates.renderSystem(
+                        "daily_recommend_structure",
+                        tenantId,
+                        "zh-CN",
+                        Map.of("today", today.toString())));
         var user = new ModelChatRequest.MessageTurn();
         user.setRole("user");
         StringBuilder body = new StringBuilder();
@@ -319,14 +315,52 @@ public class ChatUserDailyRecommendService {
         return jsonSupport.parseItems(acc.toString());
     }
 
-    private static String buildSearchQuery(String profileHint) {
+    private String buildSearchQuery(long tenantId, String profileHint) {
+        int year = BeijingTime.today().getYear();
         if (profileHint != null && !profileHint.isBlank()) {
             String excerpt = profileHint.length() > 200 ? profileHint.substring(0, 200) : profileHint;
-            return "今日最新资讯 热点新闻 与以下用户兴趣相关："
-                    + excerpt.replace('\n', ' ')
-                    + " 2026";
+            return promptTemplates.renderQuery(
+                    "daily_recommend_search_query_profile",
+                    tenantId,
+                    Map.of("profile_excerpt", excerpt.replace('\n', ' '), "year", String.valueOf(year)));
         }
-        return "今日中国 科技 财经 教育 社会 校园 热点资讯 最新 2026";
+        return promptTemplates.renderQuery(
+                "daily_recommend_search_query", tenantId, Map.of("year", String.valueOf(year)));
+    }
+
+    private static List<DailyRecommendItemRecord> normalizeItemDates(
+            List<DailyRecommendItemRecord> items, LocalDate today) {
+        if (items == null || items.isEmpty()) {
+            return List.of();
+        }
+        List<DailyRecommendItemRecord> out = new ArrayList<>(items.size());
+        for (DailyRecommendItemRecord item : items) {
+            out.add(
+                    new DailyRecommendItemRecord(
+                            item.tag(),
+                            item.title(),
+                            item.summary(),
+                            item.source(),
+                            normalizePublishDate(item.date(), today),
+                            item.url()));
+        }
+        return out;
+    }
+
+    private static String normalizePublishDate(String raw, LocalDate today) {
+        String todayStr = today.toString();
+        if (raw == null || raw.isBlank() || "—".equals(raw.trim())) {
+            return todayStr;
+        }
+        try {
+            LocalDate parsed = LocalDate.parse(raw.trim());
+            if (parsed.isAfter(today)) {
+                return todayStr;
+            }
+            return parsed.toString();
+        } catch (Exception ignored) {
+            return todayStr;
+        }
     }
 
     private void failBatch(ChatUserDailyRecommend batch, String message) {
