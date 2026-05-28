@@ -6,8 +6,10 @@ import com.aaron.cloud.chat.dto.ChatMessageFeedbackRequest;
 import com.aaron.cloud.chat.dto.ChatMessageView;
 import com.aaron.cloud.chat.dto.ChatRegenerateRequest;
 import com.aaron.cloud.chat.dto.ChatSendPayload;
+import com.aaron.cloud.chat.dto.ConversationTokenTotalView;
 import com.aaron.cloud.chat.dto.LlmModelOption;
 import com.aaron.cloud.chat.dto.WebSearchAvailabilityView;
+import com.aaron.cloud.common.context.TenantContextHolder;
 import com.aaron.cloud.common.web.rest.OpenV1ControllerBases;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -55,6 +57,16 @@ public class ChatConversationController extends OpenV1ControllerBases.Chat {
     public List<ChatMessageView> listMessages(@PathVariable("conversationId") String conversationId) {
         long id = chatApplicationService.requireOpenConversationId(conversationId);
         return chatApplicationService.listConversationMessages(id);
+    }
+
+    /** 会话内全部模型调用 token 计量合计（联网插件、编排 LLM、主回答等）。 */
+    @GetMapping("/conversations/{conversationId}/token-total")
+    public ConversationTokenTotalView conversationTokenTotal(
+            @PathVariable("conversationId") String conversationId) {
+        long id = chatApplicationService.requireOpenConversationId(conversationId);
+        var snap = TenantContextHolder.require();
+        return new ConversationTokenTotalView(
+                chatApplicationService.conversationTokenTotalFromMetering(snap.getTenantId(), id));
     }
 
     @PatchMapping("/conversations/{conversationId}")

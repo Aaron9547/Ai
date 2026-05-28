@@ -29,11 +29,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
- * 将用户对话中成功的联网检索沉淀到 {@code chat_starter_prompt}（scene=WEB_KNOWLEDGE），
- * 供管理端「推荐问题与猜你想问」维护，并在后续相似问句时优先本地命中以减少外呼。
+ * 将成功的联网检索沉淀到 {@code chat_starter_prompt}（scene=WEB_KNOWLEDGE），
+ * 供管理端「联网知识库」维护，并在后续相似问句时优先本地命中以减少外呼。
  *
- * <p>今日推荐、每日热点等系统任务虽共用 {@link com.aaron.cloud.chat.websearch.ChatWebSearchGroundingService}，
- * 但 {@code conversationId<=0} 时不写入本表（见 {@code finalizeGrounding}）。
+ * <p>{@link ChatStarterPromptSource} 区分对话沉淀、今日智能洞察、每日热点等来源，便于运营辨认。
  *
  * <p>同一问句允许多版本：{@code freshHours} 内合并更新同一条；超过后外呼产生的新结果插入新行，
  * 以便资讯更新后仍能保留历史并在命中时取最新有效版本。
@@ -77,24 +76,34 @@ public class ChatWebSearchKnowledgeService {
 
     /** 联网检索成功后写入或刷新知识库条目（异步虚拟线程，不阻塞主对话）。 */
     public void ingestAsync(
-            long tenantId, String rawQuery, String normalizedQuery, WebGroundingBundle bundle) {
-        if (bundle == null || !hasContent(bundle) || normalizedQuery.isBlank()) {
+            long tenantId,
+            String rawQuery,
+            String normalizedQuery,
+            WebGroundingBundle bundle,
+            ChatStarterPromptSource source) {
+        if (bundle == null || !hasContent(bundle) || normalizedQuery.isBlank() || source == null) {
             return;
         }
         String raw = rawQuery == null ? "" : rawQuery.trim();
         String norm = normalizedQuery;
         WebGroundingBundle copy = bundle;
+        ChatStarterPromptSource src = source;
         Thread.startVirtualThread(
                 () -> {
                     try {
-                        ingestSync(tenantId, raw, norm, copy);
+                        ingestSync(tenantId, raw, norm, copy, src);
                     } catch (Exception ex) {
                         log.warn("[联网知识库] 沉淀失败 tenantId={} q={}", tenantId, norm, ex);
                     }
                 });
     }
 
-    void ingestSync(long tenantId, String rawQuery, String normalizedQuery, WebGroundingBundle bundle) {
+    void ingestSync(
+            long tenantId,
+            String rawQuery,
+            String normalizedQuery,
+            WebGroundingBundle bundle,
+            ChatStarterPromptSource source) {
         if (bundle == null || !hasContent(bundle) || normalizedQuery.isBlank()) {
             return;
         }
@@ -121,7 +130,7 @@ public class ChatWebSearchKnowledgeService {
             return;
         }
 
-        insertNewRow(tenantId, promptText, normalizedQuery, hash, json, weight);
+        insertNewRow(tenantId, promptText, normalizedQuery, hash, json, weight, source);
         if (latest.isPresent()) {
             log.info(
                     "[联网知识库] 新增版本 tenantId={} hash={} priorId={}",
@@ -139,11 +148,12 @@ public class ChatWebSearchKnowledgeService {
             String normalizedQuery,
             String hash,
             String json,
-            int weight) {
+            int weight,
+            ChatStarterPromptSource source) {
         var row = new ChatStarterPrompt();
         row.setTenantId(tenantId);
         row.setScene(ChatStarterPromptScene.WEB_KNOWLEDGE);
-        row.setSource(ChatStarterPromptSource.WEB_SEARCH_GROUNDING);
+        row.setSource(source);
         row.setPromptText(promptText);
         row.setQueryNormalized(normalizedQuery);
         row.setQueryNormHash(hash);

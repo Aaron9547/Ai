@@ -50,6 +50,9 @@ public class LlmUsagePersistenceService {
             if (m.durationMs() != null && m.durationMs() > 0) {
                 ref.put("durationMs", m.durationMs());
             }
+            if (m.usageSceneCode() != null && !m.usageSceneCode().isBlank()) {
+                ref.put("usageScene", m.usageSceneCode());
+            }
             ev.setRefJson(objectMapper.writeValueAsString(ref));
             meteringUsageEventRepository.insert(ev);
         } catch (Exception ex) {

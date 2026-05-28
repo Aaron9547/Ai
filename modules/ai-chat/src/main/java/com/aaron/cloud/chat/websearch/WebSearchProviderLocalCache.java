@@ -38,7 +38,8 @@ public class WebSearchProviderLocalCache {
         if (normalizedQuery == null
                 || normalizedQuery.isBlank()
                 || source == null
-                || bundle == null) {
+                || bundle == null
+                || isEmpty(bundle)) {
             return;
         }
         if (store.size() >= MAX_ENTRIES) {
@@ -46,6 +47,12 @@ public class WebSearchProviderLocalCache {
         }
         String key = cacheKey(tenantId, source, normalizedQuery);
         store.put(key, new Entry(bundle, Instant.now().plus(DEFAULT_TTL)));
+    }
+
+    private static boolean isEmpty(WebGroundingBundle bundle) {
+        boolean noRefs = bundle.references() == null || bundle.references().isEmpty();
+        boolean noSummary = bundle.summaryText() == null || bundle.summaryText().isBlank();
+        return noRefs && noSummary;
     }
 
     private static String cacheKey(long tenantId, WebSearchFixedSource source, String normalizedQuery) {

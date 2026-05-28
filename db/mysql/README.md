@@ -56,7 +56,12 @@
 - **`migrate_0_1_256_message_center.sql`**：表 **`msg_channel`**、**`msg_template`**、**`msg_delivery_log`**；从 **`AUTH_REGISTER_VERIFICATION_JSON`** / **`KNOWLEDGE_PLANET_EMAIL_JSON`** 迁移 SMTP 与模板（**`SUBSTRING_INDEX` + `LIKE`**，**不依赖** `JSON_OBJECT`/`JSON_EXTRACT`/`JSON_UNQUOTE`，兼容 MySQL 5.6）；与 **`pom.xml` `0.1.256-SNAPSHOT`** 一致；**已建库须手工执行**；新库以 **`schema_v1.sql`** + **`gw_api_endpoint_catalog_inserts.sql`** 为准可跳过。
 - **`migrate_0_1_256_message_center_menu.sql`**：管理端菜单 **`MESSAGE_CENTER`**（**消息发送**，挂在「租户配置」下）；**已建库**若侧栏无入口则**须执行**；新库以 **`schema_v1.sql`** 菜单种子为准可跳过。
 - **`migrate_0_1_258_chat_conversation_public_id.sql`**：**`chat_conversation.public_id`**（开放 API 会话标识，非自增）；**已建库须手工执行**；新库以 **`schema_v1.sql`** 为准可跳过。
+- **`migrate_0_1_258_planet_ingest_tag_order_v2.sql`**：知识星球 **`planet_ingest_system`** v2（原则约束 tag 顺序 + 正反例）；配合 **`KnowledgePlanetTopicTagsNormalizer`** 入库重排；**已建库须手工执行**；新库 **`schema_v1.sql`** 已含。
+- **`migrate_0_1_258_planet_cluster_by_primary_tag.sql`**（历史）：v1 沉淀提示词；若未执行 v2 请改执行 **`migrate_0_1_258_planet_ingest_tag_order_v2.sql`**。
 - **`migrate_0_1_258_daily_recommend_prompt_templates.sql`**：今日智能洞察 **`daily_recommend_*`** 提示词种子（UPDATE 结构化 SYSTEM + INSERT 两条 QUERY）；**已建库须手工执行**；新库 **`schema_v1.sql`** 已含。
+- **`migrate_0_1_258_daily_recommend_search_query_dates.sql`**：今日洞察 / 每日热点检索词加入 **`${today}`/`${yesterday}`/`${region_phrase}`** 及昨日补充 QUERY；**已建库须手工执行**；新库 **`schema_v1.sql`** 已含。
 - **`migrate_0_1_258_web_search_query_rewrite.sql`**：对话联网问句重写提示词 v1 种子；**已建库须手工执行**。
 - **`migrate_0_1_258_web_search_query_rewrite_v2.sql`**：问句重写提示词 v2（检索词专家 + `${today}`/`${year}`）；**已建库若已执行 v1 须再手工执行**；新库 **`schema_v1.sql`** 已为 v2。
+- **`migrate_0_1_258_web_search_fixed_keywords.sql`**：固定源渠道三关键词拆分 **`web_search_fixed_keywords_*`**；**已建库须手工执行**；新库 **`schema_v1.sql`** 已含。
+- **`migrate_0_1_258_web_search_fixed_keywords_context.sql`**：固定源关键词 system 提示词补充「结合近几轮对话理解追问」；**已建库须手工执行**；新库 **`schema_v1.sql`** 已含。
 - **`migrate_0_1_258_web_search_multi_source.sql`**：联网纠偏——默认种子 **`WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON`**（DDG+维基）、清空废弃 **`WEB_SEARCH_GROUNDING_MODEL_IDS_JSON`**；**已建库须手工执行**；Ark 仍用 **`WEB_SEARCH_GROUNDING_MODEL_ID`**。

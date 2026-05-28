@@ -48,13 +48,25 @@ public final class PromptTemplateBuiltinCatalog {
                 PromptTemplateKind.QUERY,
                 PromptTemplateDomain.WEB,
                 "*",
-                "今日中国 科技 财经 教育 社会 校园 热点资讯 最新 ${year}");
+                "${region_phrase}中国 科技 财经 教育 社会 校园 热点资讯 ${today} 今日 ${yesterday} 昨日 最新");
         register(
                 "daily_recommend_search_query_profile",
                 PromptTemplateKind.QUERY,
                 PromptTemplateDomain.WEB,
                 "*",
-                "今日最新资讯 热点新闻 与以下用户兴趣相关：${profile_excerpt} ${year}");
+                "${region_phrase}今日${today} 昨日${yesterday} 最新资讯 热点新闻 用户兴趣：${profile_excerpt}");
+        register(
+                "daily_recommend_search_query_yesterday",
+                PromptTemplateKind.QUERY,
+                PromptTemplateDomain.WEB,
+                "*",
+                "${region_phrase}中国 科技 财经 教育 社会 校园 ${yesterday} 昨日 热点 补充");
+        register(
+                "daily_recommend_search_query_yesterday_profile",
+                PromptTemplateKind.QUERY,
+                PromptTemplateDomain.WEB,
+                "*",
+                "${region_phrase}${yesterday} 昨日 热点资讯 补充 用户兴趣：${profile_excerpt}");
         register(
                 "starter_hot_topic_structure",
                 PromptTemplateKind.SYSTEM,
@@ -70,7 +82,7 @@ public final class PromptTemplateBuiltinCatalog {
                 PromptTemplateKind.QUERY,
                 PromptTemplateDomain.WEB,
                 "*",
-                "今日中国网络与社会热点新闻 科技 财经 文化 2026 最新");
+                "中国 网络与社会热点 科技 财经 文化 ${today} 今日 ${yesterday} 昨日 最新");
         register(
                 "turn_digest_system",
                 PromptTemplateKind.SYSTEM,
@@ -139,12 +151,18 @@ public final class PromptTemplateBuiltinCatalog {
                 只输出严格 JSON（不要 markdown），格式：
                 {"skip":true}
                 或
-                {"skip":false,"title":"不超过24字标题","summary":"1～3句摘要","topicTags":["主题分类","子标签1","子标签2"]}
-                topicTags 第一项为「知识星球」主题名（如：排序算法、Java、前端工程化），决定星系中的星球；第 2 项起为子标签（技术名、语言、算法名等，便于与历史节点关联）。
+                {"skip":false,"title":"不超过24字标题","summary":"1～3句摘要","topicTags":["主题星球名","子标签1","子标签2"]}
+                topicTags 约定：
+                - topicTags[0] 为本轮最具体的「知识星球」主题名（2～8 字名词短语，如：硬件超频、油价、6G、排序算法），单独即可回答「这条知识属于哪颗星」；决定星图分星。
+                - topicTags[1] 及之后为子标签（技术名、实体、时间等），便于同星内关联。
+                - 比本轮主题更宽的上位词、学科门类、科普/常识/入门/综合类修饰，不得放在第 0 项；若需要请放在后面。
+                正反例（顺序）：
+                - 好：["油价","汽柴油","通识科普"]
+                - 坏：["通识科普","油价","汽柴油"]
                 规则：
                 1. 若用户消息中给出【已有主题星球】，且本轮属于同一技术领域，topicTags[0] 必须与列表中某一项完全一致，勿为相近话题另造新名（如已有「排序算法」则勿写「Java排序」「算法」）。
-                2. 同一对话内的追问、换语言实现、对比、延伸（如「五种语言冒泡排序」接在「十大排序」后）应沉淀，skip 仅用于纯寒暄或完全无新信息的重复。
-                3. 子标签尽量包含能串联历史节点的关键词（如：排序、冒泡、Java、多语言）。
+                2. 同一对话内的追问、换语言实现、对比、延伸应沉淀，skip 仅用于纯寒暄或完全无新信息的重复。
+                3. 子标签尽量包含能串联同主题历史节点的关键词（如：超频、DDR5、汽柴油）。
                 """);
         register(
                 "planet_weekly_system",
@@ -263,6 +281,34 @@ public final class PromptTemplateBuiltinCatalog {
                 """
                 当前日期：${today}（${year} 年）
                 将下列用户消息改写为一行检索查询词（仅输出检索词本身）：
+
+                ${user_message}
+                """);
+        register(
+                "web_search_fixed_keywords_system",
+                PromptTemplateKind.SYSTEM,
+                PromptTemplateDomain.WEB,
+                "zh-CN",
+                """
+                你是检索关键词拆分器。结合对话中已给出的最近几轮 user/assistant 与「当前这一轮」用户消息，拆成恰好 3 个短检索词，供 DuckDuckGo、新闻 RSS、HTML 源并行抓取。
+
+                规则：
+                1. 只输出 JSON 数组，恰好 3 个字符串；禁止 markdown、解释、换行。
+                2. 每个关键词 2～12 个汉字（或等价英文词）；覆盖不同检索角度（主题/实体/时间或地域）。
+                3. 删除礼貌用语与「联网/搜索」等动作词；可保留今日/最近/${year} 等时间意图。
+                4. 追问、指代（如「那昨天呢」）须结合上文补全检索意图，禁止脱离上文改写成无关主题。
+                5. 禁止拒答。
+
+                示例：["6G 试点","中国 通信","${year} 进展"]
+                """);
+        register(
+                "web_search_fixed_keywords_user",
+                PromptTemplateKind.USER,
+                PromptTemplateDomain.WEB,
+                "zh-CN",
+                """
+                当前日期：${today}（${year} 年）
+                输出恰好 3 个检索关键词的 JSON 数组：
 
                 ${user_message}
                 """);

@@ -56,9 +56,18 @@ public class AdminReadController extends ApiV1ControllerBases.AdminRead {
     public Object metering(
             @RequestParam(defaultValue = "1") long page,
             @RequestParam(defaultValue = "20") long size,
+            @RequestParam(required = false) Long filterTenantId,
+            @RequestParam(required = false) String usageScene) {
+        Long tid = AdminQueryTenantSupport.resolveAdminListTenantFilter(filterTenantId);
+        return meteringUsageEventRepository.pageForAdmin(tid, page, size, usageScene);
+    }
+
+    @GetMapping("/metering-events/usage-by-scene")
+    public java.util.List<com.aaron.cloud.common.metering.MeteringUsageBySceneView> meteringUsageByScene(
+            @RequestParam(defaultValue = "7") int days,
             @RequestParam(required = false) Long filterTenantId) {
         Long tid = AdminQueryTenantSupport.resolveAdminListTenantFilter(filterTenantId);
-        return meteringUsageEventRepository.pageForAdmin(tid, page, size);
+        return meteringUsageEventRepository.sumTokensGroupedByUsageScene(tid, days);
     }
 
     @GetMapping("/file-objects")

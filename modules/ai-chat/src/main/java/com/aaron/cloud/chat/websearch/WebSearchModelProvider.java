@@ -11,7 +11,8 @@ public interface WebSearchModelProvider {
     /**
      * @param row 租户 {@code llm_model} 行（须 {@code model_kind=WEB_SEARCH} 且已解密所需字段由调用方保证）
      * @param apiKeyPlaintext Ark API Key 明文
-     * @param userQueryPlaintext 用户问题（可与附件拼接后的文本）
+     * @param request Ark Bot messages（含画像、历史与本轮 user）
      */
-    WebSearchExecutionResult execute(SysLlmModel row, String apiKeyPlaintext, String userQueryPlaintext) throws Exception;
+    WebSearchExecutionResult execute(
+            SysLlmModel row, String apiKeyPlaintext, WebSearchArkInvokeRequest request) throws Exception;
 }

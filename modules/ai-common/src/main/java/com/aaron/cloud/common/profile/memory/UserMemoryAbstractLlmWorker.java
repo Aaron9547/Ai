@@ -1,6 +1,7 @@
 package com.aaron.cloud.common.profile.memory;
 
 import com.aaron.cloud.common.api.dto.model.ModelChatRequest;
+import com.aaron.cloud.common.api.enums.metering.LlmUsageScene;
 import com.aaron.cloud.common.api.enums.llm.LlmModelKind;
 import com.aaron.cloud.common.api.ports.ModelInvokePort;
 import com.aaron.cloud.common.api.ports.PromptTemplateResolvePort;
@@ -88,6 +89,7 @@ public class UserMemoryAbstractLlmWorker {
         req.setTenantId(tenantId);
         req.setModelAlias(alias.trim());
         req.setThinkingEnabled(false);
+        req.setUsageScene(LlmUsageScene.MEMORY_ABSTRACT.getCode());
         req.setMessages(turns);
 
         StringBuilder acc = new StringBuilder();

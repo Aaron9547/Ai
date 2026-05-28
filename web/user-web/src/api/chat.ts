@@ -138,6 +138,13 @@ export async function listConversationMessages(conversationId: string): Promise<
   return data;
 }
 
+export async function fetchConversationTokenTotal(conversationId: string): Promise<number> {
+  const { data } = await http.get<{ totalTokens?: number }>(
+    `/open/v1/chat/conversations/${encodeURIComponent(conversationId)}/token-total`,
+  );
+  return typeof data.totalTokens === "number" && data.totalTokens > 0 ? data.totalTokens : 0;
+}
+
 export interface ChatShareCreateResult {
   shareCode: string;
   sharePath: string;
@@ -248,7 +255,7 @@ export type StreamPart =
       bodySnippet?: string;
     }
   | { type: "followUpPrompts"; items: StarterPromptItem[] }
-  | { type: "end"; usage?: TokenUsageChunk; assistantMessageId?: number; durationMs?: number };
+  | { type: "end"; usage?: TokenUsageChunk; assistantMessageId?: number; durationMs?: number; conversationTokenTotal?: number };
 
 function parseSsePayload(raw: string): StreamPart | null {
   const t = raw.trim();
@@ -360,14 +367,20 @@ function parseSsePayload(raw: string): StreamPart | null {
       }
     }
     if (o.type === "end") {
+      const raw = o as {
+        usage?: TokenUsageChunk;
+        assistantMessageId?: number;
+        durationMs?: number;
+        conversationTokenTotal?: number;
+      };
       return {
         type: "end",
-        usage: o.usage,
+        usage: raw.usage,
         assistantMessageId:
-          typeof o.assistantMessageId === "number" ? o.assistantMessageId : undefined,
-        durationMs: typeof (o as { durationMs?: number }).durationMs === "number"
-          ? (o as { durationMs: number }).durationMs
-          : undefined,
+          typeof raw.assistantMessageId === "number" ? raw.assistantMessageId : undefined,
+        durationMs: typeof raw.durationMs === "number" ? raw.durationMs : undefined,
+        conversationTokenTotal:
+          typeof raw.conversationTokenTotal === "number" ? raw.conversationTokenTotal : undefined,
       };
     }
   } catch {

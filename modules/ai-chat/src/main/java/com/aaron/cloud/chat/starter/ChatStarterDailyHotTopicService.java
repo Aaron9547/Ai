@@ -3,11 +3,13 @@ package com.aaron.cloud.chat.starter;
 import com.aaron.cloud.chat.websearch.ChatWebSearchGroundingService;
 import com.aaron.cloud.chat.websearch.WebSearchGroundingPlanResolver;
 import com.aaron.cloud.common.api.dto.model.ModelChatRequest;
+import com.aaron.cloud.common.api.enums.metering.LlmUsageScene;
 import com.aaron.cloud.common.api.enums.chat.ChatStarterDailyBatchStatus;
 import com.aaron.cloud.common.api.enums.chat.ChatStarterPromptScene;
 import com.aaron.cloud.common.api.enums.chat.ChatStarterPromptSource;
 import com.aaron.cloud.common.api.enums.llm.LlmModelKind;
 import com.aaron.cloud.common.api.ports.ModelInvokePort;
+import com.aaron.cloud.common.api.ports.PromptTemplateResolvePort;
 import com.aaron.cloud.common.chat.ChatStarterDailyBatchRepository;
 import com.aaron.cloud.common.chat.ChatStarterPromptRepository;
 import com.aaron.cloud.common.chat.entity.ChatStarterDailyBatch;
@@ -23,6 +25,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -32,9 +35,6 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 public class ChatStarterDailyHotTopicService {
-
-    private static final String HOT_SEARCH_QUERY =
-            "今日中国网络与社会热点新闻 科技 财经 文化 2026 最新";
 
     private static final String STRUCTURE_SYSTEM =
             """
@@ -51,6 +51,7 @@ public class ChatStarterDailyHotTopicService {
     private final ChatStarterDailyBatchRepository dailyBatchRepository;
     private final ChatStarterPromptRepository promptRepository;
     private final ChatStarterPromptJsonSupport jsonSupport;
+    private final PromptTemplateResolvePort promptTemplates;
 
     public void refreshForTenant(long tenantId, boolean force) {
         LocalDate today = BeijingTime.today();
@@ -86,8 +87,18 @@ public class ChatStarterDailyHotTopicService {
                 TenantSnapshot.builder().tenantId(tenantId).build();
         TenantContextHolder.set(snap);
         try {
+            String searchQuery =
+                    promptTemplates.renderQuery(
+                            "starter_hot_search_query",
+                            tenantId,
+                            Map.of(
+                                    "today",
+                                    today.toString(),
+                                    "yesterday",
+                                    today.minusDays(1).toString()));
             var grounding =
-                    webSearchGroundingService.groundWithRaw(snap, HOT_SEARCH_QUERY, 0L);
+                    webSearchGroundingService.groundWithRaw(
+                            snap, searchQuery, 0L, ChatStarterPromptSource.HOT_TOPIC_DAILY);
             String summary =
                     grounding.bundle().summaryText() == null
                             ? ""
@@ -159,6 +170,7 @@ public class ChatStarterDailyHotTopicService {
         req.setTenantId(tenantId);
         req.setModelAlias(lang.getAlias());
         req.setThinkingEnabled(false);
+        req.setUsageScene(LlmUsageScene.HOT_TOPIC_DAILY.getCode());
         req.setMessages(List.of(sys, user));
         StringBuilder acc = new StringBuilder();
         modelInvokePort.streamCompletion(req, acc::append);

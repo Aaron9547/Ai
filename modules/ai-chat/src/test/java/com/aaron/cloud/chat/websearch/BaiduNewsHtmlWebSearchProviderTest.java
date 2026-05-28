@@ -26,4 +26,15 @@ class BaiduNewsHtmlWebSearchProviderTest {
         assertTrue(refs.get(0).snippet().contains("摘要"));
     }
 
+    @Test
+    void looksLikeCaptcha_detectsSecurityPage() {
+        String html =
+                """
+                <html><head><title>百度安全验证</title></head>
+                <body><script src="https://wappass.baidu.com/static/captcha/tuxing_v2.html"></script></body>
+                </html>
+                """;
+        assertTrue(BaiduNewsHtmlWebSearchProvider.looksLikeCaptcha(Jsoup.parse(html)));
+    }
+
 }

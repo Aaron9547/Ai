@@ -1,5 +1,6 @@
 package com.aaron.cloud.chat.websearch;
 
+import com.aaron.cloud.common.api.dto.model.ModelChatRequest;
 import com.aaron.cloud.common.api.enums.llm.LlmWebSearchProvider;
 import com.aaron.cloud.common.outbound.TenantOutboundResilienceRuntime;
 import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
@@ -18,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -25,6 +27,7 @@ import org.springframework.web.client.RestClient;
 /**
  * 火山引擎 Ark：Bot 非流式 Chat Completions（须 Bot 已开通联网能力）；请求/解析不依赖 volcengine SDK，避免版本锁定。
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class VolcArkBotWebSearchProvider implements WebSearchModelProvider {
@@ -41,13 +44,13 @@ public class VolcArkBotWebSearchProvider implements WebSearchModelProvider {
     }
 
     @Override
-    public WebSearchExecutionResult execute(SysLlmModel row, String apiKeyPlaintext, String userQueryPlaintext)
-            throws Exception {
+    public WebSearchExecutionResult execute(
+            SysLlmModel row, String apiKeyPlaintext, WebSearchArkInvokeRequest request) throws Exception {
         long tid = row.getTenantId() == null ? 0L : row.getTenantId();
         outboundTenantUpstreamQuarantine.assertStreamAllowed(tid);
         if (!outboundResilienceRuntime.effective(tid).isEnabled()) {
             try {
-                WebSearchExecutionResult r = doExecute(row, apiKeyPlaintext, userQueryPlaintext);
+                WebSearchExecutionResult r = doExecute(row, apiKeyPlaintext, request);
                 outboundTenantUpstreamQuarantine.recordTenantSuccess(tid);
                 return r;
             } catch (Exception e) {
@@ -62,7 +65,7 @@ public class VolcArkBotWebSearchProvider implements WebSearchModelProvider {
             throw OutboundCircuitBreakerSupport.circuitOpen(OutboundKind.LLM_WEB_SEARCH, row.getAlias());
         }
         try {
-            WebSearchExecutionResult r = doExecute(row, apiKeyPlaintext, userQueryPlaintext);
+            WebSearchExecutionResult r = doExecute(row, apiKeyPlaintext, request);
             cb.ifPresent(c -> c.onSuccess(System.nanoTime() - t0, TimeUnit.NANOSECONDS));
             outboundTenantUpstreamQuarantine.recordTenantSuccess(tid);
             return r;
@@ -77,8 +80,8 @@ public class VolcArkBotWebSearchProvider implements WebSearchModelProvider {
         }
     }
 
-    private WebSearchExecutionResult doExecute(SysLlmModel row, String apiKeyPlaintext, String userQueryPlaintext)
-            throws Exception {
+    private WebSearchExecutionResult doExecute(
+            SysLlmModel row, String apiKeyPlaintext, WebSearchArkInvokeRequest request) throws Exception {
         String url = ArkBotChatCompletionsUrl.normalize(row.getOpenaiBaseUrl());
         if (url.isBlank()) {
             throw new IllegalArgumentException("联网搜索模型未配置有效的 Ark Base URL");
@@ -92,9 +95,22 @@ public class VolcArkBotWebSearchProvider implements WebSearchModelProvider {
         body.put("model", botId);
         body.put("stream", false);
         ArrayNode messages = body.putArray("messages");
-        ObjectNode user = messages.addObject();
-        user.put("role", "user");
-        user.put("content", userQueryPlaintext == null ? "" : userQueryPlaintext);
+        List<ModelChatRequest.MessageTurn> turns =
+                request == null || request.messages() == null ? List.of() : request.messages();
+        if (turns.isEmpty()) {
+            ObjectNode user = messages.addObject();
+            user.put("role", "user");
+            user.put("content", "");
+        } else {
+            for (ModelChatRequest.MessageTurn turn : turns) {
+                if (turn == null || turn.getRole() == null) {
+                    continue;
+                }
+                ObjectNode node = messages.addObject();
+                node.put("role", turn.getRole().trim().toLowerCase());
+                node.put("content", turn.getContent() == null ? "" : turn.getContent());
+            }
+        }
 
         RestClient client = RestClient.builder().build();
         String respBody =
@@ -118,16 +134,35 @@ public class VolcArkBotWebSearchProvider implements WebSearchModelProvider {
         String summary =
                 root.path("choices").path(0).path("message").path("content").asText("").trim();
         List<WebSearchReference> refs = mergeReferences(root);
+        if (refs.isEmpty() && !summary.isBlank() && root.has("bot_usage")) {
+            log.debug(
+                    "[联网搜索] Ark 有摘要无结构化引用，请核对 bot_usage/references 字段；bot_usage 节点={}",
+                    root.path("bot_usage").isMissingNode() ? "无" : "有");
+        }
         return new WebSearchExecutionResult(new WebGroundingBundle(summary, refs), respBody);
     }
 
-    /** 根级 {@code references} 优先，再合并 {@code bot_usage} 内检索 {@code results}（按 URL 去重）。 */
+    /**
+     * 根级 {@code references} / {@code bot_chat_result_reference}、message 内引用、{@code bot_usage} 检索
+     * results（按 URL 去重）。
+     */
     private List<WebSearchReference> mergeReferences(JsonNode root) {
         Map<String, WebSearchReference> byKey = new LinkedHashMap<>();
         if (root.path("references").isArray()) {
             for (JsonNode n : root.path("references")) {
-                WebSearchReference r = mapReferenceNode(n);
-                putDedupe(byKey, r);
+                putDedupe(byKey, mapReferenceNode(n));
+            }
+        }
+        JsonNode botChatRefs = root.path("bot_chat_result_reference");
+        if (botChatRefs.isArray()) {
+            for (JsonNode n : botChatRefs) {
+                putDedupe(byKey, mapReferenceNode(n));
+            }
+        }
+        JsonNode msgRefs = root.path("choices").path(0).path("message").path("references");
+        if (msgRefs.isArray()) {
+            for (JsonNode n : msgRefs) {
+                putDedupe(byKey, mapReferenceNode(n));
             }
         }
         for (WebSearchReference r : parseBotUsageReferences(root)) {
@@ -175,6 +210,28 @@ public class VolcArkBotWebSearchProvider implements WebSearchModelProvider {
                 null);
     }
 
+    private static JsonNode firstResultsArray(JsonNode output) {
+        if (output == null || output.isMissingNode()) {
+            return output;
+        }
+        JsonNode[] candidates = {
+            output.path("data").path("data").path("results"),
+            output.path("data").path("results"),
+            output.path("results")
+        };
+        for (JsonNode c : candidates) {
+            if (c.isArray() && !c.isEmpty()) {
+                return c;
+            }
+        }
+        for (JsonNode c : candidates) {
+            if (c.isArray()) {
+                return c;
+            }
+        }
+        return output.path("data").path("data").path("results");
+    }
+
     private List<WebSearchReference> parseBotUsageReferences(JsonNode root) {
         List<WebSearchReference> list = new ArrayList<>();
         JsonNode details = root.path("bot_usage").path("action_details");
@@ -187,7 +244,7 @@ public class VolcArkBotWebSearchProvider implements WebSearchModelProvider {
                 continue;
             }
             for (JsonNode td : tools) {
-                JsonNode results = td.path("output").path("data").path("data").path("results");
+                JsonNode results = firstResultsArray(td.path("output"));
                 if (!results.isArray()) {
                     continue;
                 }

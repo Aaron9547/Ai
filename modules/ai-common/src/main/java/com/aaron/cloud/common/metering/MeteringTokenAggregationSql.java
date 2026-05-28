@@ -30,5 +30,8 @@ final class MeteringTokenAggregationSql {
     static final String MODEL_ALIAS_EXPR =
             "COALESCE(NULLIF(TRIM(BOTH '\"' FROM CAST(JSON_EXTRACT(ref_json, '$.modelAlias') AS CHAR(255))), ''), '-')";
 
+    static final String USAGE_SCENE_EXPR =
+            "COALESCE(NULLIF(TRIM(BOTH '\"' FROM CAST(JSON_EXTRACT(ref_json, '$.usageScene') AS CHAR(64))), ''), '-')";
+
     private MeteringTokenAggregationSql() {}
 }

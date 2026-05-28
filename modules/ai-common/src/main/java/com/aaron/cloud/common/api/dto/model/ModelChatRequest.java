@@ -22,6 +22,17 @@ public class ModelChatRequest {
 
     private List<MessageTurn> messages;
 
+    /** 对话场景传会话 id，写入计量 {@code ref_json.conversationId}；非对话编排可省略或传 {@code 0}。 */
+    private Long conversationId;
+
+    /** 为 true 时跳过流式结束后的自动 token 计量（极少数编排自行落库时使用）。 */
+    private Boolean skipUsageRecord;
+
+    /**
+     * {@link com.aaron.cloud.common.api.enums.metering.LlmUsageScene#getCode()}；写入计量 {@code ref_json.usageScene}。
+     */
+    private String usageScene;
+
     @JsonIgnore private transient Consumer<String> reasoningTokenConsumer;
 
     /** 流式最后一帧解析到 usage 时回调（由编排层落库计量、累加模型共用额度等） */

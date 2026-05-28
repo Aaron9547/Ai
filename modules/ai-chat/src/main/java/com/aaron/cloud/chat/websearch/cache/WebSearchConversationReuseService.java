@@ -59,8 +59,7 @@ public class WebSearchConversationReuseService {
             if (m.getRole() != ChatMessageRole.USER) {
                 continue;
             }
-            String contentNorm = WebSearchQueryNormalizer.normalize(m.getContent());
-            if (!normalizedQuery.equals(contentNorm)) {
+            if (!matchesNormalizedWebQuery(objectMapper, m, normalizedQuery)) {
                 continue;
             }
             if (m.getCreatedAt() == null) {
@@ -87,5 +86,15 @@ public class WebSearchConversationReuseService {
             return Optional.of(new WebGroundingBundle("", List.copyOf(refs)));
         }
         return Optional.empty();
+    }
+
+    private static boolean matchesNormalizedWebQuery(
+            ObjectMapper objectMapper, ChatMessage m, String normalizedQuery) {
+        String metaNorm = WebSearchGroundingMetaSupport.readQueryNormFromMeta(objectMapper, m.getMetaJson());
+        if (metaNorm != null && !metaNorm.isBlank()) {
+            return normalizedQuery.equals(metaNorm);
+        }
+        String contentNorm = WebSearchQueryNormalizer.normalize(m.getContent());
+        return normalizedQuery.equals(contentNorm);
     }
 }

@@ -1,6 +1,7 @@
 package com.aaron.cloud.chat.knowledgeplanet;
 
 import com.aaron.cloud.common.api.dto.model.ModelChatRequest;
+import com.aaron.cloud.common.api.enums.metering.LlmUsageScene;
 import com.aaron.cloud.common.api.enums.llm.LlmModelKind;
 import com.aaron.cloud.common.api.ports.ModelInvokePort;
 import com.aaron.cloud.common.knowledgeplanet.KnowledgePlanetTenantRuntime;
@@ -53,6 +54,7 @@ public class KnowledgePlanetLlmSupport {
         req.setTenantId(tenantId);
         req.setModelAlias(model.getAlias());
         req.setThinkingEnabled(false);
+        req.setUsageScene(LlmUsageScene.KNOWLEDGE_PLANET.getCode());
         req.setMessages(List.of(sys, user));
         StringBuilder acc = new StringBuilder();
         modelInvokePort.streamCompletion(req, acc::append);

@@ -7,6 +7,7 @@ import com.aaron.cloud.chat.dto.ChatMessageView;
 import com.aaron.cloud.chat.intent.ChatIntentStreamRouter;
 import com.aaron.cloud.chat.intent.IntentKeywordMatchHit;
 import com.aaron.cloud.chat.intent.IntentSseRoute;
+import com.aaron.cloud.common.api.enums.llm.LlmAnonymousAccess;
 import com.aaron.cloud.common.chat.entity.ChatIntentDefinition;
 import com.aaron.cloud.chat.dto.ChatRegenerateRequest;
 import com.aaron.cloud.chat.dto.ChatSendPayload;
@@ -19,6 +20,9 @@ import com.aaron.cloud.chat.knowledgeplanet.KnowledgePlanetIngestService;
 import com.aaron.cloud.chat.starter.ChatStarterFollowUpService;
 import com.aaron.cloud.chat.dto.WebSearchReferenceView;
 import com.aaron.cloud.chat.websearch.WebSearchReference;
+import com.aaron.cloud.chat.websearch.WebSearchUserContext;
+import com.aaron.cloud.chat.websearch.cache.WebSearchGroundingMetaSupport;
+import com.aaron.cloud.chat.websearch.cache.WebSearchQueryNormalizer;
 import com.aaron.cloud.chat.dto.PriorAssistantVersionView;
 import com.aaron.cloud.chat.dto.RagCitationView;
 import com.aaron.cloud.chat.dto.LlmModelOption;
@@ -29,7 +33,7 @@ import com.aaron.cloud.common.api.enums.chat.ChatMessageRole;
 import com.aaron.cloud.common.api.enums.chat.ChatMessageUserFeedback;
 import com.aaron.cloud.common.api.enums.chat.ConversationRecordStatus;
 import com.aaron.cloud.common.api.enums.intent.IntentRoute;
-import com.aaron.cloud.common.api.enums.llm.LlmAnonymousAccess;
+import com.aaron.cloud.common.api.enums.metering.LlmUsageScene;
 import com.aaron.cloud.common.api.enums.llm.LlmThinkingCapability;
 import com.aaron.cloud.common.api.dto.RagCitationHit;
 import com.aaron.cloud.common.api.ports.ModelInvokePort;
@@ -67,7 +71,7 @@ import com.aaron.cloud.common.modelcfg.LlmModelKindPolicy;
 import com.aaron.cloud.common.modelcfg.SysLlmModelRepository;
 import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
 import com.aaron.cloud.common.modelcfg.quota.LlmTokenQuotaCoordinator;
-import com.aaron.cloud.model.metering.LlmModelUsageRecorder;
+import com.aaron.cloud.common.metering.MeteringUsageEventRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -108,7 +112,7 @@ public class ChatApplicationService {
     private final ChatAttachmentRepository attachmentRepository;
     private final SysLlmModelRepository llmModelRepository;
     private final LlmTokenQuotaCoordinator llmTokenQuotaCoordinator;
-    private final LlmModelUsageRecorder llmModelUsageRecorder;
+    private final MeteringUsageEventRepository meteringUsageEventRepository;
     private final ModelInvokePort modelInvokePort;
     private final ObjectProvider<RagQueryPort> ragQueryPortProvider;
     private final RagRetrievalHitCounter ragRetrievalHitCounter;
@@ -306,8 +310,15 @@ public class ChatApplicationService {
     }
 
     /**
-     * 鍔╂墜娑堟伅褰撳墠鐗堜笌鍘嗗彶绋?{@code meta.usage.totalTokens} 涔嬪拰锛堢鐞嗙鎶芥杩戜技鍊硷級銆傛秷鎭潯鏁拌繃澶ф椂璺宠繃鑱氬悎浠ュ厤鍒楄〃椤佃秴鏃躲€?     */
+     * 会话内 token 合计：优先按计量流水 {@code ref_json.conversationId} 汇总（含联网插件、编排 LLM）；
+     * 无流水时回退助手消息 {@code meta.usage.totalTokens} 之和。
+     */
     private Integer sumAssistantTokensInConversation(long tenantId, long conversationId) {
+        long meteringTotal =
+                meteringUsageEventRepository.sumTokenQuantityByConversationId(tenantId, conversationId);
+        if (meteringTotal > 0L) {
+            return (int) Math.min(meteringTotal, Integer.MAX_VALUE);
+        }
         List<Long> ids = lnkRepository.listMessageIdsByConversationOrderByLinkIdAsc(conversationId);
         if (ids.size() > 400) {
             return null;
@@ -329,6 +340,12 @@ public class ChatApplicationService {
             }
         }
         return sum > 0 ? sum : 0;
+    }
+
+    /** 开放/管理端展示：会话内全部模型调用的 token 计量合计。 */
+    public int conversationTokenTotalFromMetering(long tenantId, long conversationId) {
+        long total = meteringUsageEventRepository.sumTokenQuantityByConversationId(tenantId, conversationId);
+        return (int) Math.min(total, Integer.MAX_VALUE);
     }
 
     private List<ChatMessageView> listConversationMessagesInternal(long tenantId, long conversationId) {
@@ -737,6 +754,8 @@ public class ChatApplicationService {
         modelReq.setDeviceId(snap.getDeviceId());
         modelReq.setModelAlias(payload.getModelAlias().trim());
         modelReq.setThinkingEnabled(!isMock && shouldStreamThinking(payload, modelCfg));
+        modelReq.setConversationId(conversationId);
+        modelReq.setUsageScene(LlmUsageScene.CHAT.getCode());
         modelReq.setMessages(turns);
 
         modelReq.setResolvedLlmModelIdRef(new AtomicReference<>());
@@ -777,7 +796,6 @@ public class ChatApplicationService {
                                 snap.getTenantId(),
                                 conversationId,
                                 millisSince(openAssistantWallMs));
-                        long streamStartedAt = System.currentTimeMillis();
                         if (webSearchActiveForStream) {
                             log.info(
                                     "[对话] ⑰ 开始联网搜索增强：租户 {}，会话 {}，距开放助手开始 {}ms",
@@ -786,10 +804,13 @@ public class ChatApplicationService {
                                     millisSince(openAssistantWallMs));
                             sendSseWebSearchStatus(emitter, seq, "searching");
                             long tWeb = System.currentTimeMillis();
+                            WebSearchUserContext webCtx =
+                                    WebSearchUserContext.forConversation(
+                                            augmentedUserText, historyTurns, 2);
                             WebSearchStreamGroundingSession webSession =
                                     chatWebSearchGroundingService.groundForChatStream(
                                             snap,
-                                            augmentedUserText,
+                                            webCtx,
                                             conversationId,
                                             cumulative ->
                                                     sendSseWebSearchRefFrames(emitter, seq, cumulative));
@@ -800,19 +821,20 @@ public class ChatApplicationService {
                                 webSearchRefsForStream.addAll(wbInitial.references());
                             }
                             sendSseWebSearchStatus(emitter, seq, "done");
-                            String webCtx = formatWebGroundingContent(wbInitial, snap.getTenantId());
+                            String webGroundingText =
+                                    formatWebGroundingContent(wbInitial, snap.getTenantId());
                             log.info(
                                     "[对话] ⑱ 联网首轮结束：引用 {} 条，{}注入模型提示词；本步 {}ms，距开放助手开始 {}ms；其余轮次后台补全；租户 {}，会话 {}",
                                     webSearchRefsForStream.size(),
-                                    webCtx != null && !webCtx.isBlank() ? "已" : "未",
+                                    webGroundingText != null && !webGroundingText.isBlank() ? "已" : "未",
                                     millisSince(tWeb),
                                     millisSince(openAssistantWallMs),
                                     snap.getTenantId(),
                                     conversationId);
-                            if (webCtx != null && !webCtx.isBlank()) {
+                            if (webGroundingText != null && !webGroundingText.isBlank()) {
                                 var webSys = new ModelChatRequest.MessageTurn();
                                 webSys.setRole("system");
-                                webSys.setContent(webCtx);
+                                webSys.setContent(webGroundingText);
                                 List<ModelChatRequest.MessageTurn> msgs = modelReq.getMessages();
                                 msgs.add(msgs.size() - 1, webSys);
                             }
@@ -873,29 +895,9 @@ public class ChatApplicationService {
                         CompletableFuture<List<String>> followUpInflight =
                                 chatStarterFollowUpService.startFollowUpGeneration(
                                         snap.getTenantId(),
+                                        conversationId,
                                         userQForFollowUp,
                                         assistantBuf.toString());
-                        long durationMs = System.currentTimeMillis() - streamStartedAt;
-                        if (!isMock && modelCfg != null) {
-                            SysLlmModel billingCfg = modelCfg;
-                            var resolvedRef = modelReq.getResolvedLlmModelIdRef();
-                            if (resolvedRef != null) {
-                                Long rid = resolvedRef.get();
-                                if (rid != null && !rid.equals(billingCfg.getId())) {
-                                    billingCfg =
-                                            llmModelRepository
-                                                    .findById(snap.getTenantId(), rid)
-                                                    .orElse(billingCfg);
-                                }
-                            }
-                            llmModelUsageRecorder.recordAfterLlmUsage(
-                                    snap,
-                                    billingCfg,
-                                    payload.getModelAlias().trim(),
-                                    conversationId,
-                                    usageRef.get(),
-                                    durationMs);
-                        }
                         var asst = new ChatMessage();
                         asst.setTenantId(snap.getTenantId());
                         asst.setRole(ChatMessageRole.ASSISTANT);
@@ -926,11 +928,16 @@ public class ChatApplicationService {
                                                 sseEndPayload(
                                                         usageRef.get(),
                                                         asst.getId(),
-                                                        millisSince(openAssistantWallMs)))
+                                                        millisSince(openAssistantWallMs),
+                                                        conversationTokenTotalFromMetering(
+                                                                snap.getTenantId(), conversationId)))
                                         .id(String.valueOf(seq.incrementAndGet())));
                         if (pairedUserMessageId != null && payload.isWebSearchEnabled()) {
                             mergeWebSearchReferencesIntoUserMessageMeta(
-                                    pairedUserMessageId, snap.getTenantId(), webSearchRefsForStream);
+                                    pairedUserMessageId,
+                                    snap.getTenantId(),
+                                    webSearchRefsForStream,
+                                    WebSearchQueryNormalizer.normalize(augmentedUserText));
                         }
                         ragRetrievalHitCounter.recordHits(snap.getTenantId(), ragHitsForStream);
                         log.info(
@@ -939,7 +946,7 @@ public class ChatApplicationService {
                                 conversationId,
                                 PipelineLogZh.intentRoute(intent),
                                 assistantBuf.length(),
-                                durationMs,
+                                millisSince(openAssistantWallMs),
                                 usageRef.get() != null ? usageRef.get().totalTokens() : 0);
                         emitter.complete();
                         final String assistantTextForMemory = assistantBuf.toString();
@@ -1014,7 +1021,9 @@ public class ChatApplicationService {
                                                     sseEndPayload(
                                                             usageRef.get(),
                                                             null,
-                                                            millisSince(openAssistantWallMs)))
+                                                            millisSince(openAssistantWallMs),
+                                                            conversationTokenTotalFromMetering(
+                                                                    snap.getTenantId(), conversationId)))
                                             .id(String.valueOf(seq.incrementAndGet())));
                         } catch (Exception sendEx) {
                             log.warn("[对话] SSE 推送错误帧失败", sendEx);
@@ -1294,7 +1303,13 @@ public class ChatApplicationService {
                         sendSseFollowUpPrompts(emitter, seq, blockedFollowUp);
                         emitter.send(
                                 SseEmitter.event()
-                                        .data(sseEndPayload(null, asst.getId(), 0L))
+                                        .data(
+                                                sseEndPayload(
+                                                        null,
+                                                        asst.getId(),
+                                                        0L,
+                                                        conversationTokenTotalFromMetering(
+                                                                snap.getTenantId(), conversationId)))
                                         .id(String.valueOf(seq.incrementAndGet())));
                         emitter.complete();
                     } catch (Exception e) {
@@ -1493,7 +1508,8 @@ public class ChatApplicationService {
         return objectMapper.writeValueAsString(o);
     }
 
-    private String sseEndPayload(ModelTokenUsage usage, Long assistantMessageId, long durationMs)
+    private String sseEndPayload(
+            ModelTokenUsage usage, Long assistantMessageId, long durationMs, int conversationTokenTotal)
             throws JsonProcessingException {
         ObjectNode o = objectMapper.createObjectNode();
         o.put("type", "end");
@@ -1502,6 +1518,9 @@ public class ChatApplicationService {
         }
         if (durationMs > 0L) {
             o.put("durationMs", durationMs);
+        }
+        if (conversationTokenTotal > 0) {
+            o.put("conversationTokenTotal", conversationTokenTotal);
         }
         if (usage != null && usage.totalTokens() > 0) {
             ObjectNode u = o.putObject("usage");
@@ -1868,7 +1887,10 @@ public class ChatApplicationService {
     }
 
     private void mergeWebSearchReferencesIntoUserMessageMeta(
-            long userMessageId, long tenantId, List<WebSearchReference> refs) {
+            long userMessageId,
+            long tenantId,
+            List<WebSearchReference> refs,
+            String normalizedWebQuery) {
         var opt = messageRepository.findById(userMessageId, tenantId);
         if (opt.isEmpty() || opt.get().getRole() != ChatMessageRole.USER) {
             return;
@@ -1892,9 +1914,13 @@ public class ChatApplicationService {
         try {
             if (refs == null || refs.isEmpty()) {
                 root.remove("webSearchReferences");
+                root.remove(WebSearchGroundingMetaSupport.META_WEB_SEARCH_QUERY_NORM);
             } else {
                 ArrayNode warr = root.putArray("webSearchReferences");
                 fillWebSearchReferencesArray(warr, refs);
+                if (normalizedWebQuery != null && !normalizedWebQuery.isBlank()) {
+                    root.put(WebSearchGroundingMetaSupport.META_WEB_SEARCH_QUERY_NORM, normalizedWebQuery);
+                }
             }
             messageRepository.updateMetaJson(userMessageId, tenantId, objectMapper.writeValueAsString(root));
         } catch (Exception e) {

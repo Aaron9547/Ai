@@ -193,7 +193,7 @@ final class WebSearchFixedSourceOutboundConfig {
         return null;
     }
 
-    private static WebSearchFixedSourceOutboundConfig direct() {
+    static WebSearchFixedSourceOutboundConfig direct() {
         return new WebSearchFixedSourceOutboundConfig(Mode.DIRECT, Proxy.NO_PROXY, "NO_PROXY");
     }
 

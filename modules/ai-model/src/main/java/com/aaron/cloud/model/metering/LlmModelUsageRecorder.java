@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service;
  * 任意 {@link LlmModelKind} 在产生 usage 后：Redis 额度增量 + {@code llm_model.tokens_used} + 计量流水。
  *
  * <p>C 端对话与内部编排（向量、语音、视觉、路由等）应统一走本入口，保证各类型模型均参与 token 累计与共用配额（与
- * {@link LlmTokenQuotaCoordinator} 一致）。
+ * {@link LlmTokenQuotaCoordinator} 一致）。经 {@link com.aaron.cloud.model.ModelApplicationService} 的流式补全默认自动调用本类。
  */
 @Slf4j
 @Service
@@ -27,9 +27,7 @@ public class LlmModelUsageRecorder {
     private final LlmUsagePersistenceService llmUsagePersistenceService;
     private final LlmUsageAsyncPublisher llmUsageAsyncPublisher;
 
-    /**
-     * @param conversationId 对话场景传会话 id；非对话编排可传 {@code 0}
-     */
+    /** 对话场景传会话 id；非对话编排可传 {@code 0} */
     public void recordAfterLlmUsage(
             TenantSnapshot snap,
             SysLlmModel modelCfg,
@@ -37,6 +35,18 @@ public class LlmModelUsageRecorder {
             long conversationId,
             ModelTokenUsage usage,
             long durationMs) {
+        recordAfterLlmUsage(
+                snap, modelCfg, modelAliasTrim, conversationId, usage, durationMs, null);
+    }
+
+    public void recordAfterLlmUsage(
+            TenantSnapshot snap,
+            SysLlmModel modelCfg,
+            String modelAliasTrim,
+            long conversationId,
+            ModelTokenUsage usage,
+            long durationMs,
+            com.aaron.cloud.common.api.enums.metering.LlmUsageScene usageScene) {
         if (usage == null || usage.totalTokens() <= 0) {
             return;
         }
@@ -57,6 +67,12 @@ public class LlmModelUsageRecorder {
                     total);
             return;
         }
+        String sceneCode =
+                usageScene != null
+                        ? usageScene.getCode()
+                        : conversationId > 0L
+                                ? com.aaron.cloud.common.api.enums.metering.LlmUsageScene.CHAT.getCode()
+                                : "";
         var digest =
                 new LlmUsageDigestMessage(
                         snap.getTenantId(),
@@ -70,7 +86,8 @@ public class LlmModelUsageRecorder {
                         usage.totalTokens(),
                         meterCode,
                         kind.getCode(),
-                        durationMs > 0 ? durationMs : null);
+                        durationMs > 0 ? durationMs : null,
+                        sceneCode);
         try {
             llmUsagePersistenceService.persist(digest);
         } catch (Exception ex) {

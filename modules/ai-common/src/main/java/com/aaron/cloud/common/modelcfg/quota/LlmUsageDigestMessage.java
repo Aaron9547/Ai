@@ -24,11 +24,14 @@ public record LlmUsageDigestMessage(
          * 本次模型流式调用 wall-clock 耗时（毫秒）；并入同一条 token 计量事件的 {@code ref_json}，避免再单独写
          * {@code MODEL_COMPLETION} 行。旧队列 JSON 缺本字段时为 null。
          */
-        Long durationMs) {
+        Long durationMs,
+        /** {@link com.aaron.cloud.common.api.enums.metering.LlmUsageScene#getCode()}；可空 */
+        String usageSceneCode) {
 
     /** 兼容旧队列 JSON（无后两字段时 Jackson 反序列化为 null）。 */
     public LlmUsageDigestMessage {
         meterTypeCode = meterTypeCode == null ? "" : meterTypeCode;
         modelKindCode = modelKindCode == null ? "" : modelKindCode;
+        usageSceneCode = usageSceneCode == null ? "" : usageSceneCode;
     }
 }

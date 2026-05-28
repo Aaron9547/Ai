@@ -1382,6 +1382,7 @@ async function loadMessagesForConv(id: string) {
     const rows = await chatApi.listConversationMessages(id);
     if (seq !== threadLoadSeq) return;
     messages.value = mapHistoryToMsgs(rows);
+    await refreshConversationTokenTotal(id);
   } catch {
     if (seq !== threadLoadSeq) return;
     ElMessage.error(t("chat.loadHistoryFail"));
@@ -1832,6 +1833,11 @@ function applyAssistantStreamPart(m: Msg, part: chatApi.StreamPart, tail: ReplyV
     if ("usage" in part && part.usage && part.usage.totalTokens > 0) {
       body.usage = { ...part.usage };
     }
+    if (part.conversationTokenTotal != null && part.conversationTokenTotal > 0) {
+      meteringSessionTokenTotal.value = part.conversationTokenTotal;
+    } else if (convId.value != null) {
+      void refreshConversationTokenTotal(convId.value);
+    }
     if (!(m.followUpPrompts?.length)) {
       beginFollowUpLoading(m);
       if (m.id != null && convId.value != null) {
@@ -2199,6 +2205,9 @@ async function loadFollowUpForMessage(m: Msg) {
     m.followUpPrompts = [];
   } finally {
     finishFollowUpLoading(m);
+    if (convId.value != null) {
+      void refreshConversationTokenTotal(convId.value);
+    }
   }
 }
 
@@ -2288,9 +2297,14 @@ const activeTitle = computed(() => {
   return c?.title ?? t("chat.titleChat");
 });
 
-const sessionTokenTotal = computed(() =>
-  messages.value.reduce((s, m) => s + (m.usage?.totalTokens ?? 0), 0),
-);
+const sessionTokenTotal = computed(() => {
+  if (meteringSessionTokenTotal.value > 0) {
+    return meteringSessionTokenTotal.value;
+  }
+  return messages.value.reduce((s, m) => s + (m.usage?.totalTokens ?? 0), 0);
+});
+
+const meteringSessionTokenTotal = ref(0);
 
 const tokenBadgePulse = ref(false);
 watch(sessionTokenTotal, (n, prev) => {
@@ -2472,6 +2486,15 @@ async function refresh() {
 
 function clearThread() {
   messages.value = [];
+  meteringSessionTokenTotal.value = 0;
+}
+
+async function refreshConversationTokenTotal(id: string) {
+  try {
+    meteringSessionTokenTotal.value = await chatApi.fetchConversationTokenTotal(id);
+  } catch {
+    /* 计量合计不可用时回退消息 meta 求和 */
+  }
 }
 
 function selectConv(id: string) {

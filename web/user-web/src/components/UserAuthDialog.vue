@@ -47,8 +47,8 @@
               <span class="auth-tab-indicator" :class="{ 'auth-tab-indicator--reg': tab === 'reg' }" aria-hidden="true" />
             </div>
 
-            <div class="auth-body">
-            <div class="auth-flip-wrap">
+            <el-scrollbar class="auth-body-scroll" tag="div">
+              <div class="auth-flip-wrap">
               <div class="auth-flip-inner">
                 <div v-show="tab === 'login'" class="auth-panel auth-panel--login">
                   <el-form class="auth-form" label-position="top" @submit.prevent="onLogin">
@@ -140,7 +140,7 @@
                 </div>
               </div>
             </div>
-            </div>
+            </el-scrollbar>
           </div>
         </Transition>
       </div>
@@ -408,7 +408,7 @@ async function onRegister() {
 .auth-shell {
   position: relative;
   width: min(100%, 440px);
-  max-height: min(90vh, 680px);
+  max-height: min(92vh, 760px);
   display: flex;
   flex-direction: column;
   padding: 28px 28px 24px;
@@ -521,12 +521,32 @@ async function onRegister() {
   transform: translateX(100%);
 }
 
-.auth-body {
+.auth-body-scroll {
   flex: 1;
   min-height: 0;
+}
+
+.auth-body-scroll :deep(.el-scrollbar__wrap) {
   overflow-x: hidden;
-  overflow-y: auto;
-  padding-right: 2px;
+}
+
+.auth-body-scroll :deep(.el-scrollbar__view) {
+  padding-right: 4px;
+}
+
+.auth-body-scroll :deep(.el-scrollbar__bar.is-vertical) {
+  width: 6px;
+  right: 2px;
+}
+
+.auth-body-scroll :deep(.el-scrollbar__thumb) {
+  background: rgba(148, 163, 184, 0.45);
+  border-radius: 4px;
+  opacity: 1;
+}
+
+.auth-body-scroll :deep(.el-scrollbar__thumb:hover) {
+  background: rgba(100, 116, 139, 0.65);
 }
 
 .auth-flip-wrap {

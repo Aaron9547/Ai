@@ -7,7 +7,11 @@ import com.aaron.cloud.chat.recommend.ChatDailyRecommendJsonSupport.DailyRecomme
 import com.aaron.cloud.chat.websearch.ChatWebSearchGroundingService;
 import com.aaron.cloud.chat.websearch.WebSearchGroundingPlanResolver;
 import com.aaron.cloud.chat.websearch.WebSearchReference;
+import com.aaron.cloud.chat.websearch.WebSearchUserContext;
+import com.aaron.cloud.chat.websearch.cache.WebSearchGroundingMergeSupport;
+import com.aaron.cloud.common.api.enums.chat.ChatStarterPromptSource;
 import com.aaron.cloud.common.api.dto.model.ModelChatRequest;
+import com.aaron.cloud.common.api.enums.metering.LlmUsageScene;
 import com.aaron.cloud.common.api.enums.chat.ChatStarterDailyBatchStatus;
 import com.aaron.cloud.common.api.enums.llm.LlmModelKind;
 import com.aaron.cloud.common.api.ports.ModelInvokePort;
@@ -51,6 +55,7 @@ public class ChatUserDailyRecommendService {
     private final UserProfileApplicationService userProfileApplicationService;
     private final ChatDailyRecommendProfileIngest profileIngest;
     private final PromptTemplateResolvePort promptTemplates;
+    private final ChatDailyRecommendSearchQuerySupport dailyRecommendSearchQuery;
 
     private final ConcurrentHashMap<String, Object> generationLocks = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Boolean> generationInflight = new ConcurrentHashMap<>();
@@ -220,14 +225,23 @@ public class ChatUserDailyRecommendService {
 
         String profileHint =
                 userProfileApplicationService.buildPromptAddendum(snap, "今日资讯推荐", false);
-        String searchQuery = buildSearchQuery(tenantId, profileHint);
         try {
-            var grounding =
-                    webSearchGroundingService.groundWithRaw(snap, searchQuery, 0L);
+            String queryToday = dailyRecommendSearchQuery.buildTodayPrimary(snap, profileHint);
+            WebSearchUserContext ctxToday = WebSearchUserContext.of(queryToday);
+            var groundingToday =
+                    webSearchGroundingService.groundWithRaw(
+                            snap, ctxToday, 0L, ChatStarterPromptSource.DAILY_RECOMMEND);
+            String queryYesterday =
+                    dailyRecommendSearchQuery.buildYesterdaySecondary(snap, profileHint);
+            WebSearchUserContext ctxYesterday = WebSearchUserContext.of(queryYesterday);
+            var groundingYesterday =
+                    webSearchGroundingService.groundWithRaw(
+                            snap, ctxYesterday, 0L, ChatStarterPromptSource.DAILY_RECOMMEND);
+            var mergedBundle =
+                    WebSearchGroundingMergeSupport.merge(
+                            groundingToday.bundle(), groundingYesterday.bundle());
             String summary =
-                    grounding.bundle().summaryText() == null
-                            ? ""
-                            : grounding.bundle().summaryText().trim();
+                    mergedBundle.summaryText() == null ? "" : mergedBundle.summaryText().trim();
             if (summary.isBlank()) {
                 failBatch(batch, "联网检索未返回可用摘要");
                 return;
@@ -238,8 +252,8 @@ public class ChatUserDailyRecommendService {
                             tenantId,
                             profileHint,
                             summary,
-                            grounding.bundle().references());
-            items = ChatDailyRecommendUrlSupport.attachReferenceUrls(items, grounding.bundle().references());
+                            mergedBundle.references());
+            items = ChatDailyRecommendUrlSupport.attachReferenceUrls(items, mergedBundle.references());
             items = normalizeItemDates(items, BeijingTime.today());
             if (items.isEmpty()) {
                 failBatch(batch, "语言模型未解析出有效推荐条目");
@@ -309,23 +323,11 @@ public class ChatUserDailyRecommendService {
         req.setTenantId(tenantId);
         req.setModelAlias(lang.getAlias());
         req.setThinkingEnabled(false);
+        req.setUsageScene(LlmUsageScene.DAILY_RECOMMEND.getCode());
         req.setMessages(List.of(sys, user));
         StringBuilder acc = new StringBuilder();
         modelInvokePort.streamCompletion(req, acc::append);
         return jsonSupport.parseItems(acc.toString());
-    }
-
-    private String buildSearchQuery(long tenantId, String profileHint) {
-        int year = BeijingTime.today().getYear();
-        if (profileHint != null && !profileHint.isBlank()) {
-            String excerpt = profileHint.length() > 200 ? profileHint.substring(0, 200) : profileHint;
-            return promptTemplates.renderQuery(
-                    "daily_recommend_search_query_profile",
-                    tenantId,
-                    Map.of("profile_excerpt", excerpt.replace('\n', ' '), "year", String.valueOf(year)));
-        }
-        return promptTemplates.renderQuery(
-                "daily_recommend_search_query", tenantId, Map.of("year", String.valueOf(year)));
     }
 
     private static List<DailyRecommendItemRecord> normalizeItemDates(

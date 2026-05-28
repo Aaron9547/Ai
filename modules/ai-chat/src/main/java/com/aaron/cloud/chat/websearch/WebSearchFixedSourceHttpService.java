@@ -19,6 +19,18 @@ public class WebSearchFixedSourceHttpService {
     private final TenantRuntimeSettingApplicationService tenantRuntimeSettingApplicationService;
     private final ConcurrentHashMap<String, RestClient> restClients = new ConcurrentHashMap<>();
 
+    /** 国内站点（如百度）强制直连，不受租户/进程代理影响。 */
+    public Document jsoupGetDirect(String url) throws IOException {
+        return jsoupGetDirect(url, StandardCharsets.UTF_8);
+    }
+
+    public Document jsoupGetDirect(String url, Charset charset) throws IOException {
+        byte[] body =
+                WebSearchFixedSourceHttp.fetchBytes(WebSearchFixedSourceOutboundConfig.direct(), url);
+        String html = new String(body, charset);
+        return org.jsoup.Jsoup.parse(html, url);
+    }
+
     public Document jsoupGet(long tenantId, String url) throws IOException {
         return jsoupGet(tenantId, url, StandardCharsets.UTF_8);
     }

@@ -42,7 +42,7 @@ export default {
     threadHintDesktop: "Enter 发送，Shift+Enter 换行；附件点「+」或拖入输入框。",
     tokenLine: "本会话累计",
     tokenLineValue: "<strong>{n}</strong> tokens",
-    tokenLineHint: "各条助手回复落库用量之和",
+    tokenLineHint: "含主回答、联网插件与猜你想问等全部模型调用",
     emptyBrand: "Ai",
     emptyWelcome: "您好！我是 Ai 中台助手，有什么可以帮助您的吗？",
     quick1: "写一首关于春天的诗",

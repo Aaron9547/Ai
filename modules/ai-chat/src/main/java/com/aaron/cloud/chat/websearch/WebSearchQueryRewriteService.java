@@ -1,6 +1,7 @@
 package com.aaron.cloud.chat.websearch;
 
 import com.aaron.cloud.common.api.dto.model.ModelChatRequest;
+import com.aaron.cloud.common.api.enums.metering.LlmUsageScene;
 import com.aaron.cloud.common.api.enums.llm.LlmModelKind;
 import com.aaron.cloud.common.api.ports.ModelInvokePort;
 import com.aaron.cloud.common.api.ports.PromptTemplateResolvePort;
@@ -8,8 +9,12 @@ import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.modelcfg.LlmModelKindPolicy;
 import com.aaron.cloud.common.modelcfg.SysLlmModelRepository;
 import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -18,7 +23,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
- * 第三方固定源/新闻检索前，将对话问句改写为更短、更聚焦的检索词，提高命中率。
+ * 联网问句改写：固定源渠道拆三关键词（{@link #rewriteKeywordsForFixedSources}）。
+ * {@link #rewriteForSearch} 保留供测试或后续场景；火山 Ark 直连不经此方法。
  */
 @Slf4j
 @Service
@@ -26,7 +32,12 @@ import org.springframework.stereotype.Service;
 public class WebSearchQueryRewriteService {
 
     private static final int MAX_SEARCH_QUERY_CHARS = 120;
+    private static final int MAX_KEYWORD_CHARS = 32;
+    private static final int FIXED_SOURCE_KEYWORD_COUNT = 3;
     private static final int MIN_LEN_FOR_LLM_REWRITE = 12;
+
+    private static final ObjectMapper KEYWORD_JSON = new ObjectMapper();
+    private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {};
 
     private static final Pattern FILLER_PREFIX =
             Pattern.compile(
@@ -100,6 +111,246 @@ public class WebSearchQueryRewriteService {
                 clipForLog(original),
                 clipForLog(heuristic));
         return heuristic;
+    }
+
+    /**
+     * 固定源渠道：从用户问句抽取恰好 {@value #FIXED_SOURCE_KEYWORD_COUNT} 个检索关键词，供多源并行抓取。
+     */
+    public List<String> rewriteKeywordsForFixedSources(TenantSnapshot snap, String userQueryPlaintext) {
+        return rewriteKeywordsForFixedSources(snap, userQueryPlaintext, List.of(), 0L);
+    }
+
+    public List<String> rewriteKeywordsForFixedSources(
+            TenantSnapshot snap,
+            String userQueryPlaintext,
+            List<ModelChatRequest.MessageTurn> recentHistory,
+            long conversationId) {
+        return rewriteKeywordsForFixedSources(
+                snap, userQueryPlaintext, recentHistory, conversationId, null);
+    }
+
+    /**
+     * 固定源渠道：结合近史与当前问句拆三关键词；{@code conversationId} 与 {@code usageScene} 写入 LLM 计量流水。
+     */
+    public List<String> rewriteKeywordsForFixedSources(
+            TenantSnapshot snap,
+            String userQueryPlaintext,
+            List<ModelChatRequest.MessageTurn> recentHistory,
+            long conversationId,
+            LlmUsageScene usageScene) {
+        String original = userQueryPlaintext == null ? "" : userQueryPlaintext.trim();
+        if (original.isEmpty()) {
+            return List.of();
+        }
+        List<ModelChatRequest.MessageTurn> history =
+                recentHistory == null ? List.of() : List.copyOf(recentHistory);
+        boolean hasHistory = !history.isEmpty();
+        long tenantId = snap.getTenantId();
+        SysLlmModel lang = resolveLanguageModel(tenantId);
+        boolean tryLlm =
+                lang != null && (original.length() >= MIN_LEN_FOR_LLM_REWRITE || hasHistory);
+        if (tryLlm) {
+            try {
+                String llmOut =
+                        invokeFixedKeywordsLlm(
+                                tenantId, lang, original, history, conversationId, usageScene);
+                List<String> parsed = parseKeywordJson(llmOut);
+                if (!parsed.isEmpty()) {
+                    List<String> normalized =
+                            normalizeKeywordTriplet(parsed, heuristicKeywordSource(original, history));
+                    log.info(
+                            "[联网搜索] 固定源三关键词（LLM）：租户 {}，原文 [{}]，近史 {} 条，关键词 {}",
+                            tenantId,
+                            clipForLog(original),
+                            history.size(),
+                            normalized);
+                    return normalized;
+                }
+                log.warn(
+                        "[联网搜索] 固定源关键词 LLM 解析为空，回退规则：租户 {}，原文 [{}]",
+                        tenantId,
+                        clipForLog(original));
+            } catch (Exception e) {
+                log.warn(
+                        "[联网搜索] 固定源关键词 LLM 失败，回退规则：租户 {}，原文 [{}]，原因 {}",
+                        tenantId,
+                        clipForLog(original),
+                        e.toString(),
+                        e);
+            }
+        }
+        List<String> heuristic = heuristicKeywords(heuristicKeywordSource(original, history));
+        log.info(
+                "[联网搜索] 固定源三关键词（规则）：租户 {}，原文 [{}]，近史 {} 条，关键词 {}",
+                tenantId,
+                clipForLog(original),
+                history.size(),
+                heuristic);
+        return heuristic;
+    }
+
+    static String heuristicKeywordSource(
+            String currentTurn, List<ModelChatRequest.MessageTurn> recentHistory) {
+        if (recentHistory == null || recentHistory.isEmpty()) {
+            return currentTurn;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (ModelChatRequest.MessageTurn t : recentHistory) {
+            if (t == null || t.getRole() == null) {
+                continue;
+            }
+            String role = t.getRole().trim().toLowerCase();
+            if (!"user".equals(role) && !"assistant".equals(role)) {
+                continue;
+            }
+            String body = t.getContent() == null ? "" : t.getContent().trim();
+            if (body.isEmpty()) {
+                continue;
+            }
+            if (!sb.isEmpty()) {
+                sb.append(' ');
+            }
+            sb.append(body);
+        }
+        if (!sb.isEmpty()) {
+            sb.append(' ');
+        }
+        sb.append(currentTurn == null ? "" : currentTurn.trim());
+        return sb.toString().trim();
+    }
+
+    static List<String> parseKeywordJson(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        String trimmed = raw.trim();
+        int start = trimmed.indexOf('[');
+        int end = trimmed.lastIndexOf(']');
+        if (start >= 0 && end > start) {
+            trimmed = trimmed.substring(start, end + 1);
+        }
+        try {
+            List<String> list = KEYWORD_JSON.readValue(trimmed, STRING_LIST);
+            if (list == null) {
+                return List.of();
+            }
+            List<String> out = new ArrayList<>();
+            for (String item : list) {
+                if (item == null) {
+                    continue;
+                }
+                String t = clampKeyword(item.trim());
+                if (!t.isBlank()) {
+                    out.add(t);
+                }
+            }
+            return out;
+        } catch (Exception ignored) {
+            return List.of();
+        }
+    }
+
+    static List<String> normalizeKeywordTriplet(List<String> candidates, String fallbackSource) {
+        LinkedHashSet<String> unique = new LinkedHashSet<>();
+        for (String c : candidates) {
+            String t = clampKeyword(c == null ? "" : c.trim());
+            if (!t.isBlank()) {
+                unique.add(t);
+            }
+            if (unique.size() >= FIXED_SOURCE_KEYWORD_COUNT) {
+                break;
+            }
+        }
+        List<String> tokens = tokenizeForKeywords(fallbackSource);
+        int ti = 0;
+        while (unique.size() < FIXED_SOURCE_KEYWORD_COUNT && ti < tokens.size()) {
+            unique.add(tokens.get(ti++));
+        }
+        if (unique.isEmpty()) {
+            unique.add(clampKeyword(fallbackSource));
+        }
+        while (unique.size() < FIXED_SOURCE_KEYWORD_COUNT) {
+            String pad = unique.iterator().next();
+            unique.add(pad);
+        }
+        return List.copyOf(unique).subList(0, FIXED_SOURCE_KEYWORD_COUNT);
+    }
+
+    static List<String> heuristicKeywords(String raw) {
+        return normalizeKeywordTriplet(tokenizeForKeywords(heuristicRewrite(raw)), raw);
+    }
+
+    private static List<String> tokenizeForKeywords(String text) {
+        String t = text == null ? "" : text.replace('\n', ' ').replaceAll("\\s+", " ").trim();
+        if (t.isEmpty()) {
+            return List.of();
+        }
+        String[] parts = t.split("[\\s,，;；|｜/、]+");
+        List<String> out = new ArrayList<>();
+        for (String p : parts) {
+            String k = clampKeyword(p.trim());
+            if (k.length() >= 2 && !out.contains(k)) {
+                out.add(k);
+            }
+        }
+        return out;
+    }
+
+    static String clampKeyword(String s) {
+        if (s == null || s.isEmpty()) {
+            return "";
+        }
+        String t = s.trim();
+        if (t.length() <= MAX_KEYWORD_CHARS) {
+            return t;
+        }
+        return t.substring(0, MAX_KEYWORD_CHARS).trim();
+    }
+
+    private String invokeFixedKeywordsLlm(
+            long tenantId,
+            SysLlmModel lang,
+            String original,
+            List<ModelChatRequest.MessageTurn> recentHistory,
+            long conversationId,
+            LlmUsageScene usageScene)
+            throws Exception {
+        LocalDate today = LocalDate.now();
+        Map<String, String> vars =
+                Map.of(
+                        "user_message",
+                        original,
+                        "today",
+                        today.format(DateTimeFormatter.ISO_LOCAL_DATE),
+                        "year",
+                        String.valueOf(today.getYear()));
+        String system =
+                promptTemplates.renderSystem(
+                        "web_search_fixed_keywords_system", tenantId, "zh-CN", vars);
+        String user =
+                promptTemplates.renderUser("web_search_fixed_keywords_user", tenantId, "zh-CN", vars);
+        var sysTurn = new ModelChatRequest.MessageTurn();
+        sysTurn.setRole("system");
+        sysTurn.setContent(system);
+        var userTurn = new ModelChatRequest.MessageTurn();
+        userTurn.setRole("user");
+        userTurn.setContent(user);
+        var messages = new ArrayList<ModelChatRequest.MessageTurn>();
+        messages.add(sysTurn);
+        WebSearchArkContextBuilder.appendRecentUserAssistantTurns(messages, recentHistory);
+        messages.add(userTurn);
+        var req = new ModelChatRequest();
+        req.setTenantId(tenantId);
+        req.setModelAlias(lang.getAlias());
+        req.setThinkingEnabled(false);
+        req.setConversationId(conversationId > 0L ? conversationId : null);
+        if (usageScene != null) {
+            req.setUsageScene(usageScene.getCode());
+        }
+        req.setMessages(List.copyOf(messages));
+        StringBuilder acc = new StringBuilder();
+        modelInvokePort.streamCompletion(req, acc::append);
+        return acc.toString();
     }
 
     private SysLlmModel resolveLanguageModel(long tenantId) {

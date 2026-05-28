@@ -4,12 +4,12 @@ import com.aaron.cloud.chat.dto.ChatKnowledgePlanetDtos.GraphLinkView;
 import com.aaron.cloud.chat.dto.ChatKnowledgePlanetDtos.GraphNodeView;
 import com.aaron.cloud.chat.dto.ChatKnowledgePlanetDtos.PlanetView;
 import com.aaron.cloud.chat.dto.ChatKnowledgePlanetDtos.UniverseGraphResponse;
+import com.aaron.cloud.common.knowledgeplanet.KnowledgePlanetTopicTagsNormalizer;
 import com.aaron.cloud.common.knowledgeplanet.entity.TenUserKnowledgeNode;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -20,22 +20,25 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
- * 将扁平知识节点聚合为「星系」视图：每颗 {@code planet} 对应一个主题簇（任意 topicTag 有交集的节点并到同一星球），其下挂载
- * {@code knowledge} 节点与轨道/关联连线。
+ * 将扁平知识节点聚合为「星系」视图：每颗 {@code planet} 对应 {@code topicTags[0]}（具体领域主题名），其下挂载
+ * {@code knowledge} 节点与轨道/关联连线。宽范畴修饰应由沉淀 normalizer 排在子标签位，星图严格按 {@code [0]} 分星。
  */
 @Component
 @RequiredArgsConstructor
 public class KnowledgePlanetUniverseBuilder {
 
     private static final String UNCATEGORIZED = "未分类";
+
     private static final int[] PLANET_PALETTE = {
         0x00f2fe, 0x4facfe, 0x7000ff, 0x00d9a0, 0xff6bcb, 0xffb347
     };
 
+    private static final ObjectMapper TAG_JSON = new ObjectMapper();
+
     private final ObjectMapper objectMapper;
 
     public UniverseGraphResponse build(List<TenUserKnowledgeNode> rows) {
-        List<List<TenUserKnowledgeNode>> planetGroups = clusterBySharedTags(rows);
+        List<List<TenUserKnowledgeNode>> planetGroups = clusterByPlanetTheme(rows);
 
         List<PlanetView> planets = new ArrayList<>();
         List<GraphNodeView> nodes = new ArrayList<>();
@@ -44,7 +47,7 @@ public class KnowledgePlanetUniverseBuilder {
 
         for (List<TenUserKnowledgeNode> group : planetGroups) {
             List<TenUserKnowledgeNode> ordered = chronological(group);
-            String category = planetLabelForGroup(ordered);
+            String category = planetThemeKey(ordered.getFirst());
             String planetId = planetId(category);
             int color = PLANET_PALETTE[colorIdx % PLANET_PALETTE.length];
             colorIdx++;
@@ -100,59 +103,24 @@ public class KnowledgePlanetUniverseBuilder {
         return new UniverseGraphResponse(planets, nodes, links);
     }
 
-    /** 任意 topicTag 有交集的节点并到同一主题星球（传递闭包），避免相近话题被首标签微差拆散。 */
-    private List<List<TenUserKnowledgeNode>> clusterBySharedTags(List<TenUserKnowledgeNode> rows) {
-        int n = rows.size();
-        if (n == 0) {
-            return List.of();
+    private List<List<TenUserKnowledgeNode>> clusterByPlanetTheme(List<TenUserKnowledgeNode> rows) {
+        Map<String, List<TenUserKnowledgeNode>> byTheme = new LinkedHashMap<>();
+        for (TenUserKnowledgeNode row : rows) {
+            String key = planetThemeKey(row);
+            byTheme.computeIfAbsent(key, k -> new ArrayList<>()).add(row);
         }
-        int[] parent = new int[n];
-        for (int i = 0; i < n; i++) {
-            parent[i] = i;
-        }
-        for (int i = 0; i < n; i++) {
-            for (int j = i + 1; j < n; j++) {
-                if (shareTag(rows.get(i), rows.get(j))) {
-                    union(parent, i, j);
-                }
-            }
-        }
-        Map<Integer, List<TenUserKnowledgeNode>> byRoot = new LinkedHashMap<>();
-        for (int i = 0; i < n; i++) {
-            int root = find(parent, i);
-            byRoot.computeIfAbsent(root, k -> new ArrayList<>()).add(rows.get(i));
-        }
-        return byRoot.values().stream()
+        return byTheme.values().stream()
                 .sorted(Comparator.comparingInt((List<TenUserKnowledgeNode> g) -> g.size()).reversed())
                 .toList();
     }
 
-    private static int find(int[] parent, int x) {
-        while (parent[x] != x) {
-            parent[x] = parent[parent[x]];
-            x = parent[x];
+    static String planetThemeKey(TenUserKnowledgeNode row) {
+        List<String> tags = parseTagsStatic(row == null ? null : row.getTopicTagsJson());
+        if (tags.isEmpty()) {
+            return UNCATEGORIZED;
         }
-        return x;
-    }
-
-    private static void union(int[] parent, int a, int b) {
-        int ra = find(parent, a);
-        int rb = find(parent, b);
-        if (ra != rb) {
-            parent[rb] = ra;
-        }
-    }
-
-    private String planetLabelForGroup(List<TenUserKnowledgeNode> group) {
-        Map<String, Integer> counts = new HashMap<>();
-        for (TenUserKnowledgeNode row : group) {
-            String cat = primaryCategory(row);
-            counts.merge(cat, 1, Integer::sum);
-        }
-        return counts.entrySet().stream()
-                .max(Map.Entry.comparingByValue())
-                .map(Map.Entry::getKey)
-                .orElse(UNCATEGORIZED);
+        String first = normalizeTag(tags.getFirst());
+        return first.isEmpty() ? UNCATEGORIZED : first;
     }
 
     private static List<TenUserKnowledgeNode> chronological(List<TenUserKnowledgeNode> group) {
@@ -170,7 +138,7 @@ public class KnowledgePlanetUniverseBuilder {
             for (int j = i + 1; j < group.size(); j++) {
                 TenUserKnowledgeNode a = group.get(i);
                 TenUserKnowledgeNode b = group.get(j);
-                if (shareTag(a, b) || j == i + 1 || sameConversation(a, b)) {
+                if (shareSecondaryTag(a, b) || j == i + 1) {
                     out.add(
                             new GraphLinkView(
                                     knowledgeNodeId(a.getId()),
@@ -182,30 +150,21 @@ public class KnowledgePlanetUniverseBuilder {
         return out;
     }
 
-    private static boolean sameConversation(TenUserKnowledgeNode a, TenUserKnowledgeNode b) {
-        return a.getConversationId() != null
-                && a.getConversationId().equals(b.getConversationId());
-    }
-
-    private String primaryCategory(TenUserKnowledgeNode row) {
-        List<String> tags = parseTags(row.getTopicTagsJson());
-        if (!tags.isEmpty()) {
-            return tags.getFirst().trim();
-        }
-        return UNCATEGORIZED;
-    }
-
-    private boolean shareTag(TenUserKnowledgeNode a, TenUserKnowledgeNode b) {
-        Set<String> ta = normalizedTagSet(a);
-        Set<String> tb = normalizedTagSet(b);
+    private boolean shareSecondaryTag(TenUserKnowledgeNode a, TenUserKnowledgeNode b) {
+        Set<String> ta = secondaryTagSet(a);
+        Set<String> tb = secondaryTagSet(b);
         ta.retainAll(tb);
         return !ta.isEmpty();
     }
 
-    private Set<String> normalizedTagSet(TenUserKnowledgeNode row) {
-        return parseTags(row.getTopicTagsJson()).stream()
+    private Set<String> secondaryTagSet(TenUserKnowledgeNode row) {
+        List<String> tags = parseTags(row.getTopicTagsJson());
+        if (tags.size() <= 1) {
+            return Set.of();
+        }
+        return tags.subList(1, tags.size()).stream()
                 .map(KnowledgePlanetUniverseBuilder::normalizeTag)
-                .filter(t -> !t.isEmpty())
+                .filter(t -> !t.isEmpty() && !KnowledgePlanetTopicTagsNormalizer.isBroadModifierTag(t))
                 .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
@@ -217,11 +176,15 @@ public class KnowledgePlanetUniverseBuilder {
     }
 
     private List<String> parseTags(String json) {
+        return parseTagsStatic(json);
+    }
+
+    static List<String> parseTagsStatic(String json) {
         if (json == null || json.isBlank()) {
             return List.of();
         }
         try {
-            return objectMapper.readValue(json, new TypeReference<List<String>>() {});
+            return TAG_JSON.readValue(json, new TypeReference<List<String>>() {});
         } catch (Exception e) {
             return List.of();
         }

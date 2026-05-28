@@ -6,6 +6,20 @@
           <span class="title">{{ t("views.metering.title") }}</span>
           <div class="hdr-actions">
             <el-select
+              v-model="listFilterUsageScene"
+              class="scene-filter"
+              clearable
+              :placeholder="t('views.metering.placeholderAllScenes')"
+              @change="onSceneFilterChange"
+            >
+              <el-option
+                v-for="code in knownUsageSceneCodes"
+                :key="code"
+                :label="labelUsageScene(code)"
+                :value="code"
+              />
+            </el-select>
+            <el-select
               v-if="isFounder"
               v-model="listFilterTenantId"
               class="tenant-filter"
@@ -21,12 +35,61 @@
                 :value="tenantOpt.id"
               />
             </el-select>
-            <el-button type="primary" plain :loading="loading" @click="load">{{ t("views.metering.refresh") }}</el-button>
+            <el-button type="primary" plain :loading="loading || sceneLoading" @click="reloadAll">{{ t("views.metering.refresh") }}</el-button>
           </div>
         </div>
       </template>
 
       <p class="panel-tip" v-html="t('views.metering.tip')" />
+
+      <el-card shadow="never" class="scene-panel">
+        <template #header>
+          <div class="scene-hdr">
+            <span class="scene-title">{{ t("views.metering.sceneSummaryTitle", { days: sceneDays }) }}</span>
+            <el-button type="primary" link :loading="sceneLoading" @click="loadSceneSummary">
+              {{ t("views.metering.sceneSummaryRefresh") }}
+            </el-button>
+          </div>
+        </template>
+        <el-table
+          v-loading="sceneLoading"
+          :data="sceneRows"
+          stripe
+          border
+          size="small"
+          class="scene-table"
+          :empty-text="t('views.metering.sceneSummaryEmpty')"
+        >
+          <el-table-column :label="t('views.metering.colScene')" min-width="140">
+            <template #default="{ row }">
+              {{ labelUsageScene(row.usageScene) }}
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('views.metering.colSceneTokens')" width="140" align="right">
+            <template #default="{ row }">
+              {{ formatQty(row.totalTokens) }}
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('views.metering.colSceneEvents')" width="120" align="right">
+            <template #default="{ row }">
+              {{ formatQty(row.eventCount) }}
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('views.metering.colActions')" width="100" align="center">
+            <template #default="{ row }">
+              <el-button
+                v-if="row.usageScene && row.usageScene !== '-'"
+                link
+                type="primary"
+                size="small"
+                @click="filterByScene(row.usageScene)"
+              >
+                {{ t("views.metering.filterScene") }}
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-card>
 
       <el-table
         v-loading="loading"
@@ -134,7 +197,7 @@ import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import * as admin from "../../api/admin";
 import { useAdminFounderListTenantFilter } from "../../composables/useAdminFounderTenantOptions";
-import type { MeteringEventRow } from "../../types/admin";
+import type { MeteringEventRow, MeteringUsageBySceneRow } from "../../types/admin";
 import { formatMeteringUserOrDevice, formatTenantNameCode } from "../../utils/adminListDisplay";
 
 const { t, tm } = useI18n();
@@ -144,6 +207,40 @@ const { isFounder, tenantOptions, listFilterTenantId, listFilterQuery } = useAdm
 
 const meterTypeLabels = computed(() => (tm("views.metering.meterTypes") as Record<string, string>) ?? {});
 const unitLabels = computed(() => (tm("views.metering.units") as Record<string, string>) ?? {});
+const usageSceneLabels = computed(() => (tm("views.metering.usageScenes") as Record<string, string>) ?? {});
+
+const knownUsageSceneCodes = [
+  "DAILY_RECOMMEND",
+  "HOT_TOPIC_DAILY",
+  "KNOWLEDGE_PLANET",
+  "MEMORY_ABSTRACT",
+  "CHAT",
+  "CONVERSATION_DIGEST",
+  "LLM_FOLLOW_UP",
+] as const;
+
+const sceneDays = 7;
+const sceneLoading = ref(false);
+const sceneSummary = ref<MeteringUsageBySceneRow[]>([]);
+const listFilterUsageScene = ref<string>("");
+
+const sceneRows = computed(() => {
+  const byCode = new Map(sceneSummary.value.map((r) => [r.usageScene, r]));
+  const rows: MeteringUsageBySceneRow[] = knownUsageSceneCodes.map((code) => {
+    const hit = byCode.get(code);
+    return hit ?? { usageScene: code, totalTokens: 0, eventCount: 0 };
+  });
+  const other = byCode.get("-");
+  if (other && (other.totalTokens > 0 || other.eventCount > 0)) {
+    rows.push(other);
+  }
+  return rows.sort((a, b) => b.totalTokens - a.totalTokens);
+});
+
+function labelUsageScene(code: string | null | undefined): string {
+  if (!code || code === "-") return t("views.metering.usageScenes._unknown");
+  return usageSceneLabels.value[code] ?? code;
+}
 
 function labelMeterType(code: string | null | undefined): string {
   if (!code) return emDash;
@@ -209,6 +306,9 @@ function meteringSummary(row: MeteringEventRow): string {
     if (typeof o.totalTokens === "number") {
       parts.push(t("views.metering.summaryTokens", { v: o.totalTokens }));
     }
+    if (typeof o.usageScene === "string" && o.usageScene) {
+      parts.push(t("views.metering.summaryScene", { v: labelUsageScene(o.usageScene) }));
+    }
     if (parts.length) {
       return parts.join(t("views.metering.summaryJoiner"));
     }
@@ -218,10 +318,22 @@ function meteringSummary(row: MeteringEventRow): string {
   return previewJson(raw);
 }
 
+async function loadSceneSummary() {
+  sceneLoading.value = true;
+  try {
+    sceneSummary.value = await admin.fetchMeteringUsageByScene(sceneDays, listFilterQuery());
+  } finally {
+    sceneLoading.value = false;
+  }
+}
+
 async function load() {
   loading.value = true;
   try {
-    const data = await admin.fetchMetering(page.value, size.value, listFilterQuery());
+    const data = await admin.fetchMetering(page.value, size.value, {
+      ...listFilterQuery(),
+      usageScene: listFilterUsageScene.value || undefined,
+    });
     rows.value = data.records ?? [];
     total.value = data.total ?? 0;
   } finally {
@@ -229,7 +341,22 @@ async function load() {
   }
 }
 
+async function reloadAll() {
+  await Promise.all([loadSceneSummary(), load()]);
+}
+
 function onTenantFilterChange() {
+  page.value = 1;
+  void reloadAll();
+}
+
+function onSceneFilterChange() {
+  page.value = 1;
+  void load();
+}
+
+function filterByScene(code: string) {
+  listFilterUsageScene.value = code;
   page.value = 1;
   void load();
 }
@@ -258,7 +385,7 @@ async function copyJson() {
 }
 
 onMounted(() => {
-  void load();
+  void reloadAll();
 });
 </script>
 
@@ -273,6 +400,37 @@ onMounted(() => {
   font-size: 12px;
   line-height: 1.55;
   color: var(--el-text-color-secondary);
+}
+
+.scene-panel {
+  margin-bottom: 16px;
+  border-radius: 10px;
+  border: 1px solid var(--el-border-color-lighter);
+}
+
+.scene-panel :deep(.el-card__header) {
+  padding: 10px 14px;
+}
+
+.scene-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.scene-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.scene-table {
+  width: 100%;
+}
+
+.scene-filter {
+  width: 168px;
 }
 
 .hdr {

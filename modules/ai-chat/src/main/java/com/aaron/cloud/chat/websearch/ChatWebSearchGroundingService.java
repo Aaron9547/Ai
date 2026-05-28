@@ -1,6 +1,8 @@
 package com.aaron.cloud.chat.websearch;
 
 import com.aaron.cloud.chat.starter.ChatWebSearchKnowledgeService;
+import com.aaron.cloud.common.api.enums.chat.ChatStarterPromptSource;
+import com.aaron.cloud.common.api.enums.metering.LlmUsageScene;
 import com.aaron.cloud.chat.websearch.cache.WebSearchConversationReuseService;
 import com.aaron.cloud.chat.websearch.cache.WebSearchGroundingCacheLookup;
 import com.aaron.cloud.chat.websearch.cache.WebSearchGroundingCacheService;
@@ -32,8 +34,8 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 /**
- * 对话编排：火山 Ark（{@link com.aaron.cloud.common.api.enums.LlmModelKind#WEB_SEARCH} 可配置行）+ 内置固定源（代码注册）并行检索；可选解析 usage 并计量。
- * 支持 Redis 缓存（精确 + 语义近邻，滚动 6h/24h/48h）与会话内问句复用。
+ * 对话编排：双通道并行——火山 Ark 仅本轮 user messages；内置固定源用三关键词 × 多源抓取后去重合并。
+ * 未配置 Ark 时仅走固定源通道。支持 Redis 缓存（精确 + 语义近邻）与会话内问句复用。
  */
 @Slf4j
 @Service
@@ -71,14 +73,32 @@ public class ChatWebSearchGroundingService {
             String userQueryPlaintext,
             long conversationId,
             Consumer<List<WebSearchReference>> onCumulativeReferences) {
+        return groundMultiRoundsWithRaw(
+                snap,
+                WebSearchUserContext.of(userQueryPlaintext),
+                conversationId,
+                onCumulativeReferences,
+                null);
+    }
+
+    public WebGroundingBundle groundMultiRoundsWithRaw(
+            TenantSnapshot snap,
+            WebSearchUserContext userContext,
+            long conversationId,
+            Consumer<List<WebSearchReference>> onCumulativeReferences,
+            ChatStarterPromptSource webKnowledgeSource) {
         WebSearchGroundingPlan plan = planResolver.resolve(snap.getTenantId());
         if (!plan.hasAnySource()) {
             throw new IllegalStateException("未配置联网检索（火山模型或内置固定源至少启用一项）");
         }
         List<GroundingSourceExecution> executions = buildExecutions(snap, plan);
-        String base = userQueryPlaintext == null ? "" : userQueryPlaintext;
+        WebSearchUserContext ctx =
+                userContext == null ? WebSearchUserContext.of("") : userContext;
+        String base = ctx.keywordSourceText();
         String normalized = WebSearchQueryNormalizer.normalize(base);
-        final boolean persistWebKnowledge = conversationId > 0;
+        final ChatStarterPromptSource ingestSource =
+                resolveWebKnowledgeSource(conversationId, webKnowledgeSource);
+        final LlmUsageScene usageScene = LlmUsageScene.fromStarterSource(ingestSource, conversationId);
         var multi =
                 tenantRuntimeSettingApplicationService.webSearchGroundingMultiRoundConfig(snap.getTenantId());
         List<String> roundSuffixes = multi.suffixes();
@@ -103,7 +123,8 @@ public class ChatWebSearchGroundingService {
                     base,
                     b,
                     cachePolicy,
-                    persistWebKnowledge,
+                    ingestSource,
+                    false,
                     onCumulativeReferences);
         }
 
@@ -120,7 +141,8 @@ public class ChatWebSearchGroundingService {
                     base,
                     b,
                     cachePolicy,
-                    persistWebKnowledge,
+                    ingestSource,
+                    false,
                     onCumulativeReferences);
         }
 
@@ -154,22 +176,23 @@ public class ChatWebSearchGroundingService {
                     base,
                     seed,
                     cachePolicy,
-                    persistWebKnowledge,
+                    ingestSource,
+                    false,
                     onCumulativeReferences);
         }
 
-        String searchQuery = resolveSearchQueryForLive(snap, base, effectiveRounds, seed);
         WebGroundingBundle live =
                 executeRounds(
                         executions,
                         snap,
-                        searchQuery,
+                        ctx,
                         roundSuffixes,
                         0,
                         effectiveRounds,
                         null,
                         conversationId,
                         onCumulativeReferences,
+                        usageScene,
                         false);
 
         WebGroundingBundle merged = seed == null ? live : WebSearchGroundingMergeSupport.merge(seed, live);
@@ -181,8 +204,20 @@ public class ChatWebSearchGroundingService {
                 base,
                 merged,
                 cachePolicy,
-                persistWebKnowledge,
+                ingestSource,
+                true,
                 onCumulativeReferences);
+    }
+
+    private static ChatStarterPromptSource resolveWebKnowledgeSource(
+            long conversationId, ChatStarterPromptSource explicit) {
+        if (explicit != null) {
+            return explicit;
+        }
+        if (conversationId > 0) {
+            return ChatStarterPromptSource.WEB_SEARCH_GROUNDING;
+        }
+        return null;
     }
 
     private WebGroundingBundle finalizeGrounding(
@@ -193,19 +228,15 @@ public class ChatWebSearchGroundingService {
             String rawQuery,
             WebGroundingBundle bundle,
             WebSearchGroundingCachePolicy cachePolicy,
-            boolean persistWebKnowledge,
+            ChatStarterPromptSource webKnowledgeSource,
+            boolean ingestWebKnowledge,
             Consumer<List<WebSearchReference>> onCumulativeReferences) {
         emitCumulative(onCumulativeReferences, bundle.references());
         webSearchGroundingCacheService.store(
                 snap.getTenantId(), modelId, configScope, normalized, bundle, cachePolicy);
-        if (persistWebKnowledge) {
+        if (ingestWebKnowledge && webKnowledgeSource != null) {
             webSearchKnowledgeService.ingestAsync(
-                    snap.getTenantId(), rawQuery, normalized, bundle);
-        } else {
-            log.debug(
-                    "[联网知识库] 跳过沉淀（系统联网任务，非用户对话）：租户 {}，检索词 [{}]",
-                    snap.getTenantId(),
-                    WebSearchQueryRewriteService.clipForLog(rawQuery));
+                    snap.getTenantId(), rawQuery, normalized, bundle, webKnowledgeSource);
         }
         return bundle;
     }
@@ -218,14 +249,31 @@ public class ChatWebSearchGroundingService {
             String userQueryPlaintext,
             long conversationId,
             Consumer<List<WebSearchReference>> onCumulativeReferences) {
+        return groundForChatStream(
+                snap,
+                WebSearchUserContext.of(userQueryPlaintext),
+                conversationId,
+                onCumulativeReferences);
+    }
+
+    public WebSearchStreamGroundingSession groundForChatStream(
+            TenantSnapshot snap,
+            WebSearchUserContext userContext,
+            long conversationId,
+            Consumer<List<WebSearchReference>> onCumulativeReferences) {
         WebSearchGroundingPlan plan = planResolver.resolve(snap.getTenantId());
         if (!plan.hasAnySource()) {
             throw new IllegalStateException("未配置联网检索（火山模型或内置固定源至少启用一项）");
         }
         List<GroundingSourceExecution> executions = buildExecutions(snap, plan);
-        String base = userQueryPlaintext == null ? "" : userQueryPlaintext;
+        WebSearchUserContext ctx =
+                userContext == null ? WebSearchUserContext.of("") : userContext;
+        String base = ctx.keywordSourceText();
         String normalized = WebSearchQueryNormalizer.normalize(base);
-        final boolean persistWebKnowledge = conversationId > 0;
+        final ChatStarterPromptSource ingestSource =
+                resolveWebKnowledgeSource(conversationId, null);
+        final LlmUsageScene usageScene =
+                conversationId > 0L ? LlmUsageScene.CHAT : null;
         var multi =
                 tenantRuntimeSettingApplicationService.webSearchGroundingMultiRoundConfig(snap.getTenantId());
         List<String> roundSuffixes = multi.suffixes();
@@ -250,7 +298,8 @@ public class ChatWebSearchGroundingService {
                     base,
                     b,
                     cachePolicy,
-                    persistWebKnowledge,
+                    ingestSource,
+                    false,
                     onCumulativeReferences);
             return WebSearchStreamGroundingSession.completed(b);
         }
@@ -268,7 +317,8 @@ public class ChatWebSearchGroundingService {
                     base,
                     b,
                     cachePolicy,
-                    persistWebKnowledge,
+                    ingestSource,
+                    false,
                     onCumulativeReferences);
             return WebSearchStreamGroundingSession.completed(b);
         }
@@ -301,25 +351,25 @@ public class ChatWebSearchGroundingService {
                     base,
                     seed,
                     cachePolicy,
-                    persistWebKnowledge,
+                    ingestSource,
+                    false,
                     onCumulativeReferences);
             return WebSearchStreamGroundingSession.completed(seed);
         }
-
-        String searchQuery = resolveSearchQueryForLive(snap, base, effectiveRounds, seed);
 
         if (effectiveRounds <= 1) {
             WebGroundingBundle live =
                     executeRounds(
                             executions,
                             snap,
-                            searchQuery,
+                            ctx,
                             roundSuffixes,
                             0,
                             1,
                             null,
                             conversationId,
                             onCumulativeReferences,
+                            usageScene,
                             true);
             WebGroundingBundle merged =
                     seed == null ? live : WebSearchGroundingMergeSupport.merge(seed, live);
@@ -331,7 +381,8 @@ public class ChatWebSearchGroundingService {
                     base,
                     merged,
                     cachePolicy,
-                    persistWebKnowledge,
+                    ingestSource,
+                    true,
                     onCumulativeReferences);
             return WebSearchStreamGroundingSession.completed(merged);
         }
@@ -340,20 +391,20 @@ public class ChatWebSearchGroundingService {
                 executeRounds(
                         executions,
                         snap,
-                        searchQuery,
+                        ctx,
                         roundSuffixes,
                         0,
                         1,
                         null,
                         conversationId,
                         onCumulativeReferences,
+                        usageScene,
                         true);
         WebGroundingBundle initial =
                 seed == null ? afterFirst : WebSearchGroundingMergeSupport.merge(seed, afterFirst);
 
         final int remainingRounds = effectiveRounds - 1;
         final WebGroundingBundle initialForAsync = initial;
-        final String searchQueryForAsync = searchQuery;
         CompletableFuture<WebGroundingBundle> remainder =
                 CompletableFuture.supplyAsync(
                         () -> {
@@ -361,13 +412,14 @@ public class ChatWebSearchGroundingService {
                                     executeRounds(
                                             executions,
                                             snap,
-                                            searchQueryForAsync,
+                                            ctx,
                                             roundSuffixes,
                                             1,
                                             remainingRounds,
                                             initialForAsync,
                                             conversationId,
                                             onCumulativeReferences,
+                                            usageScene,
                                             false);
                             finalizeGrounding(
                                     snap,
@@ -377,7 +429,8 @@ public class ChatWebSearchGroundingService {
                                     base,
                                     rest,
                                     cachePolicy,
-                                    persistWebKnowledge,
+                                    ingestSource,
+                                    true,
                                     onCumulativeReferences);
                             return rest;
                         },
@@ -388,34 +441,39 @@ public class ChatWebSearchGroundingService {
 
     public WebSearchExecutionResult groundWithRaw(
             TenantSnapshot snap, String userQueryPlaintext, long conversationId) {
-        WebGroundingBundle b = groundMultiRoundsWithRaw(snap, userQueryPlaintext, conversationId, null);
-        return new WebSearchExecutionResult(b, null);
+        return groundWithRaw(snap, userQueryPlaintext, conversationId, null);
     }
 
-    /**
-     * 缓存未完全兜底、需要外呼第三方源时，将用户问句改写为检索词（见 {@link WebSearchQueryRewriteService}）。
-     */
-    private String resolveSearchQueryForLive(
-            TenantSnapshot snap, String base, int effectiveRounds, WebGroundingBundle seed) {
-        if (base == null || base.isBlank()) {
-            return "";
-        }
-        if (effectiveRounds <= 0 && seed != null) {
-            return base;
-        }
-        return webSearchQueryRewriteService.rewriteForSearch(snap, base);
+    public WebSearchExecutionResult groundWithRaw(
+            TenantSnapshot snap,
+            String userQueryPlaintext,
+            long conversationId,
+            ChatStarterPromptSource webKnowledgeSource) {
+        return groundWithRaw(
+                snap, WebSearchUserContext.of(userQueryPlaintext), conversationId, webKnowledgeSource);
+    }
+
+    public WebSearchExecutionResult groundWithRaw(
+            TenantSnapshot snap,
+            WebSearchUserContext userContext,
+            long conversationId,
+            ChatStarterPromptSource webKnowledgeSource) {
+        WebGroundingBundle b =
+                groundMultiRoundsWithRaw(snap, userContext, conversationId, null, webKnowledgeSource);
+        return new WebSearchExecutionResult(b, null);
     }
 
     private WebGroundingBundle executeRounds(
             List<GroundingSourceExecution> executions,
             TenantSnapshot snap,
-            String searchQueryBase,
+            WebSearchUserContext userContext,
             List<String> roundSuffixes,
             int startRoundIndex,
             int roundsToRun,
             WebGroundingBundle carryIn,
             long conversationId,
             Consumer<List<WebSearchReference>> onCumulativeReferences,
+            LlmUsageScene usageScene,
             boolean chatStreamGate) {
         List<WebSearchReference> accumulated = new ArrayList<>();
         List<String> summaryOrder = new ArrayList<>();
@@ -430,26 +488,93 @@ public class ChatWebSearchGroundingService {
             emitCumulative(onCumulativeReferences, List.copyOf(accumulated));
         }
         int rounds = Math.clamp(roundsToRun, 1, 10);
+        WebSearchUserContext ctx =
+                userContext == null ? WebSearchUserContext.of("") : userContext;
+        List<String> fixedKeywords =
+                resolveFixedSourceKeywords(snap, executions, ctx, conversationId, usageScene);
         for (int i = 0; i < rounds; i++) {
             int round = startRoundIndex + i;
             String suffix = round < roundSuffixes.size() ? roundSuffixes.get(round) : "";
-            String q = searchQueryBase + (suffix == null ? "" : suffix);
             WebSearchExecutionResult one =
                     chatStreamGate
-                            ? executeMultiSourceSingleRoundChatGate(
-                                    snap, executions, q, conversationId, onCumulativeReferences, accumulated)
-                            : executeMultiSourceSingleRound(
-                                    snap, executions, q, conversationId, onCumulativeReferences, accumulated);
+                            ? executeDualChannelRoundChatGate(
+                                    snap,
+                                    executions,
+                                    ctx,
+                                    suffix,
+                                    fixedKeywords,
+                                    conversationId,
+                                    onCumulativeReferences,
+                                    accumulated,
+                                    usageScene)
+                            : executeDualChannelRound(
+                                    snap,
+                                    executions,
+                                    ctx,
+                                    suffix,
+                                    fixedKeywords,
+                                    conversationId,
+                                    onCumulativeReferences,
+                                    accumulated,
+                                    usageScene);
             WebGroundingBundle b = one.bundle();
             String piece = b.summaryText() == null ? "" : b.summaryText().trim();
             if (!piece.isBlank()) {
                 summaryOrder.add(piece);
             }
-            mergeReferencesDistinct(accumulated, b.references());
-            emitCumulative(onCumulativeReferences, List.copyOf(accumulated));
+            if (chatStreamGate) {
+                syncAccumulatedFromGateBundle(accumulated, b, onCumulativeReferences);
+            } else {
+                mergeReferencesDistinct(accumulated, b.references());
+                emitCumulative(onCumulativeReferences, List.copyOf(accumulated));
+            }
         }
         String mergedSummary = WebSearchSummarySupport.joinSummaryPieces(summaryOrder);
-        return new WebGroundingBundle(mergedSummary, List.copyOf(accumulated));
+        List<WebSearchReference> outRefs =
+                chatStreamGate
+                        ? authoritativeGateReferences(accumulated)
+                        : List.copyOf(accumulated);
+        return new WebGroundingBundle(mergedSummary, outRefs);
+    }
+
+    /** 对话闸门：以闸门返回的 bundle 为准同步引用，避免与异步 accumulated 不一致。 */
+    private static void syncAccumulatedFromGateBundle(
+            List<WebSearchReference> accumulated,
+            WebGroundingBundle gateBundle,
+            Consumer<List<WebSearchReference>> onCumulativeReferences) {
+        if (accumulated == null || gateBundle == null) {
+            return;
+        }
+        accumulated.clear();
+        List<WebSearchReference> refs = gateBundle.references();
+        if (refs != null && !refs.isEmpty()) {
+            accumulated.addAll(
+                    WebSearchGroundingMergeSupport.dedupeReferences(refs));
+        }
+        emitCumulative(onCumulativeReferences, List.copyOf(accumulated));
+    }
+
+    private static List<WebSearchReference> authoritativeGateReferences(
+            List<WebSearchReference> accumulated) {
+        if (accumulated == null || accumulated.isEmpty()) {
+            return List.of();
+        }
+        return List.copyOf(WebSearchGroundingMergeSupport.dedupeReferences(accumulated));
+    }
+
+    /** 闸门注入结果与 SSE 已累计引用合并（取并集，按 URL 去重）。 */
+    private static WebGroundingBundle reconcileChatGateInjectionBundle(
+            WebGroundingBundle injection,
+            List<WebSearchReference> accumulatedForEmit,
+            Object emitLock) {
+        WebGroundingBundle base = injection == null ? emptyBundle() : injection;
+        if (accumulatedForEmit == null || accumulatedForEmit.isEmpty()) {
+            return base;
+        }
+        synchronized (emitLock) {
+            return WebSearchGroundingMergeSupport.merge(
+                    base, new WebGroundingBundle("", List.copyOf(accumulatedForEmit)));
+        }
     }
 
     private static void emitCumulative(
@@ -459,134 +584,237 @@ public class ChatWebSearchGroundingService {
         }
     }
 
-    private WebSearchExecutionResult executeMultiSourceSingleRound(
+    private record ExecutionSplit(
+            List<GroundingSourceExecution> arkExecs, List<GroundingSourceExecution> fixedExecs) {}
+
+    private List<String> resolveFixedSourceKeywords(
             TenantSnapshot snap,
             List<GroundingSourceExecution> executions,
-            String userQueryPlaintext,
+            WebSearchUserContext ctx,
+            long conversationId,
+            LlmUsageScene usageScene) {
+        if (splitExecutions(executions).fixedExecs().isEmpty()) {
+            return List.of();
+        }
+        List<String> keywords =
+                webSearchQueryRewriteService.rewriteKeywordsForFixedSources(
+                        snap, ctx.keywordSourceText(), ctx.recentHistoryForArk(), conversationId, usageScene);
+        if (!keywords.isEmpty()) {
+            log.info(
+                    "[联网搜索] 固定源三关键词（多轮共用）：租户 {}，{}",
+                    snap.getTenantId(),
+                    keywords);
+        }
+        return keywords;
+    }
+
+    private static ExecutionSplit splitExecutions(List<GroundingSourceExecution> executions) {
+        List<GroundingSourceExecution> ark = new ArrayList<>();
+        List<GroundingSourceExecution> fixed = new ArrayList<>();
+        for (GroundingSourceExecution e : executions) {
+            if (e.arkModel() != null) {
+                ark.add(e);
+            } else if (e.fixedSource() != null) {
+                fixed.add(e);
+            }
+        }
+        return new ExecutionSplit(List.copyOf(ark), List.copyOf(fixed));
+    }
+
+    /**
+     * 双通道并行：火山 Ark 用 {@link WebSearchUserContext} 组 messages；固定源用三关键词抓取。
+     */
+    private WebSearchExecutionResult executeDualChannelRound(
+            TenantSnapshot snap,
+            List<GroundingSourceExecution> executions,
+            WebSearchUserContext userContext,
+            String roundSuffix,
+            List<String> fixedKeywords,
             long conversationId,
             Consumer<List<WebSearchReference>> onCumulativeReferences,
-            List<WebSearchReference> accumulatedForEmit) {
-        List<String> sourceLabels =
-                executions.stream().map(GroundingSourceExecution::logLabel).toList();
+            List<WebSearchReference> accumulatedForEmit,
+            LlmUsageScene usageScene) {
+        ExecutionSplit split = splitExecutions(executions);
+        WebSearchUserContext ctx =
+                userContext == null ? WebSearchUserContext.of("") : userContext;
+        WebSearchArkInvokeRequest arkRequest = ctx.arkInvokeRequest(roundSuffix);
+        List<String> keywords =
+                split.fixedExecs().isEmpty() ? List.of() : List.copyOf(fixedKeywords);
         log.info(
-                "[联网搜索] 本轮并行开始：租户 {}，会话 {}，共 {} 源 {}",
+                "[联网搜索] 双通道开始：租户 {}，会话 {}，Ark {} 路，固定源 {} 路，Ark messages {} 条，本轮 user [{}]",
                 snap.getTenantId(),
                 conversationId,
-                executions.size(),
-                sourceLabels);
-        Object emitLock = new Object();
-        List<CompletableFuture<WebGroundingBundle>> bundleFutures =
-                executions.stream()
-                        .map(
-                                exec ->
-                                        CompletableFuture.supplyAsync(
-                                                        () ->
-                                                                executeOneSource(
-                                                                        snap,
-                                                                        exec,
-                                                                        userQueryPlaintext,
-                                                                        conversationId),
-                                                        command -> Thread.startVirtualThread(command))
-                                                .orTimeout(
-                                                        sourceDeadlineSec(exec), TimeUnit.SECONDS)
-                                                .handle(
-                                                        (bundle, ex) -> {
-                                                            if (ex == null) {
-                                                                return bundle;
-                                                            }
-                                                            logSourceFailure(
-                                                                    snap.getTenantId(),
-                                                                    conversationId,
-                                                                    exec,
-                                                                    "并行截止 "
-                                                                            + sourceDeadlineSec(exec)
-                                                                            + "s",
-                                                                    ex);
-                                                            return emptyBundle();
-                                                        }))
-                        .toList();
-        List<CompletableFuture<Void>> emitFutures = new ArrayList<>(bundleFutures.size());
-        for (CompletableFuture<WebGroundingBundle> bundleFuture : bundleFutures) {
-            emitFutures.add(
-                    bundleFuture.thenAccept(
-                            bundle -> {
-                                if (accumulatedForEmit == null || onCumulativeReferences == null) {
-                                    return;
-                                }
-                                synchronized (emitLock) {
-                                    mergeReferencesDistinct(
-                                            accumulatedForEmit, bundle.references());
-                                    emitCumulative(
-                                            onCumulativeReferences, List.copyOf(accumulatedForEmit));
-                                }
-                            }));
-        }
-        CompletableFuture.allOf(bundleFutures.toArray(CompletableFuture[]::new)).join();
-        CompletableFuture.allOf(emitFutures.toArray(CompletableFuture[]::new)).join();
+                split.arkExecs().size(),
+                split.fixedExecs().size(),
+                arkRequest.messages().size(),
+                WebSearchQueryRewriteService.clipForLog(arkRequest.logSummary()));
 
-        WebGroundingBundle merged = emptyBundle();
-        int arkRefs = 0;
-        boolean arkSummary = false;
-        for (int i = 0; i < bundleFutures.size(); i++) {
-            WebGroundingBundle one = bundleFutures.get(i).join();
-            GroundingSourceExecution exec = executions.get(i);
-            if (exec.arkModel() != null) {
-                arkRefs += one.references() == null ? 0 : one.references().size();
-                arkSummary =
-                        arkSummary
-                                || (one.summaryText() != null && !one.summaryText().isBlank());
-            }
-            merged = WebSearchGroundingMergeSupport.merge(merged, one);
-        }
+        Object emitLock = new Object();
+
+        CompletableFuture<WebGroundingBundle> arkChannel =
+                split.arkExecs().isEmpty()
+                        ? CompletableFuture.completedFuture(emptyBundle())
+                        : runArkChannelParallel(
+                                snap,
+                                split.arkExecs(),
+                                arkRequest,
+                                conversationId,
+                                emitLock,
+                                accumulatedForEmit,
+                                onCumulativeReferences,
+                                usageScene);
+        CompletableFuture<WebGroundingBundle> fixedChannel =
+                split.fixedExecs().isEmpty()
+                        ? CompletableFuture.completedFuture(emptyBundle())
+                        : runFixedKeywordChannelParallel(
+                                snap,
+                                split.fixedExecs(),
+                                keywords,
+                                conversationId,
+                                emitLock,
+                                accumulatedForEmit,
+                                onCumulativeReferences);
+
+        CompletableFuture.allOf(arkChannel, fixedChannel).join();
+        WebGroundingBundle merged =
+                WebSearchGroundingMergeSupport.merge(arkChannel.join(), fixedChannel.join());
         int mergedRefs = merged.references() == null ? 0 : merged.references().size();
         log.info(
-                "[联网搜索] 本轮并行结束：租户 {}，会话 {}，合并引用 {} 条（火山 Ark 引用 {} 条，Ark 摘要 {}）",
+                "[联网搜索] 双通道结束：租户 {}，会话 {}，合并引用 {} 条",
                 snap.getTenantId(),
                 conversationId,
-                mergedRefs,
-                arkRefs,
-                arkSummary ? "有" : "无");
+                mergedRefs);
         return new WebSearchExecutionResult(merged, null);
+    }
+
+    private CompletableFuture<WebGroundingBundle> runArkChannelParallel(
+            TenantSnapshot snap,
+            List<GroundingSourceExecution> arkExecs,
+            WebSearchArkInvokeRequest arkRequest,
+            long conversationId,
+            Object emitLock,
+            List<WebSearchReference> accumulatedForEmit,
+            Consumer<List<WebSearchReference>> onCumulativeReferences,
+            LlmUsageScene usageScene) {
+        return CompletableFuture.supplyAsync(
+                () -> {
+                    WebGroundingBundle merged = emptyBundle();
+                    List<CompletableFuture<WebGroundingBundle>> futures = new ArrayList<>();
+                    for (GroundingSourceExecution exec : arkExecs) {
+                        futures.add(
+                                startArkBundleFuture(
+                                        snap,
+                                        exec,
+                                        arkRequest,
+                                        conversationId,
+                                        emitLock,
+                                        accumulatedForEmit,
+                                        onCumulativeReferences,
+                                        usageScene));
+                    }
+                    CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
+                    for (CompletableFuture<WebGroundingBundle> f : futures) {
+                        merged = WebSearchGroundingMergeSupport.merge(merged, f.join());
+                    }
+                    return merged;
+                },
+                command -> Thread.startVirtualThread(command));
+    }
+
+    private CompletableFuture<WebGroundingBundle> runFixedKeywordChannelParallel(
+            TenantSnapshot snap,
+            List<GroundingSourceExecution> fixedExecs,
+            List<String> keywords,
+            long conversationId,
+            Object emitLock,
+            List<WebSearchReference> accumulatedForEmit,
+            Consumer<List<WebSearchReference>> onCumulativeReferences) {
+        return CompletableFuture.supplyAsync(
+                () -> {
+                    if (keywords == null || keywords.isEmpty()) {
+                        return emptyBundle();
+                    }
+                    List<CompletableFuture<WebGroundingBundle>> futures = new ArrayList<>();
+                    for (String kw : keywords) {
+                        for (GroundingSourceExecution exec : fixedExecs) {
+                            futures.add(
+                                    startFixedBundleFuture(
+                                            snap,
+                                            exec,
+                                            kw,
+                                            conversationId,
+                                            emitLock,
+                                            accumulatedForEmit,
+                                            onCumulativeReferences));
+                        }
+                    }
+                    CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
+                    WebGroundingBundle merged = emptyBundle();
+                    for (CompletableFuture<WebGroundingBundle> f : futures) {
+                        merged = WebSearchGroundingMergeSupport.merge(merged, f.join());
+                    }
+                    return merged;
+                },
+                command -> Thread.startVirtualThread(command));
     }
 
     /**
      * 对话流首轮：已配置火山 Ark 时必须等其外呼结束；合并结果须至少一个源可用。
-     * Ark 无摘要/引用时再等到租户已启用的内置固定源至少一个有结果或全部结束；其余固定源可在主对话开始后继续 SSE 补全。
+     * Ark 无摘要/引用时再等到固定源三关键词渠道至少一个有结果；其余固定源任务可在主对话开始后继续 SSE 补全。
      */
-    private WebSearchExecutionResult executeMultiSourceSingleRoundChatGate(
+    private WebSearchExecutionResult executeDualChannelRoundChatGate(
             TenantSnapshot snap,
             List<GroundingSourceExecution> executions,
-            String userQueryPlaintext,
+            WebSearchUserContext userContext,
+            String roundSuffix,
+            List<String> fixedKeywords,
             long conversationId,
             Consumer<List<WebSearchReference>> onCumulativeReferences,
-            List<WebSearchReference> accumulatedForEmit) {
-        List<String> sourceLabels =
-                executions.stream().map(GroundingSourceExecution::logLabel).toList();
+            List<WebSearchReference> accumulatedForEmit,
+            LlmUsageScene usageScene) {
+        ExecutionSplit split = splitExecutions(executions);
+        WebSearchUserContext ctx =
+                userContext == null ? WebSearchUserContext.of("") : userContext;
+        WebSearchArkInvokeRequest arkRequest = ctx.arkInvokeRequest(roundSuffix);
+        List<String> keywords =
+                split.fixedExecs().isEmpty() ? List.of() : List.copyOf(fixedKeywords);
         log.info(
-                "[联网搜索] 对话闸门并行开始：租户 {}，会话 {}，共 {} 源 {}",
+                "[联网搜索] 对话闸门双通道开始：租户 {}，会话 {}，Ark {} 路，固定源 {} 路，Ark messages {} 条",
                 snap.getTenantId(),
                 conversationId,
-                executions.size(),
-                sourceLabels);
-
-        Optional<GroundingSourceExecution> arkExec =
-                executions.stream().filter(e -> e.arkModel() != null).findFirst();
-        List<GroundingSourceExecution> fixedExecs =
-                executions.stream().filter(e -> e.fixedSource() != null).toList();
+                split.arkExecs().size(),
+                split.fixedExecs().size(),
+                arkRequest.messages().size());
 
         Object emitLock = new Object();
         Optional<CompletableFuture<WebGroundingBundle>> arkFuture =
-                arkExec.map(
-                        exec ->
-                                startBundleFuture(
-                                        snap, exec, userQueryPlaintext, conversationId, emitLock,
-                                        accumulatedForEmit, onCumulativeReferences));
+                split.arkExecs().isEmpty()
+                        ? Optional.empty()
+                        : Optional.of(
+                                runArkChannelParallel(
+                                        snap,
+                                        split.arkExecs(),
+                                        arkRequest,
+                                        conversationId,
+                                        emitLock,
+                                        accumulatedForEmit,
+                                        onCumulativeReferences,
+                                        usageScene));
         List<CompletableFuture<WebGroundingBundle>> fixedFutures = new ArrayList<>();
-        for (GroundingSourceExecution exec : fixedExecs) {
-            fixedFutures.add(
-                    startBundleFuture(
-                            snap, exec, userQueryPlaintext, conversationId, emitLock,
-                            accumulatedForEmit, onCumulativeReferences));
+        if (!split.fixedExecs().isEmpty() && !keywords.isEmpty()) {
+            for (String kw : keywords) {
+                for (GroundingSourceExecution exec : split.fixedExecs()) {
+                    fixedFutures.add(
+                            startFixedBundleFuture(
+                                    snap,
+                                    exec,
+                                    kw,
+                                    conversationId,
+                                    emitLock,
+                                    accumulatedForEmit,
+                                    onCumulativeReferences));
+                }
+            }
         }
 
         WebGroundingBundle gateMerged = emptyBundle();
@@ -616,15 +844,19 @@ public class ChatWebSearchGroundingService {
                     "[联网搜索] 对话闸门：火山已有可用结果，主对话即将注入；未完成的固定源继续后台补全，租户 {}，会话 {}",
                     snap.getTenantId(),
                     conversationId);
-        } else if (!fixedExecs.isEmpty()) {
+        } else if (!split.fixedExecs().isEmpty()) {
             log.info(
-                    "[联网搜索] 对话闸门：未配置火山模型，已等待至少一个内置固定源，租户 {}，会话 {}，可用={}",
+                    "[联网搜索] 对话闸门：未配置火山模型，固定源三关键词渠道，租户 {}，会话 {}，可用={}",
                     snap.getTenantId(),
                     conversationId,
                     hasUsableGrounding(gateMerged));
         }
 
-        WebGroundingBundle finalMerged = buildChatGateInjectionBundle(arkFuture, fixedFutures);
+        WebGroundingBundle finalMerged =
+                reconcileChatGateInjectionBundle(
+                        buildChatGateInjectionBundle(arkFuture, fixedFutures),
+                        accumulatedForEmit,
+                        emitLock);
 
         drainRemainingFixedForSse(
                 fixedFutures, accumulatedForEmit, onCumulativeReferences, emitLock);
@@ -639,16 +871,55 @@ public class ChatWebSearchGroundingService {
         return new WebSearchExecutionResult(finalMerged, null);
     }
 
-    private CompletableFuture<WebGroundingBundle> startBundleFuture(
+    private CompletableFuture<WebGroundingBundle> startArkBundleFuture(
             TenantSnapshot snap,
             GroundingSourceExecution exec,
-            String userQueryPlaintext,
+            WebSearchArkInvokeRequest arkRequest,
+            long conversationId,
+            Object emitLock,
+            List<WebSearchReference> accumulatedForEmit,
+            Consumer<List<WebSearchReference>> onCumulativeReferences,
+            LlmUsageScene usageScene) {
+        return CompletableFuture.supplyAsync(
+                        () -> executeOneArkSource(snap, exec, arkRequest, conversationId, usageScene),
+                        command -> Thread.startVirtualThread(command))
+                .orTimeout(sourceDeadlineSec(exec), TimeUnit.SECONDS)
+                .handle(
+                        (bundle, ex) -> {
+                            if (ex == null) {
+                                return bundle;
+                            }
+                            logSourceFailure(
+                                    snap.getTenantId(),
+                                    conversationId,
+                                    exec,
+                                    "并行截止 " + sourceDeadlineSec(exec) + "s",
+                                    ex);
+                            return emptyBundle();
+                        })
+                .thenApply(
+                        bundle -> {
+                            if (accumulatedForEmit != null && onCumulativeReferences != null) {
+                                synchronized (emitLock) {
+                                    mergeReferencesDistinct(accumulatedForEmit, bundle.references());
+                                    emitCumulative(
+                                            onCumulativeReferences, List.copyOf(accumulatedForEmit));
+                                }
+                            }
+                            return bundle;
+                        });
+    }
+
+    private CompletableFuture<WebGroundingBundle> startFixedBundleFuture(
+            TenantSnapshot snap,
+            GroundingSourceExecution exec,
+            String keywordQuery,
             long conversationId,
             Object emitLock,
             List<WebSearchReference> accumulatedForEmit,
             Consumer<List<WebSearchReference>> onCumulativeReferences) {
         return CompletableFuture.supplyAsync(
-                        () -> executeOneSource(snap, exec, userQueryPlaintext, conversationId),
+                        () -> executeOneFixedSource(snap, exec, keywordQuery, conversationId),
                         command -> Thread.startVirtualThread(command))
                 .orTimeout(sourceDeadlineSec(exec), TimeUnit.SECONDS)
                 .handle(
@@ -816,50 +1087,30 @@ public class ChatWebSearchGroundingService {
         }
     }
 
-    private WebGroundingBundle executeOneSource(
+    private WebGroundingBundle executeOneArkSource(
             TenantSnapshot snap,
             GroundingSourceExecution exec,
-            String userQueryPlaintext,
-            long conversationId) {
+            WebSearchArkInvokeRequest arkRequest,
+            long conversationId,
+            LlmUsageScene usageScene) {
         long t0 = System.currentTimeMillis();
         log.info(
-                "[联网搜索] 源开始：{}，租户 {}，会话 {}",
+                "[联网搜索] Ark 源开始：{}，租户 {}，会话 {}，messages {} 条",
                 exec.logLabel(),
                 snap.getTenantId(),
-                conversationId);
+                conversationId,
+                arkRequest == null ? 0 : arkRequest.messages().size());
         try {
-            WebSearchExecutionResult result = exec.invoke(snap, userQueryPlaintext);
-            if (exec.arkModel() != null) {
-                recordUsageIfPresent(
-                        snap,
-                        exec.arkModel(),
-                        result.rawResponseBody(),
-                        conversationId,
-                        System.currentTimeMillis() - t0);
-            }
+            WebSearchExecutionResult result = exec.invokeArk(arkRequest);
+            recordUsageIfPresent(
+                    snap,
+                    exec.arkModel(),
+                    result.rawResponseBody(),
+                    conversationId,
+                    System.currentTimeMillis() - t0,
+                    usageScene);
             WebGroundingBundle labeled = labelBundle(result.bundle(), exec.label(), exec.sourceKey());
-            long elapsed = System.currentTimeMillis() - t0;
-            int refs = labeled.references() == null ? 0 : labeled.references().size();
-            boolean hasSummary =
-                    labeled.summaryText() != null && !labeled.summaryText().isBlank();
-            if (refs > 0 || hasSummary) {
-                log.info(
-                        "[联网搜索] 源成功：{}，租户 {}，会话 {}，引用 {} 条，摘要 {}，耗时 {}ms",
-                        exec.logLabel(),
-                        snap.getTenantId(),
-                        conversationId,
-                        refs,
-                        hasSummary ? "有" : "无",
-                        elapsed);
-            } else {
-                log.warn(
-                        "[联网搜索] 源无结果：{}，租户 {}，会话 {}，耗时 {}ms（请求可能成功但解析为空）",
-                        exec.logLabel(),
-                        snap.getTenantId(),
-                        conversationId,
-                        elapsed);
-            }
-            return labeled;
+            return logSourceOutcome(snap, conversationId, exec, labeled, t0);
         } catch (RestClientResponseException e) {
             String snippet = responseBodySnippet(e);
             logSourceFailure(
@@ -878,6 +1129,72 @@ public class ChatWebSearchGroundingService {
             logSourceFailure(snap.getTenantId(), conversationId, exec, e.getClass().getSimpleName(), e);
             return emptyBundle();
         }
+    }
+
+    private WebGroundingBundle executeOneFixedSource(
+            TenantSnapshot snap,
+            GroundingSourceExecution exec,
+            String keywordQuery,
+            long conversationId) {
+        long t0 = System.currentTimeMillis();
+        log.info(
+                "[联网搜索] 固定源开始：{}，租户 {}，会话 {}，关键词 [{}]",
+                exec.logLabel(),
+                snap.getTenantId(),
+                conversationId,
+                WebSearchQueryRewriteService.clipForLog(keywordQuery));
+        try {
+            WebSearchExecutionResult result = exec.invokeFixed(snap, keywordQuery);
+            WebGroundingBundle labeled = labelBundle(result.bundle(), exec.label(), exec.sourceKey());
+            return logSourceOutcome(snap, conversationId, exec, labeled, t0);
+        } catch (RestClientResponseException e) {
+            String snippet = responseBodySnippet(e);
+            logSourceFailure(
+                    snap.getTenantId(),
+                    conversationId,
+                    exec,
+                    "HTTP " + e.getStatusCode().value() + "，响应摘要=" + snippet,
+                    e);
+            return emptyBundle();
+        } catch (RestClientException e) {
+            logSourceFailure(snap.getTenantId(), conversationId, exec, "RestClient", e);
+            return emptyBundle();
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            logSourceFailure(snap.getTenantId(), conversationId, exec, e.getClass().getSimpleName(), e);
+            return emptyBundle();
+        }
+    }
+
+    private WebGroundingBundle logSourceOutcome(
+            TenantSnapshot snap,
+            long conversationId,
+            GroundingSourceExecution exec,
+            WebGroundingBundle labeled,
+            long t0) {
+        long elapsed = System.currentTimeMillis() - t0;
+        int refs = labeled.references() == null ? 0 : labeled.references().size();
+        boolean hasSummary =
+                labeled.summaryText() != null && !labeled.summaryText().isBlank();
+        if (refs > 0 || hasSummary) {
+            log.info(
+                    "[联网搜索] 源成功：{}，租户 {}，会话 {}，引用 {} 条，摘要 {}，耗时 {}ms",
+                    exec.logLabel(),
+                    snap.getTenantId(),
+                    conversationId,
+                    refs,
+                    hasSummary ? "有" : "无",
+                    elapsed);
+        } else {
+            log.warn(
+                    "[联网搜索] 源无结果：{}，租户 {}，会话 {}，耗时 {}ms（请求可能成功但解析为空）",
+                    exec.logLabel(),
+                    snap.getTenantId(),
+                    conversationId,
+                    elapsed);
+        }
+        return labeled;
     }
 
     private void logSourceFailure(
@@ -1030,14 +1347,18 @@ public class ChatWebSearchGroundingService {
             return null;
         }
 
-        WebSearchExecutionResult invoke(TenantSnapshot snap, String query) throws Exception {
-            if (arkModel != null && arkProvider != null) {
-                return arkProvider.execute(arkModel, arkApiKey, query);
+        WebSearchExecutionResult invokeArk(WebSearchArkInvokeRequest request) throws Exception {
+            if (arkModel == null || arkProvider == null) {
+                throw new IllegalStateException("非 Ark 执行项");
             }
-            if (fixedProvider != null && fixedSource != null) {
-                return fixedProvider.execute(snap.getTenantId(), query);
+            return arkProvider.execute(arkModel, arkApiKey, request);
+        }
+
+        WebSearchExecutionResult invokeFixed(TenantSnapshot snap, String keywordQuery) throws Exception {
+            if (fixedProvider == null || fixedSource == null) {
+                throw new IllegalStateException("非固定源执行项");
             }
-            throw new IllegalStateException("无效的联网检索执行项");
+            return fixedProvider.execute(snap.getTenantId(), keywordQuery);
         }
     }
 
@@ -1059,7 +1380,8 @@ public class ChatWebSearchGroundingService {
             SysLlmModel webSearchModel,
             String rawJson,
             long conversationId,
-            long durationMs) {
+            long durationMs,
+            LlmUsageScene usageScene) {
         if (rawJson == null || rawJson.isBlank()) {
             return;
         }
@@ -1075,7 +1397,8 @@ public class ChatWebSearchGroundingService {
                     webSearchModel.getAlias(),
                     conversationId,
                     usage,
-                    durationMs);
+                    durationMs,
+                    usageScene);
         } catch (Exception ex) {
             log.debug("[联网搜索] 跳过用量记录：{}", ex.toString());
         }

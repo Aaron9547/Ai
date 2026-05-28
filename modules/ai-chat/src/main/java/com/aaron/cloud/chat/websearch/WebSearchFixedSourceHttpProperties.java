@@ -8,7 +8,9 @@ import org.springframework.stereotype.Component;
 /**
  * 内置固定联网源出站代理（本地开梯子时配置，与 Postman System Proxy 对齐）。
  *
- * <p>示例 {@code application-local.yml}：{@code ai.websearch.fixed.proxy-host: 127.0.0.1}、{@code proxy-port: 7890}
+ * <p>进程级回退（任选）：租户 Shell {@code WEB_SEARCH_FIXED_SOURCE_OUTBOUND_JSON}、
+ * {@code application-local.yml} 的 {@code ai.websearch.fixed.*}、环境变量 {@code AI_WEB_SEARCH_FIXED_PROXY_*}、
+ * JVM {@code -Dai.websearch.fixed.proxyHost} 等。未配置时直连。
  */
 @Data
 @Component

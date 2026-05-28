@@ -101,6 +101,7 @@ function sourceLabel(src: string) {
   const map: Record<string, string> = {
     MANUAL: t("views.chatStarter.sourceManual"),
     HOT_TOPIC_DAILY: t("views.chatStarter.sourceHot"),
+    DAILY_RECOMMEND: t("views.chatStarter.sourceDailyRecommend"),
     LLM_FOLLOW_UP: t("views.chatStarter.sourceLlm"),
     WEB_SEARCH_GROUNDING: t("views.chatStarter.sourceWebKnowledge"),
   };

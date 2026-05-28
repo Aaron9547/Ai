@@ -17,7 +17,8 @@ import org.springframework.web.client.RestClient;
  * <p>默认直连（国内部署）。本地开梯子访问 Google/DDG/维基时，任选其一：
  *
  * <ul>
- *   <li>{@code application.yml}：{@code ai.websearch.fixed.proxy-host: 127.0.0.1}、{@code proxy-port: 7890}
+ *   <li>租户 Shell：{@code WEB_SEARCH_FIXED_SOURCE_OUTBOUND_JSON}（管理端「固定源 HTTP 代理」）
+ *   <li>{@code application-local.yml}：{@code ai.websearch.fixed.proxy-host}、{@code proxy-port: 7890}
  *   <li>启动参数：{@code -Dai.websearch.fixed.proxyHost=127.0.0.1 -Dai.websearch.fixed.proxyPort=7890}
  *   <li>环境变量：{@code AI_WEB_SEARCH_FIXED_PROXY_HOST}、{@code AI_WEB_SEARCH_FIXED_PROXY_PORT}
  *   <li>本地梯子快捷：{@code use-system-proxy: true}（映射为 {@code 127.0.0.1:7890 HTTP}，勿依赖 JVM SOCKS）

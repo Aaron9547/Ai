@@ -1,6 +1,7 @@
 package com.aaron.cloud.chat;
 
 import com.aaron.cloud.common.api.dto.model.ModelChatRequest;
+import com.aaron.cloud.common.api.enums.metering.LlmUsageScene;
 import com.aaron.cloud.common.api.enums.chat.ChatMessageRole;
 import com.aaron.cloud.common.api.enums.llm.LlmModelKind;
 import com.aaron.cloud.common.api.ports.ModelInvokePort;
@@ -166,6 +167,8 @@ public class ChatTurnDigestApplicationService {
                     req.setDeviceId(snap.getDeviceId());
                     req.setModelAlias(alias);
                     req.setThinkingEnabled(false);
+                    req.setConversationId(conversationId);
+                    req.setUsageScene(LlmUsageScene.CONVERSATION_DIGEST.getCode());
                     req.setMessages(turns);
                     StringBuilder acc = new StringBuilder();
                     try {

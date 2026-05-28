@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 public enum ChatStarterPromptSource {
     MANUAL("MANUAL", "运营配置"),
     HOT_TOPIC_DAILY("HOT_TOPIC_DAILY", "每日联网热点"),
+    DAILY_RECOMMEND("DAILY_RECOMMEND", "今日智能洞察"),
     LLM_FOLLOW_UP("LLM_FOLLOW_UP", "模型生成追问"),
     WEB_SEARCH_GROUNDING("WEB_SEARCH_GROUNDING", "对话联网检索沉淀");
 

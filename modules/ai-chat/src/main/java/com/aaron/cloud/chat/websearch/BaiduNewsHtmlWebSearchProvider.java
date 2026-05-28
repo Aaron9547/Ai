@@ -45,8 +45,17 @@ public class BaiduNewsHtmlWebSearchProvider implements WebSearchFixedSourceProvi
         }
         String encoded = URLEncoder.encode(q, StandardCharsets.UTF_8);
         String url = "https://www.baidu.com/s?tn=news&word=" + encoded;
-        log.info("[联网搜索] {} 外呼 GET {}", LABEL, url);
-        Document doc = fixedSourceHttp.jsoupGet(tenantId, url);
+        log.info("[联网搜索] {} 外呼 GET {}（直连，不走固定源代理）", LABEL, url);
+        Document doc = fixedSourceHttp.jsoupGetDirect(url);
+        if (looksLikeCaptcha(doc)) {
+            log.warn(
+                    "[联网搜索] {} 命中百度安全验证页（非搜索结果），租户 {}，关键词 [{}]；"
+                            + "请确认未经境外代理访问百度，必要时重启应用清缓存后重试",
+                    LABEL,
+                    tenantId,
+                    q);
+            return new WebSearchExecutionResult(new WebGroundingBundle("", List.of()), null);
+        }
         List<WebSearchReference> refs = parseNewsResults(doc);
         String summary =
                 WebSearchSummarySupport.prefixSummary(
@@ -54,6 +63,18 @@ public class BaiduNewsHtmlWebSearchProvider implements WebSearchFixedSourceProvi
         WebGroundingBundle bundle = new WebGroundingBundle(summary, refs);
         localCache.put(tenantId, supports(), normalized, bundle);
         return new WebSearchExecutionResult(bundle, null);
+    }
+
+    static boolean looksLikeCaptcha(Document doc) {
+        if (doc == null) {
+            return false;
+        }
+        String title = doc.title();
+        if (title != null && title.contains("安全验证")) {
+            return true;
+        }
+        String html = doc.html();
+        return html.contains("wappass.baidu.com") || html.contains("captcha/tuxing");
     }
 
     static List<WebSearchReference> parseNewsResults(Document doc) {

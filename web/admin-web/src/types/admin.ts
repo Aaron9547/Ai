@@ -60,6 +60,13 @@ export interface MeteringEventRow {
 
 export type MeteringEventPage = MybatisPage<MeteringEventRow>;
 
+/** 与后端 `MeteringUsageBySceneView` 对齐 */
+export interface MeteringUsageBySceneRow {
+  usageScene: string;
+  totalTokens: number;
+  eventCount: number;
+}
+
 /** 与后端 `McpServerRegistry` 对齐 */
 export interface McpServerRow {
   id: number;

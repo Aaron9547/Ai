@@ -4,6 +4,11 @@
       {{ t("views.chatStarter.webKnowledgeHint") }}
     </el-alert>
     <el-table v-loading="loading" :data="rows" stripe border :empty-text="t('views.chatStarter.webKnowledgeEmpty')">
+      <el-table-column :label="t('views.chatStarter.colSource')" width="120" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ sourceLabel(row.source) }}
+        </template>
+      </el-table-column>
       <el-table-column prop="promptText" :label="t('views.chatStarter.colText')" min-width="200" show-overflow-tooltip />
       <el-table-column
         prop="groundingSummaryPreview"
@@ -233,6 +238,15 @@ watch(
   { immediate: true },
 );
 
+function sourceLabel(src: string | undefined) {
+  const map: Record<string, string> = {
+    WEB_SEARCH_GROUNDING: t("views.chatStarter.sourceWebKnowledge"),
+    DAILY_RECOMMEND: t("views.chatStarter.sourceDailyRecommend"),
+    HOT_TOPIC_DAILY: t("views.chatStarter.sourceHot"),
+  };
+  return map[src ?? ""] ?? src ?? "—";
+}
+
 function refLabel(ref: WebGroundingReferenceItem): string {
   const title = (ref.title ?? "").trim();
   if (title) return title;
@@ -252,7 +266,6 @@ async function load() {
   try {
     const res = await listStarterPrompts({
       scene: "WEB_KNOWLEDGE",
-      source: "WEB_SEARCH_GROUNDING",
       page: page.value,
       size: pageSize.value,
     });

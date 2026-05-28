@@ -9,6 +9,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -39,14 +40,75 @@ public class MeteringUsageEventRepository {
     }
 
     /** {@code filterTenantId == null} 时不按租户过滤（创始人全量列表）。 */
-    public Page<MeteringUsageEvent> pageForAdmin(Long filterTenantIdOrNull, long pageNo, long pageSize) {
+    public Page<MeteringUsageEvent> pageForAdmin(
+            Long filterTenantIdOrNull, long pageNo, long pageSize, String usageSceneOrNull) {
         var q = Wrappers.<MeteringUsageEvent>lambdaQuery().orderByDesc(MeteringUsageEvent::getCreatedAt);
         if (filterTenantIdOrNull != null) {
             q.eq(MeteringUsageEvent::getTenantId, filterTenantIdOrNull);
         }
+        if (usageSceneOrNull != null && !usageSceneOrNull.isBlank()) {
+            q.apply(
+                    "CAST(JSON_EXTRACT(ref_json, '$.usageScene') AS CHAR(64)) = {0}",
+                    usageSceneOrNull.trim());
+        }
         Page<MeteringUsageEvent> page = mapper.selectPage(Page.of(pageNo, pageSize), q);
         attachAdminDisplayFields(page.getRecords());
         return page;
+    }
+
+    /** 兼容旧调用（不按场景筛选）。 */
+    public Page<MeteringUsageEvent> pageForAdmin(Long filterTenantIdOrNull, long pageNo, long pageSize) {
+        return pageForAdmin(filterTenantIdOrNull, pageNo, pageSize, null);
+    }
+
+    /** 近 {@code days} 个北京自然日（含今日）按 {@code usageScene} 汇总 token。 */
+    public List<MeteringUsageBySceneView> sumTokensGroupedByUsageScene(
+            Long filterTenantIdOrNull, int days) {
+        int d = Math.clamp(days, 1, 90);
+        java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"));
+        java.time.LocalDate start = today.minusDays(d - 1L);
+        java.time.LocalDateTime since =
+                start.atStartOfDay(java.time.ZoneId.of("Asia/Shanghai")).withZoneSameInstant(java.time.ZoneOffset.UTC).toLocalDateTime();
+        java.time.LocalDateTime until =
+                today.plusDays(1L).atStartOfDay(java.time.ZoneId.of("Asia/Shanghai")).withZoneSameInstant(java.time.ZoneOffset.UTC).toLocalDateTime();
+        QueryWrapper<MeteringUsageEvent> qw = new QueryWrapper<>();
+        qw.select(
+                        MeteringTokenAggregationSql.USAGE_SCENE_EXPR + " AS usage_scene",
+                        "COALESCE(SUM(quantity),0) AS total_tokens",
+                        "COUNT(1) AS event_count")
+                .eq("unit", "token")
+                .ge("created_at", since)
+                .lt("created_at", until);
+        if (filterTenantIdOrNull != null) {
+            qw.eq("tenant_id", filterTenantIdOrNull);
+        }
+        qw.groupBy("usage_scene").orderByDesc("total_tokens");
+        List<Map<String, Object>> maps = mapper.selectMaps(qw);
+        List<MeteringUsageBySceneView> out = new ArrayList<>();
+        for (Map<String, Object> row : maps) {
+            String scene = row.get("usage_scene") == null ? "-" : String.valueOf(row.get("usage_scene"));
+            long tokens = toLong(row.get("total_tokens"));
+            long cnt = toLong(row.get("event_count"));
+            if ("-".equals(scene) && tokens <= 0L && cnt <= 0L) {
+                continue;
+            }
+            out.add(new MeteringUsageBySceneView(scene, tokens, cnt));
+        }
+        return out;
+    }
+
+    private static long toLong(Object v) {
+        if (v == null) {
+            return 0L;
+        }
+        if (v instanceof Number n) {
+            return n.longValue();
+        }
+        try {
+            return new BigDecimal(String.valueOf(v)).longValue();
+        } catch (Exception ex) {
+            return 0L;
+        }
     }
 
     public long countByTenantSince(long tenantId, LocalDateTime sinceUtcInclusive) {
@@ -159,6 +221,36 @@ public class MeteringUsageEventRepository {
                 .groupBy("model_alias")
                 .last("ORDER BY (prompt_sum + completion_sum) DESC LIMIT " + limit);
         return mapper.selectMaps(qw);
+    }
+
+    /** 按 {@code ref_json.conversationId} 汇总会话内全部 token 计量（含联网、编排 LLM 等）。 */
+    public long sumTokenQuantityByConversationId(long tenantId, long conversationId) {
+        if (conversationId <= 0L) {
+            return 0L;
+        }
+        QueryWrapper<MeteringUsageEvent> qw = new QueryWrapper<>();
+        qw.select("COALESCE(SUM(quantity),0) AS s")
+                .eq("tenant_id", tenantId)
+                .eq("unit", "token")
+                .apply(
+                        "CAST(JSON_EXTRACT(ref_json, '$.conversationId') AS SIGNED) = {0}",
+                        conversationId);
+        Map<String, Object> row = mapper.selectMaps(qw).stream().findFirst().orElse(null);
+        if (row == null || row.get("s") == null) {
+            return 0L;
+        }
+        Object s = row.get("s");
+        if (s instanceof BigDecimal bd) {
+            return bd.longValue();
+        }
+        if (s instanceof Number n) {
+            return n.longValue();
+        }
+        try {
+            return new BigDecimal(String.valueOf(s)).longValue();
+        } catch (Exception ex) {
+            return 0L;
+        }
     }
 
     private void attachAdminDisplayFields(List<MeteringUsageEvent> records) {

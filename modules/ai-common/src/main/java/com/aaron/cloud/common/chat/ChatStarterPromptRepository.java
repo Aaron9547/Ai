@@ -35,7 +35,7 @@ public class ChatStarterPromptRepository {
                         .orderByAsc(ChatStarterPrompt::getId));
     }
 
-    /** 管理端：按场景（及可选来源）分页列表。 */
+    /** 管理端：按场景（及可选来源）分页列表；按 {@code updated_at} 从新到旧。 */
     public Page<ChatStarterPrompt> pageByTenant(
             long tenantId,
             ChatStarterPromptScene scene,
@@ -46,9 +46,8 @@ public class ChatStarterPromptRepository {
                 Wrappers.<ChatStarterPrompt>lambdaQuery()
                         .eq(ChatStarterPrompt::getTenantId, tenantId)
                         .eq(ChatStarterPrompt::getScene, scene)
-                        .orderByDesc(ChatStarterPrompt::getSortOrder)
-                        .orderByDesc(ChatStarterPrompt::getWeight)
-                        .orderByAsc(ChatStarterPrompt::getId);
+                        .orderByDesc(ChatStarterPrompt::getUpdatedAt)
+                        .orderByDesc(ChatStarterPrompt::getId);
         if (source != null) {
             q.eq(ChatStarterPrompt::getSource, source);
         }

@@ -42,7 +42,7 @@ export default {
     threadHintDesktop: "Enter to send, Shift+Enter for newline; attach via “+” or drag into the box.",
     tokenLine: "Session total",
     tokenLineValue: "<strong>{n}</strong> tokens",
-    tokenLineHint: "Sum of assistant reply usage",
+    tokenLineHint: "Includes main reply, web search plugin, follow-up prompts, and other model calls",
     emptyBrand: "Ai",
     emptyWelcome: "Hi! I’m the Ai assistant. How can I help?",
     quick1: "Write a poem about spring",

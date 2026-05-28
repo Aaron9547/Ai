@@ -2,6 +2,7 @@ package com.aaron.cloud.chat.starter;
 
 import com.aaron.cloud.chat.dto.ChatStarterPromptDtos;
 import com.aaron.cloud.common.api.dto.model.ModelChatRequest;
+import com.aaron.cloud.common.api.enums.metering.LlmUsageScene;
 import com.aaron.cloud.common.api.enums.chat.ChatMessageRole;
 import com.aaron.cloud.common.api.enums.chat.ChatStarterPromptScene;
 import com.aaron.cloud.common.api.enums.chat.ChatStarterPromptSource;
@@ -92,7 +93,7 @@ public class ChatStarterFollowUpService {
 
         List<String> generated =
                 ChatStarterFollowUpTextSupport.filterQuestions(
-                        generateFollowUpQuestions(tenantId, userQ, assistantText));
+                        generateFollowUpQuestions(tenantId, conversationId, userQ, assistantText));
         if (generated.isEmpty()) {
             return poolFallback(tenantId, snap.getUserId(), snap.getDeviceId(), limit);
         }
@@ -106,14 +107,14 @@ public class ChatStarterFollowUpService {
      * 主模型流式结束后立即启动追问 LLM（与联网后续轮 {@code join} 并行，缩短端到端等待）。
      */
     public CompletableFuture<List<String>> startFollowUpGeneration(
-            long tenantId, String userQ, String assistantText) {
+            long tenantId, long conversationId, String userQ, String assistantText) {
         String u = userQ == null ? "" : userQ.trim();
         String a = assistantText == null ? "" : assistantText.trim();
         if (a.isBlank()) {
             return CompletableFuture.completedFuture(List.of());
         }
         return CompletableFuture.supplyAsync(
-                () -> generateFollowUpQuestions(tenantId, u, a),
+                () -> generateFollowUpQuestions(tenantId, conversationId, u, a),
                 command -> Thread.startVirtualThread(command));
     }
 
@@ -303,7 +304,7 @@ public class ChatStarterFollowUpService {
     }
 
     private List<String> generateFollowUpQuestions(
-            long tenantId, String userQ, String assistantText) {
+            long tenantId, long conversationId, String userQ, String assistantText) {
         SysLlmModel lang = llmModelRepository.pickDefaultLanguageModel(tenantId).orElse(null);
         if (lang == null) {
             return List.of();
@@ -333,6 +334,8 @@ public class ChatStarterFollowUpService {
         req.setTenantId(tenantId);
         req.setModelAlias(lang.getAlias());
         req.setThinkingEnabled(false);
+        req.setConversationId(conversationId > 0L ? conversationId : null);
+        req.setUsageScene(LlmUsageScene.LLM_FOLLOW_UP.getCode());
         req.setMessages(List.of(sys, user));
         StringBuilder acc = new StringBuilder();
         try {

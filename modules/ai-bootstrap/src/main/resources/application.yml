@@ -70,15 +70,6 @@ ai:
   # 租户运行时表 ten_runtime_setting 读穿缓存 TTL（秒）；无 Redis 时直读库。
   tenant-runtime-settings:
     cache-ttl-seconds: ${AI_TENANT_RUNTIME_SETTINGS_CACHE_TTL:600}
-  # 内置固定联网源出站。默认直连（proxy-host 为空）。本地 Clash 二选一：
-  #   proxy-host: 127.0.0.1  proxy-port: 7890  proxy-type: HTTP
-  #   use-system-proxy: true   # 等同 127.0.0.1:7890 HTTP，勿依赖 JVM 系统 SOCKS
-  websearch:
-    fixed:
-      proxy-host: ${AI_WEB_SEARCH_FIXED_PROXY_HOST:127.0.0.1}
-      proxy-port: ${AI_WEB_SEARCH_FIXED_PROXY_PORT:7897}
-      proxy-type: ${AI_WEB_SEARCH_FIXED_PROXY_TYPE:HTTP}
-      use-system-proxy: ${AI_WEB_SEARCH_FIXED_USE_SYSTEM_PROXY:false}
   # 接入方 HMAC/RPM：edge-only=仅在 gateway/bootstrap 边缘验签（默认）；per-service=各服务重复验签（非默认）。
   access-party:
     enforcement: ${AI_ACCESS_PARTY_ENFORCEMENT:edge-only}

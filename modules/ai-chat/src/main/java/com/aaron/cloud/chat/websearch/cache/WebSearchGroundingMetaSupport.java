@@ -6,10 +6,29 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
 
-/** 从 {@code chat_message.meta_json#webSearchReferences} 解析引用。 */
+/** 从 {@code chat_message.meta_json} 解析联网引用与复用问句。 */
 public final class WebSearchGroundingMetaSupport {
 
+    /** 与联网外呼一致的规范化问句（含附件拼接），用于会话内复用比对。 */
+    public static final String META_WEB_SEARCH_QUERY_NORM = "webSearchQueryNorm";
+
     private WebSearchGroundingMetaSupport() {}
+
+    public static String readQueryNormFromMeta(ObjectMapper objectMapper, String metaJson) {
+        if (metaJson == null || metaJson.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(metaJson);
+            if (!root.has(META_WEB_SEARCH_QUERY_NORM)) {
+                return null;
+            }
+            String t = root.get(META_WEB_SEARCH_QUERY_NORM).asText(null);
+            return t == null || t.isBlank() ? null : t.trim();
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
     public static List<WebSearchReference> parseReferencesFromMeta(ObjectMapper objectMapper, String metaJson) {
         if (metaJson == null || metaJson.isBlank()) {

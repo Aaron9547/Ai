@@ -2,6 +2,7 @@ package com.aaron.cloud.chat.knowledgeplanet;
 
 import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.knowledgeplanet.KnowledgePlanetSubjectQuerySupport;
+import com.aaron.cloud.common.knowledgeplanet.KnowledgePlanetTopicTagsNormalizer;
 import com.aaron.cloud.common.knowledgeplanet.KnowledgePlanetTenantRuntime;
 import com.aaron.cloud.common.knowledgeplanet.TenUserKnowledgeNodeRepository;
 import com.aaron.cloud.common.knowledgeplanet.entity.TenUserKnowledgeNode;
@@ -134,7 +135,11 @@ public class KnowledgePlanetIngestService {
         row.setTitle(TextClamp.ellipsis(title, 255));
         row.setSummary(TextClamp.ellipsis(summary, 2000));
         if (parsed.getTopicTags() != null && !parsed.getTopicTags().isEmpty()) {
-            row.setTopicTagsJson(objectMapper.writeValueAsString(parsed.getTopicTags()));
+            List<String> normalized =
+                    KnowledgePlanetTopicTagsNormalizer.normalize(parsed.getTopicTags());
+            if (!normalized.isEmpty()) {
+                row.setTopicTagsJson(objectMapper.writeValueAsString(normalized));
+            }
         }
         nodeRepository.insert(row);
         log.debug("[知识星球] 节点已沉淀 tenantId={} subject={} title={}", tenantId, subjectKey, title);
@@ -149,8 +154,9 @@ public class KnowledgePlanetIngestService {
             }
             try {
                 List<String> tags = objectMapper.readValue(n.getTopicTagsJson(), new TypeReference<List<String>>() {});
-                if (tags != null && !tags.isEmpty() && tags.getFirst() != null) {
-                    String primary = tags.getFirst().trim();
+                List<String> normalized = KnowledgePlanetTopicTagsNormalizer.normalize(tags);
+                if (!normalized.isEmpty()) {
+                    String primary = normalized.getFirst().trim();
                     if (!primary.isEmpty()) {
                         planetNames.add(primary);
                     }

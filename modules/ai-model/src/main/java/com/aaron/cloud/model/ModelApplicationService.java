@@ -1,6 +1,7 @@
 package com.aaron.cloud.model;
 
 import com.aaron.cloud.common.api.dto.model.ModelChatRequest;
+import com.aaron.cloud.common.api.dto.model.ModelTokenUsage;
 import com.aaron.cloud.common.outbound.TenantOutboundResilienceRuntime;
 import com.aaron.cloud.common.context.TenantContextHolder;
 import com.aaron.cloud.common.outbound.LlmOutboundException;
@@ -8,11 +9,14 @@ import com.aaron.cloud.common.outbound.OutboundCircuitBreakerSupport;
 import com.aaron.cloud.common.api.enums.infra.OutboundKind;
 import com.aaron.cloud.common.outbound.OutboundMetricsSupport;
 import com.aaron.cloud.common.outbound.OutboundTenantUpstreamQuarantine;
+import com.aaron.cloud.model.metering.ModelStreamUsageRecorder;
 import com.aaron.cloud.model.spi.ModelCompletionEngine;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.micrometer.core.instrument.Timer;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -27,18 +31,22 @@ public class ModelApplicationService {
     private final OutboundCircuitBreakerSupport outboundCircuitBreakerSupport;
     private final OutboundMetricsSupport outboundMetricsSupport;
     private final OutboundTenantUpstreamQuarantine outboundTenantUpstreamQuarantine;
+    private final ModelStreamUsageRecorder modelStreamUsageRecorder;
 
-    public void streamCompletion(ModelChatRequest request, java.util.function.Consumer<String> onToken)
-            throws Exception {
+    public void streamCompletion(ModelChatRequest request, Consumer<String> onToken) throws Exception {
         long wallStart = System.currentTimeMillis();
         long tenantId = resolveTenantId(request);
         outboundTenantUpstreamQuarantine.assertStreamAllowed(tenantId);
+        AtomicReference<ModelTokenUsage> usageRef = new AtomicReference<>();
+        modelStreamUsageRecorder.attachUsageCapture(request, usageRef);
 
         if (!outboundResilienceRuntime.effective(tenantId).isEnabled()) {
             try {
                 modelCompletionEngine.streamCompletion(request, onToken);
                 outboundTenantUpstreamQuarantine.recordTenantSuccess(tenantId);
                 logCompletion(wallStart, request);
+                modelStreamUsageRecorder.recordAfterStream(
+                        request, usageRef.get(), System.currentTimeMillis() - wallStart);
             } catch (Exception e) {
                 throw e;
             }
@@ -64,6 +72,8 @@ public class ModelApplicationService {
             outboundMetricsSupport.stopStreamTimer(timer, OutboundKind.LLM_STREAM, true);
             outboundTenantUpstreamQuarantine.recordTenantSuccess(tenantId);
             logCompletion(wallStart, request);
+            modelStreamUsageRecorder.recordAfterStream(
+                    request, usageRef.get(), System.currentTimeMillis() - wallStart);
         } catch (Exception e) {
             if (cb.isPresent()) {
                 cb.get().onError(System.nanoTime() - t0, TimeUnit.NANOSECONDS, e);
