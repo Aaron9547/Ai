@@ -7,6 +7,7 @@ import com.aaron.cloud.common.api.enums.infra.OutboundKind;
 import com.aaron.cloud.common.api.enums.mcp.McpServerStatus;
 import com.aaron.cloud.common.mcp.McpServerRegistryRepository;
 import com.aaron.cloud.common.mcp.entity.McpServerRegistry;
+import com.aaron.cloud.common.outbound.WebSearchFixedSourceOutboundResolver;
 import com.aaron.cloud.common.outbound.OutboundCircuitBreakerSupport;
 import com.aaron.cloud.common.outbound.OutboundMetricsSupport;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -15,6 +16,7 @@ import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.TextContent;
+import java.net.http.HttpConnectTimeoutException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -36,12 +38,13 @@ public class McpRemoteSessionService {
     private final ObjectMapper objectMapper;
     private final OutboundCircuitBreakerSupport outboundCircuitBreakerSupport;
     private final OutboundMetricsSupport outboundMetricsSupport;
+    private final WebSearchFixedSourceOutboundResolver outboundResolver;
 
     public List<McpToolDescriptor> listTools(long tenantId, List<Long> serverIds, Duration timeout)
             throws Exception {
         List<McpToolDescriptor> all = new ArrayList<>();
         for (McpServerRegistry server : activeServers(tenantId, serverIds)) {
-            try (McpSyncClient client = mcpRemoteClientFactory.open(server, timeout)) {
+            try (McpSyncClient client = mcpRemoteClientFactory.open(tenantId, server, timeout)) {
                 client.initialize();
                 var tools = client.listTools();
                 all.addAll(mcpToolSchemaMapper.toDescriptors(server, tools.tools()));
@@ -60,7 +63,7 @@ public class McpRemoteSessionService {
             outboundMetricsSupport.recordError(OutboundKind.MCP, "CIRCUIT_OPEN", 503);
             throw OutboundCircuitBreakerSupport.circuitOpen(OutboundKind.MCP, server.getName());
         }
-        try (McpSyncClient client = mcpRemoteClientFactory.open(server, timeout)) {
+        try (McpSyncClient client = mcpRemoteClientFactory.open(tenantId, server, timeout)) {
             client.initialize();
             Map<String, Object> args = jsonNodeToMap(arguments);
             CallToolResult result = client.callTool(new CallToolRequest(parsed.toolName(), args));
@@ -84,8 +87,9 @@ public class McpRemoteSessionService {
 
     public McpServerProbeResult probe(long tenantId, long serverId, Duration timeout) throws Exception {
         McpServerRegistry server = requireServer(tenantId, serverId);
+        String outboundDiag = outboundResolver.diagnostics(tenantId);
         long t0 = System.nanoTime();
-        try (McpSyncClient client = mcpRemoteClientFactory.open(server, timeout)) {
+        try (McpSyncClient client = mcpRemoteClientFactory.open(tenantId, server, timeout)) {
             client.initialize();
             var listed = client.listTools();
             int count = listed.tools() == null ? 0 : listed.tools().size();
@@ -104,10 +108,16 @@ public class McpRemoteSessionService {
             server.setLastProbeOk(0);
             mcpServerRegistryRepository.updateById(server);
             long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t0);
-            log.warn("mcp probe failed serverId={} name={}: {}", serverId, server.getName(), e.toString());
+            log.warn(
+                    "mcp probe failed serverId={} name={} baseUrl={} outbound={}: {}",
+                    serverId,
+                    server.getName(),
+                    server.getBaseUrl(),
+                    outboundDiag,
+                    e.toString());
             return McpServerProbeResult.builder()
                     .ok(false)
-                    .message(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage())
+                    .message(probeFailureMessage(server, outboundDiag, e))
                     .toolCount(0)
                     .elapsedMs(elapsedMs)
                     .build();
@@ -155,5 +165,23 @@ public class McpRemoteSessionService {
             }
         }
         return sb.toString();
+    }
+
+    private static String probeFailureMessage(McpServerRegistry server, String outboundDiag, Exception e) {
+        if (isConnectTimeout(e)) {
+            return "HTTP 连接超时（当前出站: "
+                    + outboundDiag
+                    + "）。请确认 Clash HTTP 口（常见 7890）可达，或配置 ai.websearch.fixed.use-system-proxy=true 后重启";
+        }
+        return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+    }
+
+    private static boolean isConnectTimeout(Throwable e) {
+        for (Throwable cur = e; cur != null; cur = cur.getCause()) {
+            if (cur instanceof HttpConnectTimeoutException) {
+                return true;
+            }
+        }
+        return false;
     }
 }

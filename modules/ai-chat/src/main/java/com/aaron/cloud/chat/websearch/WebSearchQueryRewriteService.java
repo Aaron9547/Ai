@@ -1,15 +1,22 @@
 package com.aaron.cloud.chat.websearch;
 
 import com.aaron.cloud.common.api.dto.model.ModelChatRequest;
-import com.aaron.cloud.common.api.enums.metering.LlmUsageScene;
+import com.aaron.cloud.common.api.dto.model.ModelTokenUsage;
 import com.aaron.cloud.common.api.enums.llm.LlmModelKind;
+import com.aaron.cloud.common.api.enums.llm.LlmModelStatus;
+import com.aaron.cloud.common.api.enums.llm.LlmWebSearchProvider;
+import com.aaron.cloud.common.api.enums.metering.LlmUsageScene;
 import com.aaron.cloud.common.api.ports.ModelInvokePort;
 import com.aaron.cloud.common.api.ports.PromptTemplateResolvePort;
 import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.modelcfg.LlmModelKindPolicy;
 import com.aaron.cloud.common.modelcfg.SysLlmModelRepository;
 import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
+import com.aaron.cloud.common.security.crypto.AesSecretCipher;
+import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService;
+import com.aaron.cloud.model.metering.LlmModelUsageRecorder;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -23,8 +30,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
- * 联网问句改写：固定源渠道拆三关键词（{@link #rewriteKeywordsForFixedSources}）。
- * {@link #rewriteForSearch} 保留供测试或后续场景；火山 Ark 直连不经此方法。
+ * 联网问句改写：固定源渠道单次改写问句（{@link #rewriteKeywordsForFixedSources} 返回 1 条检索文本）。
+ * 租户可配置 LANGUAGE（提示词 + 流式 LLM）或 WEB_SEARCH（单次 Ark Bot 非流式）；火山 Ark 主检索不经此方法。
  */
 @Slf4j
 @Service
@@ -46,6 +53,11 @@ public class WebSearchQueryRewriteService {
     private final SysLlmModelRepository llmModelRepository;
     private final ModelInvokePort modelInvokePort;
     private final PromptTemplateResolvePort promptTemplates;
+    private final TenantRuntimeSettingApplicationService tenantRuntimeSettingApplicationService;
+    private final WebSearchProviderRegistry webSearchProviderRegistry;
+    private final AesSecretCipher aesSecretCipher;
+    private final ObjectMapper objectMapper;
+    private final LlmModelUsageRecorder llmModelUsageRecorder;
 
     /**
      * @return 用于外呼 DuckDuckGo/维基/Google/百度 等的检索文本（可能与原文不同）
@@ -65,34 +77,38 @@ public class WebSearchQueryRewriteService {
             return kept;
         }
         long tenantId = snap.getTenantId();
-        SysLlmModel lang = resolveLanguageModel(tenantId);
-        if (lang != null) {
+        ResolvedRewriteModel resolved = resolveRewriteModel(tenantId);
+        if (resolved != null) {
             try {
-                String llmOut = invokeRewriteLlm(tenantId, lang, original);
+                String llmOut =
+                        resolved.kind() == LlmModelKind.WEB_SEARCH
+                                ? invokeRewriteViaArk(snap, resolved.model(), original, List.of(), 0L, null)
+                                : invokeRewriteLlm(tenantId, resolved.model(), original);
                 String cleaned = sanitizeLlmOutput(llmOut);
                 if (!cleaned.isBlank() && !cleaned.equals(original)) {
                     log.info(
-                            "[联网搜索] 问句重写成功（LLM）：租户 {}，模型 {}，原文 [{}]，检索词 [{}]",
+                            "[联网搜索] 问句重写成功（{}）：租户 {}，模型 {}，原文 [{}]，检索词 [{}]",
+                            resolved.kind(),
                             tenantId,
-                            lang.getAlias(),
+                            resolved.model().getAlias(),
                             clipForLog(original),
                             clipForLog(cleaned));
                     return cleaned;
                 }
                 if (!cleaned.isBlank()) {
                     log.info(
-                            "[联网搜索] 问句重写 LLM 与原文相近，沿用：租户 {}，原文 [{}]",
+                            "[联网搜索] 问句重写与原文相近，沿用：租户 {}，原文 [{}]",
                             tenantId,
                             clipForLog(original));
                     return clampQuery(cleaned);
                 }
                 log.warn(
-                        "[联网搜索] 问句重写 LLM 输出无效，回退规则：租户 {}，原文 [{}]",
+                        "[联网搜索] 问句重写输出无效，回退规则：租户 {}，原文 [{}]",
                         tenantId,
                         clipForLog(original));
             } catch (Exception e) {
                 log.warn(
-                        "[联网搜索] 问句重写 LLM 失败，回退规则：租户 {}，原文 [{}]，原因 {}",
+                        "[联网搜索] 问句重写失败，回退规则：租户 {}，原文 [{}]，原因 {}",
                         tenantId,
                         clipForLog(original),
                         e.toString(),
@@ -100,7 +116,7 @@ public class WebSearchQueryRewriteService {
             }
         } else {
             log.info(
-                    "[联网搜索] 问句重写无可用 LANGUAGE 模型，回退规则：租户 {}，原文 [{}]",
+                    "[联网搜索] 问句重写无可用模型，回退规则：租户 {}，原文 [{}]",
                     tenantId,
                     clipForLog(original));
         }
@@ -114,7 +130,7 @@ public class WebSearchQueryRewriteService {
     }
 
     /**
-     * 固定源渠道：从用户问句抽取恰好 {@value #FIXED_SOURCE_KEYWORD_COUNT} 个检索关键词，供多源并行抓取。
+     * 固定源渠道：将用户问句改写为单条检索文本。
      */
     public List<String> rewriteKeywordsForFixedSources(TenantSnapshot snap, String userQueryPlaintext) {
         return rewriteKeywordsForFixedSources(snap, userQueryPlaintext, List.of(), 0L);
@@ -130,7 +146,7 @@ public class WebSearchQueryRewriteService {
     }
 
     /**
-     * 固定源渠道：结合近史与当前问句拆三关键词；{@code conversationId} 与 {@code usageScene} 写入 LLM 计量流水。
+     * 固定源渠道：结合近史将用户问句改写为单条检索文本，供各固定源并行抓取。
      */
     public List<String> rewriteKeywordsForFixedSources(
             TenantSnapshot snap,
@@ -146,47 +162,59 @@ public class WebSearchQueryRewriteService {
                 recentHistory == null ? List.of() : List.copyOf(recentHistory);
         boolean hasHistory = !history.isEmpty();
         long tenantId = snap.getTenantId();
-        SysLlmModel lang = resolveLanguageModel(tenantId);
-        boolean tryLlm =
-                lang != null && (original.length() >= MIN_LEN_FOR_LLM_REWRITE || hasHistory);
-        if (tryLlm) {
+        ResolvedRewriteModel resolved = resolveRewriteModel(tenantId);
+        boolean tryModel =
+                resolved != null && (original.length() >= MIN_LEN_FOR_LLM_REWRITE || hasHistory);
+        if (tryModel) {
             try {
                 String llmOut =
-                        invokeFixedKeywordsLlm(
-                                tenantId, lang, original, history, conversationId, usageScene);
-                List<String> parsed = parseKeywordJson(llmOut);
-                if (!parsed.isEmpty()) {
-                    List<String> normalized =
-                            normalizeKeywordTriplet(parsed, heuristicKeywordSource(original, history));
+                        resolved.kind() == LlmModelKind.WEB_SEARCH
+                                ? invokeRewriteViaArk(
+                                        snap,
+                                        resolved.model(),
+                                        original,
+                                        history,
+                                        conversationId,
+                                        usageScene)
+                                : invokeRewriteLlm(
+                                        tenantId,
+                                        resolved.model(),
+                                        original,
+                                        history,
+                                        conversationId,
+                                        usageScene);
+                String cleaned = sanitizeLlmOutput(llmOut);
+                if (!cleaned.isBlank()) {
                     log.info(
-                            "[联网搜索] 固定源三关键词（LLM）：租户 {}，原文 [{}]，近史 {} 条，关键词 {}",
+                            "[联网搜索] 固定源检索问句（{}）：租户 {}，原文 [{}]，近史 {} 条，问句 [{}]",
+                            resolved.kind(),
                             tenantId,
                             clipForLog(original),
                             history.size(),
-                            normalized);
-                    return normalized;
+                            clipForLog(cleaned));
+                    return List.of(cleaned);
                 }
                 log.warn(
-                        "[联网搜索] 固定源关键词 LLM 解析为空，回退规则：租户 {}，原文 [{}]",
+                        "[联网搜索] 问句重写输出无效，回退规则：租户 {}，原文 [{}]",
                         tenantId,
                         clipForLog(original));
             } catch (Exception e) {
                 log.warn(
-                        "[联网搜索] 固定源关键词 LLM 失败，回退规则：租户 {}，原文 [{}]，原因 {}",
+                        "[联网搜索] 问句重写失败，回退规则：租户 {}，原文 [{}]，原因 {}",
                         tenantId,
                         clipForLog(original),
                         e.toString(),
                         e);
             }
         }
-        List<String> heuristic = heuristicKeywords(heuristicKeywordSource(original, history));
+        String heuristic = heuristicRewrite(heuristicKeywordSource(original, history));
         log.info(
-                "[联网搜索] 固定源三关键词（规则）：租户 {}，原文 [{}]，近史 {} 条，关键词 {}",
+                "[联网搜索] 固定源检索问句（规则）：租户 {}，原文 [{}]，近史 {} 条，问句 [{}]",
                 tenantId,
                 clipForLog(original),
                 history.size(),
-                heuristic);
-        return heuristic;
+                clipForLog(heuristic));
+        return heuristic.isBlank() ? List.of() : List.of(heuristic);
     }
 
     static String heuristicKeywordSource(
@@ -307,7 +335,7 @@ public class WebSearchQueryRewriteService {
         return t.substring(0, MAX_KEYWORD_CHARS).trim();
     }
 
-    private String invokeFixedKeywordsLlm(
+    private String invokeRewriteLlm(
             long tenantId,
             SysLlmModel lang,
             String original,
@@ -315,30 +343,8 @@ public class WebSearchQueryRewriteService {
             long conversationId,
             LlmUsageScene usageScene)
             throws Exception {
-        LocalDate today = LocalDate.now();
-        Map<String, String> vars =
-                Map.of(
-                        "user_message",
-                        original,
-                        "today",
-                        today.format(DateTimeFormatter.ISO_LOCAL_DATE),
-                        "year",
-                        String.valueOf(today.getYear()));
-        String system =
-                promptTemplates.renderSystem(
-                        "web_search_fixed_keywords_system", tenantId, "zh-CN", vars);
-        String user =
-                promptTemplates.renderUser("web_search_fixed_keywords_user", tenantId, "zh-CN", vars);
-        var sysTurn = new ModelChatRequest.MessageTurn();
-        sysTurn.setRole("system");
-        sysTurn.setContent(system);
-        var userTurn = new ModelChatRequest.MessageTurn();
-        userTurn.setRole("user");
-        userTurn.setContent(user);
-        var messages = new ArrayList<ModelChatRequest.MessageTurn>();
-        messages.add(sysTurn);
-        WebSearchArkContextBuilder.appendRecentUserAssistantTurns(messages, recentHistory);
-        messages.add(userTurn);
+        List<ModelChatRequest.MessageTurn> messages =
+                buildRewriteMessages(tenantId, original, recentHistory);
         var req = new ModelChatRequest();
         req.setTenantId(tenantId);
         req.setModelAlias(lang.getAlias());
@@ -347,30 +353,96 @@ public class WebSearchQueryRewriteService {
         if (usageScene != null) {
             req.setUsageScene(usageScene.getCode());
         }
-        req.setMessages(List.copyOf(messages));
+        req.setMessages(messages);
         StringBuilder acc = new StringBuilder();
         modelInvokePort.streamCompletion(req, acc::append);
         return acc.toString();
     }
 
-    private SysLlmModel resolveLanguageModel(long tenantId) {
-        SysLlmModel lang = llmModelRepository.pickDefaultLanguageModel(tenantId).orElse(null);
-        if (lang == null) {
-            return null;
+    private String invokeRewriteViaArk(
+            TenantSnapshot snap,
+            SysLlmModel webSearchModel,
+            String original,
+            List<ModelChatRequest.MessageTurn> recentHistory,
+            long conversationId,
+            LlmUsageScene usageScene)
+            throws Exception {
+        List<ModelChatRequest.MessageTurn> messages =
+                buildRewriteMessages(snap.getTenantId(), original, recentHistory);
+        return invokeViaArk(
+                snap,
+                webSearchModel,
+                messages,
+                conversationId,
+                usageScene,
+                "rewrite:" + clipForLog(original));
+    }
+
+    private String invokeViaArk(
+            TenantSnapshot snap,
+            SysLlmModel webSearchModel,
+            List<ModelChatRequest.MessageTurn> messages,
+            long conversationId,
+            LlmUsageScene usageScene,
+            String logSummary)
+            throws Exception {
+        LlmWebSearchProvider providerKind = webSearchModel.resolveWebSearchProvider();
+        if (providerKind == null) {
+            throw new IllegalStateException("联网重写模型未配置 integration_backend");
         }
-        LlmModelKind k = lang.getModelKind() != null ? lang.getModelKind() : LlmModelKind.LANGUAGE;
-        if (k != LlmModelKind.LANGUAGE) {
-            return null;
+        WebSearchModelProvider provider = webSearchProviderRegistry.require(providerKind);
+        String apiKey = aesSecretCipher.decryptFromBase64(webSearchModel.getApiKeyCipher());
+        long t0 = System.currentTimeMillis();
+        WebSearchExecutionResult result =
+                provider.execute(
+                        webSearchModel,
+                        apiKey,
+                        new WebSearchArkInvokeRequest(logSummary, messages));
+        recordArkRewriteUsage(
+                snap,
+                webSearchModel,
+                result.rawResponseBody(),
+                conversationId,
+                System.currentTimeMillis() - t0,
+                usageScene);
+        WebGroundingBundle bundle = result.bundle();
+        if (bundle == null || bundle.summaryText() == null) {
+            return "";
+        }
+        return bundle.summaryText();
+    }
+
+    private void recordArkRewriteUsage(
+            TenantSnapshot snap,
+            SysLlmModel webSearchModel,
+            String rawJson,
+            long conversationId,
+            long durationMs,
+            LlmUsageScene usageScene) {
+        if (rawJson == null || rawJson.isBlank()) {
+            return;
         }
         try {
-            LlmModelKindPolicy.assertLanguageModelForChatStream(lang);
-            return lang;
+            JsonNode root = objectMapper.readTree(rawJson);
+            ModelTokenUsage usage = ChatWebSearchGroundingService.parseWebSearchUsage(root);
+            if (usage == null || usage.totalTokens() <= 0) {
+                return;
+            }
+            llmModelUsageRecorder.recordAfterLlmUsage(
+                    snap,
+                    webSearchModel,
+                    webSearchModel.getAlias(),
+                    conversationId,
+                    usage,
+                    durationMs,
+                    usageScene);
         } catch (Exception ex) {
-            return null;
+            log.debug("[联网搜索] 跳过问句重写 Ark 用量记录：{}", ex.toString());
         }
     }
 
-    private String invokeRewriteLlm(long tenantId, SysLlmModel lang, String original) throws Exception {
+    private List<ModelChatRequest.MessageTurn> buildRewriteMessages(
+            long tenantId, String original, List<ModelChatRequest.MessageTurn> recentHistory) {
         LocalDate today = LocalDate.now();
         Map<String, String> vars =
                 Map.of(
@@ -392,14 +464,90 @@ public class WebSearchQueryRewriteService {
         var userTurn = new ModelChatRequest.MessageTurn();
         userTurn.setRole("user");
         userTurn.setContent(user);
-        var req = new ModelChatRequest();
-        req.setTenantId(tenantId);
-        req.setModelAlias(lang.getAlias());
-        req.setThinkingEnabled(false);
-        req.setMessages(List.of(sysTurn, userTurn));
-        StringBuilder acc = new StringBuilder();
-        modelInvokePort.streamCompletion(req, acc::append);
-        return acc.toString();
+        var messages = new ArrayList<ModelChatRequest.MessageTurn>();
+        messages.add(sysTurn);
+        WebSearchArkContextBuilder.appendRecentUserAssistantTurns(messages, recentHistory);
+        messages.add(userTurn);
+        return List.copyOf(messages);
+    }
+
+    private ResolvedRewriteModel resolveRewriteModel(long tenantId) {
+        var configured = tenantRuntimeSettingApplicationService.webSearchQueryRewriteModelId(tenantId);
+        if (configured.isPresent()) {
+            SysLlmModel row =
+                    llmModelRepository.findById(tenantId, configured.get()).orElse(null);
+            ResolvedRewriteModel usable = asUsableRewriteModel(row);
+            if (usable != null) {
+                return usable;
+            }
+            log.warn(
+                    "[联网搜索] 问句重写配置模型不可用 tenantId={} modelId={}，回退默认",
+                    tenantId,
+                    configured.get());
+        }
+        SysLlmModel lang = llmModelRepository.pickDefaultLanguageModel(tenantId).orElse(null);
+        SysLlmModel usableLang = usableLanguageModel(lang);
+        return usableLang != null ? new ResolvedRewriteModel(usableLang, LlmModelKind.LANGUAGE) : null;
+    }
+
+    private static ResolvedRewriteModel asUsableRewriteModel(SysLlmModel row) {
+        if (row == null) {
+            return null;
+        }
+        LlmModelKind kind = row.getModelKind() != null ? row.getModelKind() : LlmModelKind.LANGUAGE;
+        if (kind == LlmModelKind.LANGUAGE) {
+            SysLlmModel lang = usableLanguageModel(row);
+            return lang != null ? new ResolvedRewriteModel(lang, LlmModelKind.LANGUAGE) : null;
+        }
+        if (kind == LlmModelKind.WEB_SEARCH) {
+            SysLlmModel web = usableWebSearchModel(row);
+            return web != null ? new ResolvedRewriteModel(web, LlmModelKind.WEB_SEARCH) : null;
+        }
+        return null;
+    }
+
+    private static SysLlmModel usableLanguageModel(SysLlmModel lang) {
+        if (lang == null) {
+            return null;
+        }
+        LlmModelKind k = lang.getModelKind() != null ? lang.getModelKind() : LlmModelKind.LANGUAGE;
+        if (k != LlmModelKind.LANGUAGE || lang.getStatus() != LlmModelStatus.ACTIVE) {
+            return null;
+        }
+        try {
+            LlmModelKindPolicy.assertLanguageModelForChatStream(lang);
+            return lang;
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private static SysLlmModel usableWebSearchModel(SysLlmModel row) {
+        if (row == null || row.getStatus() != LlmModelStatus.ACTIVE) {
+            return null;
+        }
+        if (row.getModelKind() != LlmModelKind.WEB_SEARCH) {
+            return null;
+        }
+        if (row.resolveWebSearchProvider() != LlmWebSearchProvider.VOLCENGINE_ARK_BOT) {
+            return null;
+        }
+        String botId = row.getOpenaiModelId() == null ? "" : row.getOpenaiModelId().trim();
+        if (botId.isBlank()) {
+            return null;
+        }
+        String url = ArkBotChatCompletionsUrl.normalize(row.getOpenaiBaseUrl());
+        if (url.isBlank()) {
+            return null;
+        }
+        if (row.getApiKeyCipher() == null || row.getApiKeyCipher().isBlank()) {
+            return null;
+        }
+        return row;
+    }
+
+    private String invokeRewriteLlm(long tenantId, SysLlmModel lang, String original) throws Exception {
+        return invokeRewriteLlm(tenantId, lang, original, List.of(), 0L, null);
     }
 
     static String sanitizeLlmOutput(String raw) {
@@ -452,4 +600,6 @@ public class WebSearchQueryRewriteService {
         String t = s.replace('\n', ' ');
         return t.length() <= 200 ? t : t.substring(0, 200) + "…";
     }
+
+    private record ResolvedRewriteModel(SysLlmModel model, LlmModelKind kind) {}
 }

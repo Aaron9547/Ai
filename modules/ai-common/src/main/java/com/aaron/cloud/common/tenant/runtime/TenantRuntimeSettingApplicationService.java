@@ -51,6 +51,38 @@ public class TenantRuntimeSettingApplicationService {
         return parseOptionalLlmModelId(tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MODEL_ID);
     }
 
+    /**
+     * 联网问句重写模型（LANGUAGE 或 WEB_SEARCH）；未配置或非法时为空。
+     * 读兼容：依次回退已废弃的 LANGUAGE / WEB_SEARCH 分键。
+     */
+    public java.util.Optional<Long> webSearchQueryRewriteModelId(long tenantId) {
+        var primary =
+                parseOptionalLlmModelId(tenantId, TenantRuntimeSettingKey.WEB_SEARCH_QUERY_REWRITE_MODEL_ID);
+        if (primary.isPresent()) {
+            return primary;
+        }
+        var legacyLang =
+                parseOptionalLlmModelId(
+                        tenantId, TenantRuntimeSettingKey.WEB_SEARCH_QUERY_REWRITE_LANGUAGE_MODEL_ID);
+        if (legacyLang.isPresent()) {
+            return legacyLang;
+        }
+        return parseOptionalLlmModelId(
+                tenantId, TenantRuntimeSettingKey.WEB_SEARCH_QUERY_REWRITE_WEB_SEARCH_MODEL_ID);
+    }
+
+    /** @deprecated 使用 {@link #webSearchQueryRewriteModelId(long)} */
+    @Deprecated
+    public java.util.Optional<Long> webSearchQueryRewriteLanguageModelId(long tenantId) {
+        return parseOptionalLlmModelId(tenantId, TenantRuntimeSettingKey.WEB_SEARCH_QUERY_REWRITE_LANGUAGE_MODEL_ID);
+    }
+
+    /** @deprecated 使用 {@link #webSearchQueryRewriteModelId(long)} */
+    @Deprecated
+    public java.util.Optional<Long> webSearchQueryRewriteWebSearchModelId(long tenantId) {
+        return parseOptionalLlmModelId(tenantId, TenantRuntimeSettingKey.WEB_SEARCH_QUERY_REWRITE_WEB_SEARCH_MODEL_ID);
+    }
+
     /** 租户启用的内置固定联网源（代码注册，非 {@code llm_model} 行）。 */
     public List<com.aaron.cloud.common.api.enums.llm.WebSearchFixedSource> webSearchGroundingFixedSources(
             long tenantId) {

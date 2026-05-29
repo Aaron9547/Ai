@@ -1,33 +1,23 @@
 package com.aaron.cloud.chat;
 
-import com.aaron.cloud.chat.dto.ChatAttachmentMessageView;
-import com.aaron.cloud.chat.dto.ChatIntentTurnHitView;
-import com.aaron.cloud.chat.dto.ChatWorkflowSegmentView;
-import com.aaron.cloud.chat.dto.ChatMessageView;
+import com.aaron.cloud.chat.dto.*;
 import com.aaron.cloud.chat.intent.ChatIntentStreamRouter;
 import com.aaron.cloud.chat.intent.IntentKeywordMatchHit;
 import com.aaron.cloud.chat.intent.IntentSseRoute;
 import com.aaron.cloud.common.api.enums.llm.LlmAnonymousAccess;
 import com.aaron.cloud.common.chat.entity.ChatIntentDefinition;
-import com.aaron.cloud.chat.dto.ChatRegenerateRequest;
-import com.aaron.cloud.chat.dto.ChatSendPayload;
 import com.aaron.cloud.chat.websearch.ChatWebSearchGroundingService;
 import com.aaron.cloud.chat.websearch.WebGroundingBundle;
 import com.aaron.cloud.chat.websearch.WebSearchGroundingPlanResolver;
 import com.aaron.cloud.chat.websearch.WebSearchStreamGroundingSession;
-import com.aaron.cloud.chat.dto.ChatStarterPromptDtos;
 import com.aaron.cloud.chat.knowledgeplanet.KnowledgePlanetIngestService;
 import com.aaron.cloud.chat.mcp.ChatMcpToolCallingSupport;
 import com.aaron.cloud.chat.mcp.ChatMcpToolCallingSupport.McpToolCallSummary;
 import com.aaron.cloud.chat.starter.ChatStarterFollowUpService;
-import com.aaron.cloud.chat.dto.WebSearchReferenceView;
 import com.aaron.cloud.chat.websearch.WebSearchReference;
 import com.aaron.cloud.chat.websearch.WebSearchUserContext;
 import com.aaron.cloud.chat.websearch.cache.WebSearchGroundingMetaSupport;
 import com.aaron.cloud.chat.websearch.cache.WebSearchQueryNormalizer;
-import com.aaron.cloud.chat.dto.PriorAssistantVersionView;
-import com.aaron.cloud.chat.dto.RagCitationView;
-import com.aaron.cloud.chat.dto.LlmModelOption;
 import com.aaron.cloud.common.api.dto.model.ModelChatRequest;
 import com.aaron.cloud.common.api.dto.model.ModelTokenUsage;
 import com.aaron.cloud.common.api.enums.chat.ChatInputBlockReason;
@@ -350,6 +340,79 @@ public class ChatApplicationService {
     public int conversationTokenTotalFromMetering(long tenantId, long conversationId) {
         long total = meteringUsageEventRepository.sumTokenQuantityByConversationId(tenantId, conversationId);
         return (int) Math.min(total, Integer.MAX_VALUE);
+    }
+
+    /** 开放 API：会话 token 合计与按 {@link LlmUsageScene} 拆分。 */
+    public ConversationTokenTotalView conversationTokenSummary(long tenantId, long conversationId) {
+        int total = conversationTokenTotalFromMetering(tenantId, conversationId);
+        Map<String, Object> split =
+                meteringUsageEventRepository.sumTokenSplitByConversationId(tenantId, conversationId);
+        int prompt = meteringLong(split.get("prompt_sum"));
+        int completion = meteringLong(split.get("completion_sum"));
+        List<ConversationTokenSceneView> scenes = new ArrayList<>();
+        for (Map<String, Object> row :
+                meteringUsageEventRepository.sumTokenSplitGroupedByUsageSceneForConversation(
+                        tenantId, conversationId)) {
+            String scene = row.get("usage_scene") == null ? "-" : String.valueOf(row.get("usage_scene"));
+            LlmUsageScene known = LlmUsageScene.fromCode(scene);
+            String label = known != null ? known.getLabel() : scene;
+            int sceneTotal = meteringLong(row.get("total_tokens"));
+            if (sceneTotal <= 0) {
+                continue;
+            }
+            scenes.add(
+                    new ConversationTokenSceneView(
+                            scene,
+                            label,
+                            sceneTotal,
+                            meteringLong(row.get("prompt_sum")),
+                            meteringLong(row.get("completion_sum"))));
+        }
+        return new ConversationTokenTotalView(total, prompt, completion, scenes);
+    }
+
+    private static int meteringLong(Object v) {
+        if (v == null) {
+            return 0;
+        }
+        if (v instanceof Number n) {
+            return (int) Math.min(n.longValue(), Integer.MAX_VALUE);
+        }
+        try {
+            return (int) Math.min(Long.parseLong(String.valueOf(v)), Integer.MAX_VALUE);
+        } catch (Exception ex) {
+            return 0;
+        }
+    }
+
+    private int computeTurnTokenDelta(long tenantId, long conversationId, int meteringBaseline) {
+        int now = conversationTokenTotalFromMetering(tenantId, conversationId);
+        return Math.max(0, now - meteringBaseline);
+    }
+
+    private void patchAssistantTurnTokenTotal(long assistantMessageId, long tenantId, int turnTotal) {
+        if (turnTotal <= 0) {
+            return;
+        }
+        try {
+            ChatMessage row =
+                    messageRepository
+                            .findById(assistantMessageId, tenantId)
+                            .orElse(null);
+            if (row == null) {
+                return;
+            }
+            ObjectNode root;
+            if (row.getMetaJson() == null || row.getMetaJson().isBlank()) {
+                root = objectMapper.createObjectNode();
+            } else {
+                root = (ObjectNode) objectMapper.readTree(row.getMetaJson());
+            }
+            root.put("turnTokenTotal", turnTotal);
+            messageRepository.updateMetaJson(assistantMessageId, tenantId, objectMapper.writeValueAsString(root));
+        } catch (Exception ex) {
+            log.warn("[对话] 写入回合 token 合计失败：消息 {}", assistantMessageId, ex);
+        }
     }
 
     private List<ChatMessageView> listConversationMessagesInternal(long tenantId, long conversationId) {
@@ -819,6 +882,8 @@ public class ChatApplicationService {
         Runnable run =
                 () -> {
                     TenantContextHolder.set(snap);
+                    final int meteringBaseline =
+                            conversationTokenTotalFromMetering(snap.getTenantId(), conversationId);
                     try {
                         log.info(
                                 "[对话] ⑯ 大模型流式线程已启动：租户 {}，会话 {}，距开放助手开始 {}ms",
@@ -1012,6 +1077,10 @@ public class ChatApplicationService {
                                         assistantBuf.toString(),
                                         3);
                         sendSseFollowUpPrompts(emitter, seq, followUpForSse);
+                        int conversationTotal =
+                                conversationTokenTotalFromMetering(snap.getTenantId(), conversationId);
+                        int turnTotal = computeTurnTokenDelta(snap.getTenantId(), conversationId, meteringBaseline);
+                        patchAssistantTurnTokenTotal(asst.getId(), snap.getTenantId(), turnTotal);
                         sseGate.trySend(
                                 SseEmitter.event()
                                         .data(
@@ -1019,8 +1088,8 @@ public class ChatApplicationService {
                                                         usageRef.get(),
                                                         asst.getId(),
                                                         millisSince(openAssistantWallMs),
-                                                        conversationTokenTotalFromMetering(
-                                                                snap.getTenantId(), conversationId)))
+                                                        conversationTotal,
+                                                        turnTotal))
                                         .id(String.valueOf(seq.incrementAndGet())),
                                 "结束帧");
                         if (pairedUserMessageId != null && !webSearchRefsForStream.isEmpty()) {
@@ -1116,7 +1185,8 @@ public class ChatApplicationService {
                                                             null,
                                                             millisSince(openAssistantWallMs),
                                                             conversationTokenTotalFromMetering(
-                                                                    snap.getTenantId(), conversationId)))
+                                                                    snap.getTenantId(), conversationId),
+                                                            0))
                                             .id(String.valueOf(seq.incrementAndGet())),
                                     "结束帧");
                         } catch (Exception sendEx) {
@@ -1339,6 +1409,8 @@ public class ChatApplicationService {
         Runnable run =
                 () -> {
                     TenantContextHolder.set(snap);
+                    final int meteringBaseline =
+                            conversationTokenTotalFromMetering(snap.getTenantId(), conversationId);
                     try {
                         var userMsg = new ChatMessage();
                         userMsg.setTenantId(snap.getTenantId());
@@ -1395,6 +1467,10 @@ public class ChatApplicationService {
                                         template,
                                         3);
                         sendSseFollowUpPrompts(emitter, seq, blockedFollowUp);
+                        int conversationTotal =
+                                conversationTokenTotalFromMetering(snap.getTenantId(), conversationId);
+                        int turnTotal = computeTurnTokenDelta(snap.getTenantId(), conversationId, meteringBaseline);
+                        patchAssistantTurnTokenTotal(asst.getId(), snap.getTenantId(), turnTotal);
                         emitter.send(
                                 SseEmitter.event()
                                         .data(
@@ -1402,8 +1478,8 @@ public class ChatApplicationService {
                                                         null,
                                                         asst.getId(),
                                                         0L,
-                                                        conversationTokenTotalFromMetering(
-                                                                snap.getTenantId(), conversationId)))
+                                                        conversationTotal,
+                                                        turnTotal))
                                         .id(String.valueOf(seq.incrementAndGet())));
                         emitter.complete();
                     } catch (Exception e) {
@@ -1637,7 +1713,11 @@ public class ChatApplicationService {
     }
 
     private String sseEndPayload(
-            ModelTokenUsage usage, Long assistantMessageId, long durationMs, int conversationTokenTotal)
+            ModelTokenUsage usage,
+            Long assistantMessageId,
+            long durationMs,
+            int conversationTokenTotal,
+            int turnTokenTotal)
             throws JsonProcessingException {
         ObjectNode o = objectMapper.createObjectNode();
         o.put("type", "end");
@@ -1649,6 +1729,9 @@ public class ChatApplicationService {
         }
         if (conversationTokenTotal > 0) {
             o.put("conversationTokenTotal", conversationTokenTotal);
+        }
+        if (turnTokenTotal > 0) {
+            o.put("turnTokenTotal", turnTokenTotal);
         }
         if (usage != null && usage.totalTokens() > 0) {
             ObjectNode u = o.putObject("usage");
@@ -1819,6 +1902,7 @@ public class ChatApplicationService {
         Integer pt = null;
         Integer ct = null;
         Integer tt = null;
+        Integer turnTt = null;
         String modelAlias = null;
         String userFeedback = null;
         String contentSummary = null;
@@ -1850,6 +1934,12 @@ public class ChatApplicationService {
                     pt = usage.has("promptTokens") ? usage.get("promptTokens").asInt() : null;
                     ct = usage.has("completionTokens") ? usage.get("completionTokens").asInt() : null;
                     tt = usage.has("totalTokens") ? usage.get("totalTokens").asInt() : null;
+                }
+                if (root.has("turnTokenTotal") && root.get("turnTokenTotal").isIntegralNumber()) {
+                    int v = root.get("turnTokenTotal").asInt();
+                    if (v > 0) {
+                        turnTt = v;
+                    }
                 }
                 if (root.has("modelAlias") && root.get("modelAlias").isTextual()) {
                     modelAlias = root.get("modelAlias").asText();
@@ -1941,6 +2031,7 @@ public class ChatApplicationService {
                 pt,
                 ct,
                 tt,
+                turnTt,
                 m.getCreatedAt(),
                 modelAlias,
                 userFeedback,

@@ -13,6 +13,8 @@ public record ChatMessageView(
         Integer promptTokens,
         Integer completionTokens,
         Integer totalTokens,
+        /** 本回合全部模型调用 token 合计（联网、猜你想问等；助手 meta {@code turnTokenTotal}） */
+        Integer turnTotalTokens,
         LocalDateTime createdAt,
         /** 鍔╂墜娑堟伅 meta 涓殑妯″瀷鍒悕锛涚敤鎴?绯荤粺娑堟伅涓?{@code null} */
         String modelAlias,

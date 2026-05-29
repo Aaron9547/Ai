@@ -133,6 +133,11 @@ public class TenantShellAdminApplicationService {
         String fixedSourcesJson =
                 jsonArrayOrDefault(body.getWebSearchGroundingFixedSourcesJson(), "[]");
         validateWebSearchGroundingSelection(tenantId, webModelId, fixedSourcesJson);
+        String rewriteModelId =
+                body.getWebSearchQueryRewriteModelId() == null
+                        ? ""
+                        : body.getWebSearchQueryRewriteModelId().trim();
+        validateOptionalRewriteModelId(tenantId, rewriteModelId);
         String limits = jsonOrDefault(body.getChatPromptLimitsJson(), "{}");
         String memPol = jsonOrDefault(body.getMemoryPolicyJson(), "{}");
         String guard = jsonOrDefault(body.getChatInputGuardJson(), "{}");
@@ -168,6 +173,9 @@ public class TenantShellAdminApplicationService {
         items.add(item(TenantRuntimeSettingKey.MEMORY_EMBEDDING_VECTOR_MODEL_ID, mem));
         items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MODEL_ID, webModelId));
         items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON, fixedSourcesJson));
+        items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_QUERY_REWRITE_MODEL_ID, rewriteModelId));
+        items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_QUERY_REWRITE_LANGUAGE_MODEL_ID, ""));
+        items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_QUERY_REWRITE_WEB_SEARCH_MODEL_ID, ""));
         items.add(item(TenantRuntimeSettingKey.CHAT_PROMPT_LIMITS_JSON, limits));
         items.add(item(TenantRuntimeSettingKey.MEMORY_POLICY_JSON, memPol));
         items.add(item(TenantRuntimeSettingKey.CHAT_INPUT_GUARD_JSON, guard));
@@ -360,6 +368,61 @@ public class TenantShellAdminApplicationService {
         }
     }
 
+    private String effectiveQueryRewriteModelId(long tenantId) {
+        String primary =
+                tenantRuntimeSettingApplicationService
+                        .getEffectiveValueText(
+                                tenantId, TenantRuntimeSettingKey.WEB_SEARCH_QUERY_REWRITE_MODEL_ID)
+                        .trim();
+        if (!primary.isEmpty()) {
+            return primary;
+        }
+        String legacyLang =
+                tenantRuntimeSettingApplicationService
+                        .getEffectiveValueText(
+                                tenantId,
+                                TenantRuntimeSettingKey.WEB_SEARCH_QUERY_REWRITE_LANGUAGE_MODEL_ID)
+                        .trim();
+        if (!legacyLang.isEmpty()) {
+            return legacyLang;
+        }
+        return tenantRuntimeSettingApplicationService
+                .getEffectiveValueText(
+                        tenantId, TenantRuntimeSettingKey.WEB_SEARCH_QUERY_REWRITE_WEB_SEARCH_MODEL_ID)
+                .trim();
+    }
+
+    private void validateOptionalRewriteModelId(long tenantId, String rawId) {
+        if (rawId == null || rawId.isBlank()) {
+            return;
+        }
+        long id;
+        try {
+            id = Long.parseLong(rawId.trim());
+        } catch (NumberFormatException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "问句重写模型 id 无效");
+        }
+        SysLlmModel model =
+                llmModelRepository
+                        .findById(tenantId, id)
+                        .orElseThrow(
+                                () ->
+                                        new ResponseStatusException(
+                                                HttpStatus.BAD_REQUEST, "问句重写模型不存在或不属于本租户"));
+        if (model.getStatus() != LlmModelStatus.ACTIVE) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "问句重写模型须为启用状态");
+        }
+        LlmModelKind kind = model.getModelKind();
+        if (kind == LlmModelKind.LANGUAGE) {
+            return;
+        }
+        if (kind == LlmModelKind.WEB_SEARCH) {
+            return;
+        }
+        throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST, "问句重写模型须为 LANGUAGE 或 WEB_SEARCH 类型");
+    }
+
     private void validateOptionalWebSearchModelId(long tenantId, String rawId) {
         if (rawId == null || rawId.isBlank()) {
             return;
@@ -400,6 +463,7 @@ public class TenantShellAdminApplicationService {
                         tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MODEL_ID),
                 tenantRuntimeSettingApplicationService.getEffectiveValueText(
                         tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON),
+                effectiveQueryRewriteModelId(tenantId),
                 tenantRuntimeSettingApplicationService.getEffectiveValueText(
                         tenantId, TenantRuntimeSettingKey.CHAT_PROMPT_LIMITS_JSON),
                 tenantRuntimeSettingApplicationService.getEffectiveValueText(
@@ -494,6 +558,7 @@ public class TenantShellAdminApplicationService {
             String memoryEmbeddingVectorModelId,
             String webSearchGroundingModelId,
             String webSearchGroundingFixedSourcesJson,
+            String webSearchQueryRewriteModelId,
             String chatPromptLimitsJson,
             String memoryPolicyJson,
             String chatInputGuardJson,
@@ -555,6 +620,8 @@ public class TenantShellAdminApplicationService {
         private String webSearchGroundingModelId;
         /** {@link TenantRuntimeSettingKey#WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON}；内置固定源代码数组 */
         private String webSearchGroundingFixedSourcesJson;
+        /** {@link TenantRuntimeSettingKey#WEB_SEARCH_QUERY_REWRITE_MODEL_ID} */
+        private String webSearchQueryRewriteModelId;
         private String chatPromptLimitsJson;
         private String memoryPolicyJson;
         private String chatInputGuardJson;

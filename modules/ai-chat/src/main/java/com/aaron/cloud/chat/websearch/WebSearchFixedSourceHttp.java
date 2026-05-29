@@ -1,5 +1,6 @@
 package com.aaron.cloud.chat.websearch;
 
+import com.aaron.cloud.common.outbound.WebSearchFixedSourceOutboundConfig;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -23,6 +24,7 @@ import org.springframework.web.client.RestClient;
  *   <li>环境变量：{@code AI_WEB_SEARCH_FIXED_PROXY_HOST}、{@code AI_WEB_SEARCH_FIXED_PROXY_PORT}
  *   <li>本地梯子快捷：{@code use-system-proxy: true}（映射为 {@code 127.0.0.1:7890 HTTP}，勿依赖 JVM SOCKS）
  *   <li>IDEA 已配 {@code -Dhttps.proxyHost} 时自动走 JVM 代理属性（无需再配）
+ *   <li>MCP 远程出站与固定源共用上述配置（见 {@code McpRemoteClientFactory}）
  * </ul>
  */
 public final class WebSearchFixedSourceHttp {
@@ -33,26 +35,7 @@ public final class WebSearchFixedSourceHttp {
     static final String USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-    private static volatile WebSearchFixedSourceOutboundConfig globalConfig;
-
     private WebSearchFixedSourceHttp() {}
-
-    /** 由 {@link WebSearchFixedSourceHttpProperties} 在 Spring 启动后注入（进程级回退）。 */
-    static synchronized void applySpringSettings(
-            String proxyHost, Integer proxyPort, String proxyType, Boolean useSystemProxy) {
-        globalConfig =
-                WebSearchFixedSourceOutboundConfig.resolve(
-                        proxyHost, proxyPort, proxyType, useSystemProxy);
-    }
-
-    static WebSearchFixedSourceOutboundConfig globalConfig() {
-        ensureGlobalInitialized();
-        return globalConfig;
-    }
-
-    public static String outboundDiagnostics() {
-        return WebSearchFixedSourceOutboundConfig.diagnostics(globalConfig());
-    }
 
     static byte[] fetchBytes(WebSearchFixedSourceOutboundConfig config, String urlString) throws IOException {
         URL url = URI.create(urlString).toURL();
@@ -69,17 +52,6 @@ public final class WebSearchFixedSourceHttp {
             return readAll(stream);
         } finally {
             connection.disconnect();
-        }
-    }
-
-    private static void ensureGlobalInitialized() {
-        if (globalConfig != null) {
-            return;
-        }
-        synchronized (WebSearchFixedSourceHttp.class) {
-            if (globalConfig == null) {
-                applySpringSettings(null, null, null, null);
-            }
         }
     }
 

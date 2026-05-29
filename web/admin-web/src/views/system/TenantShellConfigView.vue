@@ -88,7 +88,7 @@
       </template>
       <p class="model-calling-tip">{{ t("admin.shell.modelCallingBlockTip") }}</p>
       <div class="outbound-card-body">
-        <el-form :key="locale" label-width="auto" class="outbound-fields-form model-calling-fields-form">
+        <el-form :key="locale" label-width="140px" class="outbound-fields-form model-calling-fields-form">
           <div class="outbound-section-head">{{ t("admin.shell.modelCalling.sectionEmbedding") }}</div>
           <div class="outbound-fields-grid">
             <el-form-item>
@@ -310,6 +310,11 @@
                 <div v-show="webSearchFixedOutboundForm.enabled" class="web-search-outbound-fields">
                   <div class="web-search-outbound-field">
                     <label class="web-search-outbound-label">
+                      <span
+                        v-if="webSearchFixedOutboundForm.enabled"
+                        class="web-search-outbound-required"
+                        :aria-label="t('admin.shell.fieldRequired')"
+                      >*</span>
                       {{ t("admin.shell.modelCalling.webSearchFixedOutboundHost") }}
                     </label>
                     <el-input
@@ -342,7 +347,11 @@
                   </div>
                 </div>
               </div>
-            </el-form-item>
+              </el-form-item>
+          </div>
+
+          <div class="outbound-section-head">{{ t("admin.shell.modelCalling.sectionWebSearchRounds") }}</div>
+          <div class="outbound-fields-grid">
             <el-form-item>
               <template #label>
                 <ShellFieldLabel :label="t('admin.shell.modelCalling.webSearchRounds')" tooltip-i18n-key="admin.shell.modelCalling.tooltips.webSearchRounds" />
@@ -359,6 +368,51 @@
                 />
               </template>
               <el-input v-model="suffixSlots[sIdx]" class="outbound-line-input" type="textarea" :rows="2" />
+            </el-form-item>
+          </div>
+
+          <div class="outbound-section-head">{{ t("admin.shell.modelCalling.sectionQueryRewrite") }}</div>
+          <div class="outbound-fields-grid">
+            <el-form-item class="outbound-field-span">
+              <template #label>
+                <ShellFieldLabel
+                  :label="t('admin.shell.modelCalling.queryRewriteModel')"
+                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.queryRewriteModel"
+                />
+              </template>
+              <el-select
+                v-model="webSearchQueryRewriteModelId"
+                clearable
+                filterable
+                class="outbound-line-input"
+                :placeholder="t('admin.shell.modelCalling.queryRewritePlaceholder')"
+                :loading="loadingLanguageModels || loadingWebSearchModels"
+              >
+                <el-option
+                  v-if="queryRewriteOrphanOption"
+                  :key="'rewrite-orphan-' + queryRewriteOrphanOption.id"
+                  :label="queryRewriteOrphanOption.label"
+                  :value="queryRewriteOrphanOption.id"
+                />
+                <el-option-group :label="t('admin.shell.modelCalling.queryRewriteLanguageGroup')">
+                  <el-option
+                    v-for="opt in queryRewriteLanguageSelectOptions"
+                    :key="'lang-' + opt.id"
+                    :label="opt.label"
+                    :value="opt.id"
+                    :disabled="opt.disabled"
+                  />
+                </el-option-group>
+                <el-option-group :label="t('admin.shell.modelCalling.queryRewriteWebSearchGroup')">
+                  <el-option
+                    v-for="opt in queryRewriteWebSearchSelectOptions"
+                    :key="'web-' + opt.id"
+                    :label="opt.label"
+                    :value="opt.id"
+                    :disabled="opt.disabled"
+                  />
+                </el-option-group>
+              </el-select>
             </el-form-item>
           </div>
 
@@ -823,11 +877,14 @@ const ragVectorDimensionOptions = [512, 768, 1024, 1536, 2048, 3072, 4096];
 const ragRetrievalMode = ref("");
 const ragRetrievalModeEffective = ref("milvus_es_hybrid");
 const webSearchGroundingModelId = ref<number | undefined>(undefined);
+const webSearchQueryRewriteModelId = ref<number | undefined>(undefined);
 const webSearchFixedSources = ref<WebSearchFixedSourceCode[]>([]);
 const webSearchFixedSourceCodes = WEB_SEARCH_FIXED_SOURCE_CODES;
 const vectorModelsForMemory = ref<LlmModelAdminView[]>([]);
+const languageModelsForRewrite = ref<LlmModelAdminView[]>([]);
 const webSearchModelsForBinding = ref<LlmModelAdminView[]>([]);
 const loadingVectorModels = ref(false);
+const loadingLanguageModels = ref(false);
 const loadingWebSearchModels = ref(false);
 
 const ragRetrievalModeEffectiveLabel = computed(() => {
@@ -881,6 +938,84 @@ const memoryEmbeddingSelectOptions = computed(() => {
       ...rows,
     ];
   }
+  return rows;
+});
+
+function buildLanguageModelSelectOptions(
+  models: LlmModelAdminView[],
+  selected: number | undefined,
+  orphanLabelKey: string,
+) {
+  void locale.value;
+  const rows = models
+    .slice()
+    .sort((a, b) => {
+      if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+      const ao = a.sortOrder ?? 0;
+      const bo = b.sortOrder ?? 0;
+      if (ao !== bo) return ao - bo;
+      return a.id - b.id;
+    })
+    .map((m) => ({
+      id: m.id,
+      label: `${m.displayName} (${m.alias}) · ${m.openaiModelId}`,
+      disabled: !m.enabled && m.id !== selected,
+    }));
+  if (typeof selected === "number" && !rows.some((r) => r.id === selected)) {
+    return [
+      {
+        id: selected,
+        label: t(orphanLabelKey, { id: selected }),
+        disabled: false,
+      },
+      ...rows,
+    ];
+  }
+  return rows;
+}
+
+const queryRewriteOrphanOption = computed(() => {
+  void locale.value;
+  const selected = webSearchQueryRewriteModelId.value;
+  if (typeof selected !== "number") {
+    return null;
+  }
+  const inLanguage = languageModelsForRewrite.value.some((m) => m.id === selected);
+  const inWebSearch = webSearchModelsForBinding.value.some((m) => m.id === selected);
+  if (inLanguage || inWebSearch) {
+    return null;
+  }
+  return {
+    id: selected,
+    label: t("admin.shell.modelCalling.queryRewriteOrphan", { id: selected }),
+  };
+});
+
+const queryRewriteLanguageSelectOptions = computed(() =>
+  buildLanguageModelSelectOptions(
+    languageModelsForRewrite.value,
+    undefined,
+    "admin.shell.modelCalling.queryRewriteLanguageOrphan",
+  ),
+);
+
+const queryRewriteWebSearchSelectOptions = computed(() => {
+  void locale.value;
+  const selected = webSearchQueryRewriteModelId.value;
+  const rows = webSearchModelsForBinding.value
+    .slice()
+    .sort((a, b) => {
+      if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+      const ao = a.sortOrder ?? 0;
+      const bo = b.sortOrder ?? 0;
+      if (ao !== bo) return ao - bo;
+      return a.id - b.id;
+    })
+    .map((m) => ({
+      id: m.id,
+      label: `${m.displayName} (${m.alias})`,
+      disabled: !m.enabled && m.id !== selected,
+    }));
   return rows;
 });
 
@@ -1002,6 +1137,9 @@ async function applyModelCallingFromApi(mc: TenantShellModelCallingRuntime | und
   }
   memoryEmbeddingModelId.value = parseMemoryEmbeddingModelId(mc.memoryEmbeddingVectorModelId);
   webSearchGroundingModelId.value = parseWebSearchGroundingModelId(mc.webSearchGroundingModelId);
+  webSearchQueryRewriteModelId.value = parseWebSearchGroundingModelId(
+    mc.webSearchQueryRewriteModelId,
+  );
   webSearchFixedSources.value = parseWebSearchFixedSourcesJson(mc.webSearchGroundingFixedSourcesJson);
   Object.assign(promptLimitsForm, parseChatPromptLimitsJson(mc.chatPromptLimitsJson ?? "{}"));
   Object.assign(memoryPolicyForm, parseMemoryPolicyJson(mc.memoryPolicyJson ?? "{}"));
@@ -1038,11 +1176,13 @@ async function applyModelCallingFromApi(mc: TenantShellModelCallingRuntime | und
 
 async function reload() {
   loadingVectorModels.value = true;
+  loadingLanguageModels.value = true;
   loadingWebSearchModels.value = true;
   try {
-    const [shellRes, vecRes, webRes] = await Promise.allSettled([
+    const [shellRes, vecRes, langRes, webRes] = await Promise.allSettled([
       tenantShellApi.getTenantShellConfig(),
       listLlmModels({ modelKind: "VECTOR" }),
+      listLlmModels({ modelKind: "LANGUAGE" }),
       listLlmModels({ modelKind: "WEB_SEARCH" }),
     ]);
     if (shellRes.status === "rejected") {
@@ -1055,6 +1195,13 @@ async function reload() {
       console.warn("[tenant shell] list VECTOR models", vecRes.reason);
       vectorModelsForMemory.value = [];
       ElMessage.warning(t("admin.shell.modelCalling.vectorModelsLoadFailed"));
+    }
+    if (langRes.status === "fulfilled") {
+      languageModelsForRewrite.value = langRes.value;
+    } else {
+      console.warn("[tenant shell] list LANGUAGE models", langRes.reason);
+      languageModelsForRewrite.value = [];
+      ElMessage.warning(t("admin.shell.modelCalling.languageModelsLoadFailed"));
     }
     if (webRes.status === "fulfilled") {
       webSearchModelsForBinding.value = webRes.value;
@@ -1073,6 +1220,7 @@ async function reload() {
     await applyModelCallingFromApi(data.modelCallingRuntime);
   } finally {
     loadingVectorModels.value = false;
+    loadingLanguageModels.value = false;
     loadingWebSearchModels.value = false;
   }
 }
@@ -1185,6 +1333,10 @@ async function saveModelCalling() {
       memoryEmbeddingVectorModelId: embStr.trim(),
       webSearchGroundingModelId: webModelStr.trim(),
       webSearchGroundingFixedSourcesJson: fixedSourcesJson,
+      webSearchQueryRewriteModelId:
+        webSearchQueryRewriteModelId.value != null
+          ? String(webSearchQueryRewriteModelId.value)
+          : "",
       chatPromptLimitsJson: serializeChatPromptLimitsJson(promptLimitsForm),
       memoryPolicyJson: serializeMemoryPolicyJson(memoryPolicyForm),
       chatInputGuardJson: serializeInputGuardJson(inputGuardForm),
@@ -1436,6 +1588,7 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   align-items: center;
+  flex-shrink: 0;
   height: auto;
   min-height: var(--el-component-size);
   padding-right: 8px;
@@ -1445,13 +1598,18 @@ onMounted(() => {
 .outbound-fields-form :deep(.el-form-item__content) {
   display: flex;
   align-items: center;
+  flex: 1 1 0;
+  min-width: 0;
   min-height: var(--el-component-size);
 }
 
-/* 多行输入占满一行，不用与短控件同一 flex 行规则 */
+/* 多行输入占满标签右侧剩余宽度，勿 width:100% 铺满整行（会与 label 重叠） */
 .outbound-fields-form :deep(.outbound-field-span .el-form-item__content) {
   display: block;
-  width: 100%;
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  max-width: min(720px, 100%);
   min-height: 0;
 }
 
@@ -1558,21 +1716,36 @@ onMounted(() => {
 
 .model-calling-fields-form .memory-embedding-select {
   width: 100%;
-  max-width: min(520px, 100%);
+  max-width: min(480px, 100%);
 }
 
 .model-calling-fields-form .suffix-row {
   margin-bottom: 4px;
 }
 
-/* 模型对话卡片：长标签 + 数字框同列时避免过窄 */
+/* 模型对话：栅格列宽与表单项上限，控件在 label 右侧伸缩 */
 .model-calling-fields-form .outbound-fields-grid {
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
 }
 
 .model-calling-fields-form .outbound-fields-grid :deep(.el-form-item) {
-  max-width: none;
+  max-width: 520px;
   width: 100%;
+}
+
+.model-calling-fields-form .outbound-fields-grid :deep(.el-form-item.outbound-field-span) {
+  max-width: none;
+}
+
+.model-calling-fields-form .outbound-fields-grid :deep(.el-input-number.num-wide) {
+  width: 100%;
+  min-width: 0;
+  max-width: min(280px, 100%);
+}
+
+.model-calling-fields-form .outbound-fields-grid :deep(.outbound-field-span .el-select.outbound-line-input) {
+  width: 100%;
+  max-width: min(480px, 100%);
 }
 
 .site-crawl-block {
@@ -1692,6 +1865,11 @@ onMounted(() => {
 
 .web-search-outbound-field--narrow {
   min-width: 120px;
+}
+
+.web-search-outbound-required {
+  color: var(--el-color-danger);
+  margin-right: 4px;
 }
 
 .web-search-outbound-label {

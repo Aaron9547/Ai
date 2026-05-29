@@ -65,8 +65,7 @@ public class ChatConversationController extends OpenV1ControllerBases.Chat {
             @PathVariable("conversationId") String conversationId) {
         long id = chatApplicationService.requireOpenConversationId(conversationId);
         var snap = TenantContextHolder.require();
-        return new ConversationTokenTotalView(
-                chatApplicationService.conversationTokenTotalFromMetering(snap.getTenantId(), id));
+        return chatApplicationService.conversationTokenSummary(snap.getTenantId(), id);
     }
 
     @PatchMapping("/conversations/{conversationId}")

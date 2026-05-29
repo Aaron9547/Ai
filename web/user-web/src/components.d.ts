@@ -40,6 +40,7 @@ declare module 'vue' {
     ElSkeleton: typeof import('element-plus/es')['ElSkeleton']
     ElTabPane: typeof import('element-plus/es')['ElTabPane']
     ElTabs: typeof import('element-plus/es')['ElTabs']
+    ElTooltip: typeof import('element-plus/es')['ElTooltip']
     ElUpload: typeof import('element-plus/es')['ElUpload']
     KnowledgePlanetCard: typeof import('./components/chat/KnowledgePlanetCard.vue')['default']
     KnowledgePlanetMobileEntry: typeof import('./components/chat/KnowledgePlanetMobileEntry.vue')['default']

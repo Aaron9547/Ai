@@ -20,6 +20,14 @@ function messageFromResponseData(data: unknown): string {
   return "";
 }
 
+/** 会话归属切换后（如退出登录）访问原用户会话时后端返回 400 + 固定文案。 */
+export function isConversationNotFoundHttpError(err: unknown): boolean {
+  if (!axios.isAxiosError(err) || err.response?.status !== 400) {
+    return false;
+  }
+  return messageFromResponseData(err.response?.data) === "conversation not found";
+}
+
 /** 将 API 异常转为用户可见说明（优先读响应体 {@code message}，而非 Axios 默认英文）。 */
 export function apiRequestErrorMessage(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err)) {

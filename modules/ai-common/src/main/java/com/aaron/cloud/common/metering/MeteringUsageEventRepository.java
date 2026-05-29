@@ -230,6 +230,39 @@ public class MeteringUsageEventRepository {
         return mapper.selectMaps(qw);
     }
 
+    /** 会话内输入/输出 Token 拆分（{@code ref_json}；无拆分时 {@code quantity} 计入 completion）。 */
+    public Map<String, Object> sumTokenSplitByConversationId(long tenantId, long conversationId) {
+        if (conversationId <= 0L) {
+            return Map.of();
+        }
+        QueryWrapper<MeteringUsageEvent> qw = new QueryWrapper<>();
+        qw.select(MeteringTokenAggregationSql.SUM_PROMPT, MeteringTokenAggregationSql.SUM_COMPLETION)
+                .eq("tenant_id", tenantId)
+                .eq("unit", "token")
+                .apply(MeteringRefJsonSqlSupport.CONVERSATION_ID_EQUALS, conversationId);
+        return mapper.selectMaps(qw).stream().findFirst().orElse(Map.of());
+    }
+
+    /** 会话内按 {@code usageScene} 汇总 token（含 prompt/completion 拆分）。 */
+    public List<Map<String, Object>> sumTokenSplitGroupedByUsageSceneForConversation(
+            long tenantId, long conversationId) {
+        if (conversationId <= 0L) {
+            return List.of();
+        }
+        QueryWrapper<MeteringUsageEvent> qw = new QueryWrapper<>();
+        qw.select(
+                        MeteringTokenAggregationSql.USAGE_SCENE_EXPR + " AS usage_scene",
+                        "COALESCE(SUM(quantity),0) AS total_tokens",
+                        MeteringTokenAggregationSql.SUM_PROMPT,
+                        MeteringTokenAggregationSql.SUM_COMPLETION)
+                .eq("tenant_id", tenantId)
+                .eq("unit", "token")
+                .apply(MeteringRefJsonSqlSupport.CONVERSATION_ID_EQUALS, conversationId)
+                .groupBy("usage_scene")
+                .orderByDesc("total_tokens");
+        return mapper.selectMaps(qw);
+    }
+
     /** 按 {@code ref_json.conversationId} 汇总会话内全部 token 计量（含联网、编排 LLM 等）。 */
     public long sumTokenQuantityByConversationId(long tenantId, long conversationId) {
         if (conversationId <= 0L) {

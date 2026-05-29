@@ -140,7 +140,7 @@ CREATE TABLE IF NOT EXISTS chat_starter_prompt (
   valid_until DATE NULL,
   sort_order INT NOT NULL DEFAULT 0,
   batch_key VARCHAR(32) NULL,
-  query_normalized VARCHAR(512) NULL COMMENT '规范化问句（展示与语义匹配）',
+  query_normalized text NULL COMMENT '规范化问句（展示与语义匹配）',
   query_norm_hash CHAR(64) NULL COMMENT 'SHA256(规范化问句)，索引用',
   grounding_json MEDIUMTEXT NULL COMMENT '联网摘要与引用 JSON（scene=WEB_KNOWLEDGE）',
   hit_count INT NOT NULL DEFAULT 0 COMMENT '本地知识库命中次数',

@@ -659,7 +659,7 @@ public class ChatWebSearchGroundingService {
                         snap, ctx.keywordSourceText(), ctx.recentHistoryForArk(), conversationId, usageScene);
         if (!keywords.isEmpty()) {
             log.info(
-                    "[联网搜索] 固定源三关键词（多轮共用）：租户 {}，{}",
+                    "[联网搜索] 固定源检索问句（多轮共用）：租户 {}，{}",
                     snap.getTenantId(),
                     keywords);
         }

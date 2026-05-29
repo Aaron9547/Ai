@@ -55,6 +55,37 @@ public enum TenantRuntimeSettingKey {
             "[]",
             false),
     /**
+     * 联网问句重写 / 固定源三关键词抽取模型：值为 {@code sys_llm_model.id}（须为启用的 LANGUAGE 或火山 Ark
+     * WEB_SEARCH）；LANGUAGE 走提示词 + 流式 LLM，WEB_SEARCH 单次 Ark Bot 非流式调用；留空则按 {@code sort_order}
+     * 取租户默认对话模型（LANGUAGE）。
+     */
+    WEB_SEARCH_QUERY_REWRITE_MODEL_ID(
+            "WEB_SEARCH_QUERY_REWRITE_MODEL_ID",
+            "问句重写模型 id（LANGUAGE 或 WEB_SEARCH）",
+            SettingValueKind.STRING,
+            "",
+            false),
+    /**
+     * 已改为 {@link #WEB_SEARCH_QUERY_REWRITE_MODEL_ID}；读路径兼容，写路径管理端保存时清空。
+     */
+    @Deprecated
+    WEB_SEARCH_QUERY_REWRITE_LANGUAGE_MODEL_ID(
+            "WEB_SEARCH_QUERY_REWRITE_LANGUAGE_MODEL_ID",
+            "（已废弃）问句重写语言模型 id",
+            SettingValueKind.STRING,
+            "",
+            false),
+    /**
+     * 已改为 {@link #WEB_SEARCH_QUERY_REWRITE_MODEL_ID}；读路径兼容，写路径管理端保存时清空。
+     */
+    @Deprecated
+    WEB_SEARCH_QUERY_REWRITE_WEB_SEARCH_MODEL_ID(
+            "WEB_SEARCH_QUERY_REWRITE_WEB_SEARCH_MODEL_ID",
+            "（已废弃）问句重写联网模型 id",
+            SettingValueKind.STRING,
+            "",
+            false),
+    /**
      * 已改为 {@link #WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON} + 单 Ark {@link #WEB_SEARCH_GROUNDING_MODEL_ID}；仅作读兼容。
      */
     @Deprecated
@@ -303,6 +334,9 @@ public enum TenantRuntimeSettingKey {
                     WEB_SEARCH_GROUNDING_MODEL_ID,
                     WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON,
                     WEB_SEARCH_GROUNDING_MODEL_IDS_JSON,
+                    WEB_SEARCH_QUERY_REWRITE_MODEL_ID,
+                    WEB_SEARCH_QUERY_REWRITE_LANGUAGE_MODEL_ID,
+                    WEB_SEARCH_QUERY_REWRITE_WEB_SEARCH_MODEL_ID,
                     CHAT_PROMPT_LIMITS_JSON,
                     MEMORY_POLICY_JSON,
                     CHAT_INPUT_GUARD_JSON,

@@ -21,6 +21,8 @@ export type TenantShellModelCallingRuntime = {
   webSearchGroundingModelId: string;
   /** WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON；内置固定源代码数组 */
   webSearchGroundingFixedSourcesJson: string;
+  /** WEB_SEARCH_QUERY_REWRITE_MODEL_ID；LANGUAGE 或 WEB_SEARCH */
+  webSearchQueryRewriteModelId: string;
   chatPromptLimitsJson: string;
   memoryPolicyJson: string;
   chatInputGuardJson: string;
@@ -95,6 +97,7 @@ export type TenantShellModelCallingPutBody = Pick<
   | "memoryEmbeddingVectorModelId"
   | "webSearchGroundingModelId"
   | "webSearchGroundingFixedSourcesJson"
+  | "webSearchQueryRewriteModelId"
   | "chatPromptLimitsJson"
   | "memoryPolicyJson"
   | "chatInputGuardJson"

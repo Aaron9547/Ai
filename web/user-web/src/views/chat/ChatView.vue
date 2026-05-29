@@ -84,14 +84,38 @@
         <div class="thread-head-row">
           <div class="thread-head-leading">
             <h1 v-if="!isMobile" class="thread-title">{{ activeTitle }}</h1>
-            <div
+            <el-tooltip
               v-if="sessionTokenTotal > 0"
-              class="thread-token-badge"
-              :class="{ 'thread-token-badge--pulse': tokenBadgePulse }"
+              placement="bottom"
+              :show-after="280"
+              popper-class="thread-token-tooltip"
             >
-              <span class="thread-token-badge-label">{{ t("chat.tokenLine") }}</span>
-              <span class="thread-token-badge-val" v-html="t('chat.tokenLineValue', { n: sessionTokenTotal })" />
-            </div>
+              <template #content>
+                <div class="thread-token-tooltip-body">
+                  <p class="thread-token-tooltip-split">
+                    {{
+                      t("chat.tokenLineBreakdownSplit", {
+                        prompt: sessionTokenBreakdown.promptTokens,
+                        completion: sessionTokenBreakdown.completionTokens,
+                      })
+                    }}
+                  </p>
+                  <ul v-if="sessionTokenBreakdown.byScene.length" class="thread-token-tooltip-scenes">
+                    <li v-for="row in sessionTokenBreakdown.byScene" :key="row.scene">
+                      {{ t("chat.tokenLineBreakdownScene", { label: row.label, n: row.totalTokens }) }}
+                    </li>
+                  </ul>
+                  <p class="thread-token-tooltip-hint">{{ t("chat.tokenLineHint") }}</p>
+                </div>
+              </template>
+              <div
+                class="thread-token-badge"
+                :class="{ 'thread-token-badge--pulse': tokenBadgePulse }"
+              >
+                <span class="thread-token-badge-label">{{ t("chat.tokenLine") }}</span>
+                <span class="thread-token-badge-val" v-html="t('chat.tokenLineValue', { n: sessionTokenTotal })" />
+              </div>
+            </el-tooltip>
           </div>
           <div ref="toolbarAnchorHeadDesktopRef" class="toolbar-anchor-slot toolbar-anchor-slot--head" aria-hidden="true" />
         </div>
@@ -693,26 +717,18 @@
                 </div>
               </div>
               <div
-                v-if="m.role === 'assistant' && (assistantDurationLabel(m) || (m.usage && m.usage.totalTokens > 0))"
+                v-if="m.role === 'assistant' && (assistantDurationLabel(m) || assistantTokenMetaLabel(m))"
                 class="token-meta"
               >
                 <span v-if="assistantDurationLabel(m)">{{ assistantDurationLabel(m) }}</span>
                 <span
-                  v-if="assistantDurationLabel(m) && m.usage && m.usage.totalTokens > 0"
+                  v-if="assistantDurationLabel(m) && assistantTokenMetaLabel(m)"
                   class="token-meta-sep"
                   aria-hidden="true"
                 >
                   ·
                 </span>
-                <span v-if="m.usage && m.usage.totalTokens > 0">
-                  {{
-                    t("chat.tokenLineMsg", {
-                      total: m.usage.totalTokens,
-                      prompt: m.usage.promptTokens,
-                      completion: m.usage.completionTokens,
-                    })
-                  }}
-                </span>
+                <span v-if="assistantTokenMetaLabel(m)">{{ assistantTokenMetaLabel(m) }}</span>
               </div>
             </div>
           </div>
@@ -963,7 +979,7 @@ import { TENANT_CODE_PATH_RE } from "../../utils/outboundTenant";
 import { copyTextToUserClipboard } from "../../utils/clipboard";
 import MarkdownRichContent from "../../components/chat/MarkdownRichContent.vue";
 import { renderMarkdownToSafeHtml } from "../../utils/renderMarkdown";
-import { apiRequestErrorMessage } from "../../utils/apiRequestErrorMessage";
+import { apiRequestErrorMessage, isConversationNotFoundHttpError } from "../../utils/apiRequestErrorMessage";
 import { isAbortError } from "../../utils/isAbortError";
 import { toChatResponseLocale } from "../../utils/chatResponseLocale";
 import { useUiPreferencesStore } from "../../stores/uiPreferences";
@@ -1146,6 +1162,8 @@ type Msg = {
   reasoningCollapsed?: boolean;
   /** 助手消息落库 meta 或 SSE end 帧中的 token 用量 */
   usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
+  /** 本回合全部模型调用 token（联网、猜你想问等） */
+  turnTotalTokens?: number;
   modelAlias?: string;
   userFeedback?: string;
   /** 多版回答（服务端 meta {@code priorVersions} + 当前正文；刷新后仍可从历史接口恢复） */
@@ -1352,6 +1370,30 @@ function formatIntentMatchSource(src: string | null | undefined): string {
   return key ? t(key) : src.replace(/_/g, " ");
 }
 
+function assistantTokenMetaLabel(m: Msg): string {
+  const main = m.usage?.totalTokens ?? 0;
+  const turn = m.turnTotalTokens ?? 0;
+  if (turn > 0 && turn > main) {
+    return t("chat.tokenLineTurn", {
+      turn,
+      main,
+      prompt: m.usage?.promptTokens ?? 0,
+      completion: m.usage?.completionTokens ?? 0,
+    });
+  }
+  if (main > 0) {
+    return t("chat.tokenLineMsg", {
+      total: main,
+      prompt: m.usage?.promptTokens ?? 0,
+      completion: m.usage?.completionTokens ?? 0,
+    });
+  }
+  if (turn > 0) {
+    return t("chat.tokenLineTurnOnly", { turn });
+  }
+  return "";
+}
+
 function priorApiRowToVariant(pv: chatApi.PriorAssistantVersion): ReplyVariant {
   const usage =
     pv.totalTokens != null && pv.totalTokens > 0
@@ -1383,6 +1425,8 @@ function mapHistoryToMsgs(rows: chatApi.ChatHistoryMessage[]): Msg[] {
             totalTokens: r.totalTokens,
           }
         : undefined;
+    const turnTotalTokens =
+      r.turnTotalTokens != null && r.turnTotalTokens > 0 ? r.turnTotalTokens : undefined;
     const hasReason = !!(r.reasoning && r.reasoning.length > 0);
     if (r.role === "assistant" && r.priorVersions && r.priorVersions.length > 0) {
       const ragTitles = citationsToTitles(r.ragCitations);
@@ -1418,6 +1462,7 @@ function mapHistoryToMsgs(rows: chatApi.ChatHistoryMessage[]): Msg[] {
         reasoning: r.reasoning ?? undefined,
         reasoningCollapsed: hasReason ? true : undefined,
         usage,
+        turnTotalTokens,
         modelAlias: r.modelAlias ?? undefined,
         userFeedback: r.userFeedback ?? undefined,
         ragRetrievalTitles: ragForFlat,
@@ -1443,6 +1488,7 @@ function mapHistoryToMsgs(rows: chatApi.ChatHistoryMessage[]): Msg[] {
       reasoning: r.reasoning ?? undefined,
       reasoningCollapsed: hasReason ? true : undefined,
       usage,
+      turnTotalTokens: r.role === "assistant" ? turnTotalTokens : undefined,
       modelAlias: r.modelAlias ?? undefined,
       userFeedback: r.userFeedback ?? undefined,
       ...(r.role === "assistant" && ragSingle?.length
@@ -1561,8 +1607,9 @@ async function loadMessagesForConv(id: string) {
     if (seq !== threadLoadSeq) return;
     messages.value = mapHistoryToMsgs(rows);
     await refreshConversationTokenTotal(id);
-  } catch {
+  } catch (e) {
     if (seq !== threadLoadSeq) return;
+    if (isConversationNotFoundHttpError(e)) return;
     ElMessage.error(t("chat.loadHistoryFail"));
   } finally {
     if (seq === threadLoadSeq) {
@@ -1604,6 +1651,9 @@ function patchMsgMetadataFromServer(local: Msg, server: Msg): void {
   local.id = server.id;
   if (server.usage) {
     local.usage = { ...server.usage };
+  }
+  if (server.turnTotalTokens != null && server.turnTotalTokens > 0) {
+    local.turnTotalTokens = server.turnTotalTokens;
   }
   if (server.userFeedback != null) {
     local.userFeedback = server.userFeedback;
@@ -2025,10 +2075,14 @@ function applyAssistantStreamPart(m: Msg, part: chatApi.StreamPart, tail: ReplyV
     if ("usage" in part && part.usage && part.usage.totalTokens > 0) {
       body.usage = { ...part.usage };
     }
+    if (part.turnTokenTotal != null && part.turnTokenTotal > 0) {
+      body.turnTotalTokens = part.turnTokenTotal;
+    }
     if (part.conversationTokenTotal != null && part.conversationTokenTotal > 0) {
       meteringSessionTokenTotal.value = part.conversationTokenTotal;
+      void refreshConversationTokenSummary(convId.value!);
     } else if (convId.value != null) {
-      void refreshConversationTokenTotal(convId.value);
+      void refreshConversationTokenSummary(convId.value);
     }
     if (!(m.followUpPrompts?.length)) {
       beginFollowUpLoading(m);
@@ -2498,6 +2552,12 @@ const sessionTokenTotal = computed(() => {
 });
 
 const meteringSessionTokenTotal = ref(0);
+const sessionTokenBreakdown = ref<chatApi.ConversationTokenSummary>({
+  totalTokens: 0,
+  promptTokens: 0,
+  completionTokens: 0,
+  byScene: [],
+});
 
 const tokenBadgePulse = ref(false);
 watch(sessionTokenTotal, (n, prev) => {
@@ -2681,14 +2741,26 @@ async function refresh() {
 function clearThread() {
   messages.value = [];
   meteringSessionTokenTotal.value = 0;
+  sessionTokenBreakdown.value = {
+    totalTokens: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    byScene: [],
+  };
 }
 
-async function refreshConversationTokenTotal(id: string) {
+async function refreshConversationTokenSummary(id: string) {
   try {
-    meteringSessionTokenTotal.value = await chatApi.fetchConversationTokenTotal(id);
+    const summary = await chatApi.fetchConversationTokenSummary(id);
+    sessionTokenBreakdown.value = summary;
+    meteringSessionTokenTotal.value = summary.totalTokens;
   } catch {
     /* 计量合计不可用时回退消息 meta 求和 */
   }
+}
+
+async function refreshConversationTokenTotal(id: string) {
+  await refreshConversationTokenSummary(id);
 }
 
 function selectConv(id: string) {
@@ -2844,12 +2916,22 @@ async function logoutUser() {
   } catch {
     return;
   }
+  ++threadLoadSeq;
+  pendingThreadAction = null;
+  if (sending.value) {
+    cancelActiveStream();
+    sending.value = false;
+  }
   clearUserSession();
   refreshAuthLabel();
   webSearchEnabled.value = false;
+  pendingThreadAction = { kind: "empty" };
   convId.value = null;
   clearThread();
   await refresh();
+  if (convId.value != null) {
+    await loadMessagesForConv(convId.value);
+  }
   authBump.value += 1;
   ElMessage.success(t("chat.loggedOut"));
 }
@@ -3301,6 +3383,7 @@ async function send() {
   text-transform: uppercase;
   color: var(--chat-text-muted, #94a3b8);
   transition: opacity 0.35s var(--nexus-ease, cubic-bezier(0.4, 0, 0.2, 1));
+  cursor: help;
 }
 
 .thread-token-badge-label {
@@ -3326,6 +3409,31 @@ async function send() {
   100% {
     opacity: 1;
   }
+}
+
+:global(.thread-token-tooltip) {
+  max-width: 300px;
+}
+
+:global(.thread-token-tooltip-body) {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+:global(.thread-token-tooltip-split) {
+  margin: 0 0 6px;
+  font-weight: 600;
+}
+
+:global(.thread-token-tooltip-scenes) {
+  margin: 0 0 6px;
+  padding-left: 1.1em;
+}
+
+:global(.thread-token-tooltip-hint) {
+  margin: 0;
+  opacity: 0.82;
+  font-size: 11px;
 }
 
 .reasoning {

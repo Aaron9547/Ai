@@ -6,6 +6,7 @@ import { InfoFilled } from "@element-plus/icons-vue";
 const props = defineProps<{
   label: string;
   tooltipI18nKey: string;
+  required?: boolean;
 }>();
 
 const { t } = useI18n();
@@ -17,6 +18,7 @@ function tooltipText(): string {
 
 <template>
   <span class="shell-field-label">
+    <span v-if="required" class="shell-field-required" :aria-label="t('admin.shell.fieldRequired')">*</span>
     <span class="shell-field-label-text">{{ label }}</span>
     <el-tooltip
       :content="tooltipText()"
@@ -43,6 +45,12 @@ function tooltipText(): string {
   flex-wrap: nowrap;
   gap: 4px 6px;
   box-sizing: border-box;
+}
+
+.shell-field-required {
+  color: var(--el-color-danger);
+  line-height: 1;
+  flex-shrink: 0;
 }
 
 .shell-field-label-text {

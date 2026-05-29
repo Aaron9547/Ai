@@ -377,6 +377,90 @@ flowchart TB
 
 ## 变更记录
 
+### 0.1.280-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **问句重写下拉（admin-web）**：修复联网模型选中时语言分组误插 orphan 项，导致显示「已配置 id=…，列表中无此模型」。
+
+### 0.1.279-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **问句重写（ai-chat / admin-web）**：固定源改写改为单次调用、直接使用返回问句（不再拆三关键词）；管理端将「检索轮数 / 轮次后缀」移至「多轮检索」专节，与问句重写分离。
+
+### 0.1.278-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **管理端模型调用文案（admin-web）**：缩短 label、去掉「可选」与技术键名；说明迁入图标 tooltip；`ShellFieldLabel` 支持必填 `*`；代理主机启用时标必填。
+
+### 0.1.277-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **管理端文案（admin-web）**：简化「固定源 HTTP 代理」说明与 tooltip，去掉 JSON 键名、Clash/SOCKS、application.yml 等技术细节。
+
+### 0.1.276-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **管理端模型调用布局（admin-web）**：固定 `label-width: 180px`；`outbound-field-span` 内容区改为 `flex:1` 占标签右侧剩余宽度，修复控件与 label 重叠。
+
+### 0.1.275-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **管理端模型调用布局（admin-web）**：移除标签置顶；恢复 label 与控件同一行；表单项恢复约 380px 上限并为数字框设 `min-width: 160px`；模型下拉单独约 280～560px。
+
+### 0.1.274-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **管理端模型调用布局（admin-web）**：撤回整段 `model-select-grid` 单列拉满；仅对记忆嵌入 / 火山联网 / 问句重写三个模型下拉使用标签置顶 + 约 320～560px 宽度，其余联网区块恢复原有双列栅格。
+
+### 0.1.273-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **问句重写单模型配置（ai-common / ai-chat / ai-identity / admin-web）**：合并为 **`WEB_SEARCH_QUERY_REWRITE_MODEL_ID`**，可选 **LANGUAGE**（提示词 + 流式 LLM）或 **WEB_SEARCH**（单次火山 Ark Bot，结合近史重写问句/三关键词）；读路径兼容已废弃的双键；管理端「外观与模型调用」改为一个分组下拉。**无 DB migrate**。
+
+### 0.1.272-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **联网问句重写可配置（ai-common / ai-chat / ai-identity / admin-web）**：租户运行参数 **`WEB_SEARCH_QUERY_REWRITE_LANGUAGE_MODEL_ID`**、**`WEB_SEARCH_QUERY_REWRITE_WEB_SEARCH_MODEL_ID`**；`WebSearchQueryRewriteService` 优先配置 LANGUAGE，否则默认对话模型；管理端「外观与模型调用 → 问句重写 / 关键词抽取」双下拉。**无 DB migrate**。
+
+### 0.1.271-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **对话 Token 展示（ai-chat / ai-common / user-web）**：`GET …/token-total` 返回 prompt/completion 与按 `usageScene` 拆分；助手 meta 写入 `turnTokenTotal`（本回合全部模型调用）；SSE `end` 帧下发 `turnTokenTotal`；用户端会话累计悬浮明细、单条回复展示「本回合共 … tokens」。
+
+### 0.1.270-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **用户端退出登录（user-web）**：`logoutUser` 递增 `threadLoadSeq`、清空 `pendingThreadAction` 并置 `{ kind: "empty" }`，避免 `thread-pane` 过渡结束后仍拉取已登录会话；访客会话列表刷新后补拉首条历史；`conversation not found` 不再弹「加载历史消息失败」。
+
+### 0.1.269-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **MCP 出站代理修复（ai-mcp / ai-common）**：`HttpClient` 在 `DIRECT` 时不再强制 `NO_PROXY`（允许 Clash 系统代理）；MCP SDK transport 对齐 **`HTTP/1.1`** 与 **`connectTimeout`**；探测失败日志/文案附带 **`outbound`** 诊断。
+
+### 0.1.268-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **MCP 出站代理（ai-mcp / ai-common / ai-chat）**：MCP Streamable HTTP 与固定联网源共用 **`ai.websearch.fixed.*`** 与租户 Shell **`WEB_SEARCH_FIXED_SOURCE_OUTBOUND_JSON`**；代理解析下沉 **`WebSearchFixedSourceOutboundResolver`**（`ai-common`），**`HttpClientProxySupport`** 注入 **`McpRemoteClientFactory`**。
+
+### 0.1.267-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **MCP 出站连接（ai-mcp）**：**`McpRemoteClientFactory`** 为 Streamable HTTP 注入 **`HttpClient.connectTimeout`**（复用 **`ai.outbound.connect-timeout-seconds`**，默认 30s）与 **`initializationTimeout`**；探测失败时对 **`HttpConnectTimeoutException`** 返回可读的防火墙/代理排查提示。
+
 ### 0.1.266-SNAPSHOT
 
 > **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**

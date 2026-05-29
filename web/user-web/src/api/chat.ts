@@ -104,6 +104,21 @@ export interface ChatAttachmentMessage {
   charLength: number | null;
 }
 
+export interface ConversationTokenSceneRow {
+  scene: string;
+  label: string;
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+}
+
+export interface ConversationTokenSummary {
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  byScene: ConversationTokenSceneRow[];
+}
+
 export interface ChatHistoryMessage {
   id: number;
   role: "user" | "assistant" | "system";
@@ -112,6 +127,8 @@ export interface ChatHistoryMessage {
   promptTokens: number | null;
   completionTokens: number | null;
   totalTokens: number | null;
+  /** 本回合全部模型调用 token（联网、猜你想问等） */
+  turnTotalTokens?: number | null;
   createdAt: string;
   modelAlias?: string | null;
   /** 助手消息点踩，后端存 DISLIKE */
@@ -140,11 +157,31 @@ export async function listConversationMessages(conversationId: string): Promise<
   return data;
 }
 
-export async function fetchConversationTokenTotal(conversationId: string): Promise<number> {
-  const { data } = await http.get<{ totalTokens?: number }>(
+export async function fetchConversationTokenSummary(conversationId: string): Promise<ConversationTokenSummary> {
+  const { data } = await http.get<ConversationTokenSummary>(
     `/open/v1/chat/conversations/${encodeURIComponent(conversationId)}/token-total`,
   );
-  return typeof data.totalTokens === "number" && data.totalTokens > 0 ? data.totalTokens : 0;
+  const totalTokens = typeof data.totalTokens === "number" && data.totalTokens > 0 ? data.totalTokens : 0;
+  const promptTokens = typeof data.promptTokens === "number" ? data.promptTokens : 0;
+  const completionTokens = typeof data.completionTokens === "number" ? data.completionTokens : 0;
+  const byScene = Array.isArray(data.byScene)
+    ? data.byScene
+        .filter((row) => row && typeof row.totalTokens === "number" && row.totalTokens > 0)
+        .map((row) => ({
+          scene: String(row.scene ?? ""),
+          label: String(row.label ?? row.scene ?? ""),
+          totalTokens: row.totalTokens,
+          promptTokens: typeof row.promptTokens === "number" ? row.promptTokens : 0,
+          completionTokens: typeof row.completionTokens === "number" ? row.completionTokens : 0,
+        }))
+    : [];
+  return { totalTokens, promptTokens, completionTokens, byScene };
+}
+
+/** 使用 {@link fetchConversationTokenSummary} 的合计字段。 */
+export async function fetchConversationTokenTotal(conversationId: string): Promise<number> {
+  const summary = await fetchConversationTokenSummary(conversationId);
+  return summary.totalTokens;
 }
 
 export interface ChatShareCreateResult {
@@ -260,7 +297,7 @@ export type StreamPart =
       bodySnippet?: string;
     }
   | { type: "followUpPrompts"; items: StarterPromptItem[] }
-  | { type: "end"; usage?: TokenUsageChunk; assistantMessageId?: number; durationMs?: number; conversationTokenTotal?: number };
+  | { type: "end"; usage?: TokenUsageChunk; assistantMessageId?: number; durationMs?: number; conversationTokenTotal?: number; turnTokenTotal?: number };
 
 function normalizeWebSearchRefItems(refs: unknown[]): WebSearchRefItem[] {
   return refs
@@ -394,6 +431,7 @@ function parseSsePayload(raw: string): StreamPart | null {
         assistantMessageId?: number;
         durationMs?: number;
         conversationTokenTotal?: number;
+        turnTokenTotal?: number;
       };
       return {
         type: "end",
@@ -403,6 +441,7 @@ function parseSsePayload(raw: string): StreamPart | null {
         durationMs: typeof raw.durationMs === "number" ? raw.durationMs : undefined,
         conversationTokenTotal:
           typeof raw.conversationTokenTotal === "number" ? raw.conversationTokenTotal : undefined,
+        turnTokenTotal: typeof raw.turnTokenTotal === "number" ? raw.turnTokenTotal : undefined,
       };
     }
   } catch {
