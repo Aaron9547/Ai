@@ -39,13 +39,18 @@ export function varsForScene(scene: MessageSceneCode): MessageTemplateVarDef[] {
 
 /** 在 input/textarea 光标处插入占位符；无焦点时追加到末尾。 */
 /** 与后端 {@code MessageTemplateSupport} 一致，用于管理端预览。 */
+/** 与后端 {@link MessageTemplateSupport#applyTemplate} 一致（含 \\n → 换行）。 */
 export function applyTemplatePreview(template: string, vars: Record<string, string>): string {
   if (!template) return "";
   let out = template;
   for (const [key, value] of Object.entries(vars)) {
-    out = out.split(`{${key}}`).join(value ?? "");
+    out = out.split(`{${key}}`).join(normalizeTemplateEscapes(value ?? ""));
   }
-  return out;
+  return normalizeTemplateEscapes(out);
+}
+
+function normalizeTemplateEscapes(text: string): string {
+  return text.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n").replace(/\\r/g, "\n").replace(/\\t/g, "\t");
 }
 
 export const TEMPLATE_PREVIEW_SAMPLE_VARS: Record<string, string> = {

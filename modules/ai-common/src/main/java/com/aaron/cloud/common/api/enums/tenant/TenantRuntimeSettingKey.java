@@ -234,6 +234,41 @@ public enum TenantRuntimeSettingKey {
             "知识星球沉淀/周报模型 id",
             SettingValueKind.STRING,
             "",
+            false),
+    /** 周报计算前是否联网检索书目摘要（Pre-LLM，每用户每周至多 1 次）。 */
+    KNOWLEDGE_PLANET_WEEKLY_BOOK_SEARCH_ENABLED(
+            "KNOWLEDGE_PLANET_WEEKLY_BOOK_SEARCH_ENABLED",
+            "知识星球周报荐书联网",
+            SettingValueKind.BOOLEAN,
+            "true",
+            false),
+    /** 本周知识节点数低于该值且无学习者画像时跳过 LLM 周报。 */
+    KNOWLEDGE_PLANET_WEEKLY_MIN_NODES(
+            "KNOWLEDGE_PLANET_WEEKLY_MIN_NODES",
+            "知识星球周报最少节点数",
+            SettingValueKind.STRING,
+            "2",
+            false),
+    /** 对话 MCP 工具调用最大轮数（模型返回 tool_calls 后重入模型的次数上限）。 */
+    MCP_CHAT_MAX_TOOL_ROUNDS(
+            "MCP_CHAT_MAX_TOOL_ROUNDS",
+            "MCP 对话最大工具轮数",
+            SettingValueKind.STRING,
+            "5",
+            false),
+    /** 单次 MCP tools/call 超时（秒）。 */
+    MCP_CHAT_TOOL_TIMEOUT_SECONDS(
+            "MCP_CHAT_TOOL_TIMEOUT_SECONDS",
+            "MCP 工具调用超时（秒）",
+            SettingValueKind.STRING,
+            "60",
+            false),
+    /** 单次 tool 结果写入对话上下文的最大字符数（防 read_url 等超大响应）。 */
+    MCP_CHAT_TOOL_RESULT_MAX_CHARS(
+            "MCP_CHAT_TOOL_RESULT_MAX_CHARS",
+            "MCP 工具结果截断（字符）",
+            SettingValueKind.STRING,
+            "8000",
             false);
 
     @EnumValue

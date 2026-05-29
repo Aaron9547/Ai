@@ -10,8 +10,8 @@ alwaysApply: true
 ## §0.3 编码迭代交付（勾选）
 
 - [ ] 改动触及 §0.2 路径？（java / web / db/mysql / pom / application*.yml）
-- [ ] **大改**已 `pom` bump + **新开** `PROJECT.md` 顶节 `###`？（禁止只堆旧版如 0.1.237）
-- [ ] 顶节 `###` **=** `pom.xml` `<version>`？
+- [ ] 已 **新开** `PROJECT.md` 顶节 `###`（文档补丁 +1）？（禁止只堆旧版如 0.1.258）
+- [ ] 顶节 `###` 补丁 **≥** `pom.xml` `<version>`？（可不 bump `pom`；顶节注明构件版本）
 - [ ] `PROJECT.md`「变更记录」至少一条 `- **模块**：…`（含 migrate / 已建库手工执行说明）？
 - [ ] `schema_v1.sql` / `migrate_0_1_{patch}_*` / `gw_api_endpoint_catalog_inserts.sql` / `README.md` 已同集更新？
 - [ ] 新能力：`PROJECT.md` 功能索引 + §1.5（若适用）？
@@ -20,4 +20,4 @@ alwaysApply: true
 
 ## 禁止（§0.5 / §0.6）
 
-只改代码不写变更记录 · 用 `##` 专节代替变更记录 · pom/顶节不一致 · 以为重启即迁库 · 新 API 不写 gw 目录 · **GBK 等非 UTF-8 保存源码** · **PowerShell 管道/重定向覆盖 `.java`/`.vue`/`.ts`**
+只改代码不写变更记录 · 用 `##` 专节代替变更记录 · 文档顶节落后 pom · 以为重启即迁库 · 新 API 不写 gw 目录 · **GBK 等非 UTF-8 保存源码** · **PowerShell 管道/重定向覆盖 `.java`/`.vue`/`.ts`**

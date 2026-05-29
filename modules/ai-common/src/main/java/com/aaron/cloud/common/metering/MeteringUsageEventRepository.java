@@ -47,9 +47,7 @@ public class MeteringUsageEventRepository {
             q.eq(MeteringUsageEvent::getTenantId, filterTenantIdOrNull);
         }
         if (usageSceneOrNull != null && !usageSceneOrNull.isBlank()) {
-            q.apply(
-                    "CAST(JSON_EXTRACT(ref_json, '$.usageScene') AS CHAR(64)) = {0}",
-                    usageSceneOrNull.trim());
+            q.apply(MeteringRefJsonSqlSupport.USAGE_SCENE_EQUALS, usageSceneOrNull.trim());
         }
         Page<MeteringUsageEvent> page = mapper.selectPage(Page.of(pageNo, pageSize), q);
         attachAdminDisplayFields(page.getRecords());
@@ -189,6 +187,15 @@ public class MeteringUsageEventRepository {
         return mapper.selectMaps(qw).stream().findFirst().orElse(Map.of());
     }
 
+    /** 租户累计 token 计量（全历史，{@code unit=token}）。 */
+    public Map<String, Object> sumTokenSplitByTenantAll(long tenantId) {
+        QueryWrapper<MeteringUsageEvent> qw = new QueryWrapper<>();
+        qw.select(MeteringTokenAggregationSql.SUM_PROMPT, MeteringTokenAggregationSql.SUM_COMPLETION)
+                .eq("tenant_id", tenantId)
+                .eq("unit", "token");
+        return mapper.selectMaps(qw).stream().findFirst().orElse(Map.of());
+    }
+
     public List<Map<String, Object>> sumTokenSplitByTenantGroupedByBeijingDate(
             long tenantId, LocalDateTime sinceInclusive, LocalDateTime untilExclusive) {
         QueryWrapper<MeteringUsageEvent> qw = new QueryWrapper<>();
@@ -232,9 +239,7 @@ public class MeteringUsageEventRepository {
         qw.select("COALESCE(SUM(quantity),0) AS s")
                 .eq("tenant_id", tenantId)
                 .eq("unit", "token")
-                .apply(
-                        "CAST(JSON_EXTRACT(ref_json, '$.conversationId') AS SIGNED) = {0}",
-                        conversationId);
+                .apply(MeteringRefJsonSqlSupport.CONVERSATION_ID_EQUALS, conversationId);
         Map<String, Object> row = mapper.selectMaps(qw).stream().findFirst().orElse(null);
         if (row == null || row.get("s") == null) {
             return 0L;

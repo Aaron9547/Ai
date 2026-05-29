@@ -36,6 +36,11 @@
   --chat-text-web-refs: #0f172a;
   --chat-web-chip-bg: #ffffff;
   --chat-web-chip-border: rgba(16, 185, 129, 0.25);
+  --chat-bg-kb-refs: #f5f3ff;
+  --chat-border-kb-refs: #ddd6fe;
+  --chat-text-kb-refs: #5b21b6;
+  --chat-kb-chip-bg: #ffffff;
+  --chat-kb-chip-border: #c4b5fd;
   --chat-border: var(--nexus-border);
   --chat-border-subtle: var(--nexus-border-subtle);
   --chat-border-input: rgba(0, 0, 0, 0.08);
@@ -149,6 +154,11 @@ html.dark .chat-app {
   --chat-text-web-refs: #cbd5e1;
   --chat-web-chip-bg: #27272a;
   --chat-web-chip-border: #475569;
+  --chat-bg-kb-refs: #2e1065;
+  --chat-border-kb-refs: #5b21b6;
+  --chat-text-kb-refs: #ddd6fe;
+  --chat-kb-chip-bg: #3b0764;
+  --chat-kb-chip-border: #7c3aed;
   --chat-border: #2e2e2e;
   --chat-border-subtle: #3f3f46;
   --chat-border-input: #3f3f46;
@@ -595,6 +605,27 @@ html.dark .chat-app .web-search-refs-strip {
 
 html.dark .chat-app .web-search-refs-strip .rag-sources-label {
   color: var(--chat-text-body) !important;
+}
+
+html.dark .chat-app .kb-refs-strip {
+  background: var(--chat-bg-kb-refs) !important;
+  border-color: var(--chat-border-kb-refs) !important;
+  color: var(--chat-text-kb-refs) !important;
+}
+
+html.dark .chat-app .kb-refs-label {
+  color: var(--chat-text-kb-refs) !important;
+}
+
+html.dark .chat-app .kb-ref-chip {
+  background: var(--chat-kb-chip-bg) !important;
+  border-color: var(--chat-kb-chip-border) !important;
+  color: var(--chat-text-kb-refs) !important;
+}
+
+html.dark .chat-app .kb-ref-chip:hover {
+  border-color: #a78bfa !important;
+  color: #ddd6fe !important;
 }
 
 html.dark .chat-app .rag-doc-chip,

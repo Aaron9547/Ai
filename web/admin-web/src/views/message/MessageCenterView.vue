@@ -384,6 +384,9 @@
           <p v-if="isTemplateFormSms" class="field-hint">
             {{ isTemplateFormAliyun ? t("admin.message.smsAliyunVarsHint") : t("admin.message.smsTencentVarsHint") }}
           </p>
+          <p v-else-if="!isTemplateFormSms" class="field-hint">
+            {{ t("admin.message.emailBodyTemplateHint") }}
+          </p>
         </el-form-item>
         <el-form-item :label="t('admin.message.messagePreview')">
           <div class="preview-box">

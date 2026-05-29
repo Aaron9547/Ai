@@ -124,9 +124,31 @@ export default {
       localeZhCn: "Simplified Chinese",
       localeEnUs: "English",
       defaultSubjectRegister: "[{tenantName}] Registration code",
-      defaultBodyRegister: "Your code is {code}. Valid for {ttlMinutes} minutes.",
+      defaultBodyRegister: `Hello,
+
+Your verification code is: {code}
+Valid for {ttlMinutes} minutes.
+
+If you did not request this, please ignore this email.`,
       defaultSubjectWeekly: "[{tenantName}] Knowledge planet weekly",
-      defaultBodyWeekly: "Hi {userName},\n\n{summary}\n\n{weekLabel}",
+      defaultBodyWeekly: `Hi {userName},
+
+Your knowledge planet weekly report for {weekLabel} is ready.
+
+{summary}
+
+Suggested directions:
+{thinkDirections}
+
+Areas to improve:
+{gapAreas}
+
+Recommended reading:
+{books}
+
+Open the chat page and see Knowledge Planet on the right for the full map.`,
+      emailBodyTemplateHint:
+        "Plain-text email: press Enter for line breaks (avoid literal \\n). An HTML part is generated automatically; if the body contains tags like <p> or <br>, it is sent as HTML. Markdown is not supported.",
       defaultBodySmsLogin: "Your code is {code}. Valid for {ttlMinutes} minutes.",
       channelType: {
         EMAIL_SMTP: "Email (SMTP)",
@@ -317,6 +339,8 @@ export default {
         digestModelPh: "Optional; empty uses default chat model",
         digestModelOrphan: "Bound model #{id} (not in list)",
         emailEnabled: "Send weekly email",
+        weeklyBookSearch: "Weekly book web search",
+        weeklyMinNodes: "Min nodes this week for weekly plan",
         reuseSmtp: "Reuse sign-up verification SMTP",
         emailNotReady: "Email channel not ready: configure SMTP or enable sign-up mail with valid credentials.",
         save: "Save knowledge planet settings",

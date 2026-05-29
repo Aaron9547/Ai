@@ -14,6 +14,10 @@ const LS_META_KEY = "daily-recommend-meta";
 
 const PROFILE_POLL_INTERVAL_MS = 2000;
 const PROFILE_POLL_MAX_ATTEMPTS = 60;
+/** 跨日检测轮询（前台长挂兜底，与午夜定时互补） */
+const DAY_ROLLOVER_POLL_MS = 5 * 60 * 1000;
+/** 过本地 0 点后稍等再拉取，避免边界竞态 */
+const DAY_ROLLOVER_MIDNIGHT_BUFFER_MS = 30_000;
 
 type CachedPayload = {
   cacheKey: string;
@@ -48,6 +52,17 @@ function todayLocalDateStr(): string {
 
 function isSameCalendarDay(dateStr: string): boolean {
   return dateStr === todayLocalDateStr();
+}
+
+function isRecommendDateStale(dateStr: string): boolean {
+  return !dateStr || !isSameCalendarDay(dateStr);
+}
+
+function msUntilNextLocalMidnight(): number {
+  const now = new Date();
+  const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
+  next.setTime(next.getTime() + DAY_ROLLOVER_MIDNIGHT_BUFFER_MS);
+  return Math.max(1000, next.getTime() - now.getTime());
 }
 
 function readLastMeta(): RecommendMeta | null {
@@ -120,6 +135,72 @@ function tagsFromItems(items: DailyRecommendItem[]): string[] {
 
 export type DailyRecommendUiStatus = "loading" | "success" | "error" | "empty";
 
+let dayRolloverWatchInitialized = false;
+let dayRolloverPollTimer: number | null = null;
+/** bootstrap / 跨日刷新完成后回调，用于按「是否已是今日」启停轮询 */
+let syncDayRolloverPollState: () => void = () => {};
+
+/** 仅当已有批次日期且非今日时才需轮询（空日期表示尚未 bootstrap，不启轮询） */
+function shouldRunDayRolloverPoll(dateStr: string): boolean {
+  return !!dateStr && isRecommendDateStale(dateStr);
+}
+
+function stopDayRolloverPoll(): void {
+  if (dayRolloverPollTimer != null) {
+    clearInterval(dayRolloverPollTimer);
+    dayRolloverPollTimer = null;
+  }
+}
+
+function syncDayRolloverPoll(
+  getRecommendDate: () => string,
+  refreshIfDateStale: () => Promise<void>,
+): void {
+  const dateStr = getRecommendDate() || readLastMeta()?.recommendDate || "";
+  if (!shouldRunDayRolloverPoll(dateStr)) {
+    stopDayRolloverPoll();
+    return;
+  }
+  if (dayRolloverPollTimer != null) return;
+
+  dayRolloverPollTimer = window.setInterval(() => {
+    const current = getRecommendDate() || readLastMeta()?.recommendDate || "";
+    if (!shouldRunDayRolloverPoll(current)) {
+      stopDayRolloverPoll();
+      return;
+    }
+    void refreshIfDateStale().finally(() => syncDayRolloverPoll(getRecommendDate, refreshIfDateStale));
+  }, DAY_ROLLOVER_POLL_MS);
+}
+
+function initDayRolloverAutoRefresh(
+  getRecommendDate: () => string,
+  refreshIfDateStale: () => Promise<void>,
+): void {
+  if (dayRolloverWatchInitialized) return;
+  dayRolloverWatchInitialized = true;
+
+  const syncPoll = (): void => syncDayRolloverPoll(getRecommendDate, refreshIfDateStale);
+  syncDayRolloverPollState = syncPoll;
+
+  const onVisibilityChange = (): void => {
+    if (document.visibilityState === "visible") {
+      void refreshIfDateStale().finally(syncPoll);
+    }
+  };
+  document.addEventListener("visibilitychange", onVisibilityChange);
+
+  const scheduleMidnightCheck = (): void => {
+    window.setTimeout(() => {
+      void refreshIfDateStale().finally(() => {
+        syncPoll();
+        scheduleMidnightCheck();
+      });
+    }, msUntilNextLocalMidnight());
+  };
+  scheduleMidnightCheck();
+}
+
 function createDailyRecommendStore() {
   const status = ref<DailyRecommendUiStatus>("loading");
   const recommendations = ref<DailyRecommendItem[]>([]);
@@ -132,6 +213,7 @@ function createDailyRecommendStore() {
   const retrying = ref(false);
   const fromTodayCache = ref(false);
   const selectedStarterPrompt = ref<SelectedStarterPrompt | null>(null);
+  let dayRolloverInFlight = false;
 
   function applyProfileResponse(res: DailyRecommendResponse): boolean {
     cacheKey.value = res.cacheKey ?? "";
@@ -308,6 +390,27 @@ function createDailyRecommendStore() {
     return recommendations.value.length > 0 ? "ok" : "error";
   }
 
+  /** 跨日或从后台回到前台：静默拉取新一批，无需用户点刷新。 */
+  async function refreshIfDateStale(): Promise<void> {
+    if (dayRolloverInFlight || retrying.value || status.value === "loading") return;
+    const dateStr = recommendDate.value || readLastMeta()?.recommendDate || "";
+    if (!isRecommendDateStale(dateStr)) return;
+
+    dayRolloverInFlight = true;
+    fromTodayCache.value = false;
+    status.value = "loading";
+    try {
+      await fetchProfileOnce();
+    } finally {
+      dayRolloverInFlight = false;
+      syncDayRolloverPollState();
+    }
+  }
+
+  function getRecommendDateStr(): string {
+    return recommendDate.value;
+  }
+
   async function reloadAfterLogin(): Promise<void> {
     if (!getUserAccessToken()) return;
     clearDailyRecommendStorage();
@@ -339,8 +442,10 @@ function createDailyRecommendStore() {
   }
 
   onMounted(() => {
-    void bootstrap();
+    void bootstrap().finally(syncDayRolloverPollState);
   });
+
+  initDayRolloverAutoRefresh(getRecommendDateStr, refreshIfDateStale);
 
   return {
     status,

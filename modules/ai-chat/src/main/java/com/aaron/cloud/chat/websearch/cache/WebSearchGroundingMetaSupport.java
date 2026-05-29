@@ -12,6 +12,9 @@ public final class WebSearchGroundingMetaSupport {
     /** 与联网外呼一致的规范化问句（含附件拼接），用于会话内复用比对。 */
     public static final String META_WEB_SEARCH_QUERY_NORM = "webSearchQueryNorm";
 
+    /** 联网知识库本地命中引用（助手 meta；与 {@code webSearchReferences} 结构相同）。 */
+    public static final String META_KNOWLEDGE_BASE_REFERENCES = "knowledgeBaseReferences";
+
     private WebSearchGroundingMetaSupport() {}
 
     public static String readQueryNormFromMeta(ObjectMapper objectMapper, String metaJson) {

@@ -149,11 +149,99 @@ public class KnowledgePlanetWeeklyEmailApplicationService {
             sb.append("· 《")
                     .append(b.getTitle() == null ? "" : b.getTitle())
                     .append("》")
-                    .append(b.getReason() == null ? "" : " — " + b.getReason())
-                    .append("\n");
+                    .append(b.getReason() == null ? "" : " — " + b.getReason());
+            if (b.getUrl() != null && !b.getUrl().isBlank()) {
+                sb.append(" ").append(b.getUrl().trim());
+            }
+            sb.append("\n");
         }
         return sb.toString().trim();
     }
 
+    /**
+     * 管理端测试发信：不校验 {@code KNOWLEDGE_PLANET_WEEKLY_EMAIL_ENABLED}；幂等键带 {@code test:} 前缀以便重复测。
+     *
+     * @param planOverride 本次计算结果；非空时直接使用
+     * @param updateInsightStatus 为 true 且库中存在对应周洞察行时，成功发信后标记为 SENT
+     */
+    public SingleWeeklyEmailResult sendTestForUser(
+            long tenantId,
+            long userId,
+            LocalDate weekStart,
+            KnowledgeWeeklyPlan planOverride,
+            boolean updateInsightStatus) {
+        if (!planetRuntime.isEnabled(tenantId)) {
+            return new SingleWeeklyEmailResult("SKIPPED", "租户未启用知识星球", null);
+        }
+        if (!sceneReadinessQuery.isSceneConfigured(tenantId, MessageSceneCode.KNOWLEDGE_PLANET_WEEKLY)) {
+            return new SingleWeeklyEmailResult("SKIPPED", "邮件通道未就绪", null);
+        }
+        if (planOverride == null) {
+            return new SingleWeeklyEmailResult("SKIPPED", "无周报内容", null);
+        }
+
+        SecUserAccount user = userAccountRepository.findById(userId).orElse(null);
+        if (user == null || user.getEmail() == null || user.getEmail().isBlank()) {
+            return new SingleWeeklyEmailResult("SKIPPED", "用户未绑定邮箱", null);
+        }
+
+        String tenantName = tenantRepository.findById(tenantId).map(t -> t.getName()).orElse("AI");
+        try {
+            Map<String, String> vars = buildVars(tenantName, user, weekStart, planOverride);
+            String recipient = user.getEmail().trim();
+            var result =
+                    messageSendPort.send(
+                            MessageSendRequest.builder()
+                                    .tenantId(tenantId)
+                                    .sceneCode(MessageSceneCode.KNOWLEDGE_PLANET_WEEKLY)
+                                    .recipient(recipient)
+                                    .templateVars(vars)
+                                    .idempotencyKey(
+                                            "kp-weekly-test:"
+                                                    + tenantId
+                                                    + ":"
+                                                    + userId
+                                                    + ":"
+                                                    + weekStart
+                                                    + ":"
+                                                    + System.currentTimeMillis())
+                                    .async(true)
+                                    .build());
+            if (result.getStatus() == MessageDeliveryStatus.FAILED) {
+                throw new IllegalStateException(
+                        result.getErrorMessage() == null ? "send failed" : result.getErrorMessage());
+            }
+            if (updateInsightStatus) {
+                insightRepository
+                        .findByUserWeek(tenantId, userId, weekStart)
+                        .ifPresent(
+                                ins -> {
+                                    ins.setStatus(KnowledgeWeeklyInsightStatus.SENT);
+                                    ins.setEmailedAt(LocalDateTime.now());
+                                    ins.setErrorMessage(null);
+                                    insightRepository.updateById(ins);
+                                });
+            }
+            return new SingleWeeklyEmailResult("SENT", null, recipient);
+        } catch (Exception ex) {
+            log.warn("[知识星球] 测试邮件发送失败 tenantId={} userId={}", tenantId, userId, ex);
+            if (updateInsightStatus) {
+                insightRepository
+                        .findByUserWeek(tenantId, userId, weekStart)
+                        .ifPresent(
+                                ins -> {
+                                    ins.setStatus(KnowledgeWeeklyInsightStatus.FAILED);
+                                    ins.setErrorMessage(
+                                            ex.getMessage() == null ? "send failed" : ex.getMessage());
+                                    insightRepository.updateById(ins);
+                                });
+            }
+            return new SingleWeeklyEmailResult(
+                    "FAILED", ex.getMessage() == null ? "send failed" : ex.getMessage(), null);
+        }
+    }
+
     public record WeeklyEmailResult(int sent, int skipped, int failed, String skipReason) {}
+
+    public record SingleWeeklyEmailResult(String status, String message, String recipient) {}
 }

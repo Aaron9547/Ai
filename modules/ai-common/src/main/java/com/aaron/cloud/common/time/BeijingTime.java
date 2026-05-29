@@ -29,4 +29,12 @@ public final class BeijingTime {
     public static String formatDisplay(LocalDateTime t) {
         return t == null ? null : t.format(FMT);
     }
+
+    /** 中文日期展示，如 2026年5月29日（用于检索词与推荐提示）。 */
+    public static String formatChineseDateLabel(LocalDate date) {
+        if (date == null) {
+            return "";
+        }
+        return date.getYear() + "年" + date.getMonthValue() + "月" + date.getDayOfMonth() + "日";
+    }
 }

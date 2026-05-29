@@ -59,6 +59,11 @@ public class AdminDashboardApplicationService {
                 jobTaskRepository.countByTenantAndStatuses(
                         tenantId, List.of(JobTaskStatus.PENDING, JobTaskStatus.RUNNING));
         long job7d = jobTaskRepository.countByTenantSince(tenantId, rangeStart);
+        Map<String, Object> tenantTokensAll =
+                meteringUsageEventRepository.sumTokenSplitByTenantAll(tenantId);
+        long tenantPromptAll = longVal(tenantTokensAll.get("prompt_sum"));
+        long tenantCompletionAll = longVal(tenantTokensAll.get("completion_sum"));
+        long tenantTokenAll = tenantPromptAll + tenantCompletionAll;
 
         long http24 = accessLogRepository.countByTenantSince(tenantId, since24h);
         long met24 = meteringUsageEventRepository.countByTenantSince(tenantId, since24h);
@@ -80,7 +85,16 @@ public class AdminDashboardApplicationService {
                 tenantId,
                 BeijingTime.nowDisplayString(),
                 new AdminDashboardSummaryView.Kpi(
-                        members, conv, msgs, llmTotal, llmActive, jobBusy, job7d),
+                        members,
+                        conv,
+                        msgs,
+                        llmTotal,
+                        llmActive,
+                        jobBusy,
+                        job7d,
+                        tenantTokenAll,
+                        tenantPromptAll,
+                        tenantCompletionAll),
                 new AdminDashboardSummaryView.Recent24h(
                         http24, met24, meteringTokens.prompt24(), meteringTokens.completion24(), audit24),
                 fillDailyLong(start7, todayBj, rawHttp, "cnt"),

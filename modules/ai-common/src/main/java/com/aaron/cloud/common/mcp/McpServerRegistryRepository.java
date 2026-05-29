@@ -53,4 +53,24 @@ public class McpServerRegistryRepository {
                         .eq(McpServerRegistry::getId, id)
                         .eq(McpServerRegistry::getTenantId, tenantId));
     }
+
+    public java.util.List<McpServerRegistry> listActiveByTenant(long tenantId) {
+        return mapper.selectList(
+                Wrappers.<McpServerRegistry>lambdaQuery()
+                        .eq(McpServerRegistry::getTenantId, tenantId)
+                        .eq(McpServerRegistry::getStatus, com.aaron.cloud.common.api.enums.mcp.McpServerStatus.ACTIVE)
+                        .orderByAsc(McpServerRegistry::getName));
+    }
+
+    public java.util.List<McpServerRegistry> listActiveByTenantAndIds(long tenantId, java.util.Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return listActiveByTenant(tenantId);
+        }
+        return mapper.selectList(
+                Wrappers.<McpServerRegistry>lambdaQuery()
+                        .eq(McpServerRegistry::getTenantId, tenantId)
+                        .eq(McpServerRegistry::getStatus, com.aaron.cloud.common.api.enums.mcp.McpServerStatus.ACTIVE)
+                        .in(McpServerRegistry::getId, ids)
+                        .orderByAsc(McpServerRegistry::getName));
+    }
 }

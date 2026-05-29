@@ -40,6 +40,12 @@
       <el-form-item :label="t('admin.shell.knowledgePlanet.emailEnabled')">
         <el-switch v-model="form.emailEnabled" />
       </el-form-item>
+      <el-form-item :label="t('admin.shell.knowledgePlanet.weeklyBookSearch')">
+        <el-switch v-model="form.weeklyBookSearchEnabled" />
+      </el-form-item>
+      <el-form-item :label="t('admin.shell.knowledgePlanet.weeklyMinNodes')">
+        <el-input-number v-model="form.weeklyMinNodes" :min="0" :max="20" />
+      </el-form-item>
       <el-form-item>
         <el-button type="primary" :loading="saving" @click="save">{{
           t("admin.shell.knowledgePlanet.save")
@@ -73,6 +79,8 @@ const form = reactive<TenantShellKnowledgePlanetPutBody>({
   enabled: false,
   digestModelId: "",
   emailEnabled: true,
+  weeklyBookSearchEnabled: true,
+  weeklyMinNodes: 2,
 });
 
 const digestModelSelectOptions = computed(() => {
@@ -116,6 +124,8 @@ function applyFromConfig(kp: NonNullable<Awaited<ReturnType<typeof getTenantShel
   digestModelId.value = parseDigestModelId(kp.digestModelId);
   form.digestModelId = digestModelId.value != null ? String(digestModelId.value) : "";
   form.emailEnabled = kp.emailEnabled;
+  form.weeklyBookSearchEnabled = kp.weeklyBookSearchEnabled ?? true;
+  form.weeklyMinNodes = kp.weeklyMinNodes ?? 2;
   emailDeliveryReady.value = kp.emailDeliveryReady;
 }
 

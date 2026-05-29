@@ -1,15 +1,19 @@
 package com.aaron.cloud.chat.websearch;
 
 import com.aaron.cloud.common.api.dto.model.ModelChatRequest;
+import com.aaron.cloud.common.time.BeijingTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /** 组装火山 Ark 联网 Bot 的 messages（system + 近 1～2 轮 user/assistant + 本轮 user；不含画像）。 */
 public final class WebSearchArkContextBuilder {
 
-    private static final String ARK_SYSTEM_DIRECTIVE =
+    private static final String ARK_SYSTEM_DIRECTIVE_TEMPLATE =
             """
-            你是联网检索助手。结合用户最近几轮对话与「当前这一轮」的问题主动联网查找最新、相关的事实与可引用来源；勿编造。
+            你是联网检索助手。当前真实日期（中国时区）：%s（%s）。\
+            结合用户最近几轮对话与「当前这一轮」的问题主动联网查找最新、相关的事实与可引用来源；勿编造。
             """;
 
     private WebSearchArkContextBuilder() {}
@@ -22,7 +26,11 @@ public final class WebSearchArkContextBuilder {
             String currentUserText, String roundSuffix, List<ModelChatRequest.MessageTurn> recentHistory) {
         var sys = new ModelChatRequest.MessageTurn();
         sys.setRole("system");
-        sys.setContent(ARK_SYSTEM_DIRECTIVE.trim());
+        var today = BeijingTime.today();
+        String zhDate =
+                today.format(DateTimeFormatter.ofPattern("yyyy年M月d日 EEEE", Locale.SIMPLIFIED_CHINESE));
+        sys.setContent(
+                ARK_SYSTEM_DIRECTIVE_TEMPLATE.formatted(zhDate, today).trim());
         List<ModelChatRequest.MessageTurn> out = new ArrayList<>();
         out.add(sys);
         appendRecentUserAssistantTurns(out, recentHistory);

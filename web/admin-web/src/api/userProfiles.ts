@@ -66,3 +66,25 @@ export async function getMemoryEmbeddingModel(): Promise<MemoryEmbeddingModelSet
 export async function putMemoryEmbeddingModel(body: { llmModelId: number | null }): Promise<void> {
   await http.put("/api/v1/admin/user-profiles/memory-embedding-model", body);
 }
+
+export interface KnowledgePlanetWeeklyTestPushResult {
+  computeStatus: string;
+  computeMessage?: string | null;
+  weekStart?: string | null;
+  persisted: boolean;
+  emailStatus?: string | null;
+  emailMessage?: string | null;
+  emailRecipient?: string | null;
+  plan?: Record<string, unknown> | null;
+}
+
+export async function postKnowledgePlanetWeeklyTestPush(
+  userId: number,
+  body: { persist?: boolean; sendEmail?: boolean; weekStart?: string },
+): Promise<KnowledgePlanetWeeklyTestPushResult> {
+  const { data } = await http.post<KnowledgePlanetWeeklyTestPushResult>(
+    `/api/v1/admin/user-profiles/${userId}/knowledge-planet-weekly-test-push`,
+    body,
+  );
+  return data;
+}

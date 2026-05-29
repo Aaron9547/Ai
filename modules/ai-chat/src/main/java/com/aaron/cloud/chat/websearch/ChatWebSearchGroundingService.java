@@ -110,29 +110,17 @@ public class ChatWebSearchGroundingService {
                 webSearchGroundingCacheService.configScopeHash(configuredRounds, roundSuffixes, fixedCodes, arkId);
         long cacheModelKey = WebSearchModelScopeSupport.cacheScopeModelKey(arkId, fixedCodes);
 
-        Optional<WebGroundingBundle> conversationReuse =
-                webSearchConversationReuseService.tryReuse(
-                        snap.getTenantId(), conversationId, normalized, cachePolicy);
-        if (conversationReuse.isPresent()) {
-            WebGroundingBundle b = conversationReuse.get();
-            return finalizeGrounding(
-                    snap,
-                    cacheModelKey,
-                    configScope,
-                    normalized,
-                    base,
-                    b,
-                    cachePolicy,
-                    ingestSource,
-                    false,
-                    onCumulativeReferences);
-        }
-
-        Optional<WebGroundingBundle> knowledgeHit =
-                webSearchKnowledgeService.tryLookup(snap.getTenantId(), normalized);
-        if (knowledgeHit.isPresent()) {
-            WebGroundingBundle b = knowledgeHit.get();
-            log.info("[联网知识库] 本地命中：租户 {}，会话 {}", snap.getTenantId(), conversationId);
+        Optional<WebGroundingBundle> localHit =
+                lookupLocalGroundingBundle(
+                        snap.getTenantId(),
+                        conversationId,
+                        normalized,
+                        cachePolicy,
+                        plan,
+                        configuredRounds,
+                        roundSuffixes);
+        if (localHit.isPresent()) {
+            WebGroundingBundle b = localHit.get();
             return finalizeGrounding(
                     snap,
                     cacheModelKey,
@@ -220,6 +208,89 @@ public class ChatWebSearchGroundingService {
         return null;
     }
 
+    /**
+     * 不发起外呼的本地检索：同会话复用 → 联网知识库（WEB_KNOWLEDGE）→ Redis（0 外呼轮档位）。
+     * 与用户是否勾选「联网搜索」、是否启用 RAG 无关；未配置外呼计划时仍可命中联网知识库。
+     */
+    public Optional<WebGroundingBundle> tryLocalGroundingWithoutOutbound(
+            TenantSnapshot snap,
+            WebSearchUserContext userContext,
+            long conversationId,
+            Consumer<List<WebSearchReference>> onReferences) {
+        WebSearchUserContext ctx =
+                userContext == null ? WebSearchUserContext.of("") : userContext;
+        String normalized = WebSearchQueryNormalizer.normalize(ctx.keywordSourceText());
+        if (normalized.isBlank()) {
+            return Optional.empty();
+        }
+        WebSearchGroundingCachePolicy cachePolicy =
+                webSearchGroundingCacheService.policy(snap.getTenantId());
+        WebSearchGroundingPlan plan = planResolver.resolve(snap.getTenantId());
+        var multi =
+                tenantRuntimeSettingApplicationService.webSearchGroundingMultiRoundConfig(
+                        snap.getTenantId());
+        Optional<WebGroundingBundle> hit =
+                lookupLocalGroundingBundle(
+                        snap.getTenantId(),
+                        conversationId,
+                        normalized,
+                        cachePolicy,
+                        plan.hasAnySource() ? plan : null,
+                        multi.rounds(),
+                        multi.suffixes());
+        hit.ifPresent(b -> emitCumulative(onReferences, b.references()));
+        return hit;
+    }
+
+    /** 会话复用 → 联网知识库 → Redis（无需外呼的档位）。 */
+    private Optional<WebGroundingBundle> lookupLocalGroundingBundle(
+            long tenantId,
+            long conversationId,
+            String normalized,
+            WebSearchGroundingCachePolicy cachePolicy,
+            WebSearchGroundingPlan plan,
+            int configuredRounds,
+            List<String> roundSuffixes) {
+        Optional<WebGroundingBundle> conversationReuse =
+                webSearchConversationReuseService.tryReuse(
+                        tenantId, conversationId, normalized, cachePolicy);
+        if (conversationReuse.isPresent()) {
+            log.info("[联网知识库] 会话内复用：租户 {}，会话 {}", tenantId, conversationId);
+            return conversationReuse;
+        }
+        Optional<WebGroundingBundle> knowledgeHit =
+                webSearchKnowledgeService.tryLookup(tenantId, normalized);
+        if (knowledgeHit.isPresent()) {
+            log.info("[联网知识库] 本地命中：租户 {}，会话 {}", tenantId, conversationId);
+            return knowledgeHit;
+        }
+        if (plan == null || !plan.hasAnySource()) {
+            return Optional.empty();
+        }
+        List<String> fixedCodes = WebSearchModelScopeSupport.sortedFixedSourceCodes(plan.fixedSources());
+        Long arkId = plan.arkModel().map(SysLlmModel::getId).orElse(null);
+        String configScope =
+                webSearchGroundingCacheService.configScopeHash(
+                        configuredRounds, roundSuffixes, fixedCodes, arkId);
+        long cacheModelKey = WebSearchModelScopeSupport.cacheScopeModelKey(arkId, fixedCodes);
+        Optional<WebSearchGroundingCacheLookup> cached =
+                webSearchGroundingCacheService.lookup(
+                        tenantId, cacheModelKey, configScope, normalized, cachePolicy);
+        if (cached.isPresent() && cached.get().usable()) {
+            WebSearchGroundingCacheLookup hit = cached.get();
+            int effectiveRounds = cachePolicy.effectiveRoundsForTier(hit.tier(), configuredRounds);
+            if (effectiveRounds <= 0 && hit.bundle() != null) {
+                log.info(
+                        "[联网缓存] 本地命中（0 外呼）{}：租户 {}，会话 {}",
+                        hit.tier(),
+                        tenantId,
+                        conversationId);
+                return Optional.of(hit.bundle());
+            }
+        }
+        return Optional.empty();
+    }
+
     private WebGroundingBundle finalizeGrounding(
             TenantSnapshot snap,
             long modelId,
@@ -285,30 +356,17 @@ public class ChatWebSearchGroundingService {
                 webSearchGroundingCacheService.configScopeHash(configuredRounds, roundSuffixes, fixedCodes, arkId);
         long cacheModelKey = WebSearchModelScopeSupport.cacheScopeModelKey(arkId, fixedCodes);
 
-        Optional<WebGroundingBundle> conversationReuse =
-                webSearchConversationReuseService.tryReuse(
-                        snap.getTenantId(), conversationId, normalized, cachePolicy);
-        if (conversationReuse.isPresent()) {
-            WebGroundingBundle b = conversationReuse.get();
-            finalizeGrounding(
-                    snap,
-                    cacheModelKey,
-                    configScope,
-                    normalized,
-                    base,
-                    b,
-                    cachePolicy,
-                    ingestSource,
-                    false,
-                    onCumulativeReferences);
-            return WebSearchStreamGroundingSession.completed(b);
-        }
-
-        Optional<WebGroundingBundle> knowledgeHit =
-                webSearchKnowledgeService.tryLookup(snap.getTenantId(), normalized);
-        if (knowledgeHit.isPresent()) {
-            WebGroundingBundle b = knowledgeHit.get();
-            log.info("[联网知识库] 本地命中：租户 {}，会话 {}", snap.getTenantId(), conversationId);
+        Optional<WebGroundingBundle> localHit =
+                lookupLocalGroundingBundle(
+                        snap.getTenantId(),
+                        conversationId,
+                        normalized,
+                        cachePolicy,
+                        plan,
+                        configuredRounds,
+                        roundSuffixes);
+        if (localHit.isPresent()) {
+            WebGroundingBundle b = localHit.get();
             finalizeGrounding(
                     snap,
                     cacheModelKey,

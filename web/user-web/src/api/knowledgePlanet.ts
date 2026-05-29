@@ -67,13 +67,20 @@ export type KnowledgePlanetUniverse = {
 export type BookRecommendation = {
   title: string;
   reason: string;
+  url?: string;
+  source?: string;
+  matchedReferenceTitle?: string;
 };
 
 export type KnowledgeWeeklyPlan = {
   summary: string;
+  inferredPersona?: string;
+  evidenceTopics?: string[];
+  progressNotes?: string;
   thinkDirections: string[];
   gapAreas: string[];
   bookRecommendations: BookRecommendation[];
+  bookSearchQuery?: string;
 };
 
 export type KnowledgePlanetWeeklyLatest = {
@@ -97,4 +104,12 @@ export async function fetchKnowledgePlanetWeeklyLatest(): Promise<KnowledgePlane
     "/open/v1/chat/knowledge-planet/weekly/latest",
   );
   return data;
+}
+
+export async function postKnowledgePlanetWeeklyFeedback(helpful: boolean): Promise<void> {
+  await http.post("/open/v1/chat/knowledge-planet/weekly/feedback", { helpful });
+}
+
+export async function putKnowledgePlanetLearningGoal(goal: string): Promise<void> {
+  await http.put("/open/v1/chat/knowledge-planet/learning-goal", { goal });
 }

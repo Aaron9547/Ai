@@ -47,6 +47,27 @@ public class KnowledgePlanetTenantRuntime {
         }
     }
 
+    public boolean isWeeklyBookSearchEnabled(long tenantId) {
+        String raw =
+                runtimeSettings.getEffectiveValueText(
+                        tenantId, TenantRuntimeSettingKey.KNOWLEDGE_PLANET_WEEKLY_BOOK_SEARCH_ENABLED);
+        return Boolean.parseBoolean(raw == null ? "true" : raw.trim());
+    }
+
+    public int weeklyMinNodes(long tenantId) {
+        String raw =
+                runtimeSettings.getEffectiveValueText(
+                        tenantId, TenantRuntimeSettingKey.KNOWLEDGE_PLANET_WEEKLY_MIN_NODES);
+        if (raw == null || raw.isBlank()) {
+            return 2;
+        }
+        try {
+            return Math.max(0, Integer.parseInt(raw.trim()));
+        } catch (NumberFormatException e) {
+            return 2;
+        }
+    }
+
     private String cronOrDefault(long tenantId, TenantRuntimeSettingKey key, String def) {
         String raw = runtimeSettings.getEffectiveValueText(tenantId, key);
         if (raw == null || raw.isBlank()) {

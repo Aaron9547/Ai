@@ -55,7 +55,7 @@
 - **编排位置**：**`ChatWebSearchGroundingService`** 由 **`ChatApplicationService#openAssistantSseStream`** 在 RAG 等之后、主 **`ModelInvokePort`** 之前注入网络检索 **system**；请求体 **`webSearchEnabled`**（及重试覆盖项）参与决策。
 - **联网实例选择**：租户在「外观与模型调用」可选 **`WEB_SEARCH_GROUNDING_MODEL_ID`**（火山 **Ark Bot**，**`llm_model` WEB_SEARCH 行**）并多选 **`WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON`**（**`WebSearchFixedSource`** 内置源：DDG / 维基 / Google News RSS / 百度新闻；代码注册，不占模型表）；**至少启用 Ark 或一项固定源**。Ark 未配 id 时 **`SysLlmModelRepository#resolveWebSearchModel`** 可按 **`sort_order`** 回退默认 Ark 行。
 - **多轮检索与提示后缀**：轮数及各轮拼在用户问题后的说明为租户运行参数 **`WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT`**、**`WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON`**（**`TenantRuntimeSettingKey`**）；与 **`application.yml` 分层**见 **`.cursorrules` §3.8**。
-- **检索缓存**：**`WEB_SEARCH_GROUNDING_CACHE_JSON`**（Redis 精确 + 语义近邻，默认滚动 **6h/24h/48h**）；同会话相同问句复用见 **`WebSearchConversationReuseService`**（优先 **`chat_message.meta_json#webSearchQueryNorm`**，与含附件的联网问句对齐）。持久化 **联网知识库**（**`chat_starter_prompt` scene=WEB_KNOWLEDGE**）在 Redis 未命中时优先本地精确/语义命中，**仅新外呼结果**由 **`ChatWebSearchKnowledgeService`** 沉淀。对话流式在 **`streamCompletion` 前**完成配置轮数联网（**`groundMultiRoundsWithRaw`**，SSE 渐进 **`webSearchRefs`**）见 **「变更记录」** **`### 0.1.244-SNAPSHOT`**。
+- **检索缓存**：**`WEB_SEARCH_GROUNDING_CACHE_JSON`**（Redis 精确 + 语义近邻，默认滚动 **6h/24h/48h**）；同会话相同问句复用见 **`WebSearchConversationReuseService`**（优先 **`chat_message.meta_json#webSearchQueryNorm`**，与含附件的联网问句对齐）。持久化 **联网知识库**（**`chat_starter_prompt` scene=WEB_KNOWLEDGE**）在 Redis 未命中时优先本地精确/语义命中，**仅新外呼结果**由 **`ChatWebSearchKnowledgeService`** 沉淀；**未勾选联网搜索时仍尝试本地命中并注入 grounding**（不外呼）。对话流式在 **`streamCompletion` 前**完成配置轮数联网（**`groundMultiRoundsWithRaw`**，SSE 渐进 **`webSearchRefs`**）见 **「变更记录」** **`### 0.1.244-SNAPSHOT`**。
 - **引用持久化与 SSE**：检索归一化条目落 **`chat_message.meta_json#webSearchReferences`**（助手行写入；**同一轮 user 行**在助手落库后同步写入或移除该键，便于按轮次导出）；主流式前下发 **`webSearchRefs`** 分帧（**`v`** 为 **`{"references":[…]}`**）。**`GET …/conversations/{id}/messages`** 经 **`ChatMessageView`** 对 **user / assistant** 均解析 **`webSearchReferences`**。**`VolcArkBotWebSearchProvider`** 合并根 **`references`** 与 **`bot_usage…tool_details…results`**（按 URL 去重）。用户端 **`web/user-web`**（**`chat.ts` / `ChatView.vue`**）与管理端类型 **`chatAdmin.ts`** 对齐字段；迭代明细见 **「变更记录」** 当前顶 **`###`** 节。
 - **扩展与实现真源**：**`WebSearchProviderRegistry`** / **`WebSearchModelProvider`**（仅 **`VolcArkBotWebSearchProvider`**）；**`WebSearchFixedSourceRegistry`** / **`WebSearchFixedSourceProvider`**（四个内置源）；**`WebSearchGroundingPlanResolver`** 组装计划；**`ChatWebSearchGroundingService`** 每轮 Ark+固定源并行合并、计量回写、**`WebSearchFlagDeserializer`** 等与周边模块的细则以代码及 **`LlmModelKind`** 注释为准。
 
@@ -195,24 +195,30 @@ sequenceDiagram
   3. **图谱层（Graph）**：知识点间 `relation` 连线（任意 **topicTag** 交集、同会话、或时序相邻）；星球→知识点为 `orbit` 流光连线；多节点并簇规则见 **`KnowledgePlanetUniverseBuilder`**（非仅首标签字面相等）。
   非租户 RAG；与 **`ten_user_memory_*`** 并行。每周一计算成长方案并邮件推送。
 - **主体键**：与画像一致，**`subject_key`** = **`u:{userId}`**（已登录）或 **`d:{deviceId}`**（访客）；**周报邮件**仅 **`u:*` 且 `sec_user.email` 非空**。
-- **持久化**：**`ten_user_knowledge_node`**（单轮节点：标题、摘要、`topic_tags_json`、来源会话/消息）；**`ten_user_weekly_insight`**（按 **`week_start`**=当周周一、`KnowledgeWeeklyInsightStatus`：DRAFT/READY/SENT/SKIPPED/FAILED，**`plan_json`** 见下）。
+- **持久化**：**`ten_user_knowledge_node`**（单轮节点：标题、摘要、`topic_tags_json`、来源会话/消息）；**`ten_user_weekly_insight`**（按 **`week_start`**=当周周一、`KnowledgeWeeklyInsightStatus`：DRAFT/READY/SENT/SKIPPED/FAILED，**`plan_json`** + **`progress_ledger_json`** 见下）；**`ten_user_learner_profile`**（登录用户滚动画像 **`body_json`**，由周报 **`learnerProfileDelta`** 每周 merge，**无独立 LLM Job**）。
 - **默认关闭**：**`KNOWLEDGE_PLANET_ENABLED`** = `false`；开启后才有沉淀、定时任务与 C 端入口。
+- **周报外呼预算（每活跃登录用户 / 周）**：**1 次** digest LLM（**`KNOWLEDGE_PLANET_DIGEST_MODEL_ID`**）+ **0～1 次** 荐书联网检索（**`KNOWLEDGE_PLANET_WEEKLY_BOOK_SEARCH_ENABLED`**，可走检索缓存）；禁止对每条书目再开 LLM。
 
 **`plan_json` 结构（LLM 输出，邮件与全屏 overlay 共用）**
 
 | 字段 | 含义 |
 |------|------|
 | `summary` | 本周一句话总览 |
+| `inferredPersona` | 系统理解中的用户（1～2 句） |
+| `evidenceTopics` | 推荐依据（主题星球/事实） |
+| `progressNotes` | 相对近几周进步印证 |
 | `thinkDirections` | 建议思考方向（3～5 条） |
 | `gapAreas` | 可弥补的不足（2～4 条） |
-| `bookRecommendations` | `{ title, reason }` 荐书（2～4 本） |
+| `bookRecommendations` | `{ title, reason, url?, source }` 荐书（2～4 本；可联网 grounding） |
+| `learnerProfileDelta` | 合并入 **`ten_user_learner_profile`** 的增量 |
+| `progress_ledger_json`（列） | 下周 Prompt 用的压缩账本（非完整 plan） |
 
 **配置与调度**
 
 | 能力 | 入口 / 键 |
 |------|-----------|
 | 总开关、可选沉淀模型、邮件模板 | 管理端 **租户能力与外观** → Tab **「知识星球」**；**`PUT /api/v1/admin/tenant-shell-config/knowledge-planet`**（沉淀模型下拉 **LANGUAGE**，留空走默认） |
-| 运行时键 | **`KNOWLEDGE_PLANET_ENABLED`**、**`KNOWLEDGE_PLANET_EMAIL_JSON`**、**`KNOWLEDGE_PLANET_DIGEST_MODEL_ID`**（Shell 专管）；**`*_CRON`** 键仅迁移种子，**Cron 在「定时任务」维护** |
+| 运行时键 | **`KNOWLEDGE_PLANET_ENABLED`**、**`KNOWLEDGE_PLANET_EMAIL_JSON`**、**`KNOWLEDGE_PLANET_DIGEST_MODEL_ID`**、**`KNOWLEDGE_PLANET_WEEKLY_BOOK_SEARCH_ENABLED`**（默认 true）、**`KNOWLEDGE_PLANET_WEEKLY_MIN_NODES`**（默认 2，本周节点不足且无画像时可 skip 周报 LLM）；**`*_CRON`** 键仅迁移种子，**Cron 在「定时任务」维护** |
 | 定时注册 | **`ten_scheduled_task`** 执行器 **`KNOWLEDGE_PLANET_WEEKLY_COMPUTE`**、**`KNOWLEDGE_PLANET_WEEKLY_EMAIL`**；Shell 保存 **`KnowledgePlanetScheduledTaskSynchronizer`** 同步启停（**不覆盖**已有 Cron）；tick 与 RAG/热点共用 **`TenantScheduledTaskPoller`**（**`Asia/Shanghai`**） |
 | 邮件通道 | **`TenantTemplateEmailSender`** + **`TenantKnowledgePlanetEmailResolver`**；可 **`reuseRegisterSmtp`** 合并 **`AUTH_REGISTER_VERIFICATION_JSON`** 的 SMTP |
 
@@ -221,17 +227,19 @@ sequenceDiagram
 | 阶段 | 类（模块） |
 |------|------------|
 | 对话后沉淀 | **`KnowledgePlanetIngestService`**（**`ai-chat`**，`com.aaron.cloud.chat.knowledgeplanet`）；**`ChatApplicationService`** 助手流式落库后虚拟线程调用 |
-| 周一方案计算 | **`KnowledgePlanetWeeklyComputeService`** + **`KnowledgePlanetWeeklyComputeJobHandler`**（**`ai-job`**） |
+| 周一方案计算 | **`KnowledgePlanetWeeklyComputeService`** + **`KnowledgePlanetWeeklyContextBuilder`** + **`KnowledgePlanetWeeklyBookSearchSupport`** / **`KnowledgePlanetWeeklyBookEnrichSupport`** + **`KnowledgePlanetLearnerProfileService`** + **`KnowledgePlanetWeeklyComputeJobHandler`**（**`ai-job`**） |
 | 周一邮件 | **`KnowledgePlanetWeeklyEmailApplicationService`**（**`ai-identity`**）+ **`KnowledgePlanetWeeklyEmailJobHandler`** |
-| C 端查询 | **`KnowledgePlanetQueryService`**、**`ChatKnowledgePlanetController`** |
+| C 端查询 / 反馈 | **`KnowledgePlanetQueryService`**、**`KnowledgePlanetWeeklyFeedbackService`**、**`ChatKnowledgePlanetController`** |
 
-**Open API**（前缀 **`/open/v1/chat`**，网关目录 **2112～2114**）
+**Open API**（前缀 **`/open/v1/chat`**，网关目录 **2112～2116**）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | **`/knowledge-planet/summary`** | 是否启用、节点数、最近节点、最新周报摘要摘要 |
 | GET | **`/knowledge-planet/universe`** | 星系数据：`planets` + `nodes`（planet/knowledge）+ `links`（orbit/relation）；供 **3d-force-graph** |
 | GET | **`/knowledge-planet/weekly/latest`** | 当前登录用户最新 READY/SENT 周报（未登录 401） |
+| POST | **`/knowledge-planet/weekly/feedback`** | 周报是否有帮助（写 **`WEEKLY_INSIGHT_FEEDBACK_JSON`**） |
+| PUT | **`/knowledge-planet/learning-goal`** | 显式学习目标（**`LEARNING_GOAL`** tag，冷启动与周报 Prompt） |
 
 **端到端数据流**
 
@@ -243,12 +251,18 @@ flowchart TB
     NODE[(ten_user_knowledge_node)]
     CHAT --> ING --> NODE
   end
-  subgraph weekly [每周一]
-    CRON1[KNOWLEDGE_PLANET_WEEKLY_COMPUTE<br/>默认 03:00 MON]
-    CRON2[KNOWLEDGE_PLANET_WEEKLY_EMAIL<br/>默认 09:00 MON]
-    INS[(ten_user_weekly_insight)]
+  subgraph weekly [每周一 v2]
+    CRON1[KNOWLEDGE_PLANET_WEEKLY_COMPUTE]
+    SEARCH[0~1 荐书联网<br/>KNOWLEDGE_PLANET_WEEKLY]
+    LLM[1x planet_weekly_system]
+    PROF[(ten_user_learner_profile)]
+    INS[(ten_user_weekly_insight<br/>plan + progress_ledger)]
+    CRON2[KNOWLEDGE_PLANET_WEEKLY_EMAIL]
     MAIL[TenantTemplateEmailSender]
-    CRON1 --> INS
+    CRON1 --> SEARCH
+    SEARCH --> LLM
+    LLM --> INS
+    LLM --> PROF
     CRON2 --> INS
     CRON2 --> MAIL
   end
@@ -270,9 +284,9 @@ flowchart TB
 | 触发 | 每轮助手落库后 | 文档入库/爬站 | 每轮 user/assistant 片段 | 每日/空会话 |
 | C 端入口 | 右侧栏「知识星球」卡片 | 无（管理端知识库） | 注入 system，无独立 UI | 同栏「今日画像推荐」 |
 
-**已建库运维**：**必须**手工执行 **`db/mysql/migrate/migrate_0_1_254_knowledge_planet.sql`**（含表、定时任务种子、网关 **`INSERT IGNORE`**）；新库以 **`schema_v1.sql`** + **`gw_api_endpoint_catalog_inserts.sql`** 为准可跳过迁移主体 DDL。迭代明细见 **「变更记录」** **`### 0.1.254-SNAPSHOT`**。
+**已建库运维**：**必须**手工执行 **`db/mysql/migrate/migrate_0_1_254_knowledge_planet.sql`**（初版表与定时任务）；**0.1.258 同补丁**另须 **`migrate_0_1_258_02_knowledge_planet_weekly_v2.sql`**（**`progress_ledger_json`**、**`ten_user_learner_profile`**、周报 v2 提示词与 Open API 2115～2116）。新库以 **`schema_v1.sql`** + **`gw_api_endpoint_catalog_inserts.sql`** 为准可跳过上述迁移主体 DDL。
 
-**迭代写在哪里**：功能边界与索引见**本节**；版本差异见 **「变更记录」** 顶节 **`### 0.1.254-SNAPSHOT`**。
+**迭代写在哪里**：功能边界见**本节**；交付清单见 **「变更记录」** 顶节（当前 **`### 0.1.259-SNAPSHOT`**，构件 **`pom.xml` `0.1.258-SNAPSHOT`**）。
 
 ---
 
@@ -351,27 +365,94 @@ flowchart TB
 
 | 项 | 约定 |
 |----|------|
-| **权威来源** | `pom.xml` 中 `<version>`，与本文档「变更记录」**同步更新**。 |
-| **开发线** | **0.1.x**：从 **0.1.0** 起；**补丁位**在「实质编码迭代」下按下行 **bump** 规则递增。 |
-| **快照** | 开发阶段统一使用 **`-SNAPSHOT`** 后缀（例如 `0.1.0-SNAPSHOT`）。发布正式版时去掉 `-SNAPSHOT` 并按发布流程另开版本线（不在本文档展开）。 |
-| **变更记录（必写）** | 凡合并入主线且改动了 **`src/main/java`**、**`src/test/java`**、**`web/user-web/`**、**`web/admin-web/`**、**`db/mysql/`** 迁移、**`pom.xml`**（含 **`<version>`** 与**生产依赖**）、**`application*.yml`** 等可运行产物，**必须**在「变更记录」留痕：**小改**在**当前** `### x.y.z-SNAPSHOT` 节内**追加或改写**条目（同一主题可合并为一条）；**大改**（独立能力、破坏性变更、需单独阅读的一整块主题）则 **bump `pom.xml` 补丁位**并**新增**一节 **`### x.y.(z+1)-SNAPSHOT`**，不宜继续挤在上一个补丁节里。 |
-| **专节（`## …`）** | **一类：功能模块索引**——**新增可独立命名的产品能力**时增加短 **`##` 节**（例如 **`PROJECT.md`** 中的 **「联网搜索（功能模块索引）」**）：只写**稳定边界与入口**（产品语义、配置/编排位置、与周边关系、关键类型或表意），**不写迭代清单**。**二类：长期约定 / 协作说明**——如 **「★ 用户端路由与租户」**、**「管理端租户成员与审计写入规则」**、**「管理端 Accept-Language 与 LLM 元数据」**等，可作为字段级或流程真源保留表格与较长说明；**仍禁止**用任一类 **`##` 节**的扩写**代替**「变更记录」记录每次代码改动（动代码则变更记录必有条目）。 |
-| **何时 bump `pom.xml`** | 与上表「大改」一致：出现**新一节变更记录**时，**须**同步递增 **`pom.xml`** 补丁位，使文档版本与构件版本一致。 |
-| **何时不 bump** | **仅**修订 **`.cursorrules`**、**`PROJECT.md`**、其它**纯说明类 `.md`**（不涉及上表「变更记录必写」路径）时，**不递增**版本号；若有需要可在**当前** `###` 节下追加一句「文档修订」类说明。 |
-| **修订说明（2026-05）** | 同质、同主题的**极小**文档或注释调整可合并叙述；**不**免除「动代码则变更记录必有条目」；**不**用专节顶替变更记录。 |
-| **提交前自检** | 仓库根 **`.\scripts\check-project-changelog.ps1 -IncludeUntracked`**（校验：动代码须同集改 **`PROJECT.md`**，且顶节 **`###`** 与 **`pom.xml` `<version>`** 一致）。Agent 必读 **`AGENTS.md`**。 |
+| **构件版本（Maven）** | **`pom.xml` `<version>`** — 当前 **`0.1.258-SNAPSHOT`**；决定 **`migrate_0_1_{patch}_*`** 中 **`{patch}`** 与构件坐标。 |
+| **变更记录顶节（文档）** | **`PROJECT.md`「变更记录」最上方 `### x.y.z-SNAPSHOT`** — 每次**实质编码交付**应**新开顶节**并递增补丁位（如 **`0.1.259-SNAPSHOT`**），**允许**领先于 **`pom.xml`**。 |
+| **双版本关系** | 顶节 `###` **≥** `pom` 补丁位（同 **0.1.x**）；顶节内用 **`> 构件版本（pom.xml）：…`** 标明当前 Maven 未 bump 时的构件线。 |
+| **开发线** | **0.1.x** + **`-SNAPSHOT`**。 |
+| **变更记录（必写）** | 动 **§0.2** 路径代码时**必须**留痕：**新开**顶节 `###`（文档补丁 +1）为默认；**可选**同步 bump **`pom.xml`**（发布/对外宣称构件版本时再做）。 |
+| **专节（`## …`）** | 功能模块索引与长期约定；**不写**迭代清单，迭代只在「变更记录」`###` 节。 |
+| **何时 bump `pom.xml`** | 需要对外/Maven 坐标与文档顶节对齐时（发布、依赖消费方以构件版本为准）。**不强制**每次文档顶节 +1 都 bump `pom`。 |
+| **何时只 bump 文档顶节** | 同构件线内连续交付（如知识星球周报 v2）：**`### 0.1.259-SNAPSHOT`** + 条目中注明 **`pom` 仍为 `0.1.258-SNAPSHOT`**；migrate 文件名仍用 **`migrate_0_1_258_*`**（跟 `pom` 补丁位）。 |
+| **提交前自检** | **`.\scripts\check-project-changelog.ps1 -IncludeUntracked`**：动代码须改 **`PROJECT.md`**；顶节补丁 **≥** `pom` 补丁。 |
 
 ## 变更记录
 
+### 0.1.266-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **MCP 通用远程客户端（ai-mcp / ai-common）**：引入官方 **`io.modelcontextprotocol.sdk`**（Streamable HTTP）；**`McpInvokePort`** + **`mcp_server_registry`** 扩展（`transport_kind`、`auth_headers_cipher`、探测列）；管理端 **API Key / 测试连接**；租户 API **`GET/POST /api/v1/mcp/servers/{id}/tools`**。**已建库须手工执行** **`migrate_0_1_258_14_mcp_remote_client.sql`**（`ten_runtime_setting` 列为 **`value_text`**）；Jina 等远程 Server 仅需注册 `baseUrl` + Bearer 密钥（示例 `https://mcp.jina.ai/v1`），无厂商硬编码。
+- **DB · 0.1.258 迁移编号**：同补丁脚本统一重命名为 **`migrate_0_1_258_01` … `_14`**，按文件名排序执行；清单见 **`db/mysql/README.md`**。
+- **对话 MCP Tool Calling（ai-chat / ai-model / user-web）**：**`ModelChatRequest.tools`** + SSE **`mcpToolStatus`**；**`ChatMcpToolCallingSupport`** agent loop；用户端 composer **MCP** 开关（`mcpEnabled`）。运行时键 **`MCP_CHAT_MAX_TOOL_ROUNDS`** / **`MCP_CHAT_TOOL_TIMEOUT_SECONDS`** / **`MCP_CHAT_TOOL_RESULT_MAX_CHARS`**。
+
+### 0.1.265-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **今日智能洞察 · 提示词（ai-chat / ai-prompt / ai-common / admin-web）**：检索词 v2 加入 **`${today}`/`${today_label}`**（北京时区），有画像时 **`${profile_excerpt}`** 前置（合并记忆 + 资讯点击兴趣标签）；无画像时去掉「科技财经教育…」宽泛类目；结构化 SYSTEM 要求至少 4 条与画像相关、不同用户差异明显。**`ChatDailyRecommendSearchQuerySupport`** 合并兴趣标签。**已建库须手工执行** **`migrate_0_1_258_10_daily_recommend_search_query_personal_v2.sql`**（仅更新各 code 最高 version 行，**勿** `version+1` 批量 UPDATE，避免 **1062**）；执行后重启后端或等 prompt 缓存过期；当日已生成批次须删 **`chat_user_daily_recommend`** 对应行或等次日重算。
+
+### 0.1.264-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **用户端 · 对话布局（user-web）**：视口 **&lt;1024**（平板/中屏）时左侧会话栏与右侧「今日智能洞察」**至多展开一侧**；展开第二个自动收起另一个；自桌面缩至该断点时若两侧均展开则默认收起右侧。**无 DB migrate**。
+
+### 0.1.263-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **用户端 · 今日智能洞察（user-web）**：跨日 5 分钟轮询改为**按需启停**——仅当推荐批次日期非「今日」时启动；确认已是今日或 bootstrap 完成后立即停止，避免全天空转。**无 DB migrate**。
+
+### 0.1.262-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **用户端 · 今日智能洞察（user-web）**：**`useDailyRecommend`** 增加跨日自动刷新——本地 0 点定时、每 5 分钟轮询兜底、页签重新可见时检测；推荐日期非「今日」时静默拉取新批次，长挂前台无需手点刷新。**无 DB migrate**。
+
+### 0.1.261-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **对话 · 思考流护栏（ai-chat / ai-model / ai-common）**：**`ChatReasoningStreamGuard`** 限制 reasoning 总长度（默认 24k 字）并检测重复循环，触发后取消上游 SSE；**`ReasoningDeltaNormalizer`** 兼容部分厂商累计式 **`reasoning_content`**；**`ChatSseSendGate`** 客户端断开时同步 **`streamCancelled`** 中止上游；手动停止后 **`AsyncRequestNotUsableException`** 降为 DEBUG/WARN 不再 ERROR。**无 DB migrate**。
+- **对话 · 联网知识库本地命中（ai-chat / user-web）**：未勾选「联网搜索」时仍走 **`tryLocalGroundingWithoutOutbound`**；命中后注入 grounding，并通过 **`knowledgeRefs` SSE** + 助手 meta **`knowledgeBaseReferences`** 展示独立 **「知识库参考」** 条（紫色样式，注明「来自历史联网沉淀，本次未实时联网」），与 **「联网参考」** 区分。**无 DB migrate**。
+
+### 0.1.260-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **管理端数据概览（ai-gateway / admin-web）**：核心业务 KPI **3×3**（成员/会话/消息、模型/任务队列/7 日新建任务、累计 Token 合计/提示/输出）；累计 Token 来自 **`MeteringUsageEventRepository#sumTokenSplitByTenantAll`**。**无 DB migrate**。
+- **计量 · 无 JSON 函数库兼容（ai-common）**：**`MeteringRefJsonSqlSupport`** 用 **REGEXP** / **SUBSTRING_INDEX** 替代 **`JSON_EXTRACT`**（修复 **`token-total`** 等在 MySQL 5.6 / 无 JSON 的 MariaDB 上报错）；**`MeteringTokenAggregationSql`** 同步。**无 DB migrate**。
+- **消息中心 · 邮件排版（ai-notification / admin-web）**：SMTP 改为 **multipart**（纯文本 + 简易 HTML）；**`MessageTemplateSupport`** 将字面量 **`\\n`** 还原为换行（**注册 REGISTER_VERIFICATION / 周报 KNOWLEDGE_PLANET_WEEKLY** 等场景共用）；管理端默认注册/周报模板改为真实换行。可选 **`migrate_0_1_258_13_message_template_literal_newlines.sql`** 批量修正库内 **`msg_template`**；**已建库须重启后端并（建议）执行该 migrate 或在消息中心重排模板**。
+- **DB 修复**：**`migrate_0_1_258_02_knowledge_planet_weekly_v2.sql`** 末尾 **`gw_api_endpoint`** 插入列名改为 **`display_name`/`remark`**（原误写 **`description`/`module_id`** 导致 1054）。
+- **知识星球 · 周报测试（ai-identity / ai-chat / admin-web）**：**`KnowledgePlanetWeeklyComputeService#computeForUser`** 支持 **`persist`** 控制是否落库；**`KnowledgePlanetWeeklyEmailApplicationService#sendTestForUser`** 管理端测试发信（跳过租户周报邮件总开关，**`kp-weekly-test:`** 幂等键）；**`KnowledgePlanetWeeklyAdminTestApplicationService`** 编排计算+发信；**`POST /api/v1/admin/user-profiles/{userId}/knowledge-planet-weekly-test-push`**（网关 **2196**）；**`UserProfilesView`** 画像详情内「测试推送周报」。**无 DB migrate**；**已建库须手工执行**网关目录增量（**`gw_api_endpoint_catalog_inserts.sql`** 含 **2196**）。
+- **联网检索 · Ark 诊断（ai-chat）**：恢复 **`stream=false`** 非流式 Bot 调用；引用为空时 **INFO 打出 Ark 原始 JSON 全文**（上限 32KB）；**`VolcArkBotReferenceParser`** 保留 **`mobile_url`/output 字符串/数组 content** 等解析增强。**无 DB migrate**。
+- **对话 · 时间上下文（ai-chat）**：**`ChatTemporalContextPrompt`** 向主对话 system 与联网 grounding 注入当前真实日期（**`BeijingTime`**）；明确检索结果中不超过「今天」的日期为真实外部信息，避免模型在思考链中将 2025/2026 报道误判为幻觉。**无 DB migrate**。
+- **对话 · SSE 思考流（ai-chat）**：**`ChatSseSendGate`** 在客户端断开或 **`complete()`** 后跳过后续 **`send`**，思考 token 推送不再刷屏 **`ResponseBodyEmitter has already completed`** WARN。**无 DB migrate**。
+
+### 0.1.259-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **知识星球 · 周报 v2（ai-chat）**：**`KnowledgePlanetWeeklyComputeService`** 按自然周过滤节点；**`KnowledgePlanetWeeklyContextBuilder`** 拼装画像/记忆精简/星图 TOP5/周环比/近 3 周 **progress ledger**；**`KnowledgePlanetWeeklyBookSearchSupport`** Pre-LLM 单次联网（**`ChatStarterPromptSource.KNOWLEDGE_PLANET_WEEKLY`**）；**`KnowledgePlanetWeeklyBookEnrichSupport`** 书目挂链；**`KnowledgePlanetLearnerProfileService`** merge **`learnerProfileDelta`**；**`KnowledgePlanetWeeklyFeedbackService`**。
+- **知识星球 · 周报 v2（ai-common）**：**`KnowledgeWeeklyPlan`** 扩展字段；**`KnowledgeWeeklyProgressLedger`**；**`ten_user_learner_profile`**；**`TenUserKnowledgeNodeRepository#listSince`**；**`ProfileTagCode.LEARNING_GOAL`**、**`WEEKLY_INSIGHT_FEEDBACK_JSON`**；运行时 **`KNOWLEDGE_PLANET_WEEKLY_BOOK_SEARCH_ENABLED`**、**`KNOWLEDGE_PLANET_WEEKLY_MIN_NODES`**。
+- **知识星球 · 周报 v2（Open API / web）**：**`POST /open/v1/chat/knowledge-planet/weekly/feedback`**、**`PUT …/learning-goal`**（网关 **2115～2116**）；**`KnowledgePlanetOverlay`** 周报完整展示与反馈；管理端 Shell 荐书联网/最少节点配置。
+- **知识星球 · 周报 v2（ai-prompt / DB）**：**`planet_weekly_system`** v2；**`migrate_0_1_258_02_knowledge_planet_weekly_v2.sql`**（**`{patch}` 随 `pom` 258**）。**已建库须手工执行**该 migrate。
+- **外呼预算**：每活跃登录用户每周 **1 LLM + 0～1 联网**（可关荐书联网或提高节点门槛）。
+
 ### 0.1.258-SNAPSHOT
 
-- **知识星球 topicTags 源头治理**：**`planet_ingest_system`** v2（原则 + 正反例，宽修饰不得占 `[0]`）；入库前 **`KnowledgePlanetTopicTagsNormalizer`** 将宽修饰后缀/占位标签移到尾部；**`KnowledgePlanetUniverseBuilder`** 严格按 **`topicTags[0]`** 分星（无枚举词表回退）。**已建库须手工执行** **`migrate_0_1_258_planet_ingest_tag_order_v2.sql`**（若已执行 v1 聚类 migrate 仍须执行 v2）；历史脏节点不自动改库。
-- **知识星球星图聚类（历史）**：取消「任意子标签交集 + 传递闭包」并簇；见 **`migrate_0_1_258_planet_cluster_by_primary_tag.sql`**（已被 v2 提示词取代逐词禁表）。
+#### 知识星球 topicTags / 星图
+
+- **知识星球 topicTags 源头治理**：**`planet_ingest_system`** v2（原则 + 正反例，宽修饰不得占 `[0]`）；入库前 **`KnowledgePlanetTopicTagsNormalizer`** 将宽修饰后缀/占位标签移到尾部；**`KnowledgePlanetUniverseBuilder`** 严格按 **`topicTags[0]`** 分星（无枚举词表回退）。**已建库须手工执行** **`migrate_0_1_258_12_planet_ingest_tag_order_v2.sql`**（若已执行 v1 聚类 migrate 仍须执行 v2）；历史脏节点不自动改库。
+- **知识星球星图聚类（历史）**：取消「任意子标签交集 + 传递闭包」并簇；见 **`migrate_0_1_258_11_planet_cluster_by_primary_tag.sql`**（已被 v2 提示词取代逐词禁表）。
+
+#### 联网检索 / 计量 / 会话与其它
+
 - **联网对话闸门修复**：注入引用与 SSE/落库以闸门 bundle 为准并与已累计引用合并，修复「日志 24 条、对话仅 1 条」；**`VolcArkBotWebSearchProvider`** 扩展 `bot_chat_result_reference` / message.references / 多路径 `bot_usage` results 解析。**无 DB migrate**。
-- **联网双通道**：**火山 Ark** 与 **固定源关键词 LLM** 均注入 **近 1～2 轮 user/assistant + 本轮 user**（含附件拼接，**无画像**）；固定源 **`rewriteKeywordsForFixedSources`** 三关键词 × 多源并行；**`executeRounds`** 多轮共用一次关键词 LLM；会话复用比对 **`meta.webSearchQueryNorm`**（与联网问句一致）；缓存/知识库/会话复用命中**不重复** **`ingestAsync`**。**已建库须手工执行** **`migrate_0_1_258_web_search_fixed_keywords_context.sql`**（system 提示词；messages 近史由代码注入）。
-- **联网双通道（历史）**：Ark 曾仅本轮 user；固定源三关键词见 **`migrate_0_1_258_web_search_fixed_keywords.sql`**。
-- **联网知识库沉淀**：所有成功联网均写入 **`WEB_KNOWLEDGE`**，**`ChatStarterPromptSource`** 区分 **对话**（`WEB_SEARCH_GROUNDING`）、**今日智能洞察**（`DAILY_RECOMMEND`）、**每日热点**（`HOT_TOPIC_DAILY`）。**今日洞察**检索词含 **本日/昨日** 与登录 **`last_login_region`** 属地；先本日、再昨日两次外呼后合并。**已建库须手工执行** **`migrate_0_1_258_daily_recommend_search_query_dates.sql`**。
-- **联网问句重写 v2**：**`web_search_query_rewrite_*`** 提示词加强（检索词专家、示例、`${today}`/`${year}`）；**`WebSearchQueryRewriteService`** 传入日期变量。**已建库须手工执行** **`migrate_0_1_258_web_search_query_rewrite_v2.sql`**。
+- **联网双通道**：**火山 Ark** 与 **固定源关键词 LLM** 均注入 **近 1～2 轮 user/assistant + 本轮 user**（含附件拼接，**无画像**）；固定源 **`rewriteKeywordsForFixedSources`** 三关键词 × 多源并行；**`executeRounds`** 多轮共用一次关键词 LLM；会话复用比对 **`meta.webSearchQueryNorm`**（与联网问句一致）；缓存/知识库/会话复用命中**不重复** **`ingestAsync`**。**已建库须手工执行** **`migrate_0_1_258_07_web_search_fixed_keywords_context.sql`**（system 提示词；messages 近史由代码注入）。
+- **联网双通道（历史）**：Ark 曾仅本轮 user；固定源三关键词见 **`migrate_0_1_258_06_web_search_fixed_keywords.sql`**。
+- **联网知识库沉淀**：所有成功联网均写入 **`WEB_KNOWLEDGE`**，**`ChatStarterPromptSource`** 区分 **对话**（`WEB_SEARCH_GROUNDING`）、**今日智能洞察**（`DAILY_RECOMMEND`）、**每日热点**（`HOT_TOPIC_DAILY`）。**今日洞察**检索词含 **本日/昨日** 与登录 **`last_login_region`** 属地；先本日、再昨日两次外呼后合并。**已建库须手工执行** **`migrate_0_1_258_09_daily_recommend_search_query_dates.sql`**。
+- **联网问句重写 v2**：**`web_search_query_rewrite_*`** 提示词加强（检索词专家、示例、`${today}`/`${year}`）；**`WebSearchQueryRewriteService`** 传入日期变量。**已建库须手工执行** **`migrate_0_1_258_05_web_search_query_rewrite_v2.sql`**。
 - **管理端联网知识库引用弹窗**：按检索源 **Tab** 分组；摘要/引用展示去重；多轮合并摘要 **`WebSearchSummarySupport`** 去重；引用 **`sourceKey`**（新检索生效）。**无 DB migrate**（弹窗/沉淀逻辑）。
 - **管理端固定源 HTTP 代理**：Shell「外观与模型调用」代理区改为独立面板栅格布局（避免嵌套表单项错位）。**无 DB migrate**。
 - **管理端「推荐问题与猜你想问」分页**：**`GET /api/v1/admin/chat/starter-prompts`** 改为按 **`scene`**（联网知识库可选 **`source`**）分页返回 **`records/total/page/size`**；列表按 **`updated_at` 降序**（近→远）；各 Tab 懒加载 + **`el-pagination`**（默认每页 20）。**无 DB migrate**。
@@ -381,18 +462,18 @@ flowchart TB
 - **对话 token 全量计量**：**`ModelApplicationService`** 流式结束经 **`ModelStreamUsageRecorder`** 统一落库；**`ModelChatRequest.conversationId`** 关联会话；对话内联网三关键词 LLM、猜你想问、对话摘要等均计量；**`MeteringUsageEventRepository.sumTokenQuantityByConversationId`** 汇总会话合计；开放 **`GET …/token-total`**；SSE **`end.conversationTokenTotal`**；用户端顶栏展示计量合计。**无 DB migrate**。
 - **LLM 场景用量看板**：**`LlmUsageScene`** 写入 **`metering_usage_event.ref_json.usageScene`**；今日洞察 / 每日热点 / 知识星球 / 记忆摘要 / 对话摘要 / 猜你想问 / 对话及联网 Ark 均打标；管理端 **`GET /api/v1/admin/metering-events/usage-by-scene?days=7`** 汇总 + 明细 **`usageScene`** 筛选；**`MeteringView`** 近 7 日场景表。**无 DB migrate**（历史行无场景码显示为「未标注」）。
 - **联网检索体验**：对话流 **闸门**：已配置火山 Ark **必须等其返回** 再注入主模型；至少一个源有摘要/引用，Ark 无结果再等内置固定源；Ark 已有结果则不阻塞境外固定源超时；单源 SSE **`webSearchRefs`**；Ark 截止 **90s**；合并 **Ark 优先**。
-- **联网问句重写**：外呼固定源前 **`WebSearchQueryRewriteService`**（LANGUAGE 模型 + **`web_search_query_rewrite_*`** v2）；日志 **`[联网搜索] 问句重写`**。**已建库须手工执行** **`migrate_0_1_258_web_search_query_rewrite_v2.sql`**（v1 见同补丁 **`migrate_0_1_258_web_search_query_rewrite.sql`**）。
+- **联网问句重写**：外呼固定源前 **`WebSearchQueryRewriteService`**（LANGUAGE 模型 + **`web_search_query_rewrite_*`** v2）；日志 **`[联网搜索] 问句重写`**。**已建库须手工执行** **`migrate_0_1_258_05_web_search_query_rewrite_v2.sql`**（v1 见同补丁 **`migrate_0_1_258_04_web_search_query_rewrite.sql`**）。
 - **联网检索日志**：每源 **开始/成功/无结果/失败** + 启动 **`WebSearchFixedSourceOutboundDiagnostics`** 打印 JVM 代理与出站模式（对照 Postman）。
 - **内置固定源出站（历史）**：默认直连、**10s** 超时；代理见上条 **`ai.websearch.fixed.*`**。
-- **多源联网检索（架构纠偏）**：**`LlmWebSearchProvider`** 仅保留 **`VOLCENGINE_ARK_BOT`**（大模型管理 WEB_SEARCH 行）；DDG / 维基 / Google News RSS / 百度新闻改为 **`WebSearchFixedSource`** + **`WebSearchFixedSourceProvider`**（代码内置，**`WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON`** 勾选）；**`WebSearchGroundingPlanResolver`**；**`ChatWebSearchGroundingService`** 每轮 Ark+固定源并行（**`WebSearchProviderLocalCache`** 10 分钟）；管理端 Ark 下拉 + 固定源多选（至少一项）。**已建库须手工执行** **`db/mysql/migrate/migrate_0_1_258_web_search_multi_source.sql`**。
+- **多源联网检索（架构纠偏）**：**`LlmWebSearchProvider`** 仅保留 **`VOLCENGINE_ARK_BOT`**（大模型管理 WEB_SEARCH 行）；DDG / 维基 / Google News RSS / 百度新闻改为 **`WebSearchFixedSource`** + **`WebSearchFixedSourceProvider`**（代码内置，**`WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON`** 勾选）；**`WebSearchGroundingPlanResolver`**；**`ChatWebSearchGroundingService`** 每轮 Ark+固定源并行（**`WebSearchProviderLocalCache`** 10 分钟）；管理端 Ark 下拉 + 固定源多选（至少一项）。**已建库须手工执行** **`db/mysql/migrate/migrate_0_1_258_03_web_search_multi_source.sql`**。
 - **用户端开放注册/登录**：邮箱改为 **`AuthEmailInput`**（**`el-autocomplete`** + **`emailSuffixFill`**），输入时弹出后缀候选（如 `zhangsan@qq.com`），非底部固定芯片；**`UserAuthDialog`** 表单区改用 **`el-scrollbar`**（替代原生滚动条），弹窗 **`max-height`** 略增。**无 DB migrate**。
-- **今日智能洞察 · 提示词工程**：检索词与结构化 SYSTEM 迁入 **`prompt_template`**（**`daily_recommend_search_query`** / **`daily_recommend_search_query_profile`** / **`daily_recommend_structure`**）；**`ChatUserDailyRecommendService`** 经 **`PromptTemplateResolvePort#renderQuery/renderSystem`** 渲染 **`${year}`** / **`${profile_excerpt}`** / **`${today}`**；**`PromptTemplateBuiltinCatalog`** 同集。**已建库须手工执行** **`db/mysql/migrate/migrate_0_1_258_daily_recommend_prompt_templates.sql`**。
+- **今日智能洞察 · 提示词工程**：检索词与结构化 SYSTEM 迁入 **`prompt_template`**（**`daily_recommend_search_query`** / **`daily_recommend_search_query_profile`** / **`daily_recommend_structure`**）；**`ChatUserDailyRecommendService`** 经 **`PromptTemplateResolvePort#renderQuery/renderSystem`** 渲染 **`${year}`** / **`${profile_excerpt}`** / **`${today}`**；**`PromptTemplateBuiltinCatalog`** 同集。**已建库须手工执行** **`db/mysql/migrate/migrate_0_1_258_08_daily_recommend_prompt_templates.sql`**。
 - **今日智能洞察**：落库前 **`normalizeItemDates`**；卡片「今日」角标仅当 **`item.date === recommendDate`**。与运营热点问句池（**`ChatStarterDailyHotTopicService`** / **`starter_hot_search_query`**）独立，**不**兜底读 **`chat_starter_prompt`**。
 - **UTF-8 文案修复与编码门禁**：新增 **`tools/check_text_encoding.py`**、**`tools/restore_utf8_from_git.py`**、**`scripts/check-encoding.ps1`**（已接入变更记录门禁）；**`.editorconfig`** / **`.gitattributes`**；扩展 **`tools/strip_java_bom.py`** 至 **`modules/**`** / **`web/**`**；废弃 **`scripts/fix-truncated-java-strings.py`**（应急逻辑迁至 **`tools/_deprecated_fix_truncated_strings.py`**）。从 **HEAD** 恢复并手工校正注释/异常文案：**`TenantMemberRoleApplicationService`**、**`UserProfileApplicationService`**（含访客 **`buildPromptAddendum`** 三参数）、**`ChatApplicationService`** / **`ChatAdminRestController`** / **`RagCitationView`**、**`RagKbAdminApplicationService`** / **`RagIngestOrchestrationService`** 及批量 **`invalid_utf8`** 文件；**`web/admin-web`** **`KbDocumentMatrixPanel.vue`**。**无 DB migrate**。
 - **UTF-8 全项目硬约束（§0.6）**：**`config/idea/encodings.xml`**、**`config/vscode/settings.json`**、**`scripts/setup-ide-encoding.ps1`**；**`.editorconfig` / `.gitattributes`** 扩展至 json/css/py/ps1 等；编码扫描扩至 **properties / yml / db/mysql SQL / locales**；**`.cursorrules` §0.7**、**`AGENTS.md`**、**`project-changelog.mdc`** 禁止 GBK 与非 UTF-8 保存。
 - **开放会话标识**：**`chat_conversation.public_id`**（16 位随机字符串，全局唯一）；开放 API 路径 **`/open/v1/chat/conversations/{id}`** 与 JSON **`id`** 均使用 **`public_id`**，不再暴露自增主键；**`ChatConversationOpenView`**、**`requireOpenConversation`** / **`requireOpenConversationId`**；**`user-web`** 会话 id 改为 **`string`**；**`ai-chat`** 显式依赖 **`spring-boot-starter-web`**。**`TenantSnapshot`** 恢复为 **`com.aaron.cloud.common.context`** 顶层类（修复与 **`TenantContextHolder` 内部类** 混用导致的编译 classpath 冲突）。
 - **ai-chat**：补全 **`ChatApplicationService.requireOpenConversation`** / **`requireOpenConversationId`**（按 **`public_id`** 查库、访客会话登录归并、**`assertConversationAccess`**）。
-- **已建库须手工执行** **`db/mysql/migrate/migrate_0_1_258_chat_conversation_public_id.sql`**（回填历史行 **`public_id`**）；新库 **`schema_v1.sql`** 已含列与唯一索引。
+- **已建库须手工执行** **`db/mysql/migrate/migrate_0_1_258_01_chat_conversation_public_id.sql`**（回填历史行 **`public_id`**）；新库 **`schema_v1.sql`** 已含列与唯一索引。
 - **版本**：**`pom.xml`** bump **0.1.257 → 0.1.258-SNAPSHOT**。
 
 ### 0.1.257-SNAPSHOT

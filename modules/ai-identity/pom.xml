@@ -18,6 +18,10 @@
         </dependency>
         <dependency>
             <groupId>com.aaron.cloud</groupId>
+            <artifactId>ai-chat</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.aaron.cloud</groupId>
             <artifactId>ai-remoting</artifactId>
         </dependency>
         <dependency>

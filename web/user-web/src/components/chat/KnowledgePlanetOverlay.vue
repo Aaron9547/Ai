@@ -273,6 +273,41 @@
           <section v-if="weekly?.plan" class="kp-weekly">
             <h3>{{ t("knowledgePlanet.weeklyTitle") }}</h3>
             <p class="kp-summary">{{ weekly.plan.summary }}</p>
+            <p v-if="weekly.plan.inferredPersona" class="kp-persona">{{ weekly.plan.inferredPersona }}</p>
+            <p v-if="weekly.plan.progressNotes" class="kp-progress">{{ weekly.plan.progressNotes }}</p>
+            <div v-if="weekly.plan.thinkDirections?.length" class="kp-weekly-block">
+              <h4>{{ t("knowledgePlanet.think") }}</h4>
+              <ul>
+                <li v-for="(item, i) in weekly.plan.thinkDirections" :key="'t' + i">{{ item }}</li>
+              </ul>
+            </div>
+            <div v-if="weekly.plan.gapAreas?.length" class="kp-weekly-block">
+              <h4>{{ t("knowledgePlanet.gaps") }}</h4>
+              <ul>
+                <li v-for="(item, i) in weekly.plan.gapAreas" :key="'g' + i">{{ item }}</li>
+              </ul>
+            </div>
+            <div v-if="weekly.plan.bookRecommendations?.length" class="kp-weekly-block">
+              <h4>{{ t("knowledgePlanet.books") }}</h4>
+              <ul class="kp-books">
+                <li v-for="(book, i) in weekly.plan.bookRecommendations" :key="'b' + i">
+                  <a v-if="book.url" :href="book.url" target="_blank" rel="noopener noreferrer"
+                    >《{{ book.title }}》</a
+                  >
+                  <span v-else>《{{ book.title }}》</span>
+                  <span v-if="book.reason" class="kp-book-reason"> — {{ book.reason }}</span>
+                </li>
+              </ul>
+            </div>
+            <div class="kp-weekly-feedback">
+              <span>{{ t("knowledgePlanet.weeklyFeedbackPrompt") }}</span>
+              <button type="button" class="kp-tour-btn" @click="submitWeeklyFeedback(true)">
+                {{ t("knowledgePlanet.weeklyFeedbackYes") }}
+              </button>
+              <button type="button" class="kp-tour-btn" @click="submitWeeklyFeedback(false)">
+                {{ t("knowledgePlanet.weeklyFeedbackNo") }}
+              </button>
+            </div>
           </section>
 
           <div v-if="tourOpen && !isMobileLayout" class="kp-tour">
@@ -311,7 +346,8 @@ import type {
   KnowledgePlanetWeeklyLatest,
   KnowledgePlanetWarpOrigin,
 } from "../../api/knowledgePlanet";
-import { warpOriginCenter } from "../../api/knowledgePlanet";
+import { postKnowledgePlanetWeeklyFeedback, warpOriginCenter } from "../../api/knowledgePlanet";
+import { ElMessage } from "element-plus";
 import { useKnowledgePlanetStarMap } from "../../composables/useKnowledgePlanetStarMap";
 import {
   useKnowledgePlanetUniverseGraph,
@@ -338,6 +374,20 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const isMobileLayout = computed(() => props.layout === "mobile");
+const weeklyFeedbackSent = ref(false);
+
+async function submitWeeklyFeedback(helpful: boolean) {
+  if (weeklyFeedbackSent.value) {
+    return;
+  }
+  try {
+    await postKnowledgePlanetWeeklyFeedback(helpful);
+    weeklyFeedbackSent.value = true;
+    ElMessage.success(t("knowledgePlanet.weeklyFeedbackThanks"));
+  } catch {
+    ElMessage.error(t("knowledgePlanet.weeklyFeedbackFail"));
+  }
+}
 const warpBg = shallowRef<HTMLElement | null>(null);
 const overlayRoot = shallowRef<HTMLElement | null>(null);
 const graphHost = shallowRef<HTMLElement | null>(null);

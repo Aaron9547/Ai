@@ -9,6 +9,7 @@
   >
     <div v-if="isMobile && sidebarOpen" class="sidebar-scrim" aria-hidden="true" @click="sidebarOpen = false" />
     <ChatSidebar
+      v-model:collapsed="convPanelCollapsed"
       :convs="convs"
       :conv-id="convId"
       :logged-in-username="loggedInUsername"
@@ -457,6 +458,71 @@
                 </div>
               </div>
               <div
+                v-if="m.knowledgeBaseReferences?.length && m.role === 'assistant'"
+                class="kb-refs-strip"
+                :class="{ 'kb-refs-strip--foldable': refsStripFoldable(m.knowledgeBaseReferences) }"
+              >
+                <button
+                  v-if="refsStripFoldable(m.knowledgeBaseReferences)"
+                  type="button"
+                  class="kb-refs-bar"
+                  @click="onKnowledgeBaseRefsBarClick(m)"
+                >
+                  <span class="kb-refs-label">{{ t("chat.kbRefs") }}</span>
+                  <span class="kb-refs-meta">
+                    {{
+                      isKnowledgeBaseRefsBodyVisible(m)
+                        ? t("chat.kbRefsExpand")
+                        : t("chat.kbRefsCollapsed", { n: m.knowledgeBaseReferences!.length })
+                    }}
+                  </span>
+                  <el-icon class="kb-refs-chevron">
+                    <ArrowDown v-if="!isKnowledgeBaseRefsBodyVisible(m)" />
+                    <ArrowUp v-else />
+                  </el-icon>
+                </button>
+                <div v-else class="kb-refs-head">
+                  <span class="kb-refs-label">{{ t("chat.kbRefs") }}</span>
+                  <span class="kb-refs-hint">{{ t("chat.kbRefsHint") }}</span>
+                </div>
+                <div v-show="isKnowledgeBaseRefsBodyVisible(m)" class="kb-refs-body" role="list">
+                  <p v-if="refsStripFoldable(m.knowledgeBaseReferences)" class="kb-refs-hint kb-refs-hint--body">
+                    {{ t("chat.kbRefsHint") }}
+                  </p>
+                  <template v-for="(w, wi) in m.knowledgeBaseReferences" :key="`kb-${wi}-${w.url || w.title || ''}`">
+                    <a
+                      v-if="(w.url ?? '').trim()"
+                      class="kb-ref-chip"
+                      :href="w.url"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      :title="(w.summary || '').trim() || undefined"
+                    >
+                      <img
+                        v-if="(w.logoUrl ?? '').trim()"
+                        class="kb-ref-logo"
+                        :src="w.logoUrl!"
+                        alt=""
+                      />
+                      <span class="kb-ref-chip-text">{{ webRefLabel(w) }}</span>
+                    </a>
+                    <span
+                      v-else
+                      class="kb-ref-chip kb-ref-chip--nolink"
+                      :title="(w.summary || '').trim() || undefined"
+                    >
+                      <img
+                        v-if="(w.logoUrl ?? '').trim()"
+                        class="kb-ref-logo"
+                        :src="w.logoUrl!"
+                        alt=""
+                      />
+                      <span class="kb-ref-chip-text">{{ webRefLabel(w) }}</span>
+                    </span>
+                  </template>
+                </div>
+              </div>
+              <div
                 v-if="showFollowUpPromptsBlock(m, idx)"
                 class="follow-up-prompts"
                 role="list"
@@ -712,6 +778,16 @@
                   >
                     {{ t("chat.webSearch") }}
                   </button>
+                  <button
+                    type="button"
+                    class="composer-mode-pill composer-mode-pill--mcp"
+                    :class="{ 'composer-mode-pill--on': mcpEnabled }"
+                    :aria-pressed="mcpEnabled"
+                    :aria-label="t('chat.mcpAria')"
+                    @click="mcpEnabled = !mcpEnabled"
+                  >
+                    {{ t("chat.mcp") }}
+                  </button>
                 </div>
                 <el-select
                   v-if="models.length"
@@ -897,10 +973,36 @@ const { t, locale } = useI18n();
 const { logoUrl, displayBrandTitle, loadTenantBranding } = useTenantBranding();
 const uiPrefs = useUiPreferencesStore();
 const chatResponseLocale = computed(() => toChatResponseLocale(uiPrefs.locale));
-const { isMobile, isTablet } = useWindowBreakpoints();
+const { isMobile, isTablet, isDesktop } = useWindowBreakpoints();
 const sidebarOpen = ref(false);
+/** 左侧会话栏收起态（小于 1024 与右侧推荐栏互斥展开） */
+const convPanelCollapsed = ref(false);
 /** 右侧推荐栏收起态，用于空对话悬浮工具栏定位 */
 const recPanelCollapsed = ref(false);
+/** 平板/中屏（小于 1024）：两侧栏至多展开一侧 */
+const exclusiveSidebars = computed(() => !isDesktop.value && !isMobile.value);
+let exclusiveSidebarSync = false;
+
+function collapseOtherSidebar(which: "conv" | "rec"): void {
+  if (!exclusiveSidebars.value || exclusiveSidebarSync) return;
+  exclusiveSidebarSync = true;
+  try {
+    if (which === "conv" && !recPanelCollapsed.value) {
+      recPanelCollapsed.value = true;
+    } else if (which === "rec" && !convPanelCollapsed.value) {
+      convPanelCollapsed.value = true;
+    }
+  } finally {
+    exclusiveSidebarSync = false;
+  }
+}
+
+function ensureExclusiveSidebarsOnNarrow(): void {
+  if (!exclusiveSidebars.value) return;
+  if (!convPanelCollapsed.value && !recPanelCollapsed.value) {
+    recPanelCollapsed.value = true;
+  }
+}
 const toolbarAnchorFloatRef = ref<HTMLElement | null>(null);
 const toolbarAnchorHeadMobileRef = ref<HTMLElement | null>(null);
 const toolbarAnchorHeadDesktopRef = ref<HTMLElement | null>(null);
@@ -948,6 +1050,18 @@ const mePagePath = computed(() => `/${tenantCodeParam.value}/system/me`);
 
 watch(isMobile, (m) => {
   if (!m) sidebarOpen.value = false;
+});
+
+watch(convPanelCollapsed, (collapsed) => {
+  if (!collapsed) collapseOtherSidebar("conv");
+});
+
+watch(recPanelCollapsed, (collapsed) => {
+  if (!collapsed) collapseOtherSidebar("rec");
+});
+
+watch(exclusiveSidebars, (narrow) => {
+  if (narrow) ensureExclusiveSidebarsOnNarrow();
 });
 
 /** 模型下拉触发器宽度：随当前展示文案变化（避免占满半行）。 */
@@ -1005,6 +1119,9 @@ type ReplyVariant = {
   webSearchReferences?: chatApi.WebSearchRefItem[];
   /** 引用条数较多时默认折叠 */
   webSearchRefsCollapsed?: boolean;
+  /** 联网知识库引用（SSE {@code knowledgeRefs}；历史由 meta {@code knowledgeBaseReferences} 恢复） */
+  knowledgeBaseReferences?: chatApi.WebSearchRefItem[];
+  knowledgeBaseRefsCollapsed?: boolean;
 };
 
 type Msg = {
@@ -1019,6 +1136,9 @@ type Msg = {
   webSearchReferences?: chatApi.WebSearchRefItem[];
   /** 引用条数较多时默认折叠 */
   webSearchRefsCollapsed?: boolean;
+  /** 联网知识库引用（SSE {@code knowledgeRefs}；历史 {@code knowledgeBaseReferences}） */
+  knowledgeBaseReferences?: chatApi.WebSearchRefItem[];
+  knowledgeBaseRefsCollapsed?: boolean;
   streaming?: boolean;
   reasoning?: string;
   reasoningStreaming?: boolean;
@@ -1139,17 +1259,51 @@ function citationsToTitles(c: chatApi.RagCitationItem[] | null | undefined): str
   return titles.length ? titles : undefined;
 }
 
-/** 超过该条数时联网参考默认折叠 */
-const WEB_SEARCH_REFS_FOLD_THRESHOLD = 4;
+/** 超过该条数时参考条默认折叠 */
+const REFS_STRIP_FOLD_THRESHOLD = 4;
+
+function refsStripFoldable(refs: chatApi.WebSearchRefItem[] | null | undefined): boolean {
+  return (refs?.length ?? 0) > REFS_STRIP_FOLD_THRESHOLD;
+}
 
 function webSearchRefsFoldable(refs: chatApi.WebSearchRefItem[] | null | undefined): boolean {
-  return (refs?.length ?? 0) > WEB_SEARCH_REFS_FOLD_THRESHOLD;
+  return refsStripFoldable(refs);
+}
+
+function defaultRefsStripCollapsed(
+  refs: chatApi.WebSearchRefItem[] | null | undefined,
+): boolean | undefined {
+  return refsStripFoldable(refs) ? true : undefined;
 }
 
 function defaultWebSearchRefsCollapsed(
   refs: chatApi.WebSearchRefItem[] | null | undefined,
 ): boolean | undefined {
-  return webSearchRefsFoldable(refs) ? true : undefined;
+  return defaultRefsStripCollapsed(refs);
+}
+
+function defaultKnowledgeBaseRefsCollapsed(
+  refs: chatApi.WebSearchRefItem[] | null | undefined,
+): boolean | undefined {
+  return defaultRefsStripCollapsed(refs);
+}
+
+function isKnowledgeBaseRefsBodyVisible(m: Msg): boolean {
+  if (!refsStripFoldable(m.knowledgeBaseReferences)) {
+    return true;
+  }
+  return m.knowledgeBaseRefsCollapsed !== true;
+}
+
+function onKnowledgeBaseRefsBarClick(m: Msg) {
+  const nextCollapsed = isKnowledgeBaseRefsBodyVisible(m);
+  m.knowledgeBaseRefsCollapsed = nextCollapsed;
+  if (m.replyVariants?.length) {
+    const v = m.replyVariants[m.activeVariantIndex ?? 0];
+    if (v) {
+      v.knowledgeBaseRefsCollapsed = nextCollapsed;
+    }
+  }
 }
 
 function isWebSearchRefsBodyVisible(m: Msg): boolean {
@@ -1238,6 +1392,10 @@ function mapHistoryToMsgs(rows: chatApi.ChatHistoryMessage[]): Msg[] {
         r.webSearchReferences && r.webSearchReferences.length > 0
           ? [...r.webSearchReferences]
           : undefined;
+      const kbRefs =
+        r.knowledgeBaseReferences && r.knowledgeBaseReferences.length > 0
+          ? [...r.knowledgeBaseReferences]
+          : undefined;
       const variants: ReplyVariant[] = r.priorVersions.map(priorApiRowToVariant);
       variants.push({
         id: r.id,
@@ -1250,6 +1408,8 @@ function mapHistoryToMsgs(rows: chatApi.ChatHistoryMessage[]): Msg[] {
         ragRetrievalTitles: ragForTail,
         webSearchReferences: webRefs,
         webSearchRefsCollapsed: defaultWebSearchRefsCollapsed(webRefs),
+        knowledgeBaseReferences: kbRefs,
+        knowledgeBaseRefsCollapsed: defaultKnowledgeBaseRefsCollapsed(kbRefs),
       });
       out.push({
         id: r.id,
@@ -1263,6 +1423,8 @@ function mapHistoryToMsgs(rows: chatApi.ChatHistoryMessage[]): Msg[] {
         ragRetrievalTitles: ragForFlat,
         webSearchReferences: webRefs,
         webSearchRefsCollapsed: defaultWebSearchRefsCollapsed(webRefs),
+        knowledgeBaseReferences: kbRefs,
+        knowledgeBaseRefsCollapsed: defaultKnowledgeBaseRefsCollapsed(kbRefs),
         replyVariants: variants,
         activeVariantIndex: variants.length - 1,
         workflowSegments:
@@ -1294,6 +1456,12 @@ function mapHistoryToMsgs(rows: chatApi.ChatHistoryMessage[]): Msg[] {
               : {}),
           }
         : {}),
+      ...(r.role === "assistant" && r.knowledgeBaseReferences?.length
+        ? {
+            knowledgeBaseReferences: [...r.knowledgeBaseReferences],
+            knowledgeBaseRefsCollapsed: defaultKnowledgeBaseRefsCollapsed(r.knowledgeBaseReferences),
+          }
+        : {}),
       ...(r.role === "assistant" && r.workflowSegments?.length
         ? { workflowSegments: decorateHistoryWorkflowSegments([...r.workflowSegments]) }
         : {}),
@@ -1315,6 +1483,10 @@ function deepCloneReplyVariants(v: ReplyVariant[]): ReplyVariant[] {
     webSearchReferences:
       x.webSearchReferences && x.webSearchReferences.length > 0
         ? [...x.webSearchReferences]
+        : undefined,
+    knowledgeBaseReferences:
+      x.knowledgeBaseReferences && x.knowledgeBaseReferences.length > 0
+        ? [...x.knowledgeBaseReferences]
         : undefined,
   }));
 }
@@ -1351,6 +1523,12 @@ function syncAssistantActiveToFlat(m: Msg) {
     v.webSearchReferences && v.webSearchReferences.length > 0 ? [...v.webSearchReferences] : undefined;
   m.webSearchRefsCollapsed =
     v.webSearchRefsCollapsed ?? defaultWebSearchRefsCollapsed(v.webSearchReferences);
+  m.knowledgeBaseReferences =
+    v.knowledgeBaseReferences && v.knowledgeBaseReferences.length > 0
+      ? [...v.knowledgeBaseReferences]
+      : undefined;
+  m.knowledgeBaseRefsCollapsed =
+    v.knowledgeBaseRefsCollapsed ?? defaultKnowledgeBaseRefsCollapsed(v.knowledgeBaseReferences);
 }
 
 function assistantFeedbackEligible(m: Msg): boolean {
@@ -1450,6 +1628,10 @@ function patchMsgMetadataFromServer(local: Msg, server: Msg): void {
   if (server.webSearchReferences?.length && !(local.webSearchReferences?.length)) {
     local.webSearchReferences = [...server.webSearchReferences];
     local.webSearchRefsCollapsed = defaultWebSearchRefsCollapsed(server.webSearchReferences);
+  }
+  if (server.knowledgeBaseReferences?.length && !(local.knowledgeBaseReferences?.length)) {
+    local.knowledgeBaseReferences = [...server.knowledgeBaseReferences];
+    local.knowledgeBaseRefsCollapsed = defaultKnowledgeBaseRefsCollapsed(server.knowledgeBaseReferences);
   }
 }
 
@@ -1795,9 +1977,19 @@ function applyAssistantStreamPart(m: Msg, part: chatApi.StreamPart, tail: ReplyV
     body.webSearchReferences = [...part.references];
     m.webSearchTurnEnabled = true;
     bumpWebSearchDisplayCount(m, part.references.length);
-    if (webSearchRefsFoldable(part.references)) {
+    if (refsStripFoldable(part.references)) {
       m.webSearchRefsCollapsed = true;
       body.webSearchRefsCollapsed = true;
+    }
+  } else if (part.type === "knowledgeRefs" && part.references?.length) {
+    if (!m.streaming) {
+      return;
+    }
+    body.knowledgeBaseReferences = [...part.references];
+    m.knowledgeBaseReferences = [...part.references];
+    if (refsStripFoldable(part.references)) {
+      m.knowledgeBaseRefsCollapsed = true;
+      body.knowledgeBaseRefsCollapsed = true;
     }
   } else if (part.type === "reasoning" && part.v) {
     if (m.webSearchPhase === "searching") {
@@ -2105,6 +2297,7 @@ const modelAlias = ref("");
 const thinkingEnabled = ref(true);
 const webSearchAllowed = ref(false);
 const webSearchEnabled = ref(false);
+const mcpEnabled = ref(false);
 
 /** 点击空会话推荐 / 猜你想问时，租户允许联网则默认打开联网开关（见 PROJECT.md 0.1.242）。 */
 function enableWebSearchForStarterPrompt() {
@@ -2411,6 +2604,7 @@ async function retryAssistantAt(assistantIdx: number) {
         modelAlias: modelAlias.value,
         thinkingEnabled: think,
         webSearchEnabled: useWeb,
+        mcpEnabled: mcpEnabled.value,
         responseLocale: chatResponseLocale.value,
       },
       (part) => {
@@ -2882,6 +3076,7 @@ async function send() {
           modelAlias: modelAlias.value,
           thinkingEnabled: think,
           webSearchEnabled: useWeb,
+          mcpEnabled: mcpEnabled.value,
           attachmentIds,
           clientSendKey,
           ...(intentFlowTicket ? { intentFlowTicket } : {}),
@@ -4192,6 +4387,127 @@ async function send() {
 }
 
 .web-ref-chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: min(320px, 70vw);
+}
+
+.kb-refs-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 10px 0 0 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--chat-bg-kb-refs, #f5f3ff);
+  border: 1px solid var(--chat-border-kb-refs, #ddd6fe);
+  font-size: 12px;
+  color: var(--chat-text-kb-refs, #4c1d95);
+}
+
+.kb-refs-strip--foldable {
+  display: block;
+  padding: 0;
+  overflow: hidden;
+}
+
+.kb-refs-bar,
+.kb-refs-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+}
+
+.kb-refs-bar {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.kb-refs-bar:hover {
+  background: rgba(91, 33, 182, 0.06);
+}
+
+.kb-refs-label {
+  font-weight: 600;
+  color: var(--chat-text-kb-refs, #5b21b6);
+}
+
+.kb-refs-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: #7c3aed;
+  opacity: 0.85;
+}
+
+.kb-refs-hint--body {
+  flex: none;
+  width: 100%;
+  margin: 0 0 4px;
+}
+
+.kb-refs-meta {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: #7c3aed;
+}
+
+.kb-refs-chevron {
+  flex-shrink: 0;
+  font-size: 14px;
+  color: #a78bfa;
+}
+
+.kb-refs-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 0 10px 8px;
+}
+
+.kb-ref-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--chat-kb-chip-bg, #fff);
+  border: 1px solid var(--chat-kb-chip-border, #c4b5fd);
+  color: var(--chat-text-kb-refs, #4c1d95);
+  text-decoration: none;
+  line-height: 1.35;
+}
+
+.kb-ref-chip:hover {
+  border-color: #8b5cf6;
+  color: #6d28d9;
+}
+
+.kb-ref-chip--nolink {
+  cursor: default;
+}
+
+.kb-ref-logo {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.kb-ref-chip-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  变更记录门禁：动代码须同集改 PROJECT.md，且顶节 ### 与 pom.xml 版本一致。
+  变更记录门禁：动代码须同集改 PROJECT.md；顶节 ### 补丁位须 >= pom.xml（允许文档领先构件）。
 
 .EXAMPLE
   .\scripts\check-project-changelog.ps1
@@ -113,16 +113,39 @@ if (-not $projectMdTouched) {
     exit 1
 }
 
-$pomVer = Get-PomVersion
-$docVer = Get-ProjectChangelogTopVersion
-if ($pomVer -and $docVer -and $pomVer -ne $docVer) {
-    Write-Host ''
-    Write-Host "FAIL: pom.xml version ($pomVer) != PROJECT.md changelog top ($docVer)." -ForegroundColor Red
-    Write-Host 'Bump pom.xml and add matching ### section, or fix the mismatch.' -ForegroundColor Yellow
-    exit 1
+function Get-SnapshotPatch {
+    param([string]$Version)
+    if ($Version -match '^0\.1\.(\d+)-SNAPSHOT$') {
+        return [int]$Matches[1]
+    }
+    return $null
 }
 
-Write-Host "OK: PROJECT.md updated; changelog top matches pom.xml ($pomVer)."
+$pomVer = Get-PomVersion
+$docVer = Get-ProjectChangelogTopVersion
+$pomPatch = Get-SnapshotPatch $pomVer
+$docPatch = Get-SnapshotPatch $docVer
+
+if ($pomVer -and $docVer -and $null -ne $pomPatch -and $null -ne $docPatch) {
+    if ($docPatch -lt $pomPatch) {
+        Write-Host ''
+        Write-Host "FAIL: PROJECT.md changelog top ($docVer) is behind pom.xml ($pomVer)." -ForegroundColor Red
+        Write-Host 'Add a newer ### section at the top of "## 变更记录".' -ForegroundColor Yellow
+        exit 1
+    }
+    if ($docPatch -eq $pomPatch) {
+        Write-Host "OK: PROJECT.md updated; changelog top matches pom.xml ($pomVer)."
+    }
+    else {
+        Write-Host "OK: PROJECT.md updated; changelog top $docVer (artifact pom $pomVer)."
+    }
+}
+elseif ($pomVer -and $docVer) {
+    Write-Host "OK: PROJECT.md updated (pom=$pomVer, doc=$docVer)."
+}
+else {
+    Write-Host 'OK: PROJECT.md updated.'
+}
 
 $encScript = Join-Path $repoRoot 'scripts\check-encoding.ps1'
 if (Test-Path $encScript) {

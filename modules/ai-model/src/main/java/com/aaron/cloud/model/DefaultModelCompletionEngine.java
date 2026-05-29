@@ -1,6 +1,9 @@
 package com.aaron.cloud.model;
 
 import com.aaron.cloud.common.api.dto.model.ModelChatRequest;
+import com.aaron.cloud.common.api.dto.model.ModelStreamResult;
+import com.aaron.cloud.common.api.dto.model.ModelToolCall;
+import com.aaron.cloud.common.api.dto.model.ModelToolDefinition;
 import com.aaron.cloud.common.config.properties.AiOutboundResilienceProperties;
 import com.aaron.cloud.common.context.TenantContextHolder;
 import com.aaron.cloud.common.modelcfg.LlmModelKindPolicy;
@@ -12,6 +15,7 @@ import com.aaron.cloud.common.outbound.OutboundTenantUpstreamQuarantine;
 import com.aaron.cloud.common.outbound.TenantOutboundResilienceRuntime;
 import com.aaron.cloud.common.security.crypto.AesSecretCipher;
 import com.aaron.cloud.model.openai.OpenAiCallContext;
+import com.aaron.cloud.model.openai.OpenAiStreamCapture;
 import com.aaron.cloud.model.openai.OpenAiUpstreamStreamService;
 import com.aaron.cloud.model.openai.OpenAiUsageParser;
 import com.aaron.cloud.model.spi.ModelCompletionEngine;
@@ -47,6 +51,12 @@ public class DefaultModelCompletionEngine implements ModelCompletionEngine {
 
     @Override
     public void streamCompletion(ModelChatRequest request, Consumer<String> onToken) throws Exception {
+        streamCompletionWithResult(request, onToken);
+    }
+
+    @Override
+    public ModelStreamResult streamCompletionWithResult(ModelChatRequest request, Consumer<String> onToken)
+            throws Exception {
         String alias =
                 request.getModelAlias() == null || request.getModelAlias().isBlank()
                         ? "mock"
@@ -59,15 +69,20 @@ public class DefaultModelCompletionEngine implements ModelCompletionEngine {
             }
         }
         if ("mock".equalsIgnoreCase(alias)) {
-            runMock(request, onToken);
+            StringBuilder buf = new StringBuilder();
+            runMock(request, t -> {
+                buf.append(t);
+                onToken.accept(t);
+            });
             if (tenantId != null && tenantId > 0) {
                 outboundTenantUpstreamQuarantine.recordTenantSuccess(tenantId);
             }
-            return;
+            return ModelStreamResult.builder().content(buf.toString()).finishReason("stop").build();
         }
         if (tenantId == null) {
             throw new IllegalStateException("缺少 tenantId，无法解析模型配置");
         }
+        OpenAiStreamCapture capture = new OpenAiStreamCapture();
         List<SysLlmModel> chain = buildLanguageModelChain(tenantId, alias);
         if (chain.isEmpty()) {
             throw new IllegalArgumentException(
@@ -103,9 +118,11 @@ public class DefaultModelCompletionEngine implements ModelCompletionEngine {
                         onUsage,
                         new OpenAiCallContext(
                                 tenantId, m.getAlias(), m.getId(), m.getOpenaiModelId(), m.getOpenaiBaseUrl()),
-                        m.getAlias());
+                        m.getAlias(),
+                        request.getStreamCancelled(),
+                        capture);
                 outboundTenantUpstreamQuarantine.recordTenantSuccess(tenantId);
-                return;
+                return capture.toResult();
             } catch (Exception e) {
                 last = e;
                 outboundTenantUpstreamQuarantine.recordHardFailureIfSignal(tenantId, e);
@@ -123,6 +140,7 @@ public class DefaultModelCompletionEngine implements ModelCompletionEngine {
         if (last != null) {
             throw last;
         }
+        return capture.toResult();
     }
 
     private List<SysLlmModel> buildLanguageModelChain(long tenantId, String primaryAlias) {
@@ -206,8 +224,60 @@ public class DefaultModelCompletionEngine implements ModelCompletionEngine {
         if (turns != null) {
             for (ModelChatRequest.MessageTurn t : turns) {
                 ObjectNode m = messages.addObject();
-                m.put("role", t.getRole());
-                m.put("content", t.getContent() == null ? "" : t.getContent());
+                String role = t.getRole() == null ? "user" : t.getRole();
+                m.put("role", role);
+                if ("tool".equalsIgnoreCase(role)) {
+                    if (t.getToolCallId() != null) {
+                        m.put("tool_call_id", t.getToolCallId());
+                    }
+                    if (t.getName() != null) {
+                        m.put("name", t.getName());
+                    }
+                    m.put("content", t.getContent() == null ? "" : t.getContent());
+                } else if ("assistant".equalsIgnoreCase(role) && t.getToolCalls() != null && !t.getToolCalls().isEmpty()) {
+                    if (t.getContent() != null) {
+                        m.put("content", t.getContent());
+                    } else {
+                        m.putNull("content");
+                    }
+                    ArrayNode tcs = m.putArray("tool_calls");
+                    for (ModelToolCall tc : t.getToolCalls()) {
+                        ObjectNode tcNode = tcs.addObject();
+                        if (tc.getId() != null) {
+                            tcNode.put("id", tc.getId());
+                        }
+                        tcNode.put("type", tc.getType() == null ? "function" : tc.getType());
+                        ObjectNode fn = tcNode.putObject("function");
+                        if (tc.getFunction() != null) {
+                            fn.put("name", tc.getFunction().getName() == null ? "" : tc.getFunction().getName());
+                            fn.put(
+                                    "arguments",
+                                    tc.getFunction().getArguments() == null ? "{}" : tc.getFunction().getArguments());
+                        }
+                    }
+                } else {
+                    m.put("content", t.getContent() == null ? "" : t.getContent());
+                }
+            }
+        }
+        if (request.getTools() != null && !request.getTools().isEmpty()) {
+            ArrayNode tools = body.putArray("tools");
+            for (ModelToolDefinition td : request.getTools()) {
+                ObjectNode tool = tools.addObject();
+                tool.put("type", td.getType() == null ? "function" : td.getType());
+                if (td.getFunction() != null) {
+                    ObjectNode fn = tool.putObject("function");
+                    fn.put("name", td.getFunction().getName());
+                    if (td.getFunction().getDescription() != null) {
+                        fn.put("description", td.getFunction().getDescription());
+                    }
+                    if (td.getFunction().getParameters() != null) {
+                        fn.set("parameters", td.getFunction().getParameters());
+                    }
+                }
+            }
+            if (request.getToolChoice() != null && !request.getToolChoice().isBlank()) {
+                body.put("tool_choice", request.getToolChoice());
             }
         }
         return objectMapper.writeValueAsString(body);

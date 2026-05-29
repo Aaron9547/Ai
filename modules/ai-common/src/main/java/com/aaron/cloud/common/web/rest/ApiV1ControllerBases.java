@@ -67,6 +67,9 @@ public final class ApiV1ControllerBases {
     @RequestMapping(AbstractApiV1Controller.PREFIX + "/mcp/tools")
     public static abstract class McpTools extends AbstractApiV1Controller {}
 
+    @RequestMapping(AbstractApiV1Controller.PREFIX + "/mcp/servers")
+    public static abstract class McpServersApi extends AbstractApiV1Controller {}
+
     @RequestMapping(AbstractApiV1Controller.PREFIX + "/notifications")
     public static abstract class Notifications extends AbstractApiV1Controller {}
 

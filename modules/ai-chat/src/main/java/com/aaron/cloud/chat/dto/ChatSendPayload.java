@@ -29,6 +29,12 @@ public class ChatSendPayload {
     @JsonDeserialize(using = WebSearchFlagDeserializer.class)
     private Boolean webSearchEnabled;
 
+    @Getter(AccessLevel.NONE)
+    @JsonDeserialize(using = WebSearchFlagDeserializer.class)
+    private Boolean mcpEnabled;
+
+    private List<Long> mcpServerIds;
+
     private List<Long> attachmentIds;
 
     /**
@@ -55,5 +61,10 @@ public class ChatSendPayload {
     @JsonIgnore
     public boolean isWebSearchEnabled() {
         return Boolean.TRUE.equals(webSearchEnabled);
+    }
+
+    @JsonIgnore
+    public boolean isMcpEnabled() {
+        return Boolean.TRUE.equals(mcpEnabled);
     }
 }

@@ -305,7 +305,11 @@ public class ChatUserDailyRecommendService {
                         "daily_recommend_structure",
                         tenantId,
                         "zh-CN",
-                        Map.of("today", today.toString())));
+                        Map.of(
+                                "today",
+                                today.toString(),
+                                "today_label",
+                                BeijingTime.formatChineseDateLabel(today))));
         var user = new ModelChatRequest.MessageTurn();
         user.setRole("user");
         StringBuilder body = new StringBuilder();

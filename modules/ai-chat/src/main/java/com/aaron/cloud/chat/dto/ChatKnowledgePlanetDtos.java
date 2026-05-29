@@ -56,4 +56,8 @@ public final class ChatKnowledgePlanetDtos {
     public record GraphLinkView(String sourceId, String targetId, String kind) {}
 
     public record WeeklyLatestResponse(LocalDate weekStart, String status, KnowledgeWeeklyPlan plan) {}
+
+    public record WeeklyFeedbackBody(boolean helpful) {}
+
+    public record LearningGoalBody(String goal) {}
 }

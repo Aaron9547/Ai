@@ -202,6 +202,38 @@
             </el-table>
             <el-empty v-else :description="t('views.profiles.emptyRecent')" :image-size="64" />
 
+            <h3 class="detail-sec-title">{{ t("views.profiles.secWeeklyTest") }}</h3>
+            <p class="detail-hint">{{ t("views.profiles.weeklyTestHint") }}</p>
+            <el-form label-width="0" class="weekly-test-form">
+              <el-form-item>
+                <el-checkbox v-model="weeklyTestPersist">{{ t("views.profiles.weeklyTestPersist") }}</el-checkbox>
+              </el-form-item>
+              <el-form-item>
+                <el-checkbox v-model="weeklyTestSendEmail">{{ t("views.profiles.weeklyTestSendEmail") }}</el-checkbox>
+              </el-form-item>
+              <el-form-item :label="t('views.profiles.weeklyTestWeekStart')" label-width="140px">
+                <el-date-picker
+                  v-model="weeklyTestWeekStart"
+                  type="date"
+                  value-format="YYYY-MM-DD"
+                  clearable
+                  :placeholder="t('views.profiles.weeklyTestWeekStartPh')"
+                  style="width: 220px"
+                />
+              </el-form-item>
+              <el-form-item>
+                <el-button
+                  type="warning"
+                  plain
+                  :loading="weeklyTestPushing"
+                  :disabled="detailUserId == null"
+                  @click="runWeeklyTestPush"
+                >
+                  {{ weeklyTestPushing ? t("views.profiles.weeklyTestPushing") : t("views.profiles.weeklyTestPush") }}
+                </el-button>
+              </el-form-item>
+            </el-form>
+
             <div class="raw-json-toggle">
               <el-button text type="primary" @click="showRawJson = !showRawJson">
                 {{ showRawJson ? t("views.profiles.rawJsonHide") : t("views.profiles.rawJsonShow") }}{{ t("views.profiles.rawJsonSuffix") }}
@@ -249,8 +281,14 @@ const embeddingHydrateSkipSave = ref(true);
 
 const detailOpen = ref(false);
 const detail = ref<AdminUserProfileDetail | null>(null);
+const detailUserId = ref<number | null>(null);
 const detailRawPayload = ref<unknown>(null);
 const showRawJson = ref(false);
+
+const weeklyTestPersist = ref(false);
+const weeklyTestSendEmail = ref(true);
+const weeklyTestWeekStart = ref<string | undefined>(undefined);
+const weeklyTestPushing = ref(false);
 
 const abstractBlocks = computed(() => {
   void locale.value;
@@ -352,12 +390,43 @@ function onPage(p: number) {
 async function openDetail(userId: number) {
   try {
     showRawJson.value = false;
+    weeklyTestPersist.value = false;
+    weeklyTestSendEmail.value = true;
+    weeklyTestWeekStart.value = undefined;
     const { raw, detail: d } = await userProfilesApi.fetchUserProfileDetail(userId);
     detailRawPayload.value = raw;
     detail.value = d;
+    detailUserId.value = userId;
     detailOpen.value = true;
   } catch {
     ElMessage.error(t("views.profiles.loadDetailFailed"));
+  }
+}
+
+async function runWeeklyTestPush() {
+  const uid = detailUserId.value;
+  if (uid == null) return;
+  weeklyTestPushing.value = true;
+  try {
+    const res = await userProfilesApi.postKnowledgePlanetWeeklyTestPush(uid, {
+      persist: weeklyTestPersist.value,
+      sendEmail: weeklyTestSendEmail.value,
+      weekStart: weeklyTestWeekStart.value?.trim() || undefined,
+    });
+    const computeLine = `${t("views.profiles.weeklyTestCompute")}: ${res.computeStatus}${res.computeMessage ? ` — ${res.computeMessage}` : ""}${res.persisted ? " ✓" : ""}`;
+    const emailLine =
+      res.emailStatus != null
+        ? `${t("views.profiles.weeklyTestEmail")}: ${res.emailStatus}${res.emailMessage ? ` — ${res.emailMessage}` : ""}${res.emailRecipient ? ` → ${res.emailRecipient}` : ""}`
+        : "";
+    ElMessage.success({
+      message: [computeLine, emailLine].filter(Boolean).join("\n"),
+      duration: 8000,
+      showClose: true,
+    });
+  } catch {
+    ElMessage.error(t("views.profiles.weeklyTestFailed"));
+  } finally {
+    weeklyTestPushing.value = false;
   }
 }
 
@@ -497,6 +566,10 @@ onMounted(() => {
 
 .nested-desc {
   margin-top: 2px;
+}
+
+.weekly-test-form {
+  max-width: 520px;
 }
 
 .raw-json-toggle {

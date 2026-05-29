@@ -167,7 +167,7 @@ import {
 import BrandMark from "@/components/BrandMark.vue";
 import KnowledgePlanetMobileEntry from "./KnowledgePlanetMobileEntry.vue";
 import SidebarCollapseTab from "./SidebarCollapseTab.vue";
-import { computed, ref, watch } from "vue";
+import { computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 
@@ -204,7 +204,7 @@ const emit = defineEmits<{
 
 const { t, locale } = useI18n();
 const router = useRouter();
-const collapsed = ref(props.defaultCollapsed);
+const collapsed = defineModel<boolean>("collapsed", { default: false });
 
 function onUserMenuCommand(command: string | number): void {
   if (command === "account") {

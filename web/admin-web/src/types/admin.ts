@@ -73,7 +73,12 @@ export interface McpServerRow {
   tenantId: number;
   name: string;
   baseUrl: string;
+  transportKind?: string;
+  description?: string | null;
+  hasApiKey?: boolean;
   status?: string;
+  lastProbeAt?: string | null;
+  lastProbeOk?: boolean | null;
   createdAt?: string | null;
   updatedAt?: string | null;
 }

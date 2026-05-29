@@ -124,9 +124,31 @@ export default {
       localeZhCn: "简体中文",
       localeEnUs: "English",
       defaultSubjectRegister: "【{tenantName}】注册验证码",
-      defaultBodyRegister: "验证码：{code}，{ttlMinutes} 分钟内有效。",
+      defaultBodyRegister: `您好，
+
+您的注册验证码为：{code}
+有效期 {ttlMinutes} 分钟。
+
+如非本人操作，请忽略此邮件。`,
       defaultSubjectWeekly: "【{tenantName}】知识星球周报",
-      defaultBodyWeekly: "{userName}，您好：\n\n{summary}\n\n{weekLabel}",
+      defaultBodyWeekly: `{userName}，您好：
+
+{weekLabel} 个人知识星球周报已生成。
+
+{summary}
+
+【建议思考方向】
+{thinkDirections}
+
+【可弥补的不足】
+{gapAreas}
+
+【推荐阅读】
+{books}
+
+登录对话页右侧「知识星球」可查看完整图谱。`,
+      emailBodyTemplateHint:
+        "纯文本邮件：请直接回车换行（勿粘贴字面量 \\n）。发送时会自动生成 HTML 版式；若正文含 <p>、<br> 等标签则按 HTML 发送。不支持 Markdown。",
       defaultBodySmsLogin: "验证码：{code}，{ttlMinutes} 分钟内有效。",
       channelType: {
         EMAIL_SMTP: "邮件（SMTP）",
@@ -318,6 +340,8 @@ export default {
         digestModelPh: "可选；留空使用默认对话模型",
         digestModelOrphan: "已绑定模型 #{id}（列表中不可见）",
         emailEnabled: "发送周报邮件",
+        weeklyBookSearch: "周报荐书联网",
+        weeklyMinNodes: "周报最少本周节点数",
         reuseSmtp: "复用注册验证码 SMTP",
         emailNotReady: "邮件通道未就绪：请配置 SMTP 或开启注册邮箱且填写完整。",
         save: "保存知识星球配置",

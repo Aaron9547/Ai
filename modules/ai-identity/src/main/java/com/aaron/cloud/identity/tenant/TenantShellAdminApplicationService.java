@@ -243,6 +243,14 @@ public class TenantShellAdminApplicationService {
                         body.isEmailEnabled() ? "true" : "false"));
         String digestId = trimOrEmpty(body.getDigestModelId());
         items.add(item(TenantRuntimeSettingKey.KNOWLEDGE_PLANET_DIGEST_MODEL_ID, digestId));
+        items.add(
+                item(
+                        TenantRuntimeSettingKey.KNOWLEDGE_PLANET_WEEKLY_BOOK_SEARCH_ENABLED,
+                        body.isWeeklyBookSearchEnabled() ? "true" : "false"));
+        items.add(
+                item(
+                        TenantRuntimeSettingKey.KNOWLEDGE_PLANET_WEEKLY_MIN_NODES,
+                        String.valueOf(Math.max(0, body.getWeeklyMinNodes()))));
         tenantRuntimeSettingApplicationService.replace(tenantId, items);
         knowledgePlanetScheduledTaskSynchronizer.syncForTenant(tenantId);
         return load(tenantId);
@@ -259,7 +267,9 @@ public class TenantShellAdminApplicationService {
                 enabled,
                 knowledgePlanetTenantRuntime.digestModelId(tenantId).map(String::valueOf).orElse(""),
                 emailEnabled,
-                emailReady);
+                emailReady,
+                knowledgePlanetTenantRuntime.isWeeklyBookSearchEnabled(tenantId),
+                knowledgePlanetTenantRuntime.weeklyMinNodes(tenantId));
     }
 
     private void validateOptionalChatModelId(long tenantId, String rawId, String label) {
@@ -469,7 +479,9 @@ public class TenantShellAdminApplicationService {
             boolean enabled,
             String digestModelId,
             boolean emailEnabled,
-            boolean emailDeliveryReady) {}
+            boolean emailDeliveryReady,
+            boolean weeklyBookSearchEnabled,
+            int weeklyMinNodes) {}
 
     public record AuthRegisterRuntimeDto(
             boolean openRegistration,
@@ -569,6 +581,8 @@ public class TenantShellAdminApplicationService {
         private String digestModelId;
         /** 是否期望发送周报邮件（须消息中心 KNOWLEDGE_PLANET_WEEKLY 模板就绪） */
         private boolean emailEnabled = true;
+        private boolean weeklyBookSearchEnabled = true;
+        private int weeklyMinNodes = 2;
     }
 
     @Data

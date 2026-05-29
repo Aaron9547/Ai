@@ -13,7 +13,11 @@ public enum ProfileTagCode {
     /** 最近一次用户输入摘要（跨会话，以主体为键）。 */
     LAST_USER_EXCERPT("LAST_USER_EXCERPT"),
     /** 近期点击的资讯兴趣（JSON 数组，供推荐与画像注入）。 */
-    INTEREST_NEWS_JSON("INTEREST_NEWS_JSON");
+    INTEREST_NEWS_JSON("INTEREST_NEWS_JSON"),
+    /** 用户显式填写的学习目标（纯文本）。 */
+    LEARNING_GOAL("LEARNING_GOAL"),
+    /** 知识星球周报反馈（JSON 数组，helpful/weekStart）。 */
+    WEEKLY_INSIGHT_FEEDBACK_JSON("WEEKLY_INSIGHT_FEEDBACK_JSON");
 
     @EnumValue
     private final String storageValue;

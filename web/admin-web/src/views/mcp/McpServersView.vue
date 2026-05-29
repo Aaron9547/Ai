@@ -15,13 +15,27 @@
       </template>
 
       <el-table v-loading="loading" :data="rows" stripe border :empty-text="t('views.mcp.empty')">
-        <el-table-column prop="name" :label="t('views.mcp.colName')" min-width="140" />
-        <el-table-column prop="baseUrl" :label="t('views.mcp.colBaseUrl')" min-width="220" show-overflow-tooltip />
-        <el-table-column prop="status" :label="t('views.mcp.colStatus')" width="120">
+        <el-table-column prop="name" :label="t('views.mcp.colName')" min-width="120" />
+        <el-table-column prop="baseUrl" :label="t('views.mcp.colBaseUrl')" min-width="200" show-overflow-tooltip />
+        <el-table-column :label="t('views.mcp.colHasKey')" width="100">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.hasApiKey ? 'success' : 'info'">
+              {{ row.hasApiKey ? t("views.mcp.hasKey") : t("views.mcp.noKey") }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="status" :label="t('views.mcp.colStatus')" width="100">
           <template #default="{ row }">
             <el-tag size="small" :type="row.status === 'ACTIVE' ? 'success' : 'info'">
               {{ row.status || t("common.dash") }}
             </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('views.mcp.colProbe')" width="100">
+          <template #default="{ row }">
+            <el-tag v-if="row.lastProbeOk === true" size="small" type="success">OK</el-tag>
+            <el-tag v-else-if="row.lastProbeOk === false" size="small" type="danger">FAIL</el-tag>
+            <span v-else>{{ t("common.dash") }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="createdAt" :label="t('views.mcp.colCreated')" width="168">
@@ -29,8 +43,11 @@
             {{ formatTime(row.createdAt) }}
           </template>
         </el-table-column>
-        <el-table-column :label="t('views.mcp.colActions')" width="200" fixed="right">
+        <el-table-column :label="t('views.mcp.colActions')" width="260" fixed="right">
           <template #default="{ row }">
+            <el-button link type="primary" size="small" :loading="probingId === row.id" @click="probe(row)">
+              {{ t("views.mcp.probe") }}
+            </el-button>
             <el-button link type="primary" size="small" @click="openEdit(row)">{{ t("views.mcp.edit") }}</el-button>
             <el-button link type="danger" size="small" @click="remove(row)">{{ t("views.mcp.delete") }}</el-button>
           </template>
@@ -54,16 +71,26 @@
     <el-dialog
       v-model="dlg"
       :title="editId ? t('views.mcp.dlgEdit') : t('views.mcp.dlgNew')"
-      width="520px"
+      width="560px"
       destroy-on-close
       @closed="resetForm"
     >
-      <el-form :model="form" label-width="100px">
+      <el-form :model="form" label-width="110px">
         <el-form-item :label="t('views.mcp.labelName')" required>
           <el-input v-model="form.name" :placeholder="t('views.mcp.namePh')" />
         </el-form-item>
         <el-form-item :label="t('views.mcp.colBaseUrl')" required>
           <el-input v-model="form.baseUrl" :placeholder="t('views.mcp.basePh')" />
+        </el-form-item>
+        <el-form-item :label="t('views.mcp.labelTransport')">
+          <el-input :model-value="t('views.mcp.transportHttp')" disabled />
+        </el-form-item>
+        <el-form-item :label="t('views.mcp.labelDescription')">
+          <el-input v-model="form.description" type="textarea" :rows="2" />
+        </el-form-item>
+        <el-form-item :label="t('views.mcp.labelApiKey')">
+          <el-input v-model="form.apiKey" type="password" show-password :placeholder="t('views.mcp.apiKeyPh')" />
+          <p v-if="editId" class="hint">{{ t("views.mcp.apiKeyEditHint") }}</p>
         </el-form-item>
         <el-form-item :label="t('views.mcp.labelEnabled')">
           <el-switch v-model="form.enabled" />
@@ -88,13 +115,20 @@ const { t } = useI18n();
 
 const loading = ref(false);
 const saving = ref(false);
+const probingId = ref<number | null>(null);
 const rows = ref<McpServerRow[]>([]);
 const total = ref(0);
 const page = ref(1);
 const size = ref(20);
 const dlg = ref(false);
 const editId = ref<number | null>(null);
-const form = reactive({ name: "", baseUrl: "", enabled: true });
+const form = reactive({
+  name: "",
+  baseUrl: "",
+  description: "",
+  apiKey: "",
+  enabled: true,
+});
 
 function formatTime(v: string | null | undefined): string {
   if (!v) return t("common.dash");
@@ -121,6 +155,8 @@ function openCreate() {
   editId.value = null;
   form.name = "";
   form.baseUrl = "";
+  form.description = "";
+  form.apiKey = "";
   form.enabled = true;
   dlg.value = true;
 }
@@ -129,6 +165,8 @@ function openEdit(row: McpServerRow) {
   editId.value = row.id;
   form.name = row.name;
   form.baseUrl = row.baseUrl;
+  form.description = row.description ?? "";
+  form.apiKey = "";
   form.enabled = row.status === "ACTIVE";
   dlg.value = true;
 }
@@ -144,19 +182,19 @@ async function save() {
   }
   saving.value = true;
   try {
+    const body = {
+      name: form.name.trim(),
+      baseUrl: form.baseUrl.trim(),
+      transportKind: "STREAMABLE_HTTP",
+      description: form.description.trim() || undefined,
+      apiKey: form.apiKey.trim() || undefined,
+      enabled: form.enabled,
+    };
     if (editId.value == null) {
-      await mcpApi.createMcpServer({
-        name: form.name.trim(),
-        baseUrl: form.baseUrl.trim(),
-        enabled: form.enabled,
-      });
+      await mcpApi.createMcpServer(body);
       ElMessage.success(t("views.mcp.created"));
     } else {
-      await mcpApi.updateMcpServer(editId.value, {
-        name: form.name.trim(),
-        baseUrl: form.baseUrl.trim(),
-        enabled: form.enabled,
-      });
+      await mcpApi.updateMcpServer(editId.value, body);
       ElMessage.success(t("views.mcp.saved"));
     }
     dlg.value = false;
@@ -167,6 +205,24 @@ async function save() {
     ElMessage.error(msg);
   } finally {
     saving.value = false;
+  }
+}
+
+async function probe(row: McpServerRow) {
+  probingId.value = row.id;
+  try {
+    const r = await mcpApi.probeMcpServer(row.id);
+    if (r.ok) {
+      ElMessage.success(t("views.mcp.probeOk", { count: r.toolCount, ms: r.elapsedMs }));
+    } else {
+      ElMessage.error(t("views.mcp.probeFail", { msg: r.message }));
+    }
+    await load();
+  } catch (e: unknown) {
+    const msg = e && typeof e === "object" && "message" in e ? String((e as { message?: string }).message) : t("views.mcp.probeFail", { msg: "error" });
+    ElMessage.error(msg);
+  } finally {
+    probingId.value = null;
   }
 }
 
@@ -222,5 +278,11 @@ onMounted(() => {
   margin-top: 12px;
   display: flex;
   justify-content: flex-end;
+}
+
+.hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 </style>

@@ -1,6 +1,7 @@
 package com.aaron.cloud.chat.dto;
 
 import jakarta.validation.constraints.Pattern;
+import java.util.List;
 import lombok.Data;
 
 /**
@@ -17,6 +18,11 @@ public class ChatRegenerateRequest {
 
     /** 覆盖是否开启联网检索；未传则仍用用户消息 meta */
     private Boolean webSearchEnabled;
+
+    /** 覆盖是否启用 MCP 工具；未传则仍用用户消息 meta */
+    private Boolean mcpEnabled;
+
+    private List<Long> mcpServerIds;
 
     /** 覆盖回复语种；未传则仍用用户消息 meta 中的 {@code responseLocale} */
     @Pattern(regexp = "^(zh-CN|en-US)?$", message = "responseLocale 仅支持 zh-CN 或 en-US")

@@ -22,6 +22,8 @@ public class TenUserWeeklyInsight {
     private LocalDate weekStart;
     private KnowledgeWeeklyInsightStatus status;
     private String planJson;
+    /** 压缩进度账本，供下周 Prompt 印证（非完整 plan）。 */
+    private String progressLedgerJson;
     private LocalDateTime computedAt;
     private LocalDateTime emailedAt;
     private String errorMessage;

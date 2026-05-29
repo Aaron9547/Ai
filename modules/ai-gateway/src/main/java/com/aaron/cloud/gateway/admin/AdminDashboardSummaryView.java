@@ -25,7 +25,12 @@ public record AdminDashboardSummaryView(
             long llmModelTotal,
             long llmModelActive,
             long jobTaskPendingOrRunning,
-            long jobTasksCreatedLast7d) {}
+            /** 近 7 个北京自然日（含今日）新建的 {@code job_task} 条数。 */
+            long jobTasksCreatedLast7d,
+            /** 本租户累计 Token（提示 + 输出，来自计量流水）。 */
+            long tenantTokenTotal,
+            long tenantPromptTokens,
+            long tenantCompletionTokens) {}
 
     public record Recent24h(
             long httpAccessCount,

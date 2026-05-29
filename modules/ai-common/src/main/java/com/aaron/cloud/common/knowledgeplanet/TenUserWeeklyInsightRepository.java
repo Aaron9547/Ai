@@ -54,4 +54,20 @@ public class TenUserWeeklyInsightRepository {
                                 .orderByDesc(TenUserWeeklyInsight::getWeekStart)
                                 .last("LIMIT 1")));
     }
+
+    /** 近 N 周已计算周报（含 progress ledger），不含当周。 */
+    public List<TenUserWeeklyInsight> listRecentComputedBeforeWeek(
+            long tenantId, long userId, LocalDate beforeWeekStart, int limit) {
+        return mapper.selectList(
+                Wrappers.<TenUserWeeklyInsight>lambdaQuery()
+                        .eq(TenUserWeeklyInsight::getTenantId, tenantId)
+                        .eq(TenUserWeeklyInsight::getUserId, userId)
+                        .lt(TenUserWeeklyInsight::getWeekStart, beforeWeekStart)
+                        .in(
+                                TenUserWeeklyInsight::getStatus,
+                                KnowledgeWeeklyInsightStatus.READY,
+                                KnowledgeWeeklyInsightStatus.SENT)
+                        .orderByDesc(TenUserWeeklyInsight::getWeekStart)
+                        .last("LIMIT " + Math.max(1, Math.min(limit, 8))));
+    }
 }

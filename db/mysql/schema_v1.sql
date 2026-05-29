@@ -497,8 +497,13 @@ CREATE TABLE IF NOT EXISTS mcp_server_registry (
   id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
   tenant_id BIGINT NOT NULL COMMENT '租户隔离键（注册记录归属）',
   name VARCHAR(128) NOT NULL COMMENT 'MCP 服务逻辑名',
-  base_url VARCHAR(1024) NOT NULL COMMENT 'MCP Server Base URL',
+  base_url VARCHAR(1024) NOT NULL COMMENT 'MCP Server Base URL（可含 query 过滤工具）',
+  transport_kind TINYINT NOT NULL DEFAULT 1 COMMENT 'McpTransportKind：1=STREAMABLE_HTTP',
+  auth_headers_cipher TEXT NULL COMMENT '出站 HTTP 头 AES-GCM 密文 JSON',
+  description VARCHAR(512) NULL COMMENT '管理端备注',
   status TINYINT NOT NULL DEFAULT 1 COMMENT 'McpServerStatus：0=DISABLED 1=ACTIVE',
+  last_probe_at DATETIME(3) NULL COMMENT '最近探测时间 UTC',
+  last_probe_ok TINYINT NULL COMMENT '最近探测：0=失败 1=成功',
   created_at DATETIME(3) NOT NULL COMMENT '创建时间 UTC',
   updated_at DATETIME(3) NOT NULL COMMENT '更新时间 UTC',
   PRIMARY KEY (id),
@@ -662,17 +667,19 @@ CREATE TABLE IF NOT EXISTS prompt_template (
 -- 平台默认 LLM 提示词（tenant_id=0；与 PromptTemplateBuiltinCatalog 同集；改种子后同步 migrate 257 段）
 INSERT IGNORE INTO prompt_template (tenant_id, prompt_code, prompt_kind, domain, locale, content, variables_schema_json, version, enabled, remark, sort_order, created_at, updated_at) VALUES (0, 'follow_up_system', 'SYSTEM', 'STARTER', 'zh-CN', '根据用户问题与助手回复，生成 2～3 条用户可能继续追问的短句。
 只输出 JSON 数组，不要 markdown。每项中文 8～36 字，与上文强相关、不重复。', NULL, 1, 1, 'platform default', 0, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
-INSERT IGNORE INTO prompt_template (tenant_id, prompt_code, prompt_kind, domain, locale, content, variables_schema_json, version, enabled, remark, sort_order, created_at, updated_at) VALUES (0, 'daily_recommend_structure', 'SYSTEM', 'CHAT', 'zh-CN', '你是资讯推荐编辑。根据联网检索摘要与用户画像，输出今日个性化资讯卡片列表。
+INSERT IGNORE INTO prompt_template (tenant_id, prompt_code, prompt_kind, domain, locale, content, variables_schema_json, version, enabled, remark, sort_order, created_at, updated_at) VALUES (0, 'daily_recommend_structure', 'SYSTEM', 'CHAT', 'zh-CN', '你是资讯推荐编辑。根据联网检索摘要与用户画像，为**当前这位用户**输出 ${today}（${today_label}）的个性化资讯卡片列表。
 只输出 JSON 数组，不要 markdown，不要解释。每项字段：
 tag（领域标签，2～8字）、title（标题，12～48字）、summary（摘要，24～120字）、
-source（来源媒体名）、date（发布日期 yyyy-MM-dd，不得晚于今日 ${today}；须来自检索摘要中的发布时间，无法判断时写 ${today}）、
+source（来源媒体名）、date（发布日期 yyyy-MM-dd，不得晚于 ${today}；须来自检索摘要中的发布时间，无法判断时写 ${today}）、
 url（可点击链接，须 http/https，且必须从【联网引用列表】中原样选取，禁止编造域名）。
-共 5～8 条，内容须为近期真实资讯，禁止编造未来日期或虚构事件；若无画像则输出通用热点资讯。
+共 5～8 条，内容须为 ${today} 前后真实资讯，禁止编造未来日期或虚构事件。
+若提供【用户画像与记忆】：至少 4 条须与用户兴趣、专业、近期对话或点击偏好直接相关；不同用户的内容组合应有明显差异，勿用与用户无关的泛化热点凑数。
+若无画像：输出 ${today} 当日中国综合热点资讯。
 示例：[{"tag":"科技","title":"…","summary":"…","source":"新华网","date":"${today}","url":"https://…"}]', NULL, 1, 1, 'platform default', 0, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
-INSERT IGNORE INTO prompt_template (tenant_id, prompt_code, prompt_kind, domain, locale, content, variables_schema_json, version, enabled, remark, sort_order, created_at, updated_at) VALUES (0, 'daily_recommend_search_query', 'QUERY', 'WEB', '*', '${region_phrase}中国 科技 财经 教育 社会 校园 热点资讯 ${today} 今日 ${yesterday} 昨日 最新', NULL, 1, 1, 'platform default', 0, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
-INSERT IGNORE INTO prompt_template (tenant_id, prompt_code, prompt_kind, domain, locale, content, variables_schema_json, version, enabled, remark, sort_order, created_at, updated_at) VALUES (0, 'daily_recommend_search_query_profile', 'QUERY', 'WEB', '*', '${region_phrase}今日${today} 昨日${yesterday} 最新资讯 热点新闻 用户兴趣：${profile_excerpt}', NULL, 1, 1, 'platform default', 0, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
-INSERT IGNORE INTO prompt_template (tenant_id, prompt_code, prompt_kind, domain, locale, content, variables_schema_json, version, enabled, remark, sort_order, created_at, updated_at) VALUES (0, 'daily_recommend_search_query_yesterday', 'QUERY', 'WEB', '*', '${region_phrase}中国 科技 财经 教育 社会 校园 ${yesterday} 昨日 热点 补充', NULL, 1, 1, 'platform default', 0, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
-INSERT IGNORE INTO prompt_template (tenant_id, prompt_code, prompt_kind, domain, locale, content, variables_schema_json, version, enabled, remark, sort_order, created_at, updated_at) VALUES (0, 'daily_recommend_search_query_yesterday_profile', 'QUERY', 'WEB', '*', '${region_phrase}${yesterday} 昨日 热点资讯 补充 用户兴趣：${profile_excerpt}', NULL, 1, 1, 'platform default', 0, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
+INSERT IGNORE INTO prompt_template (tenant_id, prompt_code, prompt_kind, domain, locale, content, variables_schema_json, version, enabled, remark, sort_order, created_at, updated_at) VALUES (0, 'daily_recommend_search_query', 'QUERY', 'WEB', '*', '${region_phrase}${today} ${today_label} 中国 热点新闻 社会 今日最新', NULL, 1, 1, 'platform default', 0, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
+INSERT IGNORE INTO prompt_template (tenant_id, prompt_code, prompt_kind, domain, locale, content, variables_schema_json, version, enabled, remark, sort_order, created_at, updated_at) VALUES (0, 'daily_recommend_search_query_profile', 'QUERY', 'WEB', '*', '${profile_excerpt} ${today} ${today_label} 最新资讯 热点 个性化', NULL, 1, 1, 'platform default', 0, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
+INSERT IGNORE INTO prompt_template (tenant_id, prompt_code, prompt_kind, domain, locale, content, variables_schema_json, version, enabled, remark, sort_order, created_at, updated_at) VALUES (0, 'daily_recommend_search_query_yesterday', 'QUERY', 'WEB', '*', '${region_phrase}${yesterday} 昨日 中国 热点 补充', NULL, 1, 1, 'platform default', 0, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
+INSERT IGNORE INTO prompt_template (tenant_id, prompt_code, prompt_kind, domain, locale, content, variables_schema_json, version, enabled, remark, sort_order, created_at, updated_at) VALUES (0, 'daily_recommend_search_query_yesterday_profile', 'QUERY', 'WEB', '*', '${profile_excerpt} ${yesterday} 昨日 补充 热点', NULL, 1, 1, 'platform default', 0, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
 INSERT IGNORE INTO prompt_template (tenant_id, prompt_code, prompt_kind, domain, locale, content, variables_schema_json, version, enabled, remark, sort_order, created_at, updated_at) VALUES (0, 'starter_hot_topic_structure', 'SYSTEM', 'STARTER', 'zh-CN', '你是推荐问句编辑。根据用户提供的联网检索摘要，输出适合 AI 对话开场白的短问题。
 只输出 JSON 数组，不要 markdown，不要解释。每项为中文问句，长度 8～36 字，共 8～12 条。
 问句应具体、可点击、避免重复。示例：["AIGC 最近有哪些新应用？","如何写一份周报模板？"]', NULL, 1, 1, 'platform default', 0, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
@@ -1154,6 +1161,7 @@ CREATE TABLE IF NOT EXISTS ten_user_weekly_insight (
   week_start DATE NOT NULL COMMENT '自然周周一（Asia/Shanghai）',
   status TINYINT NOT NULL DEFAULT 0 COMMENT 'KnowledgeWeeklyInsightStatus：0=DRAFT 1=READY 2=SENT 3=SKIPPED 4=FAILED',
   plan_json LONGTEXT NULL COMMENT '周度成长方案 JSON',
+  progress_ledger_json VARCHAR(2048) NULL COMMENT '周度进度压缩账本 JSON',
   computed_at DATETIME(3) NULL COMMENT '方案计算完成时间 UTC',
   emailed_at DATETIME(3) NULL COMMENT '邮件发送时间 UTC',
   error_message VARCHAR(512) NULL COMMENT '失败或跳过原因',
@@ -1163,6 +1171,18 @@ CREATE TABLE IF NOT EXISTS ten_user_weekly_insight (
   UNIQUE KEY uk_ten_user_weekly_insight (tenant_id, user_id, week_start),
   KEY idx_ten_user_weekly_insight_week (tenant_id, week_start, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='个人知识星球·周度成长方案';
+
+CREATE TABLE IF NOT EXISTS ten_user_learner_profile (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  tenant_id BIGINT NOT NULL COMMENT '租户隔离键',
+  user_id BIGINT NOT NULL COMMENT 'sec_user_account.id',
+  body_json LONGTEXT NULL COMMENT '学习者画像 JSON',
+  updated_week_start DATE NULL COMMENT '最近 merge 周周一',
+  created_at DATETIME(3) NOT NULL COMMENT '创建时间 UTC',
+  updated_at DATETIME(3) NOT NULL COMMENT '更新时间 UTC',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_ten_user_learner_profile (tenant_id, user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='个人知识星球·学习者画像';
 
 SET FOREIGN_KEY_CHECKS = 1;
 
@@ -1198,6 +1218,18 @@ FROM sys_tenant t;
 
 INSERT IGNORE INTO ten_runtime_setting (tenant_id, setting_key, value_text, created_at, updated_at)
 SELECT t.id, 'OUTBOUND_RESILIENCE_JSON', '{}', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)
+FROM sys_tenant t;
+
+INSERT IGNORE INTO ten_runtime_setting (tenant_id, setting_key, value_text, created_at, updated_at)
+SELECT t.id, 'MCP_CHAT_MAX_TOOL_ROUNDS', '5', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)
+FROM sys_tenant t;
+
+INSERT IGNORE INTO ten_runtime_setting (tenant_id, setting_key, value_text, created_at, updated_at)
+SELECT t.id, 'MCP_CHAT_TOOL_TIMEOUT_SECONDS', '60', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)
+FROM sys_tenant t;
+
+INSERT IGNORE INTO ten_runtime_setting (tenant_id, setting_key, value_text, created_at, updated_at)
+SELECT t.id, 'MCP_CHAT_TOOL_RESULT_MAX_CHARS', '8000', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)
 FROM sys_tenant t;
 
 -- 租户级：全量后台菜单码（AdminMenuCode）

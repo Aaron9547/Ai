@@ -23,6 +23,9 @@ export interface AdminDashboardSummary {
     llmModelActive: number;
     jobTaskPendingOrRunning: number;
     jobTasksCreatedLast7d: number;
+    tenantTokenTotal: number;
+    tenantPromptTokens: number;
+    tenantCompletionTokens: number;
   };
   recent24h: {
     httpAccessCount: number;

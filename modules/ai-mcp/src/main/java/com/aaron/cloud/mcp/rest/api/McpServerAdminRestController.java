@@ -33,12 +33,13 @@ public class McpServerAdminRestController extends ApiV1ControllerBases.McpServer
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public McpServerAdminView create(@Valid @RequestBody CreateMcpServerRequest body) {
+    public McpServerAdminView create(@Valid @RequestBody CreateMcpServerRequest body) throws Exception {
         return mcpServerAdminApplicationService.create(body);
     }
 
     @PutMapping("/{id}")
-    public McpServerAdminView update(@PathVariable long id, @Valid @RequestBody UpdateMcpServerRequest body) {
+    public McpServerAdminView update(@PathVariable long id, @Valid @RequestBody UpdateMcpServerRequest body)
+            throws Exception {
         return mcpServerAdminApplicationService.update(id, body);
     }
 

@@ -46,6 +46,8 @@ INSERT IGNORE INTO gw_api_endpoint (path_pattern, http_method, display_name, rem
 ('/open/v1/chat/knowledge-planet/summary', 'GET', 'C端知识星球摘要', NULL, 1, 2112, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/knowledge-planet/universe', 'GET', 'C端知识星球星系', NULL, 1, 2113, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/knowledge-planet/weekly/latest', 'GET', 'C端知识星球最新周报', NULL, 1, 2114, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/open/v1/chat/knowledge-planet/weekly/feedback', 'POST', 'C端知识星球周报反馈', NULL, 1, 2115, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/open/v1/chat/knowledge-planet/learning-goal', 'PUT', 'C端知识星球学习目标', NULL, 1, 2116, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 -- ---------- API：/api/v1/auth（须 JWT）----------
 ('/api/v1/auth/admin-context', 'POST', '管理端切换工作区 JWT', 'jwt-local', 1, 2000, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 -- ---------- API：/api/v1/admin/me ----------
@@ -72,6 +74,7 @@ INSERT IGNORE INTO gw_api_endpoint (path_pattern, http_method, display_name, rem
 ('/api/v1/admin/user-profiles/memory-embedding-model', 'GET', '记忆向量化模型配置', NULL, 1, 2193, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/user-profiles/memory-embedding-model', 'PUT', '保存记忆向量化模型', NULL, 1, 2194, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/user-profiles/*', 'GET', '用户画像详情', NULL, 1, 2195, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/user-profiles/*/knowledge-planet-weekly-test-push', 'POST', '知识星球周报测试推送', '仅管理端手工测流程', 1, 2196, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 -- ---------- API：租户成员 ----------
 ('/api/v1/admin/tenant-members', 'GET', '租户成员列表', NULL, 1, 2200, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/tenant-members', 'POST', '邀请或恢复成员', NULL, 1, 2210, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
@@ -116,6 +119,7 @@ INSERT IGNORE INTO gw_api_endpoint (path_pattern, http_method, display_name, rem
 ('/api/v1/admin/mcp-servers', 'POST', '注册 MCP', NULL, 1, 2810, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/mcp-servers/*', 'PUT', '更新 MCP', NULL, 1, 2820, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/mcp-servers/*', 'DELETE', '删除 MCP', NULL, 1, 2830, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/mcp-servers/*/probe', 'POST', 'MCP 连接探测', NULL, 1, 2835, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/job-tasks', 'GET', '异步任务分页', NULL, 1, 2900, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/job-tasks/*', 'GET', '异步任务详情（含进度）', NULL, 1, 2901, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 -- ---------- API：管理端对话与敏感词 ----------
@@ -201,6 +205,8 @@ INSERT IGNORE INTO gw_api_endpoint (path_pattern, http_method, display_name, rem
 ('/api/v1/rag/kbs/*/index-jobs', 'POST', '租户索引任务', NULL, 1, 4320, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 -- ---------- API：MCP 工具、通知、文件、内部模型 ----------
 ('/api/v1/mcp/tools/*/invoke', 'POST', 'MCP 工具调用', '路径段为工具名', 1, 5000, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/mcp/servers/*/tools', 'GET', 'MCP 工具列表', NULL, 1, 5010, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/mcp/servers/*/tools/*/invoke', 'POST', 'MCP 按服务调用工具', NULL, 1, 5020, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/notifications/webhooks', 'POST', 'Webhook 投递', NULL, 1, 5010, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/message/channels', 'GET', '消息通道列表', NULL, 1, 5011, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/message/channels', 'POST', '新建消息通道', NULL, 1, 5012, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),

@@ -13,10 +13,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +28,9 @@ import org.springframework.web.client.RestClient;
 @Component
 @RequiredArgsConstructor
 public class VolcArkBotWebSearchProvider implements WebSearchModelProvider {
+
+    /** 引用为空时 INFO 打出原始 JSON 的上限（便于对照 Ark 实际字段）。 */
+    private static final int RAW_RESPONSE_LOG_MAX_CHARS = 32_768;
 
     private final ObjectMapper objectMapper;
     private final TenantOutboundResilienceRuntime outboundResilienceRuntime;
@@ -122,6 +122,10 @@ public class VolcArkBotWebSearchProvider implements WebSearchModelProvider {
                         .body(objectMapper.writeValueAsString(body))
                         .retrieve()
                         .body(String.class);
+        return parseResponseBody(respBody);
+    }
+
+    private WebSearchExecutionResult parseResponseBody(String respBody) throws Exception {
         if (respBody == null || respBody.isBlank()) {
             throw new IllegalStateException("Ark Bot 返回空响应");
         }
@@ -131,217 +135,42 @@ public class VolcArkBotWebSearchProvider implements WebSearchModelProvider {
             String msg = err.path("message").asText("Ark 错误");
             throw new IllegalStateException(msg);
         }
-        String summary =
-                root.path("choices").path(0).path("message").path("content").asText("").trim();
-        List<WebSearchReference> refs = mergeReferences(root);
-        if (refs.isEmpty() && !summary.isBlank() && root.has("bot_usage")) {
-            log.debug(
-                    "[联网搜索] Ark 有摘要无结构化引用，请核对 bot_usage/references 字段；bot_usage 节点={}",
-                    root.path("bot_usage").isMissingNode() ? "无" : "有");
-        }
+        String summary = VolcArkBotReferenceParser.extractAssistantText(root);
+        List<WebSearchReference> refs = VolcArkBotReferenceParser.mergeReferences(objectMapper, root);
+        logArkOutcome(root, respBody, summary, refs);
         return new WebSearchExecutionResult(new WebGroundingBundle(summary, refs), respBody);
     }
 
-    /**
-     * 根级 {@code references} / {@code bot_chat_result_reference}、message 内引用、{@code bot_usage} 检索
-     * results（按 URL 去重）。
-     */
-    private List<WebSearchReference> mergeReferences(JsonNode root) {
-        Map<String, WebSearchReference> byKey = new LinkedHashMap<>();
-        if (root.path("references").isArray()) {
-            for (JsonNode n : root.path("references")) {
-                putDedupe(byKey, mapReferenceNode(n));
-            }
+    private void logArkOutcome(JsonNode root, String respBody, String summary, List<WebSearchReference> refs) {
+        int refCount = refs == null ? 0 : refs.size();
+        if (refCount > 0) {
+            log.debug(
+                    "[联网搜索] Ark 解析完成：引用 {} 条，摘要 {} 字",
+                    refCount,
+                    summary == null ? 0 : summary.length());
+            return;
         }
-        JsonNode botChatRefs = root.path("bot_chat_result_reference");
-        if (botChatRefs.isArray()) {
-            for (JsonNode n : botChatRefs) {
-                putDedupe(byKey, mapReferenceNode(n));
-            }
+        if (summary == null || summary.isBlank()) {
+            log.info("[联网搜索] Ark 原始响应（摘要与引用均为空）：{}", clipForLog(respBody));
+            return;
         }
-        JsonNode msgRefs = root.path("choices").path(0).path("message").path("references");
-        if (msgRefs.isArray()) {
-            for (JsonNode n : msgRefs) {
-                putDedupe(byKey, mapReferenceNode(n));
-            }
-        }
-        for (WebSearchReference r : parseBotUsageReferences(root)) {
-            putDedupe(byKey, r);
-        }
-        return List.copyOf(byKey.values());
+        log.warn(
+                "[联网搜索] Ark 有摘要无结构化引用：{}",
+                VolcArkBotReferenceParser.summarizeReferenceDiagnostics(objectMapper, root));
+        log.info("[联网搜索] Ark 原始响应（引用为空，全文）：{}", clipForLog(respBody));
     }
 
-    private void putDedupe(Map<String, WebSearchReference> byKey, WebSearchReference r) {
-        String k = dedupeKey(r);
-        if (!k.isBlank()) {
-            byKey.putIfAbsent(k, r);
+    private static String clipForLog(String text) {
+        if (text == null) {
+            return "";
         }
-    }
-
-    private static String dedupeKey(WebSearchReference r) {
-        if (r.url() != null && !r.url().isBlank()) {
-            return r.url().trim();
+        String oneLine = text.replace('\r', ' ').trim();
+        if (oneLine.length() <= RAW_RESPONSE_LOG_MAX_CHARS) {
+            return oneLine;
         }
-        if (r.title() != null && !r.title().isBlank()) {
-            return "t:" + r.title().trim();
-        }
-        return "";
-    }
-
-    private WebSearchReference mapReferenceNode(JsonNode r) {
-        if (r == null || !r.isObject()) {
-            return WebSearchReference.ofTitleUrlSnippet("", "", "");
-        }
-        String title = textOrEmpty(r, "title");
-        String u = textOrEmpty(r, "url");
-        String snippet = firstNonBlank(textOrEmpty(r, "summary"), textOrEmpty(r, "content"));
-        String siteName = firstNonBlank(textOrEmpty(r, "site_name"), textOrEmpty(r, "siteName"));
-        String logoUrl = firstNonBlank(textOrEmpty(r, "logo_url"), textOrEmpty(r, "logoUrl"));
-        String publishTime = formatPublishTime(r.get("publish_time"));
-        String extraJson = buildExtraJson(r.path("extra"), null);
-        return new WebSearchReference(
-                nz(title),
-                nz(u),
-                nz(snippet),
-                blankToNull(siteName),
-                blankToNull(logoUrl),
-                blankToNull(publishTime),
-                extraJson,
-                null);
-    }
-
-    private static JsonNode firstResultsArray(JsonNode output) {
-        if (output == null || output.isMissingNode()) {
-            return output;
-        }
-        JsonNode[] candidates = {
-            output.path("data").path("data").path("results"),
-            output.path("data").path("results"),
-            output.path("results")
-        };
-        for (JsonNode c : candidates) {
-            if (c.isArray() && !c.isEmpty()) {
-                return c;
-            }
-        }
-        for (JsonNode c : candidates) {
-            if (c.isArray()) {
-                return c;
-            }
-        }
-        return output.path("data").path("data").path("results");
-    }
-
-    private List<WebSearchReference> parseBotUsageReferences(JsonNode root) {
-        List<WebSearchReference> list = new ArrayList<>();
-        JsonNode details = root.path("bot_usage").path("action_details");
-        if (!details.isArray()) {
-            return list;
-        }
-        for (JsonNode ad : details) {
-            JsonNode tools = ad.path("tool_details");
-            if (!tools.isArray()) {
-                continue;
-            }
-            for (JsonNode td : tools) {
-                JsonNode results = firstResultsArray(td.path("output"));
-                if (!results.isArray()) {
-                    continue;
-                }
-                for (JsonNode item : results) {
-                    list.add(mapSearchResultItem(item));
-                }
-            }
-        }
-        return list;
-    }
-
-    private WebSearchReference mapSearchResultItem(JsonNode r) {
-        if (r == null || !r.isObject()) {
-            return WebSearchReference.ofTitleUrlSnippet("", "", "");
-        }
-        String title = textOrEmpty(r, "title");
-        String u = textOrEmpty(r, "url");
-        String snippet = firstNonBlank(textOrEmpty(r, "summary"), textOrEmpty(r, "content"));
-        String siteName = firstNonBlank(textOrEmpty(r, "site_name"), textOrEmpty(r, "siteName"));
-        JsonNode spd = r.path("search_plugin_data");
-        String logoUrl = firstNonBlank(textOrEmpty(r, "logo_url"), textOrEmpty(r, "logoUrl"));
-        if ((logoUrl == null || logoUrl.isBlank()) && spd.isObject()) {
-            logoUrl = textOrEmpty(spd, "logo_url");
-        }
-        String publishTime = formatPublishTime(r.get("publish_time"));
-        String extraJson = buildExtraJson(r.path("extra"), spd.isObject() ? spd : null);
-        return new WebSearchReference(
-                nz(title),
-                nz(u),
-                nz(snippet),
-                blankToNull(siteName),
-                blankToNull(logoUrl),
-                blankToNull(publishTime),
-                extraJson,
-                null);
-    }
-
-    private String buildExtraJson(JsonNode extra, JsonNode pluginData) {
-        boolean hasE = extra != null && !extra.isMissingNode() && !extra.isNull();
-        boolean hasP = pluginData != null && !pluginData.isMissingNode() && !pluginData.isNull();
-        if (!hasE && !hasP) {
-            return null;
-        }
-        try {
-            if (hasE && !hasP) {
-                return objectMapper.writeValueAsString(extra);
-            }
-            if (!hasE) {
-                return objectMapper.writeValueAsString(pluginData);
-            }
-            ObjectNode wrap = objectMapper.createObjectNode();
-            wrap.set("extra", extra);
-            wrap.set("search_plugin_data", pluginData);
-            return objectMapper.writeValueAsString(wrap);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private static String formatPublishTime(JsonNode pt) {
-        if (pt == null || pt.isNull() || pt.isMissingNode()) {
-            return null;
-        }
-        if (pt.isIntegralNumber()) {
-            long epoch = pt.asLong();
-            if (epoch <= 0) {
-                return null;
-            }
-            return Long.toString(epoch);
-        }
-        if (pt.isTextual()) {
-            String t = pt.asText().trim();
-            return t.isEmpty() ? null : t;
-        }
-        return null;
-    }
-
-    private static String nz(String s) {
-        return s == null ? "" : s;
-    }
-
-    private static String blankToNull(String s) {
-        if (s == null || s.isBlank()) {
-            return null;
-        }
-        return s;
-    }
-
-    private static String textOrEmpty(JsonNode n, String field) {
-        JsonNode v = n.path(field);
-        return v.isTextual() ? v.asText().trim() : "";
-    }
-
-    private static String firstNonBlank(String a, String b) {
-        if (a != null && !a.isBlank()) {
-            return a;
-        }
-        return b == null ? "" : b;
+        return oneLine.substring(0, RAW_RESPONSE_LOG_MAX_CHARS)
+                + "…(截断，原长 "
+                + oneLine.length()
+                + " 字)";
     }
 }

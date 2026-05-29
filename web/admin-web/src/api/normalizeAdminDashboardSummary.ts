@@ -138,6 +138,14 @@ export function normalizeAdminDashboardSummary(raw: unknown): AdminDashboardSumm
       llmModelActive: num(pick(kpi, "llmModelActive", "llm_model_active")),
       jobTaskPendingOrRunning: num(pick(kpi, "jobTaskPendingOrRunning", "job_task_pending_or_running")),
       jobTasksCreatedLast7d: num(pick(kpi, "jobTasksCreatedLast7d", "job_tasks_created_last_7d")),
+      tenantPromptTokens: num(pick(kpi, "tenantPromptTokens", "tenant_prompt_tokens")),
+      tenantCompletionTokens: num(pick(kpi, "tenantCompletionTokens", "tenant_completion_tokens")),
+      tenantTokenTotal: (() => {
+        const total = num(pick(kpi, "tenantTokenTotal", "tenant_token_total"));
+        const prompt = num(pick(kpi, "tenantPromptTokens", "tenant_prompt_tokens"));
+        const completion = num(pick(kpi, "tenantCompletionTokens", "tenant_completion_tokens"));
+        return total > 0 ? total : prompt + completion;
+      })(),
     },
     recent24h: {
       httpAccessCount: num(pick(recent, "httpAccessCount", "http_access_count")),

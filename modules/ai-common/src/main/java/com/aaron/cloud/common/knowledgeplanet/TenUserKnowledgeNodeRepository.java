@@ -28,6 +28,29 @@ public class TenUserKnowledgeNodeRepository {
                         .last("LIMIT " + Math.max(1, Math.min(limit, 100))));
     }
 
+    /** {@code [sinceInclusive, untilExclusive)} 按 created_at 过滤。 */
+    public List<TenUserKnowledgeNode> listSince(
+            long tenantId, String subjectKey, LocalDateTime sinceInclusive, LocalDateTime untilExclusive, int limit) {
+        return mapper.selectList(
+                Wrappers.<TenUserKnowledgeNode>lambdaQuery()
+                        .eq(TenUserKnowledgeNode::getTenantId, tenantId)
+                        .eq(TenUserKnowledgeNode::getSubjectKey, subjectKey)
+                        .ge(TenUserKnowledgeNode::getCreatedAt, sinceInclusive)
+                        .lt(TenUserKnowledgeNode::getCreatedAt, untilExclusive)
+                        .orderByDesc(TenUserKnowledgeNode::getCreatedAt)
+                        .last("LIMIT " + Math.max(1, Math.min(limit, 20))));
+    }
+
+    public long countSince(
+            long tenantId, String subjectKey, LocalDateTime sinceInclusive, LocalDateTime untilExclusive) {
+        return mapper.selectCount(
+                Wrappers.<TenUserKnowledgeNode>lambdaQuery()
+                        .eq(TenUserKnowledgeNode::getTenantId, tenantId)
+                        .eq(TenUserKnowledgeNode::getSubjectKey, subjectKey)
+                        .ge(TenUserKnowledgeNode::getCreatedAt, sinceInclusive)
+                        .lt(TenUserKnowledgeNode::getCreatedAt, untilExclusive));
+    }
+
     public List<TenUserKnowledgeNode> listByConversation(
             long tenantId, String subjectKey, long conversationId, int limit) {
         return mapper.selectList(

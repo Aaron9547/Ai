@@ -70,7 +70,7 @@
           </div>
         </el-col>
         <el-col :xs="12" :sm="12" :md="8" :lg="8">
-          <div class="kpi" data-tone="slate">
+          <div class="kpi" data-tone="rose">
             <div class="kpi-icon">
               <el-icon :size="24"><TrendCharts /></el-icon>
             </div>
@@ -78,6 +78,45 @@
               <div class="kpi-label">{{ t("views.dashboard.kpiJobs7d") }}</div>
               <div class="kpi-value">
                 {{ formatInt(Math.round(vJobs7d)) }}
+              </div>
+            </div>
+          </div>
+        </el-col>
+        <el-col :xs="12" :sm="12" :md="8" :lg="8">
+          <div class="kpi" data-tone="slate">
+            <div class="kpi-icon">
+              <el-icon :size="24"><TrendCharts /></el-icon>
+            </div>
+            <div class="kpi-body">
+              <div class="kpi-label">{{ t("views.dashboard.kpiTenantTokenTotal") }}</div>
+              <div class="kpi-value">
+                {{ formatQty(vTenantTokenTotal) }}
+              </div>
+            </div>
+          </div>
+        </el-col>
+        <el-col :xs="12" :sm="12" :md="8" :lg="8">
+          <div class="kpi" data-tone="blue">
+            <div class="kpi-icon">
+              <el-icon :size="24"><Histogram /></el-icon>
+            </div>
+            <div class="kpi-body">
+              <div class="kpi-label">{{ t("views.dashboard.kpiTenantPromptTokens") }}</div>
+              <div class="kpi-value">
+                {{ formatQty(vTenantPromptTokens) }}
+              </div>
+            </div>
+          </div>
+        </el-col>
+        <el-col :xs="12" :sm="12" :md="8" :lg="8">
+          <div class="kpi" data-tone="cyan">
+            <div class="kpi-icon">
+              <el-icon :size="24"><Histogram /></el-icon>
+            </div>
+            <div class="kpi-body">
+              <div class="kpi-label">{{ t("views.dashboard.kpiTenantCompletionTokens") }}</div>
+              <div class="kpi-value">
+                {{ formatQty(vTenantCompletionTokens) }}
               </div>
             </div>
           </div>
@@ -175,6 +214,9 @@ const vModelActive = useMetricTransition(() => props.kpi.llmModelActive);
 const vModelTotal = useMetricTransition(() => props.kpi.llmModelTotal);
 const vJobsQueue = useMetricTransition(() => props.kpi.jobTaskPendingOrRunning);
 const vJobs7d = useMetricTransition(() => props.kpi.jobTasksCreatedLast7d);
+const vTenantTokenTotal = useMetricTransition(() => props.kpi.tenantTokenTotal);
+const vTenantPromptTokens = useMetricTransition(() => props.kpi.tenantPromptTokens);
+const vTenantCompletionTokens = useMetricTransition(() => props.kpi.tenantCompletionTokens);
 const vHttp24 = useMetricTransition(() => props.recent24h.httpAccessCount);
 const vMeterEvents = useMetricTransition(() => props.recent24h.meteringEventCount);
 const vPrompt24 = useMetricTransition(() => props.recent24h.promptTokens24h);
@@ -250,6 +292,12 @@ function formatQty(n: number): string {
 }
 .kpi[data-tone="cyan"] {
   --kpi-accent: #0891b2;
+}
+.kpi[data-tone="rose"] {
+  --kpi-accent: #e11d48;
+}
+.kpi[data-tone="blue"] {
+  --kpi-accent: #2563eb;
 }
 
 .kpi-icon {

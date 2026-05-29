@@ -54,7 +54,7 @@ class ChatConversationControllerWebMvcTest {
         when(chatApplicationService.listConversationMessages(eq(9L)))
                 .thenReturn(
                         List.of(
-                                new ChatMessageView(1L, "user", "hi", null, null, null, null, LocalDateTime.now(), null, null, null, null, null, null, null, null, List.of()),
+                                new ChatMessageView(1L, "user", "hi", null, null, null, null, LocalDateTime.now(), null, null, null, null, null, null, null, null, null, List.of()),
                                 new ChatMessageView(
                                         2L,
                                         "assistant",
@@ -65,6 +65,7 @@ class ChatConversationControllerWebMvcTest {
                                         3,
                                         LocalDateTime.now(),
                                         "m1",
+                                        null,
                                         null,
                                         null,
                                         null,

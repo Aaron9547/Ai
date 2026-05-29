@@ -58,6 +58,8 @@ export type TenantShellKnowledgePlanetRuntime = {
   digestModelId: string;
   emailEnabled: boolean;
   emailDeliveryReady: boolean;
+  weeklyBookSearchEnabled: boolean;
+  weeklyMinNodes: number;
 };
 
 /** 保存请求体；{@link #emailDeliveryReady} 仅 GET 响应只读 */

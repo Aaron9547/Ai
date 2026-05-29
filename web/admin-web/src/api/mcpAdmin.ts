@@ -12,13 +12,26 @@ export async function fetchMcpServersPage(page = 1, size = 20): Promise<MybatisP
 export interface CreateMcpServerBody {
   name: string;
   baseUrl: string;
+  transportKind?: string;
+  description?: string;
+  apiKey?: string;
   enabled?: boolean;
 }
 
 export interface UpdateMcpServerBody {
   name?: string;
   baseUrl?: string;
+  transportKind?: string;
+  description?: string;
+  apiKey?: string;
   enabled?: boolean;
+}
+
+export interface McpProbeResult {
+  ok: boolean;
+  message: string;
+  toolCount: number;
+  elapsedMs: number;
 }
 
 export async function createMcpServer(body: CreateMcpServerBody): Promise<McpServerRow> {
@@ -33,4 +46,9 @@ export async function updateMcpServer(id: number, body: UpdateMcpServerBody): Pr
 
 export async function deleteMcpServer(id: number): Promise<void> {
   await http.delete(`/api/v1/admin/mcp-servers/${id}`);
+}
+
+export async function probeMcpServer(id: number): Promise<McpProbeResult> {
+  const { data } = await http.post<McpProbeResult>(`/api/v1/admin/mcp-servers/${id}/probe`);
+  return data;
 }

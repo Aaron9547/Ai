@@ -17,6 +17,8 @@ import com.aaron.cloud.chat.websearch.WebSearchGroundingPlanResolver;
 import com.aaron.cloud.chat.websearch.WebSearchStreamGroundingSession;
 import com.aaron.cloud.chat.dto.ChatStarterPromptDtos;
 import com.aaron.cloud.chat.knowledgeplanet.KnowledgePlanetIngestService;
+import com.aaron.cloud.chat.mcp.ChatMcpToolCallingSupport;
+import com.aaron.cloud.chat.mcp.ChatMcpToolCallingSupport.McpToolCallSummary;
 import com.aaron.cloud.chat.starter.ChatStarterFollowUpService;
 import com.aaron.cloud.chat.dto.WebSearchReferenceView;
 import com.aaron.cloud.chat.websearch.WebSearchReference;
@@ -90,6 +92,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -135,6 +138,7 @@ public class ChatApplicationService {
     private final KnowledgePlanetIngestService knowledgePlanetIngestService;
     private final ChatStarterFollowUpService chatStarterFollowUpService;
     private final ChatSendIdempotencyGuard chatSendIdempotencyGuard;
+    private final ChatMcpToolCallingSupport chatMcpToolCallingSupport;
 
     public ChatConversation createConversation(String title) {
         var snap = TenantContextHolder.require();
@@ -709,6 +713,7 @@ public class ChatApplicationService {
                 sys.append("\n- ").append(s);
             }
             ChatResponseLocalePrompt.appendLanguageDirective(sys, responseLocale);
+            ChatTemporalContextPrompt.appendToSystemPrompt(sys, responseLocale);
             var sysTurn = new ModelChatRequest.MessageTurn();
             sysTurn.setRole("system");
             sysTurn.setContent(sys.toString());
@@ -716,6 +721,7 @@ public class ChatApplicationService {
         } else {
             sys.append(ChatResponseLocalePrompt.baseAssistantPersona(responseLocale));
             ChatResponseLocalePrompt.appendLanguageDirective(sys, responseLocale);
+            ChatTemporalContextPrompt.appendToSystemPrompt(sys, responseLocale);
             var sysTurn = new ModelChatRequest.MessageTurn();
             sysTurn.setRole("system");
             sysTurn.setContent(sys.toString());
@@ -737,6 +743,7 @@ public class ChatApplicationService {
             throw new IllegalStateException("联网检索不可用");
         }
         final ArrayList<WebSearchReference> webSearchRefsForStream = new ArrayList<>();
+        final ArrayList<WebSearchReference> knowledgeBaseRefsForStream = new ArrayList<>();
         if (!attachments.isEmpty()) {
             var attSys = new ModelChatRequest.MessageTurn();
             attSys.setRole("system");
@@ -761,25 +768,47 @@ public class ChatApplicationService {
         modelReq.setResolvedLlmModelIdRef(new AtomicReference<>());
 
         AtomicReference<ModelTokenUsage> usageRef = new AtomicReference<>();
+        final AtomicReference<List<McpToolCallSummary>> mcpToolAuditRef = new AtomicReference<>(List.of());
+        final boolean mcpActiveForStream = payload.isMcpEnabled();
         if (!isMock && modelCfg != null) {
             modelReq.setStreamUsageConsumer(usageRef::set);
         }
 
+        AtomicBoolean streamCancelled = new AtomicBoolean(false);
+        modelReq.setStreamCancelled(streamCancelled);
         SseEmitter emitter = new SseEmitter(300_000L);
+        ChatSseSendGate sseGate = new ChatSseSendGate(emitter, streamCancelled);
         StringBuilder assistantBuf = new StringBuilder();
         StringBuilder reasoningBuf = new StringBuilder();
         AtomicInteger seq = new AtomicInteger(0);
+        ChatReasoningStreamGuard reasoningGuard = new ChatReasoningStreamGuard();
+        AtomicReference<ChatReasoningStreamGuard.Verdict> reasoningAbortVerdict =
+                new AtomicReference<>();
         if (Boolean.TRUE.equals(modelReq.getThinkingEnabled())) {
             modelReq.setReasoningTokenConsumer(
                     t -> {
+                        if (streamCancelled.get()) {
+                            return;
+                        }
+                        ChatReasoningStreamGuard.Verdict verdict = reasoningGuard.appendDelta(t);
+                        if (verdict != ChatReasoningStreamGuard.Verdict.CONTINUE) {
+                            reasoningAbortVerdict.set(verdict);
+                            streamCancelled.set(true);
+                            log.warn(
+                                    "[对话] 思考流中止：{}，已累积 {} 字；租户 {}，会话 {}",
+                                    verdict,
+                                    reasoningGuard.length(),
+                                    snap.getTenantId(),
+                                    conversationId);
+                            return;
+                        }
                         reasoningBuf.append(t);
-                        try {
-                            emitter.send(
-                                    org.springframework.web.servlet.mvc.method.annotation.SseEmitter.event()
-                                            .data(sseChunk("reasoning", t))
-                                            .id(String.valueOf(seq.incrementAndGet())));
-                        } catch (Exception e) {
-                            log.warn("[对话] SSE 推送思考过程失败", e);
+                        if (!sseGate.trySend(
+                                SseEmitter.event()
+                                        .data(sseChunk("reasoning", t))
+                                        .id(String.valueOf(seq.incrementAndGet())),
+                                null)) {
+                            streamCancelled.set(true);
                         }
                     });
         }
@@ -816,52 +845,111 @@ public class ChatApplicationService {
                                                     sendSseWebSearchRefFrames(emitter, seq, cumulative));
                             webStreamSessionRef.set(webSession);
                             WebGroundingBundle wbInitial = webSession.initialBundle();
-                            webSearchRefsForStream.clear();
-                            if (wbInitial.references() != null) {
-                                webSearchRefsForStream.addAll(wbInitial.references());
-                            }
+                            boolean injected =
+                                    injectWebGroundingIntoPrompt(
+                                            modelReq,
+                                            wbInitial,
+                                            webSearchRefsForStream,
+                                            snap.getTenantId(),
+                                            responseLocale);
                             sendSseWebSearchStatus(emitter, seq, "done");
-                            String webGroundingText =
-                                    formatWebGroundingContent(wbInitial, snap.getTenantId());
                             log.info(
                                     "[对话] ⑱ 联网首轮结束：引用 {} 条，{}注入模型提示词；本步 {}ms，距开放助手开始 {}ms；其余轮次后台补全；租户 {}，会话 {}",
                                     webSearchRefsForStream.size(),
-                                    webGroundingText != null && !webGroundingText.isBlank() ? "已" : "未",
+                                    injected ? "已" : "未",
                                     millisSince(tWeb),
                                     millisSince(openAssistantWallMs),
                                     snap.getTenantId(),
                                     conversationId);
-                            if (webGroundingText != null && !webGroundingText.isBlank()) {
-                                var webSys = new ModelChatRequest.MessageTurn();
-                                webSys.setRole("system");
-                                webSys.setContent(webGroundingText);
-                                List<ModelChatRequest.MessageTurn> msgs = modelReq.getMessages();
-                                msgs.add(msgs.size() - 1, webSys);
+                        } else {
+                            WebSearchUserContext webCtx =
+                                    WebSearchUserContext.forConversation(
+                                            augmentedUserText, historyTurns, 2);
+                            Optional<WebGroundingBundle> localKb =
+                                    chatWebSearchGroundingService.tryLocalGroundingWithoutOutbound(
+                                            snap, webCtx, conversationId, null);
+                            if (localKb.isPresent()) {
+                                WebGroundingBundle kb = localKb.get();
+                                int refCount =
+                                        kb.references() == null ? 0 : kb.references().size();
+                                boolean injected =
+                                        injectWebGroundingIntoPrompt(
+                                                modelReq,
+                                                kb,
+                                                knowledgeBaseRefsForStream,
+                                                snap.getTenantId(),
+                                                responseLocale);
+                                sendSseKnowledgeRefFrames(
+                                        sseGate, seq, knowledgeBaseRefsForStream);
+                                log.info(
+                                        "[对话] ⑰ 联网知识库本地命中（未开联网）：引用 {} 条，{}注入模型提示词；租户 {}，会话 {}",
+                                        refCount,
+                                        injected ? "已" : "未",
+                                        snap.getTenantId(),
+                                        conversationId);
                             }
                         }
                         sendSseRagDocTitleFrames(emitter, seq, ragHitsForStream);
-                        modelInvokePort.streamCompletion(
-                                modelReq,
-                                token -> {
-                                    try {
+                        if (mcpActiveForStream) {
+                            var mcpResult =
+                                    chatMcpToolCallingSupport.streamWithToolLoop(
+                                            snap.getTenantId(),
+                                            payload.getMcpServerIds(),
+                                            modelReq,
+                                            token -> {
+                                                if (streamCancelled.get()) {
+                                                    return;
+                                                }
+                                                assistantBuf.append(token);
+                                                if (!sseGate.trySend(
+                                                        SseEmitter.event()
+                                                                .data(sseChunk("content", token))
+                                                                .id(String.valueOf(seq.incrementAndGet())),
+                                                        "回答片段")) {
+                                                    streamCancelled.set(true);
+                                                }
+                                            },
+                                            (status, toolName) ->
+                                                    sendSseMcpToolStatus(sseGate, seq, status, toolName));
+                            mcpToolAuditRef.set(
+                                    mcpResult.getToolCallSummaries() == null
+                                            ? List.of()
+                                            : mcpResult.getToolCallSummaries());
+                            if (assistantBuf.isEmpty()
+                                    && mcpResult.getContent() != null
+                                    && !mcpResult.getContent().isBlank()) {
+                                assistantBuf.append(mcpResult.getContent());
+                            }
+                        } else {
+                            modelInvokePort.streamCompletion(
+                                    modelReq,
+                                    token -> {
+                                        if (streamCancelled.get()) {
+                                            return;
+                                        }
                                         assistantBuf.append(token);
-                                        emitter.send(
-                                                org.springframework.web.servlet.mvc.method.annotation.SseEmitter
-                                                        .event()
+                                        if (!sseGate.trySend(
+                                                SseEmitter.event()
                                                         .data(sseChunk("content", token))
-                                                        .id(String.valueOf(seq.incrementAndGet())));
-                                    } catch (Exception e) {
-                                        log.error(
-                                                "[对话] SSE 推送回答片段失败：会话 {}，租户 {}，模型 {}，模型编号 {}，序号 {}",
-                                                conversationId,
-                                                snap.getTenantId(),
-                                                payload.getModelAlias(),
-                                                modelCfg != null ? modelCfg.getId() : null,
-                                                seq.get(),
-                                                e);
-                                        emitter.completeWithError(e);
-                                    }
-                                });
+                                                        .id(String.valueOf(seq.incrementAndGet())),
+                                                "回答片段")) {
+                                            streamCancelled.set(true);
+                                        }
+                                    });
+                        }
+                        if (assistantBuf.isEmpty() && reasoningAbortVerdict.get() != null) {
+                            String fallback =
+                                    reasoningAbortVerdict.get()
+                                                    == ChatReasoningStreamGuard.Verdict.STOP_REPETITION
+                                            ? "（思考过程出现重复循环已自动中止，未生成正文；请简化问题或关闭深度思考后重试）"
+                                            : "（思考过程过长已自动中止，未生成正文；请简化问题或关闭深度思考后重试）";
+                            assistantBuf.append(fallback);
+                            sseGate.trySend(
+                                    SseEmitter.event()
+                                            .data(sseChunk("content", fallback))
+                                            .id(String.valueOf(seq.incrementAndGet())),
+                                    "思考中止说明");
+                        }
                         WebSearchStreamGroundingSession webSessionDone = webStreamSessionRef.get();
                         if (webSessionDone != null) {
                             try {
@@ -910,7 +998,9 @@ public class ChatApplicationService {
                                         usageRef.get(),
                                         priorAssistantVersions,
                                         ragHitsForStream,
-                                        webSearchRefsForStream));
+                                        webSearchRefsForStream,
+                                        knowledgeBaseRefsForStream,
+                                        mcpToolAuditRef.get()));
                         messageRepository.insert(asst);
                         linkMessage(conversationId, asst.getId(), snap.getTenantId());
                         ChatStarterPromptDtos.StarterPromptListView followUpForSse =
@@ -922,8 +1012,8 @@ public class ChatApplicationService {
                                         assistantBuf.toString(),
                                         3);
                         sendSseFollowUpPrompts(emitter, seq, followUpForSse);
-                        emitter.send(
-                                org.springframework.web.servlet.mvc.method.annotation.SseEmitter.event()
+                        sseGate.trySend(
+                                SseEmitter.event()
                                         .data(
                                                 sseEndPayload(
                                                         usageRef.get(),
@@ -931,8 +1021,9 @@ public class ChatApplicationService {
                                                         millisSince(openAssistantWallMs),
                                                         conversationTokenTotalFromMetering(
                                                                 snap.getTenantId(), conversationId)))
-                                        .id(String.valueOf(seq.incrementAndGet())));
-                        if (pairedUserMessageId != null && payload.isWebSearchEnabled()) {
+                                        .id(String.valueOf(seq.incrementAndGet())),
+                                "结束帧");
+                        if (pairedUserMessageId != null && !webSearchRefsForStream.isEmpty()) {
                             mergeWebSearchReferencesIntoUserMessageMeta(
                                     pairedUserMessageId,
                                     snap.getTenantId(),
@@ -948,7 +1039,7 @@ public class ChatApplicationService {
                                 assistantBuf.length(),
                                 millisSince(openAssistantWallMs),
                                 usageRef.get() != null ? usageRef.get().totalTokens() : 0);
-                        emitter.complete();
+                        sseGate.complete();
                         final String assistantTextForMemory = assistantBuf.toString();
                         final String modelAliasForMemory = payload.getModelAlias().trim();
                         final long assistantRowId = asst.getId();
@@ -1004,18 +1095,20 @@ public class ChatApplicationService {
                         LlmOutboundException lo =
                                 toStreamOutboundException(e, hint, payload.getModelAlias().trim());
                         try {
-                            emitter.send(
+                            sseGate.trySend(
                                     SseEmitter.event()
                                             .data(sseErrorPayload(lo))
-                                            .id(String.valueOf(seq.incrementAndGet())));
-                            emitter.send(
+                                            .id(String.valueOf(seq.incrementAndGet())),
+                                    "错误帧");
+                            sseGate.trySend(
                                     SseEmitter.event()
                                             .data(
                                                     sseChunk(
                                                             "content",
                                                             "\n\n（调用失败）" + shortUserFacingMessage(lo)))
-                                            .id(String.valueOf(seq.incrementAndGet())));
-                            emitter.send(
+                                            .id(String.valueOf(seq.incrementAndGet())),
+                                    "错误说明");
+                            sseGate.trySend(
                                     SseEmitter.event()
                                             .data(
                                                     sseEndPayload(
@@ -1024,11 +1117,12 @@ public class ChatApplicationService {
                                                             millisSince(openAssistantWallMs),
                                                             conversationTokenTotalFromMetering(
                                                                     snap.getTenantId(), conversationId)))
-                                            .id(String.valueOf(seq.incrementAndGet())));
+                                            .id(String.valueOf(seq.incrementAndGet())),
+                                    "结束帧");
                         } catch (Exception sendEx) {
                             log.warn("[对话] SSE 推送错误帧失败", sendEx);
                         }
-                        emitter.complete();
+                        sseGate.complete();
                     } finally {
                         TenantContextHolder.clear();
                     }
@@ -1464,48 +1558,82 @@ public class ChatApplicationService {
         }
     }
 
-    /** 主模型流式 token 之前下发联网引用（JSON 在 {@code v} 内，形如 {@code {"references":[...]}}）。 */
-    private void sendSseWebSearchRefFrames(
-            SseEmitter emitter, AtomicInteger seq, List<WebSearchReference> refs) {
-        if (refs == null || refs.isEmpty()) {
+    private void sendSseMcpToolStatus(
+            ChatSseSendGate sseGate, AtomicInteger seq, String phase, String toolName) {
+        if (phase == null || phase.isBlank()) {
             return;
         }
         try {
             ObjectNode root = objectMapper.createObjectNode();
-            ArrayNode arr = root.putArray("references");
-            for (WebSearchReference r : refs) {
-                WebSearchReferenceView v = r.toView();
-                ObjectNode o = arr.addObject();
-                o.put("title", v.title() != null ? v.title() : "");
-                o.put("url", v.url() != null ? v.url() : "");
-                o.put("summary", v.summary() != null ? v.summary() : "");
-                if (v.siteName() != null) {
-                    o.put("siteName", v.siteName());
-                }
-                if (v.logoUrl() != null) {
-                    o.put("logoUrl", v.logoUrl());
-                }
-                if (v.publishTime() != null) {
-                    o.put("publishTime", v.publishTime());
-                }
-                if (v.extraJson() != null) {
-                    o.put("extraJson", v.extraJson());
-                }
+            root.put("phase", phase);
+            if (toolName != null && !toolName.isBlank()) {
+                root.put("tool", toolName);
             }
-            emitter.send(
+            sseGate.trySend(
                     SseEmitter.event()
-                            .data(sseChunk("webSearchRefs", objectMapper.writeValueAsString(root)))
-                            .id(String.valueOf(seq.incrementAndGet())));
+                            .data(sseChunk("mcpToolStatus", objectMapper.writeValueAsString(root)))
+                            .id(String.valueOf(seq.incrementAndGet())),
+                    null);
         } catch (Exception ex) {
-            log.warn("[对话] SSE 推送联网引用帧失败，序号 {}", seq.get(), ex);
+            log.warn("[对话] SSE 推送 MCP 工具状态帧失败，序号 {}", seq.get(), ex);
         }
     }
 
-    private String sseChunk(String type, String value) throws JsonProcessingException {
-        ObjectNode o = objectMapper.createObjectNode();
-        o.put("type", type);
-        o.put("v", value == null ? "" : value);
-        return objectMapper.writeValueAsString(o);
+    /** 主模型流式 token 之前下发联网引用（JSON 在 {@code v} 内，形如 {@code {"references":[...]}}）。 */
+    private void sendSseWebSearchRefFrames(
+            SseEmitter emitter, AtomicInteger seq, List<WebSearchReference> refs) {
+        sendSseReferenceFrames(emitter, seq, refs, "webSearchRefs");
+    }
+
+    /** 联网知识库本地命中引用（{@code knowledgeRefs}），与联网参考区分展示。 */
+    private void sendSseKnowledgeRefFrames(
+            ChatSseSendGate sseGate, AtomicInteger seq, List<WebSearchReference> refs) {
+        if (refs == null || refs.isEmpty()) {
+            return;
+        }
+        try {
+            sseGate.trySend(
+                    SseEmitter.event()
+                            .data(sseChunk("knowledgeRefs", buildReferencesPayloadJson(refs)))
+                            .id(String.valueOf(seq.incrementAndGet())),
+                    null);
+        } catch (Exception ex) {
+            log.warn("[对话] SSE 推送知识库引用帧失败，序号 {}", seq.get(), ex);
+        }
+    }
+
+    private void sendSseReferenceFrames(
+            SseEmitter emitter, AtomicInteger seq, List<WebSearchReference> refs, String sseType) {
+        if (refs == null || refs.isEmpty()) {
+            return;
+        }
+        try {
+            emitter.send(
+                    SseEmitter.event()
+                            .data(sseChunk(sseType, buildReferencesPayloadJson(refs)))
+                            .id(String.valueOf(seq.incrementAndGet())));
+        } catch (Exception ex) {
+            log.warn("[对话] SSE 推送{}引用帧失败，序号 {}", sseType, seq.get(), ex);
+        }
+    }
+
+    private String buildReferencesPayloadJson(List<WebSearchReference> refs)
+            throws JsonProcessingException {
+        ObjectNode root = objectMapper.createObjectNode();
+        ArrayNode arr = root.putArray("references");
+        fillWebSearchReferencesArray(arr, refs);
+        return objectMapper.writeValueAsString(root);
+    }
+
+    private String sseChunk(String type, String value) {
+        try {
+            ObjectNode o = objectMapper.createObjectNode();
+            o.put("type", type);
+            o.put("v", value == null ? "" : value);
+            return objectMapper.writeValueAsString(o);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("SSE chunk JSON 序列化失败", e);
+        }
     }
 
     private String sseEndPayload(
@@ -1698,6 +1826,7 @@ public class ChatApplicationService {
         List<RagCitationView> ragCitations = null;
         List<ChatWorkflowSegmentView> workflowSegments = null;
         List<WebSearchReferenceView> webSearchReferences = null;
+        List<WebSearchReferenceView> knowledgeBaseReferences = null;
         if (m.getRole() == ChatMessageRole.USER
                 && m.getMetaJson() != null
                 && !m.getMetaJson().isBlank()) {
@@ -1793,6 +1922,9 @@ public class ChatApplicationService {
                     }
                 }
                 webSearchReferences = parseWebSearchReferencesFromRoot(root);
+                knowledgeBaseReferences =
+                        parseReferenceViewsFromRoot(
+                                root, WebSearchGroundingMetaSupport.META_KNOWLEDGE_BASE_REFERENCES);
             } catch (Exception ex) {
                 log.warn("[对话] 消息元数据解析失败：消息 {}", m.getId(), ex);
             }
@@ -1816,6 +1948,7 @@ public class ChatApplicationService {
                 ragCitations,
                 workflowSegments,
                 webSearchReferences,
+                knowledgeBaseReferences,
                 contentSummary,
                 intentTurnHit,
                 attachments);
@@ -1834,13 +1967,15 @@ public class ChatApplicationService {
     }
 
     private List<WebSearchReferenceView> parseWebSearchReferencesFromRoot(JsonNode root) {
-        if (root == null
-                || !root.has("webSearchReferences")
-                || !root.get("webSearchReferences").isArray()) {
+        return parseReferenceViewsFromRoot(root, "webSearchReferences");
+    }
+
+    private List<WebSearchReferenceView> parseReferenceViewsFromRoot(JsonNode root, String field) {
+        if (root == null || !root.has(field) || !root.get(field).isArray()) {
             return null;
         }
         List<WebSearchReferenceView> wr = new ArrayList<>();
-        for (JsonNode c : root.get("webSearchReferences")) {
+        for (JsonNode c : root.get(field)) {
             if (c == null || !c.isObject()) {
                 continue;
             }
@@ -2108,7 +2243,9 @@ public class ChatApplicationService {
             ModelTokenUsage usage,
             ArrayNode priorAssistantVersions,
             List<RagCitationHit> ragCitations,
-            List<WebSearchReference> webSearchReferences) {
+            List<WebSearchReference> webSearchReferences,
+            List<WebSearchReference> knowledgeBaseReferences,
+            List<McpToolCallSummary> mcpToolCalls) {
         try {
             ObjectNode n = objectMapper.createObjectNode();
             n.put("modelAlias", modelAlias);
@@ -2140,6 +2277,22 @@ public class ChatApplicationService {
             if (webSearchReferences != null && !webSearchReferences.isEmpty()) {
                 ArrayNode warr = n.putArray("webSearchReferences");
                 fillWebSearchReferencesArray(warr, webSearchReferences);
+            }
+            if (knowledgeBaseReferences != null && !knowledgeBaseReferences.isEmpty()) {
+                ArrayNode karr =
+                        n.putArray(WebSearchGroundingMetaSupport.META_KNOWLEDGE_BASE_REFERENCES);
+                fillWebSearchReferencesArray(karr, knowledgeBaseReferences);
+            }
+            if (mcpToolCalls != null && !mcpToolCalls.isEmpty()) {
+                ArrayNode marr = n.putArray("mcpToolCalls");
+                for (McpToolCallSummary s : mcpToolCalls) {
+                    ObjectNode o = marr.addObject();
+                    o.put("qualifiedName", s.getQualifiedName());
+                    o.put("serverId", s.getServerId());
+                    o.put("toolName", s.getToolName());
+                    o.put("error", s.isError());
+                    o.put("elapsedMs", s.getElapsedMs());
+                }
             }
             return objectMapper.writeValueAsString(n);
         } catch (Exception e) {
@@ -2318,7 +2471,31 @@ public class ChatApplicationService {
         return List.copyOf(out);
     }
 
-    private String formatWebGroundingContent(WebGroundingBundle wb, long tenantId) {
+    /** 将联网 grounding（含联网知识库本地命中）注入主模型 messages，并收集引用列表。 */
+    private boolean injectWebGroundingIntoPrompt(
+            ModelChatRequest modelReq,
+            WebGroundingBundle bundle,
+            List<WebSearchReference> refsOut,
+            long tenantId,
+            String responseLocale) {
+        refsOut.clear();
+        if (bundle != null && bundle.references() != null) {
+            refsOut.addAll(bundle.references());
+        }
+        String webGroundingText = formatWebGroundingContent(bundle, tenantId, responseLocale);
+        if (webGroundingText == null || webGroundingText.isBlank()) {
+            return false;
+        }
+        var webSys = new ModelChatRequest.MessageTurn();
+        webSys.setRole("system");
+        webSys.setContent(webGroundingText);
+        List<ModelChatRequest.MessageTurn> msgs = modelReq.getMessages();
+        msgs.add(msgs.size() - 1, webSys);
+        return true;
+    }
+
+    private String formatWebGroundingContent(
+            WebGroundingBundle wb, long tenantId, String responseLocale) {
         if (wb == null) {
             return "";
         }
@@ -2330,9 +2507,15 @@ public class ChatApplicationService {
         int totalCap = limits.resolvedWebGroundingTotalMaxChars();
 
         String sum = wb.summaryText() == null ? "" : wb.summaryText().trim();
+        boolean hasRefs = wb.references() != null && !wb.references().isEmpty();
+        boolean hasSum = !sum.isBlank();
+        if (!hasSum && !hasRefs) {
+            return "";
+        }
         StringBuilder sb = new StringBuilder();
-        if (!sum.isBlank()) {
-            sb.append("【网络检索摘要】\n").append(TextClamp.ellipsis(sum, sumCap));
+        sb.append(ChatTemporalContextPrompt.webGroundingPreamble(responseLocale));
+        if (hasSum) {
+            sb.append("\n\n【网络检索摘要】\n").append(TextClamp.ellipsis(sum, sumCap));
         }
         if (wb.references() != null && !wb.references().isEmpty() && refCap > 0) {
             if (!sb.isEmpty()) {

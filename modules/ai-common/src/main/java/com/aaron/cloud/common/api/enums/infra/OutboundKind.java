@@ -11,5 +11,7 @@ public enum OutboundKind {
     /** 本地部署嵌入经 Feign。 */
     LLM_EMBEDDING_FEIGN,
     /** 意图 Coze 工作流 SSE。 */
-    INTENT_COZE
+    INTENT_COZE,
+    /** 远程 MCP Server（Streamable HTTP 等）。 */
+    MCP
 }

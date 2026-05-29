@@ -1,6 +1,7 @@
 package com.aaron.cloud.model;
 
 import com.aaron.cloud.common.api.dto.model.ModelChatRequest;
+import com.aaron.cloud.common.api.dto.model.ModelStreamResult;
 import com.aaron.cloud.common.api.dto.model.ModelTokenUsage;
 import com.aaron.cloud.common.outbound.TenantOutboundResilienceRuntime;
 import com.aaron.cloud.common.context.TenantContextHolder;
@@ -34,6 +35,11 @@ public class ModelApplicationService {
     private final ModelStreamUsageRecorder modelStreamUsageRecorder;
 
     public void streamCompletion(ModelChatRequest request, Consumer<String> onToken) throws Exception {
+        streamCompletionWithResult(request, onToken);
+    }
+
+    public ModelStreamResult streamCompletionWithResult(ModelChatRequest request, Consumer<String> onToken)
+            throws Exception {
         long wallStart = System.currentTimeMillis();
         long tenantId = resolveTenantId(request);
         outboundTenantUpstreamQuarantine.assertStreamAllowed(tenantId);
@@ -41,16 +47,12 @@ public class ModelApplicationService {
         modelStreamUsageRecorder.attachUsageCapture(request, usageRef);
 
         if (!outboundResilienceRuntime.effective(tenantId).isEnabled()) {
-            try {
-                modelCompletionEngine.streamCompletion(request, onToken);
-                outboundTenantUpstreamQuarantine.recordTenantSuccess(tenantId);
-                logCompletion(wallStart, request);
-                modelStreamUsageRecorder.recordAfterStream(
-                        request, usageRef.get(), System.currentTimeMillis() - wallStart);
-            } catch (Exception e) {
-                throw e;
-            }
-            return;
+            ModelStreamResult result = modelCompletionEngine.streamCompletionWithResult(request, onToken);
+            outboundTenantUpstreamQuarantine.recordTenantSuccess(tenantId);
+            logCompletion(wallStart, request);
+            modelStreamUsageRecorder.recordAfterStream(
+                    request, usageRef.get(), System.currentTimeMillis() - wallStart);
+            return result;
         }
         String alias =
                 request.getModelAlias() == null || request.getModelAlias().isBlank()
@@ -65,7 +67,7 @@ public class ModelApplicationService {
             throw OutboundCircuitBreakerSupport.circuitOpen(OutboundKind.LLM_STREAM, alias);
         }
         try {
-            modelCompletionEngine.streamCompletion(request, onToken);
+            ModelStreamResult result = modelCompletionEngine.streamCompletionWithResult(request, onToken);
             if (cb.isPresent()) {
                 cb.get().onSuccess(System.nanoTime() - t0, TimeUnit.NANOSECONDS);
             }
@@ -74,6 +76,7 @@ public class ModelApplicationService {
             logCompletion(wallStart, request);
             modelStreamUsageRecorder.recordAfterStream(
                     request, usageRef.get(), System.currentTimeMillis() - wallStart);
+            return result;
         } catch (Exception e) {
             if (cb.isPresent()) {
                 cb.get().onError(System.nanoTime() - t0, TimeUnit.NANOSECONDS, e);

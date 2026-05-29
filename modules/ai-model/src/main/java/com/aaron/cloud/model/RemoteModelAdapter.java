@@ -1,6 +1,7 @@
 package com.aaron.cloud.model;
 
 import com.aaron.cloud.common.api.dto.model.ModelChatRequest;
+import com.aaron.cloud.common.api.dto.model.ModelStreamResult;
 import com.aaron.cloud.common.api.ports.ModelInvokePort;
 import com.aaron.cloud.common.config.properties.AiOutboundResilienceProperties;
 import com.aaron.cloud.common.outbound.TenantOutboundResilienceRuntime;
@@ -83,6 +84,17 @@ public class RemoteModelAdapter implements ModelInvokePort {
             }
             throw e;
         }
+    }
+
+    @Override
+    public ModelStreamResult streamCompletionWithResult(
+            ModelChatRequest request, java.util.function.Consumer<String> onToken) throws Exception {
+        StringBuilder buf = new StringBuilder();
+        streamCompletion(request, t -> {
+            buf.append(t);
+            onToken.accept(t);
+        });
+        return ModelStreamResult.builder().content(buf.toString()).finishReason("stop").build();
     }
 
     private static long resolveTenantId(ModelChatRequest request) {

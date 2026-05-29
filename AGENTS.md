@@ -4,8 +4,8 @@
 
 ## 编码任务：§0.3 清单（同集必做）
 
-1. **版本**：大改 → `pom.xml` 补丁 +1 + `PROJECT.md` **新开**顶节 `###`；小改 → 仅当前顶节追加条目。
-2. **`PROJECT.md`「变更记录」**：顶节 `###` = `pom.xml` `<version>`；至少一条 `- **模块**：…`（含表名、REST、关键类）；有库表则写明 **已建库须手工执行 migrate**。
+1. **版本**：每次实质交付 → `PROJECT.md` **新开**顶节 `###`（文档补丁 +1，如 **0.1.259**）；**`pom.xml` 可选 bump**（不 bump 时 migrate 仍用 **`migrate_0_1_{pom补丁}_*`**，顶节内注明构件版本）。
+2. **`PROJECT.md`「变更记录」**：顶节 `###` 补丁 **≥** `pom.xml`；至少一条 `- **模块**：…`；有库表则 **已建库须手工执行 migrate**。
 3. **DB**：`schema_v1.sql`（含平台种子）+ `db/mysql/migrate/migrate_0_1_{patch}_*.sql`（`{patch}` = pom 补丁位）+ `gw_api_endpoint_catalog_inserts.sql` + `db/mysql/README.md`。
 4. **大改可选**：`PROJECT.md` 功能模块索引 `##` + `.cursorrules` §1.5 一行。
 5. **完成前**：`.\scripts\check-project-changelog.ps1 -IncludeUntracked` → 退出码 **0**。
@@ -14,7 +14,8 @@
 
 ## 当前开发线
 
-以 **`pom.xml`** 为准（**`0.1.258-SNAPSHOT`**）。详见 **`PROJECT.md` 顶节 `### 0.1.258-SNAPSHOT`**。
+- **变更记录顶节**：**`### 0.1.266-SNAPSHOT`**（见 **`PROJECT.md`**）
+- **构件（Maven）**：**`pom.xml` `0.1.258-SNAPSHOT`**（migrate **`{patch}`** 仍以 pom 为准）
 
 ## 源码编码（UTF-8）— 全项目硬约束
 

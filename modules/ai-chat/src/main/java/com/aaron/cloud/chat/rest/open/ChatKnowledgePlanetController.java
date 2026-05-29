@@ -1,12 +1,18 @@
 package com.aaron.cloud.chat.rest.open;
 
+import com.aaron.cloud.chat.dto.ChatKnowledgePlanetDtos.LearningGoalBody;
 import com.aaron.cloud.chat.dto.ChatKnowledgePlanetDtos.SummaryResponse;
 import com.aaron.cloud.chat.dto.ChatKnowledgePlanetDtos.UniverseGraphResponse;
+import com.aaron.cloud.chat.dto.ChatKnowledgePlanetDtos.WeeklyFeedbackBody;
 import com.aaron.cloud.chat.dto.ChatKnowledgePlanetDtos.WeeklyLatestResponse;
 import com.aaron.cloud.chat.knowledgeplanet.KnowledgePlanetQueryService;
+import com.aaron.cloud.chat.knowledgeplanet.KnowledgePlanetWeeklyFeedbackService;
 import com.aaron.cloud.common.web.rest.OpenV1ControllerBases;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -14,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ChatKnowledgePlanetController extends OpenV1ControllerBases.Chat {
 
     private final KnowledgePlanetQueryService queryService;
+    private final KnowledgePlanetWeeklyFeedbackService weeklyFeedbackService;
 
     @GetMapping("/knowledge-planet/summary")
     public SummaryResponse summary() {
@@ -29,5 +36,15 @@ public class ChatKnowledgePlanetController extends OpenV1ControllerBases.Chat {
     @GetMapping("/knowledge-planet/weekly/latest")
     public WeeklyLatestResponse weeklyLatest() {
         return queryService.weeklyLatest();
+    }
+
+    @PostMapping("/knowledge-planet/weekly/feedback")
+    public void weeklyFeedback(@RequestBody WeeklyFeedbackBody body) {
+        weeklyFeedbackService.recordFeedback(body != null && body.helpful());
+    }
+
+    @PutMapping("/knowledge-planet/learning-goal")
+    public void learningGoal(@RequestBody LearningGoalBody body) {
+        weeklyFeedbackService.saveLearningGoal(body == null ? "" : body.goal());
     }
 }

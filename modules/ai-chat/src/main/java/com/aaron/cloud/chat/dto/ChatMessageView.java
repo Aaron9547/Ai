@@ -27,6 +27,8 @@ public record ChatMessageView(
         List<ChatWorkflowSegmentView> workflowSegments,
         /** 联网检索引用（助手 meta {@code webSearchReferences}）；未开联网或未返回时 {@code null} 或空列表 */
         List<WebSearchReferenceView> webSearchReferences,
+        /** 联网知识库本地命中引用（助手 meta {@code knowledgeBaseReferences}）；无则 {@code null} 或空列表 */
+        List<WebSearchReferenceView> knowledgeBaseReferences,
         /** 助手回复摘要（meta {@code contentSummary}），用于短期记忆与抽检；无则 {@code null} */
         String contentSummary,
         /** 本回合意图命中摘要（user/assistant meta 中 intentRouted / intentHandled 等）；无则 {@code null} */

@@ -46,6 +46,10 @@ public class OutboundCircuitBreakerSupport {
         return forKey(OutboundKind.INTENT_COZE, key);
     }
 
+    public Optional<CircuitBreaker> forMcp(long tenantId, long serverId) {
+        return forKey(OutboundKind.MCP, tenantId + "-" + serverId);
+    }
+
     private Optional<CircuitBreaker> forKey(OutboundKind kind, String keySuffix) {
         if (!properties.isEnabled() || !properties.getCircuitBreaker().isEnabled()) {
             return Optional.empty();

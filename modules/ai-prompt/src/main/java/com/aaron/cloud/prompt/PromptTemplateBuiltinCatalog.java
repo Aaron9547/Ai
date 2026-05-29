@@ -35,12 +35,14 @@ public final class PromptTemplateBuiltinCatalog {
                 PromptTemplateDomain.CHAT,
                 "zh-CN",
                 """
-                你是资讯推荐编辑。根据联网检索摘要与用户画像，输出今日个性化资讯卡片列表。
+                你是资讯推荐编辑。根据联网检索摘要与用户画像，为**当前这位用户**输出 ${today}（${today_label}）的个性化资讯卡片列表。
                 只输出 JSON 数组，不要 markdown，不要解释。每项字段：
                 tag（领域标签，2～8字）、title（标题，12～48字）、summary（摘要，24～120字）、
-                source（来源媒体名）、date（发布日期 yyyy-MM-dd，不得晚于今日 ${today}；须来自检索摘要中的发布时间，无法判断时写 ${today}）、
+                source（来源媒体名）、date（发布日期 yyyy-MM-dd，不得晚于 ${today}；须来自检索摘要中的发布时间，无法判断时写 ${today}）、
                 url（可点击链接，须 http/https，且必须从【联网引用列表】中原样选取，禁止编造域名）。
-                共 5～8 条，内容须为近期真实资讯，禁止编造未来日期或虚构事件；若无画像则输出通用热点资讯。
+                共 5～8 条，内容须为 ${today} 前后真实资讯，禁止编造未来日期或虚构事件。
+                若提供【用户画像与记忆】：至少 4 条须与用户兴趣、专业、近期对话或点击偏好直接相关；不同用户的内容组合应有明显差异，勿用与用户无关的泛化热点凑数。
+                若无画像：输出 ${today} 当日中国综合热点资讯。
                 示例：[{"tag":"科技","title":"…","summary":"…","source":"新华网","date":"${today}","url":"https://…"}]
                 """);
         register(
@@ -48,25 +50,25 @@ public final class PromptTemplateBuiltinCatalog {
                 PromptTemplateKind.QUERY,
                 PromptTemplateDomain.WEB,
                 "*",
-                "${region_phrase}中国 科技 财经 教育 社会 校园 热点资讯 ${today} 今日 ${yesterday} 昨日 最新");
+                "${region_phrase}${today} ${today_label} 中国 热点新闻 社会 今日最新");
         register(
                 "daily_recommend_search_query_profile",
                 PromptTemplateKind.QUERY,
                 PromptTemplateDomain.WEB,
                 "*",
-                "${region_phrase}今日${today} 昨日${yesterday} 最新资讯 热点新闻 用户兴趣：${profile_excerpt}");
+                "${profile_excerpt} ${today} ${today_label} 最新资讯 热点 个性化");
         register(
                 "daily_recommend_search_query_yesterday",
                 PromptTemplateKind.QUERY,
                 PromptTemplateDomain.WEB,
                 "*",
-                "${region_phrase}中国 科技 财经 教育 社会 校园 ${yesterday} 昨日 热点 补充");
+                "${region_phrase}${yesterday} 昨日 中国 热点 补充");
         register(
                 "daily_recommend_search_query_yesterday_profile",
                 PromptTemplateKind.QUERY,
                 PromptTemplateDomain.WEB,
                 "*",
-                "${region_phrase}${yesterday} 昨日 热点资讯 补充 用户兴趣：${profile_excerpt}");
+                "${profile_excerpt} ${yesterday} 昨日 补充 热点");
         register(
                 "starter_hot_topic_structure",
                 PromptTemplateKind.SYSTEM,
@@ -170,10 +172,22 @@ public final class PromptTemplateBuiltinCatalog {
                 PromptTemplateDomain.PLANET,
                 "zh-CN",
                 """
-                你是个人成长教练。根据用户过去一周的对话知识节点与记忆摘要，生成本周成长方案。
+                你是个人成长教练。根据用户本周对话知识节点、学习者画像、记忆要点、历史进度账本与（若有）联网书目摘要，生成本周成长方案并对照近几周是否进步。
                 只输出严格 JSON（不要 markdown）：
-                {"summary":"一句话总览","thinkDirections":["方向1"],"gapAreas":["不足1"],"bookRecommendations":[{"title":"书名","reason":"理由"}]}
+                {
+                  "summary":"一句话总览",
+                  "inferredPersona":"1～2句：我们理解中的你",
+                  "evidenceTopics":["引用的主题星球或稳定事实"],
+                  "progressNotes":"相对近1～3周的进步/停滞/重复短板（1～3句）",
+                  "thinkDirections":["方向1"],
+                  "gapAreas":["不足1"],
+                  "bookRecommendations":[{"title":"书名","reason":"理由","source":"web_search|classic"}],
+                  "learnerProfileDelta":{"roleOrStage":"","coreInterests":[],"skillHints":{},"learningGoals":[]},
+                  "bookSearchQuery":""
+                }
                 thinkDirections 3～5 条；gapAreas 2～4 条；bookRecommendations 2～4 本。
+                若提供【联网书目摘要】，bookRecommendations 须优先从中选取并设 source=web_search；摘要不足时可补 source=classic 的公认经典，不得编造 url。
+                bookSearchQuery 填实际使用的检索词（无联网则空串）。
                 """);
         register(
                 "chat_assistant_persona",

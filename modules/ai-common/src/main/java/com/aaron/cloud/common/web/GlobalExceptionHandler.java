@@ -15,6 +15,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -254,6 +255,24 @@ public class GlobalExceptionHandler {
                                         ? br.getFieldError().getDefaultMessage()
                                         : "validation failed")
                                 .build());
+    }
+
+    /**
+     * SSE 等异步请求在客户端主动断开时，容器会通知 {@code AsyncRequestNotUsableException}；属预期行为，勿记 ERROR。
+     */
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void asyncClientDisconnected(AsyncRequestNotUsableException ex, HttpServletResponse response) {
+        if (response.isCommitted()) {
+            log.debug(
+                    "async client disconnected http=\"{}\" message={}",
+                    RequestLogSupport.currentRequestLine(),
+                    ex.getMessage());
+            return;
+        }
+        log.warn(
+                "async client disconnected http=\"{}\" message={}",
+                RequestLogSupport.currentRequestLine(),
+                ex.getMessage());
     }
 
     /**

@@ -121,6 +121,8 @@ export interface ChatHistoryMessage {
   ragCitations?: RagCitationItem[] | null;
   /** 联网检索引用（助手 meta {@code webSearchReferences}） */
   webSearchReferences?: WebSearchRefItem[] | null;
+  /** 联网知识库本地命中引用（助手 meta {@code knowledgeBaseReferences}） */
+  knowledgeBaseReferences?: WebSearchRefItem[] | null;
   /** 助手回复摘要（meta contentSummary），异步生成 */
   contentSummary?: string | null;
   /** 意图工作流阶段快照（助手 meta） */
@@ -222,6 +224,8 @@ export interface ChatSendPayload {
   clientSendKey?: string;
   /** 主模型前是否执行联网检索（须租户已配置联网搜索模型） */
   webSearchEnabled?: boolean;
+  mcpEnabled?: boolean;
+  mcpServerIds?: number[];
   attachmentIds: number[];
   /** 多轮意图流票据（来自上一条助手消息 meta） */
   intentFlowTicket?: string | null;
@@ -242,6 +246,7 @@ export type StreamPart =
   | { type: "reasoning"; v?: string }
   | { type: "ragDoc"; documentId?: number; title?: string }
   | { type: "webSearchRefs"; references: WebSearchRefItem[] }
+  | { type: "knowledgeRefs"; references: WebSearchRefItem[] }
   | { type: "webSearchStatus"; phase: WebSearchStatusPhase }
   | { type: "workflowStage"; stage: WorkflowStagePayload }
   | { type: "inputBlocked"; reason?: string }
@@ -256,6 +261,33 @@ export type StreamPart =
     }
   | { type: "followUpPrompts"; items: StarterPromptItem[] }
   | { type: "end"; usage?: TokenUsageChunk; assistantMessageId?: number; durationMs?: number; conversationTokenTotal?: number };
+
+function normalizeWebSearchRefItems(refs: unknown[]): WebSearchRefItem[] {
+  return refs
+    .filter((x) => x && typeof x === "object")
+    .map((x) => {
+      const item = x as WebSearchRefItem;
+      return {
+        title: typeof item.title === "string" ? item.title : "",
+        url: typeof item.url === "string" ? item.url : "",
+        summary: typeof item.summary === "string" ? item.summary : "",
+        siteName: typeof item.siteName === "string" ? item.siteName : null,
+        logoUrl: typeof item.logoUrl === "string" ? item.logoUrl : null,
+        publishTime: typeof item.publishTime === "string" ? item.publishTime : null,
+        extraJson: typeof item.extraJson === "string" ? item.extraJson : null,
+      };
+    });
+}
+
+function parseReferencesSsePayload(raw: string): WebSearchRefItem[] {
+  try {
+    const j = JSON.parse(raw) as { references?: WebSearchRefItem[] };
+    const refs = Array.isArray(j.references) ? j.references : [];
+    return normalizeWebSearchRefItems(refs);
+  } catch {
+    return [];
+  }
+}
 
 function parseSsePayload(raw: string): StreamPart | null {
   const t = raw.trim();
@@ -301,25 +333,15 @@ function parseSsePayload(raw: string): StreamPart | null {
       }
     }
     if (o.type === "webSearchRefs" && typeof o.v === "string") {
-      try {
-        const j = JSON.parse(o.v) as { references?: WebSearchRefItem[] };
-        const refs = Array.isArray(j.references) ? j.references : [];
-        const normalized: WebSearchRefItem[] = refs
-          .filter((x) => x && typeof x === "object")
-          .map((x) => ({
-            title: typeof x.title === "string" ? x.title : "",
-            url: typeof x.url === "string" ? x.url : "",
-            summary: typeof x.summary === "string" ? x.summary : "",
-            siteName: typeof x.siteName === "string" ? x.siteName : null,
-            logoUrl: typeof x.logoUrl === "string" ? x.logoUrl : null,
-            publishTime: typeof x.publishTime === "string" ? x.publishTime : null,
-            extraJson: typeof x.extraJson === "string" ? x.extraJson : null,
-          }));
-        if (normalized.length) {
-          return { type: "webSearchRefs", references: normalized };
-        }
-      } catch {
-        /* ignore */
+      const normalized = parseReferencesSsePayload(o.v);
+      if (normalized.length) {
+        return { type: "webSearchRefs", references: normalized };
+      }
+    }
+    if (o.type === "knowledgeRefs" && typeof o.v === "string") {
+      const normalized = parseReferencesSsePayload(o.v);
+      if (normalized.length) {
+        return { type: "knowledgeRefs", references: normalized };
       }
     }
     if (o.type === "webSearchStatus" && typeof o.v === "string") {
@@ -407,6 +429,8 @@ export interface ChatRegenerateBody {
   modelAlias?: string;
   thinkingEnabled?: boolean;
   webSearchEnabled?: boolean;
+  mcpEnabled?: boolean;
+  mcpServerIds?: number[];
   responseLocale?: ChatResponseLocale;
 }
 
@@ -535,6 +559,8 @@ export async function fetchStarterPrompts(params: {
   excludeIds?: number[];
   thinkingEnabled?: boolean;
   webSearchEnabled?: boolean;
+  mcpEnabled?: boolean;
+  mcpServerIds?: number[];
 }): Promise<StarterPromptList> {
   const { data } = await http.get("/open/v1/chat/starter-prompts", { params });
   return data as StarterPromptList;
