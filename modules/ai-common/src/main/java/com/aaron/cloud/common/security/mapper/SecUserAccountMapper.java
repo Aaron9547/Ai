@@ -22,4 +22,13 @@ public interface SecUserAccountMapper extends BaseMapper<SecUserAccount> {
             LIMIT 80
             """)
     List<Map<String, Object>> countActiveMembersByLastLoginRegion(@Param("tenantId") long tenantId);
+
+    @Select(
+            """
+            SELECT TRIM(u.last_login_region) AS region, TRIM(u.last_login_ip) AS ip
+            FROM sys_tenant_member m
+            INNER JOIN sec_user_account u ON u.id = m.user_id
+            WHERE m.tenant_id = #{tenantId} AND m.status = 1
+            """)
+    List<Map<String, Object>> listActiveMemberLoginGeo(@Param("tenantId") long tenantId);
 }

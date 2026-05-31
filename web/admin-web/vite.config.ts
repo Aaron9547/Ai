@@ -4,8 +4,10 @@ import vue from "@vitejs/plugin-vue";
 import AutoImport from "unplugin-auto-import/vite";
 import { ElementPlusResolver } from "unplugin-vue-components/resolvers";
 import { defineConfig } from "vite";
+import { resolveViteAllowedHosts } from "../vite-allowed-hosts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const allowedHosts = resolveViteAllowedHosts();
 
 export default defineConfig({
   plugins: [
@@ -21,8 +23,8 @@ export default defineConfig({
   },
   server: {
     host: true,
-    /** 穿透域名放行，见 `web/user-web/vite.config.ts` 同条注释 */
-    allowedHosts: [".vicp.fun", ".vicp.cc"],
+    /** 穿透域名放行，见 `web/vite-allowed-hosts.ts` */
+    allowedHosts,
     port: 5174,
     proxy: {
       "/api": {
@@ -37,6 +39,6 @@ export default defineConfig({
     },
   },
   preview: {
-    allowedHosts: [".vicp.fun", ".vicp.cc"],
+    allowedHosts,
   },
 });

@@ -206,12 +206,35 @@
           </div>
         </div>
 
-        <aside class="kp-side">
+        <aside
+          class="kp-side"
+          :class="{ 'kp-side--mobile-collapsed': isMobileMapBrowseView && mobileSideSheetCollapsed }"
+        >
           <header v-if="!isMobileLayout" class="kp-side-head">
             <h2>{{ t("knowledgePlanet.overlayTitle") }}</h2>
           </header>
 
-          <el-scrollbar class="kp-side-scroll">
+          <button
+            v-if="isMobileMapBrowseView"
+            type="button"
+            class="kp-mobile-side-toggle"
+            :aria-expanded="!mobileSideSheetCollapsed"
+            @click="toggleMobileSideSheet"
+          >
+            <span class="kp-mobile-side-toggle__title">{{ t("knowledgePlanet.planetsSection") }}</span>
+            <span class="kp-mobile-side-toggle__meta">
+              {{ t("knowledgePlanet.mobile.planetCount", { n: universe?.planets?.length ?? 0 }) }}
+            </span>
+            <el-icon class="kp-mobile-side-toggle__chev" :size="16">
+              <ArrowDown v-if="mobileSideSheetCollapsed" />
+              <ArrowUp v-else />
+            </el-icon>
+          </button>
+
+          <el-scrollbar
+            v-show="!isMobileMapBrowseView || !mobileSideSheetCollapsed"
+            class="kp-side-scroll"
+          >
           <div class="kp-side-scroll-inner">
           <section v-if="selectedKnowledge" class="kp-detail">
             <h3>{{ t("knowledgePlanet.knowledgeDetail") }}</h3>
@@ -242,10 +265,10 @@
           </section>
 
           <template v-else>
-            <p class="kp-select-hint">{{ t("knowledgePlanet.selectHint") }}</p>
+            <p v-if="!isMobileLayout" class="kp-select-hint">{{ t("knowledgePlanet.selectHint") }}</p>
 
             <section class="kp-side-section">
-              <h3>{{ t("knowledgePlanet.planetsSection") }}</h3>
+              <h3 v-if="!isMobileMapBrowseView">{{ t("knowledgePlanet.planetsSection") }}</h3>
               <ul class="kp-planet-picks">
                 <li v-for="p in universe?.planets ?? []" :key="p.id">
                   <button type="button" class="kp-planet-pick" @click="selectPlanet(p.id)">
@@ -335,7 +358,7 @@
 </template>
 
 <script setup lang="ts">
-import { ArrowLeft } from "@element-plus/icons-vue";
+import { ArrowDown, ArrowLeft, ArrowUp } from "@element-plus/icons-vue";
 import gsap from "gsap";
 import { computed, nextTick, onUnmounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
@@ -405,6 +428,28 @@ const focusPlanetOnly = ref(false);
 const universe3dMode = ref<UniverseViewMode>("full");
 const selectedPlanetId = ref<string | null>(null);
 const selectedKnowledgeId = ref<string | null>(null);
+
+/** 移动端星图浏览态（未选中星球/知识点）：底部面板可整页收起 */
+const mobileSideSheetCollapsed = ref(true);
+const isMobileMapBrowseView = computed(
+  () =>
+    isMobileLayout.value &&
+    mainTab.value === "map" &&
+    !selectedPlanetId.value &&
+    !selectedKnowledgeId.value,
+);
+
+function toggleMobileSideSheet() {
+  mobileSideSheetCollapsed.value = !mobileSideSheetCollapsed.value;
+  void nextTick(() => fitStarMap());
+}
+
+watch([selectedPlanetId, selectedKnowledgeId], ([planetId, knowledgeId]) => {
+  if (isMobileLayout.value && (planetId || knowledgeId)) {
+    mobileSideSheetCollapsed.value = false;
+  }
+});
+
 const graphEmpty = ref(false);
 const isPresent = ref(false);
 const isClosing = ref(false);
@@ -818,6 +863,10 @@ function clearPlanetFocus() {
   selectedKnowledgeId.value = null;
   starMap.setFocusPlanet(null);
   starMap.fitView();
+  if (isMobileLayout.value) {
+    mobileSideSheetCollapsed.value = true;
+    void nextTick(() => fitStarMap());
+  }
 }
 
 function backToPlanetFromKnowledge() {
@@ -835,6 +884,10 @@ function clearMapSelection() {
   starMap.setFocusPlanet(null);
   applyStarMapFocus();
   if (renderMode.value === "2d") starMap.fitView();
+  if (isMobileLayout.value) {
+    mobileSideSheetCollapsed.value = true;
+    void nextTick(() => fitStarMap());
+  }
 }
 
 function goBackInMap() {
@@ -984,6 +1037,7 @@ onUnmounted(() => {
   inset: 0;
   z-index: 9000;
   pointer-events: auto;
+  overflow: hidden;
 }
 
 .kp-warp-bg {
@@ -1088,10 +1142,14 @@ onUnmounted(() => {
 .kp-universe-root {
   position: relative;
   z-index: 9002;
-  width: 100vw;
+  width: 100%;
+  max-width: 100%;
   height: 100vh;
+  height: 100dvh;
   display: flex;
   pointer-events: auto;
+  box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 .kp-main {
@@ -1502,6 +1560,61 @@ html.dark .kp-render-toggle__btn--active {
   font-weight: 500;
 }
 
+.kp-side-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.kp-side-section-head h3 {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.kp-mobile-side-toggle {
+  flex-shrink: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(0, 242, 254, 0.22);
+  border-radius: 12px;
+  background: rgba(0, 242, 254, 0.06);
+  color: #e8f4ff;
+  cursor: pointer;
+  text-align: left;
+  box-sizing: border-box;
+}
+
+.kp-mobile-side-toggle:hover {
+  border-color: rgba(0, 242, 254, 0.4);
+  background: rgba(0, 242, 254, 0.1);
+}
+
+.kp-mobile-side-toggle__title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #7b9cff;
+}
+
+.kp-mobile-side-toggle__meta {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: rgba(224, 224, 224, 0.55);
+}
+
+.kp-mobile-side-toggle__chev {
+  flex-shrink: 0;
+  color: #9ecbff;
+}
+
 .kp-planet-picks {
   list-style: none;
   margin: 0;
@@ -1610,6 +1723,8 @@ html.dark .kp-render-toggle__btn--active {
   flex-direction: column;
   height: 100dvh;
   padding-top: env(safe-area-inset-top, 0);
+  padding-left: env(safe-area-inset-left, 0);
+  padding-right: env(safe-area-inset-right, 0);
   padding-bottom: env(safe-area-inset-bottom, 0);
   box-sizing: border-box;
 }
@@ -1617,11 +1732,16 @@ html.dark .kp-render-toggle__btn--active {
 .kp-overlay--mobile .kp-main {
   flex: 1;
   min-height: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .kp-overlay--mobile .kp-toolbar {
-  padding: 8px 12px 0;
+  padding: 8px max(12px, env(safe-area-inset-right, 0px)) 0 max(12px, env(safe-area-inset-left, 0px));
   gap: 8px;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .kp-overlay--mobile .kp-mobile-back {
@@ -1677,6 +1797,16 @@ html.dark .kp-render-toggle__btn--active {
   flex-shrink: 0;
 }
 
+.kp-overlay--mobile .kp-tab {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.kp-overlay--mobile .kp-render-toggle--head .kp-render-toggle__btn {
+  padding: 5px 8px;
+  font-size: 11px;
+}
+
 .kp-overlay--mobile .kp-map-hint {
   padding: 6px 12px 0;
   font-size: 11px;
@@ -1696,11 +1826,30 @@ html.dark .kp-render-toggle__btn--active {
 
 .kp-overlay--mobile .kp-side {
   width: 100%;
+  max-width: 100%;
   max-height: min(42vh, 360px);
   flex-shrink: 0;
   border-left: none;
   border-top: 1px solid rgba(0, 242, 254, 0.15);
-  padding: 12px 14px 16px;
+  padding: 12px max(14px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px))
+    max(14px, env(safe-area-inset-left, 0px));
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.kp-overlay--mobile .kp-side--mobile-collapsed {
+  max-height: none;
+  flex: 0 0 auto;
+  gap: 0;
+  padding-top: 8px;
+  padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
+}
+
+.kp-overlay--mobile .kp-planet-picks {
+  max-height: min(28vh, 220px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .kp-overlay--mobile .kp-archive {

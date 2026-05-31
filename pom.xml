@@ -47,6 +47,7 @@
         <rocketmq-spring.version>2.3.3</rocketmq-spring.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <archunit.version>1.4.2</archunit.version>
+        <ip2region.version>2.7.0</ip2region.version>
     </properties>
 
     <dependencyManagement>
@@ -204,6 +205,11 @@
                 <groupId>commons-io</groupId>
                 <artifactId>commons-io</artifactId>
                 <version>2.18.0</version>
+            </dependency>
+            <dependency>
+                <groupId>org.lionsoul</groupId>
+                <artifactId>ip2region</artifactId>
+                <version>${ip2region.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.jsoup</groupId>

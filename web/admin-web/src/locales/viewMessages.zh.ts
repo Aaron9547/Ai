@@ -50,6 +50,11 @@ export default {
     mapGeoLoadFailed: "世界地图数据加载失败，可尝试切换「中国省」或稍后刷新。",
     mapChinaGeoLoadFailed: "中国省级地图数据加载失败，可切换「世界」或稍后刷新。",
     mapChinaFootnote: "另有 {only} 人仅有国家码（中国）、{unknown} 人地区字段未能匹配到省级地图。",
+    mapMemberRegionNoData: "暂无在册成员的最近登录地区数据。成员登录成功后会写入账号字段；右侧 IP 排行来自 HTTP 访问日志，二者数据源不同。",
+    mapMemberRegionAllUnknown:
+      "成员最近登录 IP 多为本机/内网（如 127.0.0.1），无法解析为地图地区。请经公网或反向代理（并传递 X-Forwarded-For / CF-IPCountry）登录后刷新；右侧为近 7 日请求来源 IP。",
+    mapMemberRegionUnmapped:
+      "已有登录地区记录，但未能匹配当前地图（国家码或省名不在内置映射中）。可切换「中国省」视图或检查账号「登录地区」列。",
     seriesMemberCount: "在册成员",
     seriesHits: "请求次数",
     seriesDistinctUsers: "去重用户数",

@@ -304,7 +304,7 @@ flowchart TB
 > - **多租户切换**：直接修改 URL 为另一租户的 **`/租户编码/chat`**（或从运营下发的带租户前缀的入口进入）。已登录时须 JWT **`tms`** 中拥有该机位，否则接口 **403**。
 > - **登录/注册成功**：前端会 **`router.push`** 到 JWT 主租户对应的 **`/{租户编码}/chat`**。
 > - **`/…/system/me`（设备与登录）**：面向用户的「当前租户」说明以 **`sys_tenant.code`** 为准，**不**展示 **`sys_tenant.id`** 自增主键（与 **`.cursorrules` §7.1** 一致）。
-> - **花生壳 / 内网穿透**：穿透域名（如 **`*.vicp.fun`**）访问 Vite dev 时，须在 **`vite.config.ts`** 配置 **`server.allowedHosts`**（仓库已对 **`.vicp.fun` / `.vicp.cc`** 放行）；若仍被拦截，可用环境变量 **`__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS`** 追加域名，或本地临时 **`allowedHosts: true`**（勿提交仓库）。
+> - **花生壳 / 内网穿透**：穿透域名（如 **`*.vicp.fun`**、**`onecraft.ca`**）访问 Vite dev 时，须在 **`vite.config.ts`** 配置 **`server.allowedHosts`**（仓库已对 **`.vicp.fun` / `.vicp.cc` / `.onecraft.ca`** 放行，见 **`web/vite-allowed-hosts.ts`**）；若仍被拦截，可用 **`VITE_ADDITIONAL_ALLOWED_HOSTS`** 或 **`__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS`** 追加域名，或本地临时 **`VITE_ALLOWED_HOSTS_ALL=true`**（勿提交仓库）。经公网 Host 访问用户端时，未登录会跳转 **`/{tenantCode}/auth`**（**`VITE_AUTH_GATE_HOSTS`** 可配置）。
 
 ---
 
@@ -376,6 +376,105 @@ flowchart TB
 | **提交前自检** | **`.\scripts\check-project-changelog.ps1 -IncludeUntracked`**：动代码须改 **`PROJECT.md`**；顶节补丁 **≥** `pom` 补丁。 |
 
 ## 变更记录
+
+### 0.1.296-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **用户端对话输入框桌面端（user-web）**：修正第二行即出现滚动条的问题——改由 CSS `max-height: calc(3lh + 12px)` 精确限制三行，不再依赖 Element Plus `maxRows` 行高估算。
+
+### 0.1.295-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **用户端对话输入框桌面端（user-web）**：输入区随内容自动增高，超过 **3 行**后才出现滚动；滚动条改为细窄自定义样式（非原生粗滚动条）；移动端逻辑与样式不变。
+
+### 0.1.294-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **用户端大屏工具栏（user-web）**：语言/主题切换改为内联渲染（欢迎页浮动位 + 对话标题栏），不再 Teleport 到 body 用 JS 同步坐标；侧栏展开/收起时随 CSS 布局自然贴边，无需依赖窗口 resize。
+
+### 0.1.293-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **用户端大屏工具栏（user-web）**：修复左右侧栏反复展开/收起后语言·主题锚点工具栏位置漂移（监听 `chat-body` 宽度过渡、侧栏态 settle 后重算、布局变化禁用 GSAP 位移动画并清理残留 transform）；浮动锚点 `right` 统一由 `sidebar-collapse.css` 的 `:has()` 规则驱动。
+
+### 0.1.292-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **用户端移动端（user-web）**：顶栏不再展示语言/主题工具栏，语言与日/夜/跟随系统主题仅在抽屉侧栏 Logo 旁切换。
+- **用户端中屏布局（user-web）**：断点修正为 **≤1024** 时左右侧栏互斥展开（含宽度恰为 1024 的窗口）；**>1024** 视为桌面宽屏。
+
+### 0.1.291-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **知识星球移动端（user-web）**：底部「主题星球」整块可收起/展开（默认收起，仅保留一行摘要条，星图占满剩余空间）；选中星球/知识点时自动展开，返回浏览态时重新收起；修复 `100vw` 与顶栏/侧栏不对称 safe-area 导致的右侧横向溢出。
+
+### 0.1.290-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **用户端移动端（user-web）**：中英文切换移至左侧抽屉侧栏 Logo 旁（`LocaleThemeToolbar` `locale-only`）；顶栏锚点工具栏在移动端仅保留主题切换。
+
+### 0.1.289-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **用户端对话输入框移动端（user-web）**：修复底部输入区右侧溢出屏幕（`box-sizing`、左右对称安全区内边距、工具栏/模型选择器 `max-width` 约束，移动端去掉 focus 外扩光晕）。
+
+### 0.1.288-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **知识星球移动端（user-web）**：「主题星球」列表增加收起/展开；收起后侧栏变矮、星图自动 `fitView` 放大；展开时列表限高可滚动，避免占满半屏。
+
+### 0.1.287-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **管理端数据概览 · 成员最近登录地区**：`last_login_region` 为空时，大屏聚合对公网 `last_login_ip` 用内嵌 **ip2region_v4.xdb** 回退（`ClientIpRegionLookup` / `MemberLoginRegionAggregator`）；登录写入同样在无 CF 等地理头时按 IP 解析（`LoginRegionResolver`）。内网/回环（如 **127.0.0.1**）仍无法上图，前端增加说明文案（与右侧 HTTP 访问 IP TOP 数据源区分）。
+
+### 0.1.286-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **用户端对话滚底（user-web）**：上滑意图即时解除贴底（滚轮向上 / 触摸下滑 / scrollTop 回退即停），并取消排队中的滚底；仅滚回底部附近时恢复跟随，避免高速流式输出与用户抢滚动。
+
+### 0.1.285-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **用户端对话（user-web）**：流式输出滚底改为「贴底跟随」——仅当滚动条在底部附近时自动滚底；用户上滑查看历史时不再被强制拉回底部，滚回底部后恢复跟随。
+
+### 0.1.284-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **用户端对话移动端（user-web）**：模型选择器最大宽度约为此前 1.5 倍（封顶 192px），工具栏仍保持单行不换行。
+- **分享页（user-web）**：用户短问句气泡改为 `fit-content` 宽度，不再占满整行留白。
+
+### 0.1.283-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **用户端对话移动端（user-web）**：断点 `<768px` 统一为手机布局；消息气泡/欢迎语/导航等字号按移动端比例下调（输入框保持 15px 兼顾 iOS 缩放）；输入框工具栏改为单行不换行，模型选择器按视口与模式 pill 动态收窄（约 12px 字号、略减内边距），空状态快捷提示启用 `compact` 芯片。
+
+### 0.1.282-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **用户端穿透域名（user-web / admin-web）**：`web/vite-allowed-hosts.ts` 统一 `server.allowedHosts` / `preview.allowedHosts`，默认放行 **`.onecraft.ca`**（及既有 **`.vicp.fun` / `.vicp.cc`**）；支持环境变量 **`VITE_ADDITIONAL_ALLOWED_HOSTS`** / **`__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS`** 追加域名。
+- **用户端公网登录门禁（user-web）**：经 **`onecraft.ca`** 等公网 Host 访问且未登录时，路由跳转 **`/{tenantCode}/auth`** 独立登录页（分享页 **`tenant-share`** 仍免登录）；可通过 **`VITE_AUTH_GATE_HOSTS`** 覆盖或设 **`false`** 关闭。
+
+### 0.1.281-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **知识星球 3D 星图（user-web）**：连线流动粒子按边数自适应——稀疏图保留原有动效，边数增多时降低粒子密度/速度并淡化连线，避免满屏高速光点造成视觉压迫。
 
 ### 0.1.280-SNAPSHOT
 

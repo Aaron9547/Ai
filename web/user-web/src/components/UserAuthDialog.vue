@@ -7,12 +7,18 @@
         role="dialog"
         aria-modal="true"
         :aria-label="t('auth.title')"
-        @click.self="close"
-        @keydown.esc="close"
+        @click.self="onOverlayClick"
+        @keydown.esc="onEsc"
       >
         <Transition name="auth-pop" appear>
           <div v-if="innerVisible" class="auth-shell">
-            <button type="button" class="auth-close" :aria-label="t('auth.close')" @click="close">
+            <button
+              v-if="!mandatory"
+              type="button"
+              class="auth-close"
+              :aria-label="t('auth.close')"
+              @click="close"
+            >
               <el-icon :size="18"><Close /></el-icon>
             </button>
 
@@ -176,8 +182,12 @@ const props = withDefaults(
     modelValue: boolean;
     brandLogoUrl?: string | null;
     brandTitle?: string;
+    /** 为 true 时不允许关闭（用于独立登录页） */
+    mandatory?: boolean;
+    /** 登录/注册成功后优先跳转路径（须以 `/` 开头） */
+    postAuthRedirect?: string;
   }>(),
-  { brandLogoUrl: "", brandTitle: "" },
+  { brandLogoUrl: "", brandTitle: "", mandatory: false, postAuthRedirect: undefined },
 );
 
 const brandTitle = computed(() => {
@@ -250,10 +260,26 @@ function switchTab(next: "login" | "reg") {
 }
 
 function close() {
-  if (loading.value) {
+  if (props.mandatory || loading.value) {
     return;
   }
   innerVisible.value = false;
+}
+
+function onOverlayClick() {
+  close();
+}
+
+function onEsc() {
+  close();
+}
+
+function resolvePostAuthPath(data: authApi.LoginResponse): string {
+  const custom = props.postAuthRedirect?.trim();
+  if (custom?.startsWith("/")) {
+    return custom;
+  }
+  return homeChatPathAfterLogin(data);
 }
 
 function reset() {
@@ -317,7 +343,7 @@ async function onLogin() {
   try {
     const data = await authApi.loginOpen(email, loginPass.value);
     persistSession(data);
-    await router.push(homeChatPathAfterLogin(data));
+    await router.push(resolvePostAuthPath(data));
     ElMessage.success(t("auth.loggedIn"));
     innerVisible.value = false;
     emit("done");
@@ -378,7 +404,7 @@ async function onRegister() {
       displayName: regDisplay.value.trim() || undefined,
     });
     persistSession(data);
-    await router.push(homeChatPathAfterLogin(data));
+    await router.push(resolvePostAuthPath(data));
     ElMessage.success(t("auth.regOk"));
     innerVisible.value = false;
     emit("done");

@@ -1,4 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { getUserAccessToken } from "../plugins/http";
+import { isAuthGatedHost } from "../utils/authGateHosts";
 import {
   AI_USER_EFFECTIVE_TENANT_KEY,
   TENANT_CODE_PATH_RE,
@@ -44,6 +46,11 @@ const router = createRouter({
           name: "tenant-me",
           component: () => import("../views/system/MeView.vue"),
         },
+        {
+          path: "auth",
+          name: "tenant-auth",
+          component: () => import("../views/auth/AuthView.vue"),
+        },
       ],
     },
   ],
@@ -60,6 +67,21 @@ router.beforeEach((to) => {
     }
   } else {
     setRouteBoundTenantCode(null);
+  }
+
+  if (
+    isAuthGatedHost() &&
+    !getUserAccessToken() &&
+    to.name !== "tenant-auth" &&
+    to.name !== "tenant-share"
+  ) {
+    const tenantCode =
+      typeof raw === "string" && TENANT_CODE_PATH_RE.test(raw) ? raw : DEFAULT_CODE;
+    return {
+      name: "tenant-auth",
+      params: { tenantCode },
+      query: { redirect: to.fullPath },
+    };
   }
 });
 

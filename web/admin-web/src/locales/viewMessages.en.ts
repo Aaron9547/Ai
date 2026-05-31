@@ -53,6 +53,12 @@ export default {
     mapChinaGeoLoadFailed: "China map GeoJSON failed to load; try the World view or refresh.",
     mapChinaFootnote:
       "{only} member(s) only have country CN; {unknown} region value(s) could not be matched to a province polygon.",
+    mapMemberRegionNoData:
+      "No last sign-in region on file for active members. Regions are written on successful sign-in; the IP chart on the right comes from HTTP access logs (different source).",
+    mapMemberRegionAllUnknown:
+      "Last sign-in IPs are mostly local/private (e.g. 127.0.0.1), so no map region can be shown. Sign in via a public URL or reverse proxy that forwards X-Forwarded-For / CF-IPCountry, then refresh. The right chart lists client IPs from the last 7 days.",
+    mapMemberRegionUnmapped:
+      "Region values exist but do not match this map (country or province not in the built-in mapping). Try the China view or check the Members list “Region” column.",
     seriesMemberCount: "Members",
     seriesHits: "HTTP hits",
     seriesDistinctUsers: "Distinct users",

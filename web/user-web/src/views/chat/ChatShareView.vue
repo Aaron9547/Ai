@@ -230,20 +230,30 @@ onMounted(async () => {
 }
 
 .share-page-bubble {
-  flex: 1;
   min-width: 0;
   max-width: calc(100% - 42px);
   box-sizing: border-box;
 }
 
-.share-page-bubble--user,
-.share-page-user-text {
+.share-page-msg--assistant .share-page-bubble {
+  flex: 1;
+}
+
+.share-page-msg--user .share-page-bubble {
+  flex: 0 1 auto;
+  width: fit-content;
+}
+
+.share-page-bubble--user {
   padding: 11px 14px;
   border-radius: 16px;
   border-bottom-right-radius: 5px;
   background: #f4f4f5;
   font-size: 14px;
   line-height: 1.6;
+}
+
+.share-page-user-text {
   white-space: pre-wrap;
   word-break: break-word;
 }

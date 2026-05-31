@@ -96,6 +96,14 @@
             class="dash-map-err"
             :title="memberMapGeoAlert"
           />
+          <el-alert
+            v-else-if="memberRegionMapEmptyHint"
+            type="info"
+            :closable="false"
+            show-icon
+            class="dash-map-err"
+            :title="memberRegionMapEmptyHint"
+          />
           <el-row :gutter="18" class="dash-row dash-row--charts">
             <el-col :xs="24" :lg="14">
               <el-card shadow="never" class="chart-card chart-card--map">
@@ -408,6 +416,23 @@ const memberMapGeoAlert = computed(() => {
     return t("views.dashboard.mapChinaGeoLoadFailed");
   }
   return "";
+});
+
+const memberRegionMapEmptyHint = computed(() => {
+  if (memberMapGeoAlert.value) return "";
+  const rows = summary.value?.memberLoginRegionCounts ?? [];
+  if (rows.length === 0) return t("views.dashboard.mapMemberRegionNoData");
+  const worldData = aggregateMemberWorldMapData(rows);
+  const chinaAgg = aggregateMemberChinaProvinceData(rows);
+  const drawable =
+    memberMapMode.value === "world" ? worldData.length > 0 : chinaAgg.data.length > 0;
+  if (drawable) return "";
+  const unknown = rows.find((r) => (r.name || "").trim() === "—")?.value ?? 0;
+  const total = rows.reduce((s, r) => s + r.value, 0);
+  if (unknown > 0 && unknown >= total) {
+    return t("views.dashboard.mapMemberRegionAllUnknown");
+  }
+  return t("views.dashboard.mapMemberRegionUnmapped");
 });
 
 const memberRegionCardTitle = computed(() =>

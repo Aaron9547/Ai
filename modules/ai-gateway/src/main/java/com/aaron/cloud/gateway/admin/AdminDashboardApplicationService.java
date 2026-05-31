@@ -78,7 +78,8 @@ public class AdminDashboardApplicationService {
                 meteringUsageEventRepository.countByTenantGroupedByBeijingDate(
                         tenantId, rangeStart, rangeEndExclusive);
 
-        List<Map<String, Object>> rawRegions = secUserAccountRepository.countActiveMembersByLastLoginRegion(tenantId);
+        List<Map<String, Object>> rawRegions =
+                secUserAccountRepository.countActiveMembersByLastLoginRegionWithIpFallback(tenantId);
         List<Map<String, Object>> rawIpTop = accessLogRepository.topClientIpsByTenantSince(tenantId, since7d, 20);
 
         return new AdminDashboardSummaryView(

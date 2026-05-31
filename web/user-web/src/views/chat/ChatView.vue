@@ -37,19 +37,9 @@
     />
 
     <div class="chat-body">
-      <div
-        v-show="toolbarFloating"
-        ref="toolbarAnchorFloatRef"
-        class="chat-float-tools toolbar-anchor-slot"
-        :class="{ 'chat-float-tools--rec-collapsed': recPanelCollapsed }"
-        aria-hidden="true"
-      />
-      <AnchorMotionToolbar
-        :anchor-el="activeToolbarAnchor"
-        :floating="toolbarFloating"
-        :layout-hint="recPanelCollapsed"
-        compact
-      />
+      <div v-show="toolbarFloating" class="chat-float-tools">
+        <LocaleThemeToolbar compact floating />
+      </div>
     <section class="main">
       <header v-if="isMobile" class="mobile-nav">
         <button
@@ -67,7 +57,6 @@
         >{{ activeTitle }}</span>
         <span v-else class="mobile-nav-brand">{{ displayBrandTitle }}</span>
         <div class="mobile-nav-end">
-          <div ref="toolbarAnchorHeadMobileRef" class="toolbar-anchor-slot" aria-hidden="true" />
           <button
             type="button"
             class="mobile-nav-btn mobile-nav-btn--accent"
@@ -117,7 +106,7 @@
               </div>
             </el-tooltip>
           </div>
-          <div ref="toolbarAnchorHeadDesktopRef" class="toolbar-anchor-slot toolbar-anchor-slot--head" aria-hidden="true" />
+          <LocaleThemeToolbar v-if="!toolbarFloating" compact class="thread-head-tools" />
         </div>
         <p v-if="isMobile" class="thread-hint">
           {{ t("chat.threadHintMobile") }}
@@ -134,6 +123,7 @@
           <QuickPromptChip
             v-for="q in emptyStarterPrompts"
             :key="q.id ?? q.text"
+            :compact="isMobile"
             @click="applyStarterPrompt(q, 'EMPTY')"
           >
             {{ q.text }}
@@ -153,6 +143,8 @@
         class="messages-scroll"
         :class="{ 'messages-scroll--empty': messages.length === 0 }"
         tag="div"
+        @scroll="onMessagesScroll"
+        @wheel.passive="onMessagesWheel"
       >
         <div class="messages-scroll-inner">
         <div v-if="messages.length === 0" class="empty-spacer" aria-hidden="true" />
@@ -850,7 +842,7 @@
                   <el-input
                     v-model="input"
                     type="textarea"
-                    :autosize="{ minRows: 1, maxRows: 8 }"
+                    :autosize="composerAutosize"
                     resize="none"
                     maxlength="8000"
                     :placeholder="t('chat.inputPlaceholder')"
@@ -969,7 +961,7 @@ import DailyRecommendSidebar from "../../components/chat/DailyRecommendSidebar.v
 import QuickPromptChip from "../../components/chat/QuickPromptChip.vue";
 import { useDailyRecommend } from "../../composables/useDailyRecommend";
 import { bumpKnowledgePlanetPulse } from "../../composables/useKnowledgePlanetPulse";
-import AnchorMotionToolbar from "../../components/motion/AnchorMotionToolbar.vue";
+import LocaleThemeToolbar from "../../components/LocaleThemeToolbar.vue";
 import ChatShareDialog from "../../components/chat/ChatShareDialog.vue";
 import UserAuthDialog from "../../components/UserAuthDialog.vue";
 import * as chatApi from "../../api/chat";
@@ -991,11 +983,11 @@ const uiPrefs = useUiPreferencesStore();
 const chatResponseLocale = computed(() => toChatResponseLocale(uiPrefs.locale));
 const { isMobile, isTablet, isDesktop } = useWindowBreakpoints();
 const sidebarOpen = ref(false);
-/** 左侧会话栏收起态（小于 1024 与右侧推荐栏互斥展开） */
+/** 左侧会话栏收起态（≤1024 与右侧推荐栏互斥展开） */
 const convPanelCollapsed = ref(false);
 /** 右侧推荐栏收起态，用于空对话悬浮工具栏定位 */
 const recPanelCollapsed = ref(false);
-/** 平板/中屏（小于 1024）：两侧栏至多展开一侧 */
+/** 中屏（≤1024，含 1024）：两侧栏至多展开一侧 */
 const exclusiveSidebars = computed(() => !isDesktop.value && !isMobile.value);
 let exclusiveSidebarSync = false;
 
@@ -1019,19 +1011,15 @@ function ensureExclusiveSidebarsOnNarrow(): void {
     recPanelCollapsed.value = true;
   }
 }
-const toolbarAnchorFloatRef = ref<HTMLElement | null>(null);
-const toolbarAnchorHeadMobileRef = ref<HTMLElement | null>(null);
-const toolbarAnchorHeadDesktopRef = ref<HTMLElement | null>(null);
 const threadLoading = ref(false);
 const threadPaneKey = computed(() => (convId.value != null ? String(convId.value) : "none"));
 const toolbarFloating = computed(
   () => !isMobile.value && messages.value.length === 0 && !threadLoading.value,
 );
-const activeToolbarAnchor = computed(() => {
-  if (isMobile.value) return toolbarAnchorHeadMobileRef.value;
-  if (toolbarFloating.value) return toolbarAnchorFloatRef.value;
-  return toolbarAnchorHeadDesktopRef.value;
-});
+/** 桌面：仅 minRows 随内容增高，最大高度由 CSS 3lh 控制；移动端保持 maxRows: 8 */
+const composerAutosize = computed(() =>
+  isMobile.value ? { minRows: 1, maxRows: 8 } : { minRows: 1 },
+);
 let threadLoadSeq = 0;
 type ThreadPaneAction = { kind: "load"; convId: string } | { kind: "empty" };
 let pendingThreadAction: ThreadPaneAction | null = null;
@@ -1081,30 +1069,46 @@ watch(exclusiveSidebars, (narrow) => {
 });
 
 /** 模型下拉触发器宽度：随当前展示文案变化（避免占满半行）。 */
-function measureSelectLabelWidthPx(label: string, extraPad = 44): number {
+function measureSelectLabelWidthPx(label: string, extraPad = 44, fontSizePx = 13): number {
   if (typeof document === "undefined") return 120;
   const s = document.createElement("span");
   s.textContent = label || t("chat.selectModel");
   s.style.cssText =
-    "position:fixed;left:-9999px;top:0;visibility:hidden;white-space:nowrap;font-size:13px;font-weight:400;font-family:'PingFang SC','Microsoft YaHei',system-ui,sans-serif";
+    `position:fixed;left:-9999px;top:0;visibility:hidden;white-space:nowrap;font-size:${fontSizePx}px;font-weight:400;font-family:'PingFang SC','Microsoft YaHei',system-ui,sans-serif`;
   document.body.appendChild(s);
   const textW = s.getBoundingClientRect().width;
   document.body.removeChild(s);
   return Math.min(280, Math.max(72, Math.ceil(textW + extraPad)));
 }
 
-/** 移动端：为附件、发送、思考/联网等预留宽度后再给模型选择器封顶。 */
+/** 移动端：按视口与模式 pill 占位，计算模型选择器剩余宽度（略收紧以尽量单行）。 */
 function mobileModelSelectMaxWidthPx(
-  hasThinking: boolean,
-  hasWebSearch: boolean,
+  opts: { showThinking: boolean; showWebSearch: boolean; showMcp: boolean },
   viewportW: number,
 ): number {
-  let reserved = 40 + 48 + 28;
-  if (hasThinking) reserved += 50;
-  if (hasWebSearch) reserved += 50;
-  if (hasThinking && hasWebSearch) reserved += 6;
-  const cap = viewportW - reserved;
-  return Math.max(84, Math.min(148, cap));
+  const outerPad = 20;
+  const toolbarPad = 20;
+  const gapBeforeSelect = 6;
+  const tabGap = 5;
+  let tabsW = 0;
+  let pillCount = 0;
+  if (opts.showThinking) {
+    tabsW += 38;
+    pillCount += 1;
+  }
+  if (opts.showWebSearch) {
+    tabsW += 38;
+    pillCount += 1;
+  }
+  if (opts.showMcp) {
+    tabsW += 34;
+    pillCount += 1;
+  }
+  if (pillCount > 1) {
+    tabsW += tabGap * (pillCount - 1);
+  }
+  const available = viewportW - outerPad - toolbarPad - tabsW - gapBeforeSelect;
+  return Math.max(102, Math.min(192, available));
 }
 
 /** 与下拉项字号接近，用于量最长选项宽度（略小于真实 padding，后面统一加余量）。 */
@@ -1619,7 +1623,8 @@ async function loadMessagesForConv(id: string) {
   if (seq !== threadLoadSeq) return;
   await ensureEmptyStarterPromptsIfNeeded();
   loadFollowUpForLastAssistant();
-  await scrollToBottom();
+  scrollPinnedToBottom.value = true;
+  await scrollToBottom(true);
 }
 
 async function onThreadPaneAfterLeave() {
@@ -2345,6 +2350,121 @@ function messageRowKey(m: Msg, idx: number): string {
 const sending = ref(false);
 const scrollAreaRef = ref<InstanceType<typeof import("element-plus").ElScrollbar> | null>(null);
 
+/** 用户是否在底部附近；仅贴底时流式输出才自动滚底。 */
+const scrollPinnedToBottom = ref(true);
+const SCROLL_PIN_THRESHOLD_PX = 96;
+let scrollPinFromProgrammatic = false;
+let lastKnownScrollTop = 0;
+let messagesTouchStartY = 0;
+
+function getMessagesScrollWrap(): HTMLElement | null {
+  return scrollAreaRef.value?.wrapRef ?? null;
+}
+
+function isNearMessagesScrollBottom(wrap: HTMLElement, threshold = SCROLL_PIN_THRESHOLD_PX): boolean {
+  return wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight <= threshold;
+}
+
+function cancelPendingScrollToBottom() {
+  if (scrollBottomRaf != null) {
+    cancelAnimationFrame(scrollBottomRaf);
+    scrollBottomRaf = null;
+  }
+}
+
+/** 用户主动上滑：立刻解除贴底并取消排队中的滚底。 */
+function releaseScrollPin() {
+  scrollPinnedToBottom.value = false;
+  cancelPendingScrollToBottom();
+}
+
+function onMessagesWheel(e: WheelEvent) {
+  if (e.deltaY < 0) {
+    releaseScrollPin();
+  }
+}
+
+function onMessagesTouchStart(e: TouchEvent) {
+  messagesTouchStartY = e.touches[0]?.clientY ?? 0;
+}
+
+function onMessagesTouchMove(e: TouchEvent) {
+  const y = e.touches[0]?.clientY ?? messagesTouchStartY;
+  if (y > messagesTouchStartY + 6) {
+    releaseScrollPin();
+  }
+}
+
+function onMessagesScroll() {
+  const wrap = getMessagesScrollWrap();
+  if (!wrap) {
+    return;
+  }
+  if (scrollPinFromProgrammatic) {
+    lastKnownScrollTop = wrap.scrollTop;
+    return;
+  }
+  if (wrap.scrollTop < lastKnownScrollTop - 1) {
+    releaseScrollPin();
+  } else if (isNearMessagesScrollBottom(wrap)) {
+    scrollPinnedToBottom.value = true;
+  }
+  lastKnownScrollTop = wrap.scrollTop;
+}
+
+async function scrollToBottom(force = false) {
+  await nextTick();
+  const sb = scrollAreaRef.value;
+  const wrap = sb?.wrapRef;
+  if (!wrap) return;
+  if (!force && !scrollPinnedToBottom.value) return;
+
+  scrollPinFromProgrammatic = true;
+  sb.setScrollTop(wrap.scrollHeight);
+  lastKnownScrollTop = wrap.scrollTop;
+  if (force) {
+    scrollPinnedToBottom.value = true;
+  }
+  requestAnimationFrame(() => {
+    scrollPinFromProgrammatic = false;
+  });
+}
+
+let scrollBottomRaf: number | null = null;
+
+function scheduleScrollToBottom(force = false) {
+  if (scrollBottomRaf != null) {
+    return;
+  }
+  scrollBottomRaf = requestAnimationFrame(() => {
+    scrollBottomRaf = null;
+    void scrollToBottom(force);
+  });
+}
+
+watch(
+  () => scrollAreaRef.value?.wrapRef,
+  (wrap, _, onCleanup) => {
+    if (!wrap) {
+      return;
+    }
+    const onWheelWrap = (e: WheelEvent) => {
+      if (e.deltaY < 0) {
+        releaseScrollPin();
+      }
+    };
+    wrap.addEventListener("wheel", onWheelWrap, { passive: true });
+    wrap.addEventListener("touchstart", onMessagesTouchStart, { passive: true });
+    wrap.addEventListener("touchmove", onMessagesTouchMove, { passive: true });
+    onCleanup(() => {
+      wrap.removeEventListener("wheel", onWheelWrap);
+      wrap.removeEventListener("touchstart", onMessagesTouchStart);
+      wrap.removeEventListener("touchmove", onMessagesTouchMove);
+    });
+  },
+  { flush: "post" },
+);
+
 const models = ref<chatApi.LlmModelOption[]>([]);
 const modelAlias = ref("");
 /** 默认开启；不支持思考的模型由 watch(modelAlias) 置为 false */
@@ -2487,10 +2607,13 @@ const modelSelectWidthPx = computed(() => {
     return Math.min(measureSelectLabelWidthPx(label), 280);
   }
   if (isMobile.value) {
-    const raw = measureSelectLabelWidthPx(label, 36);
+    const raw = measureSelectLabelWidthPx(label, 32, 12);
     const cap = mobileModelSelectMaxWidthPx(
-      !!m?.supportsThinking,
-      webSearchAllowed.value,
+      {
+        showThinking: !!m?.supportsThinking,
+        showWebSearch: webSearchAllowed.value,
+        showMcp: true,
+      },
       window.innerWidth,
     );
     return Math.min(raw, cap);
@@ -2570,25 +2693,6 @@ watch(sessionTokenTotal, (n, prev) => {
   }
 });
 
-async function scrollToBottom() {
-  await nextTick();
-  const sb = scrollAreaRef.value;
-  if (!sb?.wrapRef) return;
-  sb.setScrollTop(sb.wrapRef.scrollHeight);
-}
-
-let scrollBottomRaf: number | null = null;
-
-function scheduleScrollToBottom() {
-  if (scrollBottomRaf != null) {
-    return;
-  }
-  scrollBottomRaf = requestAnimationFrame(() => {
-    scrollBottomRaf = null;
-    void scrollToBottom();
-  });
-}
-
 function stopGenerating() {
   if (!sending.value) {
     return;
@@ -2652,7 +2756,8 @@ async function retryAssistantAt(assistantIdx: number) {
   syncAssistantActiveToFlat(prev);
 
   sending.value = true;
-  await scrollToBottom();
+  scrollPinnedToBottom.value = true;
+  await scrollToBottom(true);
 
   const { signal: streamSignal, generation: regenGen } = beginActiveStream();
   let syncHistory = true;
@@ -2865,7 +2970,8 @@ async function loadChatShellForCurrentTenant() {
   if (convId.value) {
     await loadMessagesForConv(convId.value);
   } else {
-    await scrollToBottom();
+    scrollPinnedToBottom.value = true;
+    await scrollToBottom(true);
   }
   await ensureEmptyStarterPromptsIfNeeded();
 }
@@ -3146,7 +3252,8 @@ async function send() {
     beginAssistantStreamTiming(assistantRow, useWeb);
     messages.value.push(assistantRow);
     assistantIdx = messages.value.length - 1;
-    await scrollToBottom();
+    scrollPinnedToBottom.value = true;
+    await scrollToBottom(true);
 
     const { signal: streamSignal, generation: sendGen } = beginActiveStream();
     streamStarted = true;
@@ -3245,24 +3352,12 @@ async function send() {
 .chat-float-tools {
   position: absolute;
   top: max(14px, env(safe-area-inset-top, 0px));
-  right: calc(300px + 10px);
   z-index: 25;
+  pointer-events: auto;
 }
 
-.chat-float-tools--rec-collapsed {
-  right: calc(40px + 10px);
-}
-
-.toolbar-anchor-slot {
-  display: inline-block;
+.thread-head-tools {
   flex-shrink: 0;
-  width: 96px;
-  height: 40px;
-  pointer-events: none;
-}
-
-.toolbar-anchor-slot--head {
-  width: 96px;
 }
 
 .main {
@@ -3341,10 +3436,6 @@ async function send() {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.thread-head-tools {
-  flex-shrink: 0;
 }
 
 .thread-title {
@@ -4658,6 +4749,7 @@ async function send() {
 
 .composer-dock {
   padding: 24px 24px 16px;
+  box-sizing: border-box;
   background: linear-gradient(
     to top,
     var(--chat-bg-main, #ffffff) 0%,
@@ -4670,10 +4762,15 @@ async function send() {
   width: 100%;
   max-width: 48rem;
   margin: 0 auto;
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 .composer-surface {
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
   padding: 8px;
   border-radius: 28px;
   border: 1px solid var(--chat-border, rgba(0, 0, 0, 0.06));
@@ -5515,6 +5612,44 @@ async function send() {
   font-weight: 400;
 }
 
+/* 桌面：随内容增高，满 3 行（lh）后才滚动；避免 EP maxRows 低估行高导致 2 行出滚动条 */
+.chat-app:not(.chat-app--mobile) .composer-input :deep(.el-textarea__inner) {
+  min-height: unset;
+  max-height: calc(3lh + 12px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.42) transparent;
+}
+
+.chat-app:not(.chat-app--mobile) .composer-input :deep(.el-textarea__inner)::-webkit-scrollbar {
+  width: 5px;
+}
+
+.chat-app:not(.chat-app--mobile) .composer-input :deep(.el-textarea__inner)::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-app:not(.chat-app--mobile) .composer-input :deep(.el-textarea__inner)::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.38);
+}
+
+.chat-app:not(.chat-app--mobile) .composer-input :deep(.el-textarea__inner)::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.52);
+}
+
+html.dark .chat-app:not(.chat-app--mobile) .composer-input :deep(.el-textarea__inner) {
+  scrollbar-color: rgba(161, 161, 170, 0.35) transparent;
+}
+
+html.dark .chat-app:not(.chat-app--mobile) .composer-input :deep(.el-textarea__inner)::-webkit-scrollbar-thumb {
+  background: rgba(161, 161, 170, 0.32);
+}
+
+html.dark .chat-app:not(.chat-app--mobile) .composer-input :deep(.el-textarea__inner)::-webkit-scrollbar-thumb:hover {
+  background: rgba(212, 212, 216, 0.45);
+}
+
 .composer-note {
   width: 100%;
   max-width: 48rem;
@@ -5585,6 +5720,12 @@ async function send() {
   height: 100dvh;
   min-height: 100dvh;
   max-height: 100dvh;
+  --chat-mobile-fs-base: 13px;
+  --chat-mobile-fs-sm: 11px;
+  --chat-mobile-fs-xs: 10px;
+  --chat-mobile-fs-nav: 14px;
+  --chat-mobile-fs-input: 15px;
+  --chat-mobile-lh: 1.62;
 }
 
 .chat-app--mobile.chat-app--sidebar-open {
@@ -5643,7 +5784,7 @@ async function send() {
 .mobile-nav-brand {
   flex: 1;
   min-width: 0;
-  font-size: 15px;
+  font-size: var(--chat-mobile-fs-nav, 14px);
   font-weight: 600;
   color: #202020;
   overflow: hidden;
@@ -5689,12 +5830,23 @@ async function send() {
 
 .chat-app--mobile .thread-hint {
   max-width: none;
-  font-size: 11px;
+  font-size: var(--chat-mobile-fs-xs, 10px);
 }
 
 .chat-app--mobile .thread-tokens {
   max-width: none;
-  font-size: 11px;
+  font-size: var(--chat-mobile-fs-xs, 10px);
+}
+
+.chat-app--mobile .empty-welcome {
+  font-size: var(--chat-mobile-fs-nav, 14px);
+  line-height: 1.55;
+}
+
+.chat-app--mobile .chat-hero {
+  flex-shrink: 0;
+  overflow: visible;
+  padding: 18px 16px 10px;
 }
 
 .chat-app--mobile .messages-scroll-inner {
@@ -5734,6 +5886,13 @@ async function send() {
   max-width: none;
 }
 
+.chat-app--mobile .main > .composer {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
 .chat-app--mobile .messages-scroll {
   flex: 1;
   min-height: 0;
@@ -5750,11 +5909,6 @@ async function send() {
 
 .chat-app--mobile .messages-scroll :deep(.el-scrollbar__bar) {
   display: none;
-}
-
-.chat-app--mobile .chat-hero {
-  flex-shrink: 0;
-  overflow: visible;
 }
 
 .chat-app--mobile .messages-scroll--empty {
@@ -5776,49 +5930,134 @@ async function send() {
 }
 
 .chat-app--mobile .bubble-inner {
-  padding: 10px 14px;
-  font-size: 14px;
+  padding: 9px 12px;
+  font-size: var(--chat-mobile-fs-base, 13px);
+  line-height: var(--chat-mobile-lh, 1.62);
+}
+
+.chat-app--mobile .bubble-md :deep(p),
+.chat-app--mobile .bubble-md :deep(li),
+.chat-app--mobile .wf-body-md {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.chat-app--mobile .bubble-md :deep(h1) {
+  font-size: 1.15em;
+}
+
+.chat-app--mobile .bubble-md :deep(h2) {
+  font-size: 1.08em;
+}
+
+.chat-app--mobile .bubble-md :deep(h3) {
+  font-size: 1.02em;
+}
+
+.chat-app--mobile .follow-up-prompts-label {
+  font-size: var(--chat-mobile-fs-sm, 11px);
 }
 
 .chat-app--mobile .composer-dock {
-  padding: 12px 10px max(12px, env(safe-area-inset-bottom));
-  padding-left: max(10px, env(safe-area-inset-left));
-  padding-right: max(10px, env(safe-area-inset-right));
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px max(10px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom))
+    max(10px, env(safe-area-inset-left));
 }
 
 .chat-app--mobile .composer-island-wrap {
-  max-width: none;
+  max-width: 100%;
+  width: 100%;
 }
 
 .chat-app--mobile .composer-note {
   margin-bottom: 0;
-  max-width: none;
+  max-width: 100%;
+  padding: 0 2px;
+  box-sizing: border-box;
 }
 
 .chat-app--mobile .composer-surface {
   border-radius: 20px;
+  overflow: hidden;
+}
+
+.chat-app--mobile .composer-surface:focus-within {
+  box-shadow: 0 16px 32px -14px rgba(0, 0, 0, 0.18);
 }
 
 .chat-app--mobile .composer-toolbar {
-  flex-wrap: wrap;
-  row-gap: 8px;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px 6px;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.chat-app--mobile .composer-mode-tabs {
+  flex: 0 1 auto;
+  min-width: 0;
+  gap: 5px;
+}
+
+.chat-app--mobile .composer-mode-pill {
+  padding: 4px 9px;
+  min-height: 26px;
+  font-size: var(--chat-mobile-fs-sm, 11px);
+  line-height: 1.35;
 }
 
 .chat-app--mobile .composer-model-select {
-  width: 100% !important;
-  max-width: 100%;
-  margin-left: 0;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 42%;
+  margin-left: auto;
 }
 
 .chat-app--mobile .model-pill-select {
   flex-shrink: 1;
   min-width: 0;
-  max-width: min(148px, calc(100vw - 11.5rem));
+  max-width: 100%;
 }
 
 .chat-app--mobile .model-pill-select :deep(.el-select__wrapper),
 .chat-app--mobile .model-pill-select :deep(.el-input__wrapper) {
-  padding: 2px 6px !important;
+  padding: 1px 5px !important;
+  min-height: 26px;
+}
+
+.chat-app--mobile .model-pill-select :deep(.el-select__selection),
+.chat-app--mobile .model-pill-select :deep(.el-input__inner),
+.chat-app--mobile .model-pill-select :deep(.el-select__selected-item),
+.chat-app--mobile .model-pill-select :deep(.el-select__selected-item span),
+.chat-app--mobile .model-pill-select :deep(.el-select__placeholder) {
+  font-size: 12px !important;
+}
+
+.chat-app--mobile .composer-input-row {
+  gap: 8px;
+  padding: 4px 8px 6px;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.chat-app--mobile .composer-input-wrap {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.chat-app--mobile .composer-send-col {
+  flex-shrink: 0;
+}
+
+.chat-app--mobile .composer-input :deep(.el-textarea__inner) {
+  font-size: var(--chat-mobile-fs-input, 15px);
+  min-height: 36px;
+  line-height: 1.5;
 }
 
 .chat-app--mobile .deep-think-group {
@@ -5853,7 +6092,7 @@ async function send() {
   padding: 28px 16px 40px;
 }
 
-@media (max-width: 719px) {
+@media (max-width: 767px) {
   .bubble-md :deep(table) {
     display: block;
     overflow-x: auto;

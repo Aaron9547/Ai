@@ -227,4 +227,12 @@ public class SecUserAccountRepository {
     public List<Map<String, Object>> countActiveMembersByLastLoginRegion(long tenantId) {
         return mapper.countActiveMembersByLastLoginRegion(tenantId);
     }
+
+    /**
+     * 在册成员登录地区聚合：库内 {@code last_login_region} 优先；为空时对公网 {@code last_login_ip} 做 ip2region 回退（见
+     * {@link MemberLoginRegionAggregator}）。
+     */
+    public List<Map<String, Object>> countActiveMembersByLastLoginRegionWithIpFallback(long tenantId) {
+        return MemberLoginRegionAggregator.aggregate(mapper.listActiveMemberLoginGeo(tenantId));
+    }
 }

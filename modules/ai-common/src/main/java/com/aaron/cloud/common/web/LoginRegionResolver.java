@@ -15,7 +15,7 @@ import java.util.List;
  *   <li>Google App Engine：{@code X-Appengine-Country}（仅国家）。</li>
  * </ul>
  *
- * <p>若部署前未经过上述代理，则本字段可能为空；要「仅凭 IP」出省市需另接 MaxMind/ip2region 等离线库（未内置）。
+ * <p>若部署前未经过上述代理，则回退 {@link ClientIpRegionLookup}（内嵌 {@code ip2region_v4.xdb}，仅公网 IP）；内网/回环仍可能为空。
  */
 public final class LoginRegionResolver {
 
@@ -28,12 +28,33 @@ public final class LoginRegionResolver {
         if (request == null) {
             return null;
         }
+        String fromHeaders = resolveFromHeaders(request);
+        if (fromHeaders != null) {
+            return fromHeaders;
+        }
+        return ClientIpRegionLookup.resolveRegion(HttpClientIp.resolve(request));
+    }
+
+    /** 与 {@link #resolve(HttpServletRequest)} 相同格式，供大屏在 {@code last_login_region} 为空时按 IP 回退。 */
+    public static String formatRegion(String country2, String region, String city) {
+        return compose(country2, region, city);
+    }
+
+    private static String resolveFromHeaders(HttpServletRequest request) {
         String cfCountry = trimHeader(request, "CF-IPCountry");
         if (cfCountry != null && !isUnknownCountry(cfCountry)) {
             return compose(
                     normalizeCountryCode(cfCountry),
                     trimHeader(request, "CF-Region"),
                     trimHeader(request, "CF-IPCity"));
+        }
+        String cloudFront = trimHeader(request, "CloudFront-Viewer-Country");
+        if (cloudFront != null && !isUnknownCountry(cloudFront)) {
+            return compose(normalizeCountryCode(cloudFront), null, null);
+        }
+        String xCountry = trimHeader(request, "X-Country-Code");
+        if (xCountry != null && !isUnknownCountry(xCountry)) {
+            return compose(normalizeCountryCode(xCountry), null, null);
         }
         String gae = trimHeader(request, "X-Appengine-Country");
         if (gae != null && !isUnknownCountry(gae)) {

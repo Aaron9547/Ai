@@ -45,6 +45,70 @@ function linkEndpointId(endpoint: string | { id?: string }): string {
   return typeof endpoint === "string" ? endpoint : String(endpoint.id ?? "");
 }
 
+/** 3D 连线流动粒子全局预算，避免节点/边过多时满屏高速光点 */
+const MAX_FLOW_PARTICLES = 28;
+
+type LinkFlowProfile = {
+  particleCount: (kind: string, linkId: string) => number;
+  particleSpeed: number;
+  particleWidth: number;
+  linkOpacity: number;
+  linkColorAlpha: number;
+};
+
+function stableLinkSample(linkId: string, threshold: number): boolean {
+  let hash = 0;
+  for (let i = 0; i < linkId.length; i++) {
+    hash = (hash * 31 + linkId.charCodeAt(i)) >>> 0;
+  }
+  return (hash % 1000) / 1000 < threshold;
+}
+
+function linkFlowKey(source: string, target: string): string {
+  return source < target ? `${source}|${target}` : `${target}|${source}`;
+}
+
+function computeLinkFlowProfile(linkCount: number): LinkFlowProfile {
+  if (linkCount <= 0) {
+    return {
+      particleCount: () => 0,
+      particleSpeed: 0,
+      particleWidth: 0,
+      linkOpacity: 0.45,
+      linkColorAlpha: 0.22,
+    };
+  }
+  if (linkCount <= 15) {
+    return {
+      particleCount: (kind) => (kind === "relation" ? 2 : 1),
+      particleSpeed: 0.004,
+      particleWidth: 1.4,
+      linkOpacity: 0.42,
+      linkColorAlpha: 0.22,
+    };
+  }
+  if (linkCount <= 35) {
+    return {
+      particleCount: (kind) => (kind === "relation" ? 1 : 1),
+      particleSpeed: 0.003,
+      particleWidth: 1.2,
+      linkOpacity: 0.36,
+      linkColorAlpha: 0.18,
+    };
+  }
+  const sampleRate = Math.min(1, MAX_FLOW_PARTICLES / linkCount);
+  return {
+    particleCount: (kind, linkId) => {
+      if (!stableLinkSample(linkId, sampleRate)) return 0;
+      return kind === "relation" ? 1 : 0;
+    },
+    particleSpeed: 0.002,
+    particleWidth: 0.9,
+    linkOpacity: 0.28,
+    linkColorAlpha: 0.14,
+  };
+}
+
 function buildGraphPayload(
   universe: KnowledgePlanetUniverse,
   mode: UniverseViewMode,
@@ -142,6 +206,8 @@ export function useKnowledgePlanetUniverseGraph(containerRef: ShallowRef<HTMLEle
     const { nodes, links } = buildGraphPayload(universe, mode, selectedPlanetId);
     if (nodes.length === 0) return false;
 
+    const flowProfile = computeLinkFlowProfile(links.length);
+
     const w = Math.max(el.clientWidth, 1);
     const h = Math.max(el.clientHeight, 1);
 
@@ -167,12 +233,16 @@ export function useKnowledgePlanetUniverseGraph(containerRef: ShallowRef<HTMLEle
         return createKnowledgeCrystalObject(node.color);
       })
       .nodeThreeObjectExtend(false)
-      .linkColor(() => "rgba(0, 242, 254, 0.22)")
+      .linkColor(() => `rgba(0, 242, 254, ${flowProfile.linkColorAlpha})`)
       .linkWidth((l) => (fgLink(l).kind === "relation" ? 0.9 : 0.55))
-      .linkOpacity(0.45)
-      .linkDirectionalParticles((l) => (fgLink(l).kind === "relation" ? 3 : 2))
-      .linkDirectionalParticleWidth(1.5)
-      .linkDirectionalParticleSpeed(0.006)
+      .linkOpacity(flowProfile.linkOpacity)
+      .linkDirectionalParticles((l) => {
+        const link = fgLink(l);
+        const linkId = linkFlowKey(linkEndpointId(link.source), linkEndpointId(link.target));
+        return flowProfile.particleCount(link.kind, linkId);
+      })
+      .linkDirectionalParticleWidth(flowProfile.particleWidth)
+      .linkDirectionalParticleSpeed(flowProfile.particleSpeed)
       .linkDirectionalParticleColor(() => "#00f2fe")
       .warmupTicks(120)
       .cooldownTicks(80)

@@ -10,7 +10,14 @@
       <div class="sidebar-inner">
       <div class="sidebar-body" :aria-hidden="showCollapsed">
       <div class="sidebar-top">
-        <BrandMark :logo-url="brandLogoUrl" :label="brandLabel" size="sidebar" aria-hidden="true" />
+        <div class="sidebar-top-brand">
+          <BrandMark :logo-url="brandLogoUrl" :label="brandLabel" size="sidebar" aria-hidden="true" />
+          <LocaleThemeToolbar
+            v-if="mobileLayout && drawerOpen"
+            compact
+            class="sidebar-locale-toolbar"
+          />
+        </div>
         <div class="sidebar-top-actions">
           <button type="button" class="btn-new" :aria-label="t('chat.ariaNewChat')" @click="emit('newConv')">
             <el-icon><Plus /></el-icon>
@@ -165,6 +172,7 @@ import {
   User,
 } from "@element-plus/icons-vue";
 import BrandMark from "@/components/BrandMark.vue";
+import LocaleThemeToolbar from "@/components/LocaleThemeToolbar.vue";
 import KnowledgePlanetMobileEntry from "./KnowledgePlanetMobileEntry.vue";
 import SidebarCollapseTab from "./SidebarCollapseTab.vue";
 import { computed, watch } from "vue";
@@ -402,6 +410,18 @@ const convGroups = computed<ConvGroup[]>(() => {
   justify-content: space-between;
   gap: 8px;
   padding: 12px 12px 10px;
+}
+
+.sidebar-top-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.sidebar-locale-toolbar {
+  flex-shrink: 0;
 }
 
 .sidebar-top-actions {

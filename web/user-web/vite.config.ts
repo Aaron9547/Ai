@@ -5,8 +5,10 @@ import AutoImport from "unplugin-auto-import/vite";
 import Components from "unplugin-vue-components/vite";
 import { ElementPlusResolver } from "unplugin-vue-components/resolvers";
 import { defineConfig } from "vite";
+import { resolveViteAllowedHosts } from "../vite-allowed-hosts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const allowedHosts = resolveViteAllowedHosts();
 
 export default defineConfig({
   plugins: [
@@ -42,10 +44,10 @@ export default defineConfig({
   server: {
     host: true,
     /**
-     * 花生壳等穿透：Host 为域名（非纯 IP）时 Vite 6 会 403。以 `.` 开头表示该后缀及子域（如 *.vicp.fun）。
-     * 其它域名可设环境变量 `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS`（见 Vite server.allowedHosts），或本地临时改为 `true`（勿提交）。
+     * 花生壳 / 自定义域穿透：Host 为域名（非纯 IP）时 Vite 6 会 403。以 `.` 开头表示该后缀及子域。
+     * 追加域名：`VITE_ADDITIONAL_ALLOWED_HOSTS` 或 `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS`；本地全放行：`VITE_ALLOWED_HOSTS_ALL=true`（勿提交）。
      */
-    allowedHosts: [".vicp.fun", ".vicp.cc"],
+    allowedHosts,
     port: 5173,
     proxy: {
       "/api": {
@@ -59,6 +61,6 @@ export default defineConfig({
     },
   },
   preview: {
-    allowedHosts: [".vicp.fun", ".vicp.cc"],
+    allowedHosts,
   },
 });

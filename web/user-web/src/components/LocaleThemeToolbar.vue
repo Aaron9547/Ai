@@ -5,6 +5,7 @@
       'locale-theme-toolbar--compact': compact,
       'locale-theme-toolbar--floating': floating,
       'locale-theme-toolbar--theme-only': themeOnly,
+      'locale-theme-toolbar--locale-only': localeOnly,
     }"
     role="toolbar"
     :aria-label="t('ui.toolbarAria')"
@@ -29,10 +30,16 @@
           </template>
         </el-dropdown>
 
-        <span class="lt-divider" aria-hidden="true" />
+        <span v-if="!localeOnly" class="lt-divider" aria-hidden="true" />
       </template>
 
-      <el-dropdown trigger="click" teleported popper-class="lt-dropdown-popper" @command="onColorMode">
+      <el-dropdown
+        v-if="!localeOnly"
+        trigger="click"
+        teleported
+        popper-class="lt-dropdown-popper"
+        @command="onColorMode"
+      >
         <button type="button" class="lt-trigger" :title="t('ui.theme')">
           <span class="lt-icon-wrap" aria-hidden="true">
             <Transition name="motion-crossfade" mode="out-in">
@@ -68,8 +75,10 @@ withDefaults(
     floating?: boolean;
     /** 仅展示主题切换（悬浮时常用） */
     themeOnly?: boolean;
+    /** 仅展示语言切换（移动端侧栏等） */
+    localeOnly?: boolean;
   }>(),
-  { compact: false, floating: false, themeOnly: false },
+  { compact: false, floating: false, themeOnly: false, localeOnly: false },
 );
 
 const { t } = useI18n();
@@ -240,6 +249,14 @@ html.dark .lt-group {
 
 .locale-theme-toolbar--floating.locale-theme-toolbar--theme-only .lt-icon-wrap {
   font-size: 20px;
+}
+
+.locale-theme-toolbar--locale-only .lt-group {
+  border-radius: 10px;
+}
+
+.locale-theme-toolbar--compact.locale-theme-toolbar--locale-only .lt-trigger {
+  padding: 7px 10px;
 }
 
 html.dark .locale-theme-toolbar--floating .lt-group {
