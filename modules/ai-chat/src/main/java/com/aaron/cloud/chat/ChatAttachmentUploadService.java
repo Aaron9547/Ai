@@ -4,12 +4,18 @@ import com.aaron.cloud.common.chat.ChatAttachmentRepository;
 import com.aaron.cloud.common.chat.ChatConversationRepository;
 import com.aaron.cloud.common.chat.entity.ChatAttachment;
 import com.aaron.cloud.common.context.TenantContextHolder;
+import com.aaron.cloud.chat.support.ChatAttachmentFileKind;
+import com.aaron.cloud.chat.support.ChatAttachmentImageOcrService;
+import com.aaron.cloud.chat.support.ChatAttachmentTexts;
+import com.aaron.cloud.chat.support.ChatAttachmentUploadFileNames;
 import com.aaron.cloud.chat.support.DocumentTextExtractor;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ChatAttachmentUploadService {
@@ -20,8 +26,11 @@ public class ChatAttachmentUploadService {
     private final ChatAttachmentRepository attachmentRepository;
     private final ChatAttachmentBinStore attachmentBinStore;
     private final DocumentTextExtractor documentTextExtractor;
+    private final ChatAttachmentImageOcrService chatAttachmentImageOcrService;
 
-    public ChatAttachment save(long conversationId, MultipartFile file) throws Exception {
+    public record SaveResult(ChatAttachment attachment, boolean textExtracted, String kind) {}
+
+    public SaveResult save(long conversationId, MultipartFile file) throws Exception {
         var snap = TenantContextHolder.require();
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("空文件");
@@ -34,29 +43,47 @@ public class ChatAttachmentUploadService {
                 .isPresent()) {
             throw new IllegalArgumentException("会话不存在");
         }
-        String original = file.getOriginalFilename() == null ? "upload" : file.getOriginalFilename();
+        String mimeType =
+                file.getContentType() == null || file.getContentType().isBlank()
+                        ? "application/octet-stream"
+                        : file.getContentType();
+        String original =
+                ChatAttachmentUploadFileNames.normalize(
+                        file.getOriginalFilename() == null ? "upload" : file.getOriginalFilename(),
+                        mimeType);
         if (!isAllowedExtension(original)) {
             throw new IllegalArgumentException("不支持的文件类型：" + original);
         }
+        String kind = ChatAttachmentFileKind.resolve(original);
         byte[] bytes = file.getBytes();
-        String text = documentTextExtractor.extract(bytes, original);
-        if (text.isBlank()) {
+        String text =
+                documentTextExtractor.extract(bytes, original, mimeType);
+        if (text.isBlank() && ChatAttachmentFileKind.IMAGE.equals(kind)) {
             text =
-                    "（未能从该文件中解析出可读文本；若为扫描件或图片请改用 OCR 管线。）";
+                    chatAttachmentImageOcrService
+                            .tryExtract(snap.getTenantId(), bytes, mimeType)
+                            .orElse("");
+        }
+        boolean textExtracted = !text.isBlank();
+        if (!textExtracted) {
+            log.warn(
+                    "[对话附件] 未解析出可读文本：文件名={}，字节数={}，MIME={}，类型={}",
+                    original,
+                    bytes.length,
+                    mimeType,
+                    kind);
+            text = ChatAttachmentTexts.EMPTY_EXTRACT_PLACEHOLDER;
         }
         var row = new ChatAttachment();
         row.setTenantId(snap.getTenantId());
         row.setConversationId(conversationId);
         row.setFileName(original);
-        row.setMimeType(
-                file.getContentType() == null || file.getContentType().isBlank()
-                        ? "application/octet-stream"
-                        : file.getContentType());
+        row.setMimeType(mimeType);
         row.setCharLength(text.length());
         row.setExtractedText(text);
         attachmentRepository.insert(row);
         attachmentBinStore.persist(snap.getTenantId(), conversationId, row.getId(), bytes);
-        return row;
+        return new SaveResult(row, textExtracted, kind);
     }
 
     private static boolean isAllowedExtension(String name) {

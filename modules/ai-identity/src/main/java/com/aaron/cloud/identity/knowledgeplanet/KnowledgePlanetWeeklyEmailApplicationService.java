@@ -1,5 +1,6 @@
 package com.aaron.cloud.identity.knowledgeplanet;
 
+import com.aaron.cloud.chat.knowledgeplanet.KnowledgePlanetWeeklyComputeService;
 import com.aaron.cloud.common.api.dto.message.MessageSendRequest;
 import com.aaron.cloud.common.api.enums.message.MessageDeliveryStatus;
 import com.aaron.cloud.common.api.enums.message.MessageSceneCode;
@@ -126,7 +127,7 @@ public class KnowledgePlanetWeeklyEmailApplicationService {
                 "tenantName", tenantName == null ? "" : tenantName,
                 "userName", userName,
                 "email", user.getEmail() == null ? "" : user.getEmail(),
-                "weekLabel", weekStart + " 起的一周",
+                "weekLabel", KnowledgePlanetWeeklyComputeService.formatCoveredWeekLabel(weekStart),
                 "summary", plan.getSummary() == null ? "" : plan.getSummary(),
                 "thinkDirections", formatList(plan.getThinkDirections()),
                 "gapAreas", formatList(plan.getGapAreas()),

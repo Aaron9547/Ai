@@ -1,6 +1,8 @@
 package com.aaron.cloud.chat;
 
 import com.aaron.cloud.chat.dto.*;
+import com.aaron.cloud.chat.support.ChatAttachmentFileKind;
+import com.aaron.cloud.chat.support.ChatAttachmentTexts;
 import com.aaron.cloud.chat.intent.ChatIntentStreamRouter;
 import com.aaron.cloud.chat.intent.IntentKeywordMatchHit;
 import com.aaron.cloud.chat.intent.IntentSseRoute;
@@ -1881,7 +1883,15 @@ public class ChatApplicationService {
         for (Long id : ids) {
             ChatAttachment a = attById.get(id);
             if (a != null) {
-                out.add(new ChatAttachmentMessageView(a.getId(), a.getFileName(), a.getCharLength()));
+                out.add(
+                        new ChatAttachmentMessageView(
+                                a.getId(),
+                                a.getFileName(),
+                                a.getCharLength(),
+                                !ChatAttachmentTexts.isPlaceholder(a.getExtractedText())
+                                        && a.getCharLength() != null
+                                        && a.getCharLength() > 0,
+                                ChatAttachmentFileKind.resolve(a.getFileName())));
             }
         }
         return out;

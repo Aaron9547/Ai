@@ -98,10 +98,14 @@ export interface ChatIntentTurnHit {
 }
 
 /** 用户消息随附的上传文件摘要（与开放接口 {@code ChatMessageView.attachments} 项一致） */
+export type ChatAttachmentKind = "image" | "document";
+
 export interface ChatAttachmentMessage {
   id: number;
   fileName: string;
   charLength: number | null;
+  textExtracted?: boolean;
+  kind?: ChatAttachmentKind;
 }
 
 export interface ConversationTokenSceneRow {
@@ -234,11 +238,14 @@ export interface UploadAttResponse {
   id: number;
   fileName: string;
   charLength: number;
+  textExtracted: boolean;
+  kind: ChatAttachmentKind;
 }
 
 export async function uploadChatAttachments(
   conversationId: string,
   files: File[],
+  onProgress?: (loaded: number, total: number) => void,
 ): Promise<UploadAttResponse[]> {
   const fd = new FormData();
   for (const f of files) {
@@ -247,8 +254,27 @@ export async function uploadChatAttachments(
   const { data } = await http.post<UploadAttResponse[]>(
     `/open/v1/chat/conversations/${encodeURIComponent(conversationId)}/attachments`,
     fd,
+    {
+      onUploadProgress: (e) => {
+        if (e.total && onProgress) {
+          onProgress(e.loaded, e.total);
+        }
+      },
+    },
   );
   return data;
+}
+
+export async function uploadChatAttachment(
+  conversationId: string,
+  file: File,
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<UploadAttResponse> {
+  const [one] = await uploadChatAttachments(conversationId, [file], onProgress);
+  if (!one) {
+    throw new Error("attachment upload returned empty");
+  }
+  return one;
 }
 
 export type ChatResponseLocale = "zh-CN" | "en-US";

@@ -59,7 +59,7 @@ export const TEMPLATE_PREVIEW_SAMPLE_VARS: Record<string, string> = {
   ttlMinutes: "5",
   userName: "张老师",
   email: "teacher@example.com",
-  weekLabel: "2026-05-19 起的一周",
+  weekLabel: "2026-05-19 至 2026-05-25",
   summary: "本周聚焦机器学习基础与 RAG 检索增强。",
   thinkDirections: "· 多模态检索\n· 向量索引优化",
   gapAreas: "· 分布式训练",

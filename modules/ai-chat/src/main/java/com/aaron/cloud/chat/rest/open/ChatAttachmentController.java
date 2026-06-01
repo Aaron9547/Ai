@@ -2,13 +2,12 @@ package com.aaron.cloud.chat.rest.open;
 
 import com.aaron.cloud.chat.ChatApplicationService;
 import com.aaron.cloud.chat.ChatAttachmentUploadService;
-import com.aaron.cloud.common.chat.entity.ChatAttachment;
 import com.aaron.cloud.common.web.rest.OpenV1ControllerBases;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -35,11 +34,19 @@ public class ChatAttachmentController extends OpenV1ControllerBases.ChatConversa
             if (f == null || f.isEmpty()) {
                 continue;
             }
-            ChatAttachment row = chatAttachmentUploadService.save(convId, f);
-            views.add(new AttachmentUploadView(row.getId(), row.getFileName(), row.getCharLength()));
+            ChatAttachmentUploadService.SaveResult saved = chatAttachmentUploadService.save(convId, f);
+            var row = saved.attachment();
+            views.add(
+                    new AttachmentUploadView(
+                            row.getId(),
+                            row.getFileName(),
+                            row.getCharLength(),
+                            saved.textExtracted(),
+                            saved.kind()));
         }
         return views;
     }
 
-    public record AttachmentUploadView(long id, String fileName, int charLength) {}
+    public record AttachmentUploadView(
+            long id, String fileName, int charLength, boolean textExtracted, String kind) {}
 }

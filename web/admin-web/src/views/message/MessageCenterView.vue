@@ -162,7 +162,11 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="createdAt" :label="t('admin.message.colCreated')" width="170" />
+          <el-table-column :label="t('admin.message.colCreated')" width="170">
+            <template #default="{ row }">
+              {{ formatTime(row.createdAt) }}
+            </template>
+          </el-table-column>
           <el-table-column :label="t('common.actions')" width="88" fixed="right">
             <template #default="{ row }">
               <el-button link type="primary" @click="openLogDetail(row)">{{ t("admin.message.viewDetail") }}</el-button>
@@ -455,9 +459,14 @@
       </template>
     </el-dialog>
 
-    <el-drawer v-model="logDetailVisible" :title="t('admin.message.logDetailTitle')" size="480px" destroy-on-close>
+    <el-dialog
+      v-model="logDetailVisible"
+      :title="t('admin.message.logDetailTitle')"
+      width="600px"
+      destroy-on-close
+    >
       <template v-if="logDetailRow">
-        <el-descriptions :column="1" border>
+        <el-descriptions :column="1" border size="small">
           <el-descriptions-item label="ID">{{ logDetailRow.id }}</el-descriptions-item>
           <el-descriptions-item :label="t('admin.message.colScene')">
             {{ sceneLabel(t, logDetailRow.sceneCode) }}
@@ -489,16 +498,18 @@
           <el-descriptions-item v-if="logDetailRow.providerMsgId" :label="t('admin.message.providerMsgId')">
             {{ logDetailRow.providerMsgId }}
           </el-descriptions-item>
-          <el-descriptions-item :label="t('admin.message.colCreated')">{{ logDetailRow.createdAt }}</el-descriptions-item>
+          <el-descriptions-item :label="t('admin.message.colCreated')">
+            {{ formatTime(logDetailRow.createdAt) }}
+          </el-descriptions-item>
           <el-descriptions-item v-if="logDetailRow.finishedAt" :label="t('admin.message.colFinished')">
-            {{ logDetailRow.finishedAt }}
+            {{ formatTime(logDetailRow.finishedAt) }}
           </el-descriptions-item>
           <el-descriptions-item v-if="logDetailRow.errorMessage" :label="t('admin.message.colError')">
             {{ logDetailRow.errorMessage }}
           </el-descriptions-item>
         </el-descriptions>
       </template>
-    </el-drawer>
+    </el-dialog>
   </div>
 </template>
 
@@ -885,6 +896,11 @@ function templateProviderSummary(row: MessageTemplateRow): string {
   const ch = channelById.value.get(row.channelId);
   if (!ch) return t("common.dash");
   return channelSmsProviderSummary(ch);
+}
+
+function formatTime(v: string | null | undefined): string {
+  if (!v) return t("common.dash");
+  return v.replace("T", " ").slice(0, 19);
 }
 
 function openLogDetail(row: MessageDeliveryLogRow) {

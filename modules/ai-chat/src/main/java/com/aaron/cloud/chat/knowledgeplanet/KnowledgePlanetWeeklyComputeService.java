@@ -280,6 +280,22 @@ public class KnowledgePlanetWeeklyComputeService {
         return today.with(DayOfWeek.MONDAY);
     }
 
+    /**
+     * 库表 {@code ten_user_weekly_insight.week_start} 为编排锚点（通常为「本周一」）；节点统计区间为
+     * {@code [weekStart-7d, weekStart)}，即上一自然周。邮件/对外文案须展示该覆盖区间，而非锚点当天。
+     */
+    public static LocalDate coveredWeekMonday(LocalDate insightWeekStart) {
+        return insightWeekStart.minusDays(7);
+    }
+
+    public static LocalDate coveredWeekSunday(LocalDate insightWeekStart) {
+        return insightWeekStart.minusDays(1);
+    }
+
+    public static String formatCoveredWeekLabel(LocalDate insightWeekStart) {
+        return coveredWeekMonday(insightWeekStart) + " 至 " + coveredWeekSunday(insightWeekStart);
+    }
+
     public enum ComputeOutcome {
         COMPUTED,
         SKIPPED,

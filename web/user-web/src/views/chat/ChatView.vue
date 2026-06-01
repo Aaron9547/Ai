@@ -384,10 +384,18 @@
                     v-for="a in m.attachments"
                     :key="a.id"
                     class="user-msg-attach-chip"
-                    :title="a.fileName + (a.charLength != null ? t('chat.attachChars', { n: a.charLength }) : '')"
+                    :class="{
+                      'user-msg-attach-chip--image': isAttachImageKind(a.kind),
+                      'user-msg-attach-chip--warn': a.textExtracted === false,
+                    }"
+                    :title="attachChipTitle(a)"
                   >
-                    <el-icon class="user-msg-attach-ico"><Document /></el-icon>
+                    <el-icon v-if="isAttachImageKind(a.kind)" class="user-msg-attach-ico"><Picture /></el-icon>
+                    <el-icon v-else class="user-msg-attach-ico"><Document /></el-icon>
                     <span class="user-msg-attach-name">{{ truncateName(a.fileName) }}</span>
+                    <span v-if="a.textExtracted === false" class="user-msg-attach-badge">{{
+                      isAttachImageKind(a.kind) ? t("chat.attachParseEmptyImageShort") : t("chat.attachParseEmptyShort")
+                    }}</span>
                   </span>
                 </div>
               </div>
@@ -740,23 +748,82 @@
               @dragleave.prevent="onDragLeave"
               @dragover.prevent
               @drop.prevent="onDropFiles"
+              @paste.capture="onComposerPaste"
             >
-              <div v-if="pendingFiles.length" class="attach-strip">
+              <div v-if="pendingAttachments.length" class="attach-strip">
                 <div class="attach-chips">
-                  <span v-for="(f, i) in pendingFiles" :key="`${i}-${f.name}-${f.size}`" class="attach-chip">
-                    <el-icon class="attach-chip-icon"><Document /></el-icon>
-                    <span class="attach-chip-name" :title="f.name">{{ truncateName(f.name) }}</span>
+                  <span
+                    v-for="(p, i) in pendingAttachments"
+                    :key="p.localKey"
+                    class="attach-chip"
+                    :class="{
+                      'attach-chip--image': p.kind === 'image',
+                      'attach-chip--uploading': attachUploadInProgress(p),
+                      'attach-chip--error': p.status === 'error',
+                      'attach-chip--warn': p.status === 'done' && p.textExtracted === false,
+                    }"
+                  >
+                    <div
+                      class="attach-chip-media"
+                      :class="{ 'attach-chip-media--doc': p.kind !== 'image' }"
+                    >
+                      <img
+                        v-if="p.kind === 'image' && p.previewUrl"
+                        class="attach-chip-thumb"
+                        :src="p.previewUrl"
+                        alt=""
+                      />
+                      <el-icon v-else class="attach-chip-icon attach-chip-icon--boxed"><Document /></el-icon>
+                      <div
+                        v-if="attachUploadInProgress(p)"
+                        class="attach-chip-mask"
+                        :style="{ height: attachMaskHeightPercent(p) + '%' }"
+                        aria-hidden="true"
+                      />
+                      <span
+                        v-if="attachUploadInProgress(p)"
+                        class="attach-chip-pct"
+                        aria-live="polite"
+                      >
+                        {{ attachUploadPercent(p) }}%
+                      </span>
+                    </div>
+                    <span class="attach-chip-meta">
+                      <span class="attach-chip-name" :title="p.fileName">{{ truncateName(p.fileName) }}</span>
+                      <span v-if="attachUploadInProgress(p)" class="attach-chip-status">
+                        {{ t("chat.attachUploadingPercent", { n: attachUploadPercent(p) }) }}
+                      </span>
+                      <span v-else-if="p.status === 'error'" class="attach-chip-status attach-chip-status--error">
+                        {{ p.errorMessage || t("chat.attachUploadFailed") }}
+                      </span>
+                      <span v-else-if="p.textExtracted && p.charLength != null" class="attach-chip-status">
+                        {{ t("chat.attachChars", { n: p.charLength }) }}
+                      </span>
+                      <span v-else-if="p.status === 'done'" class="attach-chip-status attach-chip-status--warn">
+                        {{ p.kind === "image" ? t("chat.attachParseEmptyImage") : t("chat.attachParseEmpty") }}
+                      </span>
+                    </span>
+                    <button
+                      v-if="p.status === 'error'"
+                      type="button"
+                      class="attach-chip-retry"
+                      :aria-label="t('chat.attachRetry')"
+                      @click="retryPendingAttachment(p.localKey)"
+                    >
+                      {{ t("chat.attachRetry") }}
+                    </button>
                     <button
                       type="button"
                       class="attach-chip-remove"
                       :aria-label="t('chat.removeAttachAria')"
-                      @click="removePending(i)"
+                      :disabled="attachUploadInProgress(p)"
+                      @click="removePendingAttachment(i)"
                     >
                       <span aria-hidden="true">×</span>
                     </button>
                   </span>
                 </div>
-                <span class="attach-limit">{{ pendingFiles.length }}/{{ maxAttachmentsLimit }}</span>
+                <span class="attach-limit">{{ pendingAttachments.length }}/{{ maxAttachmentsLimit }}</span>
               </div>
 
               <div
@@ -940,6 +1007,7 @@ import {
   Document,
   DocumentCopy,
   Loading,
+  Picture,
   Menu,
   More,
   Paperclip,
@@ -954,6 +1022,11 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
 import { useWindowBreakpoints } from "../../composables/useWindowBreakpoints";
+import {
+  filesFromClipboardEvent,
+  usePendingChatAttachments,
+  type PendingAttachment,
+} from "../../composables/usePendingChatAttachments";
 import BrandMark from "../../components/BrandMark.vue";
 import ChatSidebar from "../../components/chat/ChatSidebar.vue";
 import { useTenantBranding } from "../../composables/useTenantBranding";
@@ -2480,7 +2553,6 @@ function enableWebSearchForStarterPrompt() {
   }
 }
 const feedbackSendingId = ref<number | null>(null);
-const pendingFiles = ref<File[]>([]);
 const dragDepth = ref(0);
 const dragOver = ref(false);
 
@@ -2581,9 +2653,58 @@ async function loadFollowUpForMessage(m: Msg) {
 const currentModel = computed(() => models.value.find((m) => m.alias === modelAlias.value));
 const maxAttachmentsLimit = computed(() => currentModel.value?.maxAttachments ?? 10);
 
+function newConvTitleForAttach(): string {
+  const dateLoc = locale.value.startsWith("en") ? "en-US" : "zh-CN";
+  return `${t("chat.newConvPrefix")} ${new Date().toLocaleString(dateLoc, { hour12: false })}`;
+}
+
+const {
+  pendingAttachments,
+  addFiles: addPendingAttachments,
+  removeAt: removePendingAttachment,
+  retry: retryPendingAttachment,
+  clearDone: clearDonePendingAttachments,
+  clearAll: clearAllPendingAttachments,
+  attachmentIdsForSend,
+  attachmentViewsForSend,
+} = usePendingChatAttachments({
+  convId,
+  maxAttachmentsLimit,
+  createConversation: (title) => chatApi.createConversation(title),
+  newConvTitle: newConvTitleForAttach,
+});
+
 const attachDisabled = computed(
-  () => sending.value || pendingFiles.value.length >= maxAttachmentsLimit.value,
+  () => sending.value || pendingAttachments.value.length >= maxAttachmentsLimit.value,
 );
+
+function isAttachImageKind(kind?: string | null): boolean {
+  return kind === "image";
+}
+
+function attachChipTitle(a: chatApi.ChatAttachmentMessage): string {
+  const parts = [a.fileName];
+  if (a.charLength != null && a.textExtracted) {
+    parts.push(t("chat.attachChars", { n: a.charLength }));
+  }
+  if (a.textExtracted === false) {
+    parts.push(t("chat.attachParseEmpty"));
+  }
+  return parts.join(" ");
+}
+
+function attachUploadInProgress(p: PendingAttachment): boolean {
+  return p.status === "queued" || p.status === "uploading";
+}
+
+function attachUploadPercent(p: PendingAttachment): number {
+  return Math.max(0, Math.min(100, p.uploadPercent ?? 0));
+}
+
+/** 遮罩剩余高度（%）：上传越多遮罩越短，自下而上揭示内容。 */
+function attachMaskHeightPercent(p: PendingAttachment): number {
+  return Math.max(0, 100 - attachUploadPercent(p));
+}
 
 const canSend = computed(
   () =>
@@ -2845,6 +2966,7 @@ async function refresh() {
 
 function clearThread() {
   messages.value = [];
+  clearAllPendingAttachments();
   meteringSessionTokenTotal.value = 0;
   sessionTokenBreakdown.value = {
     totalTokens: 0,
@@ -2874,6 +2996,7 @@ function selectConv(id: string) {
     cancelActiveStream();
     sending.value = false;
   }
+  clearAllPendingAttachments();
   pendingThreadAction = { kind: "load", convId: id };
   convId.value = id;
   webSearchEnabled.value = false;
@@ -3060,21 +3183,10 @@ onMounted(async () => {
   tenantShellReady.value = true;
 });
 
-function addPendingFiles(files: File[]) {
-  if (!files.length) return;
-  const cap = maxAttachmentsLimit.value;
-  const merged = [...pendingFiles.value, ...files].slice(0, cap);
-  pendingFiles.value = merged;
-}
-
 function onFilePick(uploadFile: UploadFile) {
   const raw = uploadFile.raw;
   if (!raw) return;
-  addPendingFiles([raw]);
-}
-
-function removePending(i: number) {
-  pendingFiles.value = pendingFiles.value.filter((_, idx) => idx !== i);
+  addPendingAttachments([raw]);
 }
 
 function truncateName(name: string, max = 28): string {
@@ -3104,14 +3216,32 @@ function onDropFiles(e: DragEvent) {
   if (attachDisabled.value) return;
   const list = e.dataTransfer?.files;
   if (!list?.length) return;
-  addPendingFiles(Array.from(list));
+  addPendingAttachments(Array.from(list));
+}
+
+function onComposerPaste(e: ClipboardEvent) {
+  const files = filesFromClipboardEvent(e);
+  if (!files.length) {
+    return;
+  }
+  if (attachDisabled.value) {
+    return;
+  }
+  e.preventDefault();
+  e.stopPropagation();
+  addPendingAttachments(files);
 }
 
 watch(modelAlias, () => {
   if (!currentModel.value?.supportsThinking) {
     thinkingEnabled.value = false;
   }
-  pendingFiles.value = pendingFiles.value.slice(0, maxAttachmentsLimit.value);
+  if (pendingAttachments.value.length > maxAttachmentsLimit.value) {
+    const drop = pendingAttachments.value.splice(maxAttachmentsLimit.value);
+    for (const p of drop) {
+      if (p.previewUrl) URL.revokeObjectURL(p.previewUrl);
+    }
+  }
 });
 
 /** 当前会话已创建但用户尚未发送任何消息（含附件未提交）。 */
@@ -3182,6 +3312,15 @@ async function send() {
     ElMessage.warning(t("chat.pickModelFirst"));
     return;
   }
+  const pendingNotReady = pendingAttachments.value.filter((p) => p.status !== "done");
+  if (pendingNotReady.length) {
+    if (pendingNotReady.some((p) => p.status === "queued" || p.status === "uploading")) {
+      ElMessage.warning(t("chat.attachWaitUpload"));
+    } else {
+      ElMessage.warning(t("chat.attachFixErrors"));
+    }
+    return;
+  }
 
   sending.value = true;
   bumpKnowledgePlanetPulse();
@@ -3207,23 +3346,8 @@ async function send() {
       }
     }
 
-    let attachmentIds: number[] = [];
-    let uploadedAttachmentViews: chatApi.ChatAttachmentMessage[] = [];
-    if (pendingFiles.value.length) {
-      try {
-        const ups = await chatApi.uploadChatAttachments(convId.value, pendingFiles.value);
-        attachmentIds = ups.map((u) => u.id);
-        uploadedAttachmentViews = ups.map((u) => ({
-          id: u.id,
-          fileName: u.fileName,
-          charLength: u.charLength ?? null,
-        }));
-        pendingFiles.value = [];
-      } catch (e: unknown) {
-        ElMessage.error(apiRequestErrorMessage(e, t("chat.uploadFail")));
-        return;
-      }
-    }
+    const attachmentIds = attachmentIdsForSend();
+    const uploadedAttachmentViews = attachmentViewsForSend();
 
     const think =
       !!currentModel.value?.supportsThinking && thinkingEnabled.value;
@@ -3237,6 +3361,7 @@ async function send() {
       clientRowKey: newClientRowKey(),
       ...(uploadedAttachmentViews.length ? { attachments: uploadedAttachmentViews } : {}),
     });
+    clearDonePendingAttachments();
     input.value = "";
     const assistantRow: Msg = {
       role: "assistant",
@@ -4447,6 +4572,20 @@ async function send() {
   max-width: 200px;
 }
 
+.user-msg-attach-chip--warn {
+  border-color: #fcd34d;
+  background: #fffbeb;
+}
+
+.user-msg-attach-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: #b45309;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(251, 191, 36, 0.2);
+}
+
 .intent-hit-hint {
   margin: 8px 0 0 2px;
   padding: 6px 10px;
@@ -5531,15 +5670,84 @@ async function send() {
 }
 
 .attach-chip {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  max-width: 100%;
-  padding: 4px 6px 4px 10px;
-  border-radius: 999px;
+  max-width: min(100%, 280px);
+  padding: 4px 6px 4px 8px;
+  border-radius: 12px;
   background: #ececec;
   font-size: 13px;
   color: #303030;
+  border: 1px solid transparent;
+}
+
+.attach-chip--image {
+  padding-left: 4px;
+}
+
+.attach-chip--uploading {
+  border-color: #c7d2fe;
+}
+
+.attach-chip--error {
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+
+.attach-chip--warn {
+  border-color: #fcd34d;
+  background: #fffbeb;
+}
+
+.attach-chip-media {
+  position: relative;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #e4e4e7;
+}
+
+.attach-chip-media--doc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.attach-chip-mask {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  background: rgba(15, 23, 42, 0.52);
+  backdrop-filter: blur(1px);
+  transition: height 0.12s ease-out;
+  pointer-events: none;
+}
+
+.attach-chip-pct {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+.attach-chip-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .attach-chip-icon {
@@ -5548,11 +5756,52 @@ async function send() {
   font-size: 14px;
 }
 
+.attach-chip-icon--boxed {
+  font-size: 18px;
+  color: #71717a;
+}
+
+.attach-chip-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+
 .attach-chip-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+  font-weight: 500;
+}
+
+.attach-chip-status {
+  font-size: 11px;
+  color: #6e6e6e;
+  line-height: 1.2;
+}
+
+.attach-chip-status--error {
+  color: #dc2626;
+}
+
+.attach-chip-status--warn {
+  color: #b45309;
+}
+
+.attach-chip-retry {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: #4f46e5;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.attach-chip-retry:hover {
+  text-decoration: underline;
 }
 
 .attach-chip-remove {

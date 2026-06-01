@@ -377,6 +377,38 @@ flowchart TB
 
 ## 变更记录
 
+### 0.1.301-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **管理端消息发送管理（admin-web）**：投递记录列表与详情中的 **`createdAt` / `finishedAt`** 统一 **`formatTime`**（ISO 中的 **`T`** 显示为空格、截断至秒）；日志详情由 **`el-drawer`** 改为 **`el-dialog`**（与通道/模板弹窗一致）。
+
+### 0.1.300-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **知识星球周报邮件（ai-identity / ai-chat）**：修正 **`weekLabel`** 展示区间——库表 **`week_start`** 为编排锚点（本周一），统计覆盖 **上一自然周** `[weekStart-7, weekStart)`；邮件模板变量改为 **`formatCoveredWeekLabel`**（如 `2026-05-25 至 2026-05-31`），不再误显示发信当周周一。
+
+### 0.1.299-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **用户端附件上传进度（user-web）**：单文件上传接入 axios **`onUploadProgress`**；chip 缩略图/文档图标上**半透明遮罩随百分比自下而上缩短**（上传多少去掉多少遮罩），并显示 **{n}%** 文案；网络传完至 95%，服务端解析完成后到 100% 并移除遮罩。
+
+### 0.1.298-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **对话附件（ai-chat）**：剪贴板/无扩展名上传经 **`ChatAttachmentUploadFileNames`** 按 MIME 补全文件名；图片在 Tika 无文本时尝试 **`ChatAttachmentImageOcrService`**（租户已配置视觉 **`LANGUAGE`** 模型，OpenAI 兼容 `image_url`）。
+- **用户端附件 UX（user-web）**：修复 chip 状态需再选文件才刷新的问题（**`patchAttachment` 不可变更新**）；输入区/岛屿容器支持 **Ctrl+V 粘贴图片与文件**（**`filesFromClipboardEvent`**）。
+
+### 0.1.297-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **对话附件（ai-chat）**：上传响应增加 **`textExtracted`**、**`kind`**（`image`/`document`）；**`DocumentTextExtractor`** 对齐 RAG 抽取（`InputStream` + 文件名/MIME）；空文本 **WARN** 日志；占位文案收口 **`ChatAttachmentTexts`**；历史消息 **`ChatAttachmentMessageView`** 同步带出解析态；单测 **`DocumentTextExtractorTest`** + **`attachment-samples/sample.txt`**。
+- **用户端对话附件 UX（user-web）**：选择/拖拽后**立即后台上传**（无会话时自动建会话），输入区展示**上传中/成功/失败/未解析**态；**图片缩略图**与**文档** chip 区分；发送仅附带已上传 **`attachmentIds`**，上传未完成或失败时拦截并提示；**`usePendingChatAttachments`** + i18n **`attachUploading`** 等。
+
 ### 0.1.296-SNAPSHOT
 
 > **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
