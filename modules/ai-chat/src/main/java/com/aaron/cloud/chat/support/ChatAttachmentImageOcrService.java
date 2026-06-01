@@ -1,6 +1,5 @@
 package com.aaron.cloud.chat.support;
 
-import com.aaron.cloud.common.api.enums.llm.LlmModelKind;
 import com.aaron.cloud.common.api.enums.llm.LlmModelStatus;
 import com.aaron.cloud.common.modelcfg.SysLlmModelRepository;
 import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
@@ -18,9 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
-import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -32,10 +29,6 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 public class ChatAttachmentImageOcrService {
-
-    private static final Pattern VISION_MODEL_ID =
-            Pattern.compile(
-                    "(?i)(vl|vision|gpt-4o|gpt-4\\.1|omni|qwen-vl|qwen3-vl|doubao.*vision|seed-1-[56]|ui-tars)");
 
     private static final String OCR_USER_PROMPT =
             "请仅输出图片中的全部可见文字（保持段落与换行），不要解释、不要 Markdown 代码块；若无文字则只回复：无文字";
@@ -51,9 +44,9 @@ public class ChatAttachmentImageOcrService {
         if (bytes == null || bytes.length == 0) {
             return Optional.empty();
         }
-        Optional<SysLlmModel> model = pickVisionLanguageModel(tenantId);
+        Optional<SysLlmModel> model = pickVisionModel(tenantId);
         if (model.isEmpty()) {
-            log.info("[对话附件] 租户 {} 无可用视觉语言模型，跳过图片 OCR", tenantId);
+            log.info("[对话附件] 租户 {} 无可用视觉模型（请在管理端配置 VISION 类型或带 vision/vl 标识的语言模型），跳过图片 OCR", tenantId);
             return Optional.empty();
         }
         SysLlmModel m = model.get();
@@ -84,9 +77,10 @@ public class ChatAttachmentImageOcrService {
                     HTTP.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
                 log.warn(
-                        "[对话附件] 图片 OCR 上游 HTTP {}：模型 alias={}",
+                        "[对话附件] 图片 OCR 上游 HTTP {}：模型 alias={}，body={}",
                         resp.statusCode(),
-                        m.getAlias());
+                        m.getAlias(),
+                        truncateForLog(resp.body()));
                 return Optional.empty();
             }
             String text = parseAssistantContent(resp.body());
@@ -105,26 +99,31 @@ public class ChatAttachmentImageOcrService {
         }
     }
 
-    private Optional<SysLlmModel> pickVisionLanguageModel(long tenantId) {
+    private Optional<SysLlmModel> pickVisionModel(long tenantId) {
+        Optional<SysLlmModel> dedicated = llmModelRepository.pickDefaultVisionModel(tenantId);
+        if (dedicated.isPresent()) {
+            return dedicated;
+        }
         List<SysLlmModel> catalog = llmModelRepository.listForCatalog(tenantId, false);
-        Optional<SysLlmModel> vision =
+        Optional<SysLlmModel> fromCatalog =
                 catalog.stream()
                         .filter(m -> m.getStatus() == LlmModelStatus.ACTIVE)
-                        .filter(m -> m.getModelKind() == null || m.getModelKind() == LlmModelKind.LANGUAGE)
-                        .filter(this::looksVisionCapable)
+                        .filter(ChatAttachmentVisionModelHints::looksVisionCapable)
                         .findFirst();
-        if (vision.isPresent()) {
-            return vision;
+        if (fromCatalog.isPresent()) {
+            return fromCatalog;
         }
-        return llmModelRepository.pickDefaultLanguageModel(tenantId).filter(this::looksVisionCapable);
+        return llmModelRepository
+                .pickDefaultLanguageModel(tenantId)
+                .filter(ChatAttachmentVisionModelHints::looksVisionCapable);
     }
 
-    private boolean looksVisionCapable(SysLlmModel m) {
-        String id = m.getOpenaiModelId();
-        if (id == null || id.isBlank()) {
-            return false;
+    private static String truncateForLog(String body) {
+        if (body == null || body.isBlank()) {
+            return "";
         }
-        return VISION_MODEL_ID.matcher(id).find();
+        String s = body.replace('\n', ' ').trim();
+        return s.length() <= 240 ? s : s.substring(0, 240) + "…";
     }
 
     private String buildVisionRequestJson(String openaiModelId, String dataUrl) throws Exception {

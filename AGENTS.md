@@ -14,7 +14,7 @@
 
 ## 当前开发线
 
-- **变更记录顶节**：**`### 0.1.301-SNAPSHOT`**（见 **`PROJECT.md`**）
+- **变更记录顶节**：**`### 0.1.304-SNAPSHOT`**（见 **`PROJECT.md`**）
 - **构件（Maven）**：**`pom.xml` `0.1.258-SNAPSHOT`**（migrate **`{patch}`** 仍以 pom 为准）
 
 ## 源码编码（UTF-8）— 全项目硬约束

@@ -138,6 +138,7 @@
         </div>
       </div>
 
+      <div class="thread-scroll-shell">
       <el-scrollbar
         ref="scrollAreaRef"
         class="messages-scroll"
@@ -152,6 +153,7 @@
           <div
             v-for="(m, idx) in messages"
             :key="messageRowKey(m, idx)"
+            :data-msg-idx="idx"
             :class="['bubble-row', m.role === 'user' ? 'user' : 'assistant']"
           >
             <div
@@ -735,6 +737,14 @@
         </div>
         </div>
       </el-scrollbar>
+      <ChatThreadQuestionRail
+        v-show="messages.length > 0 && !threadLoading"
+        :anchors="userQuestionAnchors"
+        :scroll-wrap="messagesScrollWrap"
+        :mobile="isMobile"
+        @navigate="scrollToMessageIndex"
+      />
+      </div>
       </div>
       </Transition>
 
@@ -1036,6 +1046,7 @@ import { useDailyRecommend } from "../../composables/useDailyRecommend";
 import { bumpKnowledgePlanetPulse } from "../../composables/useKnowledgePlanetPulse";
 import LocaleThemeToolbar from "../../components/LocaleThemeToolbar.vue";
 import ChatShareDialog from "../../components/chat/ChatShareDialog.vue";
+import ChatThreadQuestionRail from "../../components/chat/ChatThreadQuestionRail.vue";
 import UserAuthDialog from "../../components/UserAuthDialog.vue";
 import * as chatApi from "../../api/chat";
 import { ChatStreamHttpError } from "../../api/chat";
@@ -2423,6 +2434,91 @@ function messageRowKey(m: Msg, idx: number): string {
 const sending = ref(false);
 const scrollAreaRef = ref<InstanceType<typeof import("element-plus").ElScrollbar> | null>(null);
 
+const messagesScrollWrap = computed(() => scrollAreaRef.value?.wrapRef ?? null);
+
+const QUESTION_PREVIEW_MAX = 120;
+
+function truncateQuestionPreview(text: string): string {
+  const s = text.trim();
+  if (s.length <= QUESTION_PREVIEW_MAX) return s;
+  return `${s.slice(0, QUESTION_PREVIEW_MAX)}…`;
+}
+
+const userQuestionAnchors = computed(() => {
+  const out: { messageIndex: number; preview: string; rowKey: string }[] = [];
+  messages.value.forEach((m, idx) => {
+    if (m.role !== "user") return;
+    const text = m.content?.trim() ?? "";
+    let preview = text ? truncateQuestionPreview(text) : "";
+    if (!preview && m.attachments?.length) {
+      preview = t("chat.questionPreviewAttachments");
+    }
+    if (!preview) preview = t("chat.questionPreviewEmpty");
+    out.push({
+      messageIndex: idx,
+      preview,
+      rowKey: messageRowKey(m, idx),
+    });
+  });
+  return out;
+});
+
+let messageScrollAnimRaf: number | null = null;
+
+function cancelMessageScrollAnimation(): void {
+  if (messageScrollAnimRaf != null) {
+    cancelAnimationFrame(messageScrollAnimRaf);
+    messageScrollAnimRaf = null;
+  }
+  scrollPinFromProgrammatic = false;
+}
+
+function easeOutCubic(t: number): number {
+  return 1 - (1 - t) ** 3;
+}
+
+/** 问题节点跳转：按距离计算时长，向下/向上均有缓动过渡（避免原生 smooth 长距「闪现」感）。 */
+function animateMessagesScrollTo(targetTop: number): void {
+  const wrap = getMessagesScrollWrap();
+  if (!wrap) return;
+  cancelMessageScrollAnimation();
+  releaseScrollPin();
+
+  const startTop = wrap.scrollTop;
+  const delta = targetTop - startTop;
+  if (Math.abs(delta) < 3) {
+    wrap.scrollTop = targetTop;
+    lastKnownScrollTop = targetTop;
+    return;
+  }
+
+  const durationMs = Math.min(1400, Math.max(480, Math.abs(delta) * 0.45));
+  const startTime = performance.now();
+  scrollPinFromProgrammatic = true;
+
+  const tick = (now: number) => {
+    const progress = Math.min(1, (now - startTime) / durationMs);
+    wrap.scrollTop = startTop + delta * easeOutCubic(progress);
+    lastKnownScrollTop = wrap.scrollTop;
+    if (progress < 1) {
+      messageScrollAnimRaf = requestAnimationFrame(tick);
+    } else {
+      messageScrollAnimRaf = null;
+      scrollPinFromProgrammatic = false;
+    }
+  };
+  messageScrollAnimRaf = requestAnimationFrame(tick);
+}
+
+function scrollToMessageIndex(idx: number): void {
+  const wrap = getMessagesScrollWrap();
+  if (!wrap) return;
+  const el = wrap.querySelector(`[data-msg-idx="${idx}"]`) as HTMLElement | null;
+  if (!el) return;
+  const top = Math.max(0, el.offsetTop - 12);
+  animateMessagesScrollTo(top);
+}
+
 /** 用户是否在底部附近；仅贴底时流式输出才自动滚底。 */
 const scrollPinnedToBottom = ref(true);
 const SCROLL_PIN_THRESHOLD_PX = 96;
@@ -2778,6 +2874,7 @@ onBeforeUnmount(() => {
     cancelAnimationFrame(scrollBottomRaf);
     scrollBottomRaf = null;
   }
+  cancelMessageScrollAnimation();
   window.clearTimeout(tokenPulseTimer);
   document.documentElement.style.removeProperty("--chat-model-dd-min");
 });
@@ -3506,10 +3603,15 @@ async function send() {
 .main > .thread-pane > .thread-head,
 .main > .thread-pane > .chat-hero,
 .main > .thread-pane > .thread-pane-loading,
-.main > .thread-pane > .messages-scroll,
 .main > .composer {
   width: 100%;
   max-width: 56rem;
+  box-sizing: border-box;
+}
+
+.main > .thread-pane > .thread-scroll-shell {
+  width: 100%;
+  max-width: none;
   box-sizing: border-box;
 }
 
@@ -4241,8 +4343,17 @@ async function send() {
   animation: blink 1s step-end infinite;
 }
 
+.thread-scroll-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  background: var(--chat-bg-main, #fafafa);
+}
+
 .messages-scroll {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   background: var(--chat-bg-main, #fafafa);
 }
@@ -4253,6 +4364,10 @@ async function send() {
 
 .messages-scroll :deep(.el-scrollbar__view) {
   min-height: 100%;
+}
+
+.messages-scroll :deep(.el-scrollbar__bar.is-vertical) {
+  display: none !important;
 }
 
 .messages-scroll-inner {
@@ -4381,6 +4496,7 @@ async function send() {
 .messages {
   width: 100%;
   min-width: 0;
+  max-width: 56rem;
   margin: 0 auto;
   padding: 0 24px;
   box-sizing: border-box;
@@ -6099,7 +6215,7 @@ html.dark .chat-app:not(.chat-app--mobile) .composer-input :deep(.el-textarea__i
 }
 
 .chat-app--mobile .messages-scroll-inner {
-  padding: 12px 0 12px;
+  padding: 12px 32px 12px 0;
 }
 
 .chat-app--mobile .bubble-inner--user {
@@ -6129,7 +6245,7 @@ html.dark .chat-app:not(.chat-app--mobile) .composer-input :deep(.el-textarea__i
 .chat-app--mobile .main > .mobile-nav,
 .chat-app--mobile .main > .thread-head,
 .chat-app--mobile .main > .chat-hero,
-.chat-app--mobile .main > .messages-scroll,
+.chat-app--mobile .main > .thread-pane > .thread-scroll-shell,
 .chat-app--mobile .main > .composer {
   width: 100%;
   max-width: none;

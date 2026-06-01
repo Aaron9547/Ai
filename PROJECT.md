@@ -377,6 +377,25 @@ flowchart TB
 
 ## 变更记录
 
+### 0.1.304-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **对话附件图片 OCR（ai-chat / ai-common）**：优先选用管理端 **`VISION`** 类型模型（不再仅扫 **`LANGUAGE`** + 模型 ID 正则）；**`alias` / `displayName`** 含 vision/vl 等标识的语言模型亦可参与；扩展常见多模态型号匹配；OCR 失败日志附带上游响应摘要。
+- **用户端附件提示（user-web）**：图片未识别文字时文案改为「未识别到图片文字」，不再显示易误解为报错的「需 OCR」。
+
+### 0.1.303-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **对话页问题导航轨（user-web）**：整条导航轨统一拖动滚动（视口高亮条 + 问题节点同轨，无独立滚动条 thumb）；轻点节点跳转，拖动任意位置滚对话；隐藏消息区 `el-scrollbar` 竖条；节点跳转采用距离自适应缓动滚动，导航轨视口/节点同步 CSS 过渡。
+
+### 0.1.302-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **对话页问题导航轨（user-web）**：消息区 **`thread-scroll-shell`** 撑满主栏右缘，滚动条贴近右侧推荐栏左边界；**`ChatThreadQuestionRail`** 按用户消息显示竖轨节点，桌面悬浮预览、手机点击预览后跳转，点击滚至对应提问。
+
 ### 0.1.301-SNAPSHOT
 
 > **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
