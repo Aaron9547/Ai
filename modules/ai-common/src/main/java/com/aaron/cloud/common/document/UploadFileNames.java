@@ -1,11 +1,11 @@
-package com.aaron.cloud.chat.support;
+package com.aaron.cloud.common.document;
 
 import java.util.Locale;
 
 /** 上传文件名规范化（剪贴板/拖拽可能无扩展名）。 */
-public final class ChatAttachmentUploadFileNames {
+public final class UploadFileNames {
 
-    private ChatAttachmentUploadFileNames() {}
+    private UploadFileNames() {}
 
     public static String normalize(String original, String contentType) {
         String name = original == null ? "" : original.trim();
@@ -44,7 +44,7 @@ public final class ChatAttachmentUploadFileNames {
         return "pasted-file." + (ext != null ? ext : "bin");
     }
 
-    static String extensionFromMime(String contentType) {
+    public static String extensionFromMime(String contentType) {
         if (contentType == null) {
             return null;
         }

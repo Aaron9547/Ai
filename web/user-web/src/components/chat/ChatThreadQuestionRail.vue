@@ -13,39 +13,20 @@
       class="thread-question-rail-track"
       @pointerdown.prevent="onTrackPointerDown"
     >
-      <div
-        class="thread-question-rail-viewport"
-        aria-hidden="true"
-        :style="{ top: `${viewportTopPct}%`, height: `${viewportHeightPct}%` }"
-      />
-      <template v-for="(node, i) in layoutNodes" :key="node.rowKey">
-        <el-tooltip
-          v-if="!mobile"
-          :content="node.preview"
-          placement="left"
-          :show-after="200"
-          :disabled="dragging"
-          popper-class="thread-question-rail-tooltip"
-        >
-          <span
-            role="button"
-            tabindex="0"
-            class="thread-question-node"
-            :class="{ 'thread-question-node--active': activeIndex === node.messageIndex }"
-            :style="{ top: `${node.topPct}%` }"
-            :data-message-index="node.messageIndex"
-            :aria-label="t('chat.questionNodeAria', { n: i + 1 })"
-          />
-        </el-tooltip>
-        <el-popover
-          v-else
-          placement="left"
-          :width="260"
-          trigger="click"
-          :disabled="dragging"
-          popper-class="thread-question-rail-popover"
-        >
-          <template #reference>
+        <div
+          class="thread-question-rail-viewport"
+          aria-hidden="true"
+          :style="{ top: `${viewportTopPct}%`, height: `${viewportHeightPct}%` }"
+        />
+        <template v-for="(node, i) in layoutNodes" :key="node.rowKey">
+          <el-tooltip
+            v-if="!mobile"
+            :content="node.preview"
+            placement="left"
+            :show-after="200"
+            :disabled="dragging"
+            popper-class="thread-question-rail-tooltip"
+          >
             <span
               role="button"
               tabindex="0"
@@ -55,11 +36,30 @@
               :data-message-index="node.messageIndex"
               :aria-label="t('chat.questionNodeAria', { n: i + 1 })"
             />
-          </template>
-          <p class="thread-question-popover-preview">{{ node.preview }}</p>
-          <button type="button" class="thread-question-popover-jump" @click="onMobileJump(node)">
-            {{ t("chat.questionJump") }}
-          </button>
+          </el-tooltip>
+          <el-popover
+            v-else
+            placement="left"
+            :width="260"
+            trigger="click"
+            :disabled="dragging"
+            popper-class="thread-question-rail-popover"
+          >
+            <template #reference>
+              <span
+                role="button"
+                tabindex="0"
+                class="thread-question-node"
+                :class="{ 'thread-question-node--active': activeIndex === node.messageIndex }"
+                :style="{ top: `${node.topPct}%` }"
+                :data-message-index="node.messageIndex"
+                :aria-label="t('chat.questionNodeAria', { n: i + 1 })"
+              />
+            </template>
+            <p class="thread-question-popover-preview">{{ node.preview }}</p>
+            <button type="button" class="thread-question-popover-jump" @click="onMobileJump(node)">
+              {{ t("chat.questionJump") }}
+            </button>
         </el-popover>
       </template>
     </div>
@@ -333,13 +333,13 @@ onBeforeUnmount(() => {
   min-height: 120px;
   margin: 8px 4px;
   border-radius: 6px;
-  cursor: grab;
+  cursor: var(--chat-question-rail-cursor, default);
   touch-action: none;
   user-select: none;
 }
 
 .thread-question-rail--dragging .thread-question-rail-track {
-  cursor: grabbing;
+  cursor: var(--chat-question-rail-cursor-dragging, default);
 }
 
 .thread-question-rail-viewport {
@@ -378,6 +378,7 @@ onBeforeUnmount(() => {
   background: var(--chat-accent, #19c37d);
   opacity: 0.55;
   z-index: 2;
+  cursor: var(--chat-question-rail-node-cursor, pointer);
   transition:
     top 0.45s cubic-bezier(0.33, 1, 0.68, 1),
     opacity 0.15s ease,

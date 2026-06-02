@@ -9,6 +9,7 @@ import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.knowledgeplanet.KnowledgePlanetSubjectQuerySupport;
 import com.aaron.cloud.common.knowledgeplanet.KnowledgePlanetTenantRuntime;
 import com.aaron.cloud.common.knowledgeplanet.KnowledgeWeeklyPlan;
+import com.aaron.cloud.common.profile.ProfileSubjectKey;
 import com.aaron.cloud.common.knowledgeplanet.TenUserWeeklyInsightRepository;
 import com.aaron.cloud.common.knowledgeplanet.entity.TenUserKnowledgeNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -27,6 +28,7 @@ public class KnowledgePlanetQueryService {
     private final KnowledgePlanetSubjectQuerySupport subjectQuerySupport;
     private final TenUserWeeklyInsightRepository insightRepository;
     private final KnowledgePlanetUniverseBuilder universeBuilder;
+    private final KnowledgePlanetWeeklyFeedbackService weeklyFeedbackService;
     private final ObjectMapper objectMapper;
 
     public SummaryResponse summary() {
@@ -110,16 +112,39 @@ public class KnowledgePlanetQueryService {
                             try {
                                 KnowledgeWeeklyPlan plan =
                                         objectMapper.readValue(ins.getPlanJson(), KnowledgeWeeklyPlan.class);
+                                Boolean feedbackHelpful =
+                                        resolveFeedbackHelpful(
+                                                snap.getTenantId(),
+                                                snap.getUserId(),
+                                                ins.getWeekStart());
                                 return new WeeklyLatestResponse(
                                         ins.getWeekStart(),
                                         ins.getStatus().name(),
-                                        plan);
+                                        plan,
+                                        feedbackHelpful);
                             } catch (Exception e) {
+                                Boolean feedbackHelpful =
+                                        resolveFeedbackHelpful(
+                                                snap.getTenantId(),
+                                                snap.getUserId(),
+                                                ins.getWeekStart());
                                 return new WeeklyLatestResponse(
-                                        ins.getWeekStart(), ins.getStatus().name(), new KnowledgeWeeklyPlan());
+                                        ins.getWeekStart(),
+                                        ins.getStatus().name(),
+                                        new KnowledgeWeeklyPlan(),
+                                        feedbackHelpful);
                             }
                         })
-                .orElse(new WeeklyLatestResponse(null, null, null));
+                .orElse(new WeeklyLatestResponse(null, null, null, null));
+    }
+
+    private Boolean resolveFeedbackHelpful(long tenantId, Long userId, java.time.LocalDate weekStart) {
+        if (userId == null || weekStart == null) {
+            return null;
+        }
+        return weeklyFeedbackService
+                .findHelpfulForWeek(tenantId, ProfileSubjectKey.userKey(userId), weekStart)
+                .orElse(null);
     }
 
     private String requireSubject(TenantSnapshot snap) {

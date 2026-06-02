@@ -2,6 +2,9 @@ package com.aaron.cloud.identity.rest.api;
 
 import com.aaron.cloud.common.context.TenantContextHolder;
 import com.aaron.cloud.common.knowledgeplanet.KnowledgeWeeklyPlan;
+import com.aaron.cloud.common.profile.admin.KnowledgePlanetWeeklyFeedbackAdminApplicationService;
+import com.aaron.cloud.common.profile.admin.KnowledgePlanetWeeklyFeedbackAdminApplicationService.WeeklyFeedbackPageResult;
+import com.aaron.cloud.common.profile.admin.KnowledgePlanetWeeklyFeedbackAdminApplicationService.WeeklyInsightDetailView;
 import com.aaron.cloud.common.profile.admin.UserProfileAdminApplicationService;
 import com.aaron.cloud.identity.knowledgeplanet.KnowledgePlanetWeeklyAdminTestApplicationService;
 import com.aaron.cloud.identity.knowledgeplanet.KnowledgePlanetWeeklyAdminTestApplicationService.WeeklyTestPushResult;
@@ -27,6 +30,7 @@ public class AdminUserProfileRestController extends ApiV1ControllerBases.AdminUs
 
     private final UserProfileAdminApplicationService userProfileAdminApplicationService;
     private final KnowledgePlanetWeeklyAdminTestApplicationService weeklyAdminTestService;
+    private final KnowledgePlanetWeeklyFeedbackAdminApplicationService weeklyFeedbackAdminService;
 
     @GetMapping
     public UserProfilePageResult list(
@@ -48,6 +52,25 @@ public class AdminUserProfileRestController extends ApiV1ControllerBases.AdminUs
     public void putMemoryEmbeddingModel(@RequestBody(required = false) PutMemoryEmbeddingModelBody body) {
         long tenantId = TenantContextHolder.require().getTenantId();
         userProfileAdminApplicationService.putMemoryEmbeddingModel(tenantId, body == null ? null : body.getLlmModelId());
+    }
+
+    /** 知识星球周报「是否有帮助」反馈列表（租户内扁平化，按反馈时间倒序）。 */
+    @GetMapping("/knowledge-planet-weekly-feedback")
+    public WeeklyFeedbackPageResult listKnowledgePlanetWeeklyFeedback(
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "20") long size,
+            @RequestParam(required = false) String keyword) {
+        long tenantId = TenantContextHolder.require().getTenantId();
+        return weeklyFeedbackAdminService.page(tenantId, page, size, keyword);
+    }
+
+    /** 指定用户、指定周起始（周一 ISO）的成长方案；须声明在 {@code /{userId}} 单段路径之前。 */
+    @GetMapping("/{userId}/knowledge-planet-weekly")
+    public WeeklyInsightDetailView getKnowledgePlanetWeekly(
+            @PathVariable long userId, @RequestParam String weekStart) {
+        long tenantId = TenantContextHolder.require().getTenantId();
+        LocalDate ws = LocalDate.parse(weekStart.trim());
+        return weeklyFeedbackAdminService.getWeeklyInsight(tenantId, userId, ws);
     }
 
     @GetMapping("/{userId}")

@@ -1,12 +1,16 @@
 package com.aaron.cloud.chat.rest.open;
 
 import com.aaron.cloud.chat.ChatApplicationService;
+import com.aaron.cloud.chat.ChatAttachmentOpenService;
 import com.aaron.cloud.chat.ChatAttachmentUploadService;
+import com.aaron.cloud.chat.support.ChatAttachmentHttpSupport;
 import com.aaron.cloud.common.web.rest.OpenV1ControllerBases;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -19,6 +23,20 @@ public class ChatAttachmentController extends OpenV1ControllerBases.ChatConversa
 
     private final ChatApplicationService chatApplicationService;
     private final ChatAttachmentUploadService chatAttachmentUploadService;
+    private final ChatAttachmentOpenService chatAttachmentOpenService;
+
+    @GetMapping("/{conversationId}/attachments/{attachmentId}")
+    public ResponseEntity<byte[]> open(
+            @PathVariable("conversationId") String conversationId,
+            @PathVariable("attachmentId") long attachmentId) {
+        ChatAttachmentOpenService.OpenAttachment opened =
+                chatAttachmentOpenService.open(conversationId, attachmentId);
+        return ResponseEntity.ok()
+                .headers(
+                        ChatAttachmentHttpSupport.contentHeaders(
+                                opened.fileName(), opened.mimeType(), opened.bytes().length))
+                .body(opened.bytes());
+    }
 
     @PostMapping(value = "/{conversationId}/attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public List<AttachmentUploadView> upload(

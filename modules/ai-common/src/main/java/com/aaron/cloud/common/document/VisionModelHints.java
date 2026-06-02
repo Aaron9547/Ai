@@ -1,11 +1,11 @@
-package com.aaron.cloud.chat.support;
+package com.aaron.cloud.common.document;
 
 import com.aaron.cloud.common.api.enums.llm.LlmModelKind;
 import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
 import java.util.regex.Pattern;
 
 /** 判断租户 {@code llm_model} 是否可用于图片 OCR（OpenAI 兼容 {@code image_url}）。 */
-public final class ChatAttachmentVisionModelHints {
+public final class VisionModelHints {
 
     private static final Pattern VISION_HINT =
             Pattern.compile(
@@ -13,7 +13,7 @@ public final class ChatAttachmentVisionModelHints {
                             + "glm-4v|glm4v|moonshot.*vision|ui-tars|hunyuan.*vision|ernie.*vl|internvl|"
                             + "minicpm-v|pixtral|llava|step-1v|mimo-vl|kimi.*vision|deepseek.*vl)");
 
-    private ChatAttachmentVisionModelHints() {}
+    private VisionModelHints() {}
 
     public static boolean looksVisionCapable(SysLlmModel m) {
         if (m == null) {

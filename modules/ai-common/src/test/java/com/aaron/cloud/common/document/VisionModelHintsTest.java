@@ -1,4 +1,4 @@
-package com.aaron.cloud.chat.support;
+package com.aaron.cloud.common.document;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -7,14 +7,14 @@ import com.aaron.cloud.common.api.enums.llm.LlmModelKind;
 import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
 import org.junit.jupiter.api.Test;
 
-class ChatAttachmentVisionModelHintsTest {
+class VisionModelHintsTest {
 
     @Test
     void visionKindAlwaysCapable() {
         SysLlmModel m = new SysLlmModel();
         m.setModelKind(LlmModelKind.VISION);
         m.setOpenaiModelId("ep-20250101000000-abcde");
-        assertTrue(ChatAttachmentVisionModelHints.looksVisionCapable(m));
+        assertTrue(VisionModelHints.looksVisionCapable(m));
     }
 
     @Test
@@ -23,7 +23,7 @@ class ChatAttachmentVisionModelHintsTest {
         m.setModelKind(LlmModelKind.LANGUAGE);
         m.setOpenaiModelId("ep-20250101000000-abcde");
         m.setAlias("doubao-vision-pro");
-        assertTrue(ChatAttachmentVisionModelHints.looksVisionCapable(m));
+        assertTrue(VisionModelHints.looksVisionCapable(m));
     }
 
     @Test
@@ -32,6 +32,6 @@ class ChatAttachmentVisionModelHintsTest {
         m.setModelKind(LlmModelKind.LANGUAGE);
         m.setOpenaiModelId("deepseek-chat");
         m.setAlias("deepseek");
-        assertFalse(ChatAttachmentVisionModelHints.looksVisionCapable(m));
+        assertFalse(VisionModelHints.looksVisionCapable(m));
     }
 }

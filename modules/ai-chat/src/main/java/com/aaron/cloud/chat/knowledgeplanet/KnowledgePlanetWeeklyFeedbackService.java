@@ -8,6 +8,7 @@ import com.aaron.cloud.common.profile.ProfileSubjectKey;
 import com.aaron.cloud.common.profile.TenProfileTagRepository;
 import com.aaron.cloud.common.profile.entity.TenProfileTag;
 import com.aaron.cloud.common.time.BeijingTime;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -27,7 +28,7 @@ public class KnowledgePlanetWeeklyFeedbackService {
     private final TenProfileTagRepository profileTagRepository;
     private final ObjectMapper objectMapper;
 
-    public void recordFeedback(boolean helpful) {
+    public void recordFeedback(boolean helpful, LocalDate planWeekStart) {
         TenantSnapshot snap = TenantContextHolder.require();
         if (snap.getUserId() == null) {
             throw new IllegalStateException("login_required");
@@ -37,12 +38,51 @@ public class KnowledgePlanetWeeklyFeedbackService {
         }
         String subjectKey = ProfileSubjectKey.userKey(snap.getUserId());
         long tenantId = snap.getTenantId();
-        LocalDate week = BeijingTime.today().with(java.time.DayOfWeek.MONDAY);
+        LocalDate week =
+                planWeekStart != null
+                        ? planWeekStart
+                        : BeijingTime.today().with(java.time.DayOfWeek.MONDAY);
         try {
             appendFeedback(tenantId, subjectKey, week, helpful);
         } catch (Exception ex) {
             log.warn("[知识星球] 周报反馈失败 tenantId={} userId={}", tenantId, snap.getUserId(), ex);
         }
+    }
+
+    /** 读取指定方案周（{@code week_start}）是否已反馈；无记录则 empty。 */
+    public java.util.Optional<Boolean> findHelpfulForWeek(
+            long tenantId, String subjectKey, LocalDate weekStart) {
+        if (weekStart == null) {
+            return java.util.Optional.empty();
+        }
+        return profileTagRepository
+                .find(tenantId, subjectKey, ProfileTagCode.WEEKLY_INSIGHT_FEEDBACK_JSON)
+                .flatMap(
+                        tag -> {
+                            try {
+                                return parseHelpfulForWeek(tag.getTagValue(), weekStart.toString());
+                            } catch (Exception ex) {
+                                return java.util.Optional.empty();
+                            }
+                        });
+    }
+
+    private java.util.Optional<Boolean> parseHelpfulForWeek(String json, String weekKey) throws Exception {
+        if (json == null || json.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        JsonNode root = objectMapper.readTree(json);
+        if (!root.isArray()) {
+            return java.util.Optional.empty();
+        }
+        for (JsonNode node : root) {
+            if (node != null
+                    && node.isObject()
+                    && weekKey.equals(node.path("weekStart").asText())) {
+                return java.util.Optional.of(node.path("helpful").asBoolean(false));
+            }
+        }
+        return java.util.Optional.empty();
     }
 
     public void saveLearningGoal(String goal) {
@@ -88,8 +128,16 @@ public class KnowledgePlanetWeeklyFeedbackService {
                 arr = objectMapper.createArrayNode();
             }
         }
+        String weekKey = weekStart.toString();
+        for (int i = 0; i < arr.size(); i++) {
+            JsonNode node = arr.get(i);
+            if (node != null && node.isObject() && weekKey.equals(node.path("weekStart").asText())) {
+                arr.remove(i);
+                break;
+            }
+        }
         ObjectNode entry = objectMapper.createObjectNode();
-        entry.put("weekStart", weekStart.toString());
+        entry.put("weekStart", weekKey);
         entry.put("helpful", helpful);
         entry.put("at", java.time.Instant.now().toString());
         arr.insert(0, entry);

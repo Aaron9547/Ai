@@ -253,6 +253,54 @@ export const WEB_SEARCH_FIXED_SOURCE_CODES = [
 
 export type WebSearchFixedSourceCode = (typeof WEB_SEARCH_FIXED_SOURCE_CODES)[number];
 
+export const WEB_SEARCH_PROVIDER_MODEL_PREFIX = "model:";
+export const WEB_SEARCH_PROVIDER_FIXED_PREFIX = "fixed:";
+
+export function webSearchProviderKeysFromRuntime(
+  arkModelIdRaw: string | undefined | null,
+  fixedSourcesJson: string | undefined | null,
+): string[] {
+  const keys: string[] = [];
+  const arkId = parseWebSearchGroundingModelId(arkModelIdRaw);
+  if (arkId != null) keys.push(`${WEB_SEARCH_PROVIDER_MODEL_PREFIX}${arkId}`);
+  for (const code of parseWebSearchFixedSourcesJson(fixedSourcesJson)) {
+    keys.push(`${WEB_SEARCH_PROVIDER_FIXED_PREFIX}${code}`);
+  }
+  return keys;
+}
+
+export function normalizeWebSearchProviderKeys(keys: string[]): string[] {
+  const fixed = keys.filter((k) => k.startsWith(WEB_SEARCH_PROVIDER_FIXED_PREFIX));
+  const models = keys.filter((k) => k.startsWith(WEB_SEARCH_PROVIDER_MODEL_PREFIX));
+  const model = models.length > 0 ? [models[models.length - 1]!] : [];
+  return [...model, ...fixed];
+}
+
+export function webSearchRuntimeFromProviderKeys(keys: string[]): {
+  webSearchGroundingModelId: string;
+  webSearchGroundingFixedSourcesJson: string;
+} {
+  let modelId = "";
+  const fixed: WebSearchFixedSourceCode[] = [];
+  for (const k of keys) {
+    if (k.startsWith(WEB_SEARCH_PROVIDER_MODEL_PREFIX)) {
+      modelId = k.slice(WEB_SEARCH_PROVIDER_MODEL_PREFIX.length);
+    } else if (k.startsWith(WEB_SEARCH_PROVIDER_FIXED_PREFIX)) {
+      const code = k.slice(WEB_SEARCH_PROVIDER_FIXED_PREFIX.length);
+      if (
+        (WEB_SEARCH_FIXED_SOURCE_CODES as readonly string[]).includes(code)
+        && !fixed.includes(code as WebSearchFixedSourceCode)
+      ) {
+        fixed.push(code as WebSearchFixedSourceCode);
+      }
+    }
+  }
+  return {
+    webSearchGroundingModelId: modelId,
+    webSearchGroundingFixedSourcesJson: JSON.stringify(fixed),
+  };
+}
+
 /** 解析 {@code WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON}。 */
 export function parseWebSearchFixedSourcesJson(raw: string | undefined | null): WebSearchFixedSourceCode[] {
   const allowed = new Set<string>(WEB_SEARCH_FIXED_SOURCE_CODES);

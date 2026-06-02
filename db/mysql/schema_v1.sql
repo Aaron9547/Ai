@@ -1365,6 +1365,7 @@ FROM (
     UNION ALL SELECT NULL, '/open/v1/chat/conversations/*/messages', 'GET', 120, 0, '开放消息列表', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)
     UNION ALL SELECT NULL, '/open/v1/chat/conversations/*/messages', 'POST', 30, 0, '流式发消息 SSE', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)
     UNION ALL SELECT NULL, '/open/v1/chat/conversations/*/attachments', 'POST', 20, 0, '会话附件上传', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)
+    UNION ALL SELECT NULL, '/open/v1/chat/conversations/*/attachments/*', 'GET', 20, 0, '会话附件预览下载', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)
     UNION ALL SELECT NULL, '/api/v1/admin/me', 'GET', 120, 0, '管理端 me', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)
     UNION ALL SELECT NULL, '/api/v1/admin/users', 'GET', 120, 0, '用户列表', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)
     UNION ALL SELECT NULL, '/api/v1/admin/users', 'POST', 30, 0, '创建用户', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)

@@ -32,6 +32,11 @@ export function profileTagTitle(code: string): string {
   const c = (code ?? "").trim();
   if (c === "TURN_COUNT") return pt("views.profiles.tags.TURN_COUNT.title");
   if (c === "LAST_USER_EXCERPT") return pt("views.profiles.tags.LAST_USER_EXCERPT.title");
+  if (c === "INTEREST_NEWS_JSON") return pt("views.profiles.tags.INTEREST_NEWS_JSON.title");
+  if (c === "WEEKLY_INSIGHT_FEEDBACK_JSON") {
+    return pt("views.profiles.tags.WEEKLY_INSIGHT_FEEDBACK_JSON.title");
+  }
+  if (c === "LEARNING_GOAL") return pt("views.profiles.tags.LEARNING_GOAL.title");
   return c || pt("views.profiles.tags._unknownTitle");
 }
 
@@ -39,6 +44,11 @@ export function profileTagDescription(code: string): string {
   const c = (code ?? "").trim();
   if (c === "TURN_COUNT") return pt("views.profiles.tags.TURN_COUNT.desc");
   if (c === "LAST_USER_EXCERPT") return pt("views.profiles.tags.LAST_USER_EXCERPT.desc");
+  if (c === "INTEREST_NEWS_JSON") return pt("views.profiles.tags.INTEREST_NEWS_JSON.desc");
+  if (c === "WEEKLY_INSIGHT_FEEDBACK_JSON") {
+    return pt("views.profiles.tags.WEEKLY_INSIGHT_FEEDBACK_JSON.desc");
+  }
+  if (c === "LEARNING_GOAL") return pt("views.profiles.tags.LEARNING_GOAL.desc");
   return pt("views.profiles.tags._genericDesc");
 }
 

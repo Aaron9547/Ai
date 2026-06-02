@@ -64,36 +64,50 @@ export function normalizeClipboardFile(file: File): File {
   return new File([file], `${base}.${ext}`, { type: mime });
 }
 
+/** 粘贴/拖入批次内去重键（同名不同路径的同一文件可能 lastModified 略异，以 size+type 为主）。 */
+function fileBatchDedupKey(f: File): string {
+  return `${f.size}:${f.type}:${f.lastModified}:${f.name}`;
+}
+
+function fileBatchDedupKeyLoose(f: File): string {
+  return `${f.size}:${f.type}`;
+}
+
 export function filesFromClipboardEvent(e: ClipboardEvent): File[] {
   const dt = e.clipboardData;
   if (!dt) {
     return [];
   }
   const out: File[] = [];
-  const seen = new Set<string>();
+  const seenStrict = new Set<string>();
+  const seenLoose = new Set<string>();
   const push = (raw: File | null) => {
     if (!raw || raw.size === 0) {
       return;
     }
     const f = normalizeClipboardFile(raw);
-    const key = `${f.name}:${f.size}:${f.lastModified}`;
-    if (seen.has(key)) {
+    const strict = fileBatchDedupKey(f);
+    const loose = fileBatchDedupKeyLoose(f);
+    if (seenStrict.has(strict) || seenLoose.has(loose)) {
       return;
     }
-    seen.add(key);
+    seenStrict.add(strict);
+    seenLoose.add(loose);
     out.push(f);
   };
+  // 有 files 时仅用 FileList：再扫 items 会在 Chrome/Edge 上对同一粘贴重复入队（且 items 侧常无扩展名）。
   if (dt.files?.length) {
     for (let i = 0; i < dt.files.length; i++) {
       push(dt.files[i] ?? null);
     }
+    return out;
   }
   for (let i = 0; i < dt.items.length; i++) {
     const item = dt.items[i];
     if (!item) {
       continue;
     }
-    if (item.kind === "file" || item.kind === "image") {
+    if (item.kind === "file") {
       push(item.getAsFile());
     }
   }
@@ -233,18 +247,42 @@ export function usePendingChatAttachments(options: {
     await uploadOne(localKey, conv);
   }
 
+  function isDuplicatePending(file: File): boolean {
+    const loose = fileBatchDedupKeyLoose(file);
+    return pendingAttachments.value.some((p) => fileBatchDedupKeyLoose(p.file) === loose);
+  }
+
   function addFiles(files: File[]) {
     if (!files.length) {
       return;
     }
     const cap = options.maxAttachmentsLimit.value;
     const room = Math.max(0, cap - pendingAttachments.value.length);
-    const slice = files.slice(0, room);
-    if (slice.length < files.length) {
+    const batchSeenStrict = new Set<string>();
+    const batchSeenLoose = new Set<string>();
+    const uniqueIncoming: File[] = [];
+    for (const raw of files) {
+      const file = normalizeClipboardFile(raw);
+      const strict = fileBatchDedupKey(file);
+      const loose = fileBatchDedupKeyLoose(file);
+      if (batchSeenStrict.has(strict) || batchSeenLoose.has(loose)) {
+        continue;
+      }
+      if (isDuplicatePending(file)) {
+        continue;
+      }
+      batchSeenStrict.add(strict);
+      batchSeenLoose.add(loose);
+      uniqueIncoming.push(file);
+    }
+    if (!uniqueIncoming.length) {
+      return;
+    }
+    const slice = uniqueIncoming.slice(0, room);
+    if (slice.length < uniqueIncoming.length) {
       ElMessage.warning(t("chat.attachLimitReached", { n: cap }));
     }
-    for (const raw of slice) {
-      const file = normalizeClipboardFile(raw);
+    for (const file of slice) {
       const kind = resolvePendingAttachmentKind(file);
       const localKey = newLocalKey();
       const item: PendingAttachment = {

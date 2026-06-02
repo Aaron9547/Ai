@@ -183,6 +183,14 @@ ai:
   tenant:
     # 访客或未解析租户时的默认 tenantId（与业务种子一致即可）
     default-id: ${AI_DEFAULT_TENANT_ID:1}
+  document:
+    local-ocr:
+      # 本机图片 OCR：RapidOCR（ONNX，Markdown 布局）优先，失败回退 Tesseract
+      enabled: ${AI_DOCUMENT_LOCAL_OCR_ENABLED:true}
+      languages: ${AI_DOCUMENT_LOCAL_OCR_LANGS:chi_sim+eng}
+      rapid:
+        enabled: ${AI_DOCUMENT_LOCAL_OCR_RAPID_ENABLED:true}
+        model: ${AI_DOCUMENT_LOCAL_OCR_RAPID_MODEL:ONNX_PPOCR_V3}
   chat:
     attachment:
       # 会话附件原始文件落盘根目录（不入库）；路径段为 tenantId/conversationId/attachmentId

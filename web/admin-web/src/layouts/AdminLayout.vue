@@ -75,6 +75,10 @@
             <el-icon><UserFilled /></el-icon>
             <span>{{ t("admin.menu.userProfiles") }}</span>
           </el-menu-item>
+          <el-menu-item v-if="menuAllowed('USER_PROFILES')" index="/users/knowledge-planet-weekly-feedback">
+            <el-icon><ChatLineRound /></el-icon>
+            <span>{{ t("admin.menu.kpWeeklyFeedback") }}</span>
+          </el-menu-item>
         </el-sub-menu>
 
         <!-- 3. 对话侧运营：内容日志与策略（与网关 HTTP 日志区分） -->

@@ -30,6 +30,7 @@ const FALLBACK_PATH_ORDER = [
 export function requiredMenuForAdminPath(path: string): AdminRouteRequirement | null {
   const p = path.split("?")[0] ?? path;
   if (p === "/dashboard" || p.startsWith("/dashboard/")) return "DASHBOARD";
+  if (p.startsWith("/users/knowledge-planet-weekly-feedback")) return "USER_PROFILES";
   if (p.startsWith("/users/profiles")) return "USER_PROFILES";
   if (p.startsWith("/users")) return "USERS";
   if (p.startsWith("/tenant/tenants")) return "FOUNDER_ONLY";

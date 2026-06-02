@@ -96,6 +96,8 @@ web/**/*.tsbuildinfo
 *~
 
 ### 本地数据落盘（勿提交）---
+# Tesseract 语言包（见 tessdata/README.md、scripts/setup-tessdata.ps1）
+/tessdata/*.traineddata
 # 会话附件二进制根目录：默认 `${user.dir}/data/chat-attachment-bin`（见 `application.yml` `ai.chat.attachment.bin-dir`、`AiChatAttachmentProperties`）
 /data/
 /var/

@@ -42,6 +42,7 @@
         <div class="hdr-row">
           <span class="hdr">{{ t("views.profiles.listTitle") }}</span>
           <div class="filters">
+            <el-button type="primary" link @click="goWeeklyFeedback">{{ t("views.profiles.linkWeeklyFeedback") }}</el-button>
             <el-input
               v-model="keyword"
               clearable
@@ -106,8 +107,28 @@
                 <template #default="{ row }">{{ profileTagTitle(row.code) }}</template>
               </el-table-column>
               <el-table-column prop="code" :label="t('views.profiles.colTagCode')" width="160" show-overflow-tooltip />
-              <el-table-column :label="t('views.profiles.colCurrentValue')" min-width="160" show-overflow-tooltip>
-                <template #default="{ row }">{{ row.value || t("common.dash") }}</template>
+              <el-table-column :label="t('views.profiles.colCurrentValue')" min-width="200">
+                <template #default="{ row }">
+                  <template v-if="isWeeklyInsightFeedbackTag(row.code)">
+                    <div v-if="weeklyFeedbackCount(row.value) > 0" class="tag-value-compact">
+                      <span class="tag-value-compact__text">{{ weeklyFeedbackSummary(row.value) }}</span>
+                      <el-button type="primary" link @click="openWeeklyFeedbackDetail(row.value)">
+                        {{ t("views.profiles.weeklyFeedbackViewDetail") }}
+                      </el-button>
+                    </div>
+                    <span v-else>{{ t("common.dash") }}</span>
+                  </template>
+                  <template v-else-if="isInterestNewsJsonTag(row.code)">
+                    <div v-if="interestNewsCount(row.value) > 0" class="tag-value-compact">
+                      <span class="tag-value-compact__text">{{ interestNewsSummary(row.value) }}</span>
+                      <el-button type="primary" link @click="openInterestNewsDetail(row.value)">
+                        {{ t("views.profiles.interestNewsViewDetail") }}
+                      </el-button>
+                    </div>
+                    <span v-else>{{ t("common.dash") }}</span>
+                  </template>
+                  <span v-else class="tag-value-cell">{{ row.value || t("common.dash") }}</span>
+                </template>
               </el-table-column>
               <el-table-column :label="t('views.profiles.colDesc')" min-width="220">
                 <template #default="{ row }">{{ profileTagDescription(row.code) }}</template>
@@ -243,12 +264,29 @@
           </div>
       </template>
     </el-dialog>
+
+    <InterestNewsJsonDialog v-model:open="interestNewsDlgOpen" :raw-json="interestNewsDlgJson" />
+
+    <WeeklyInsightFeedbackDialog
+      v-model:open="weeklyFeedbackDlgOpen"
+      :raw-json="weeklyFeedbackDlgJson"
+      :user-id="detailUserId"
+      :user-label="weeklyFeedbackUserLabel"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
+import { useRoute, useRouter } from "vue-router";
+import { isInterestNewsJsonTag, parseInterestNewsJson } from "@/utils/interestNewsJson";
+import {
+  isWeeklyInsightFeedbackTag,
+  parseWeeklyInsightFeedbackJson,
+} from "@/utils/weeklyInsightFeedback";
+import InterestNewsJsonDialog from "./InterestNewsJsonDialog.vue";
+import WeeklyInsightFeedbackDialog from "./WeeklyInsightFeedbackDialog.vue";
 import { ElMessage } from "element-plus";
 import * as userProfilesApi from "@/api/userProfiles";
 import type { AdminUserProfileDetail } from "@/api/userProfiles";
@@ -265,6 +303,8 @@ import {
 } from "@/utils/userProfileDetailSemantics";
 
 const { t, locale } = useI18n();
+const route = useRoute();
+const router = useRouter();
 
 const loading = ref(false);
 const savingEmbed = ref(false);
@@ -289,6 +329,58 @@ const weeklyTestPersist = ref(false);
 const weeklyTestSendEmail = ref(true);
 const weeklyTestWeekStart = ref<string | undefined>(undefined);
 const weeklyTestPushing = ref(false);
+
+const weeklyFeedbackUserLabel = computed(() => {
+  const d = detail.value;
+  if (!d) return "";
+  return (d.displayName || d.loginName || "").trim();
+});
+
+const interestNewsDlgOpen = ref(false);
+const interestNewsDlgJson = ref<string | null>(null);
+
+const weeklyFeedbackDlgOpen = ref(false);
+const weeklyFeedbackDlgJson = ref<string | null>(null);
+
+function weeklyFeedbackCount(raw: string | undefined): number {
+  return parseWeeklyInsightFeedbackJson(raw).length;
+}
+
+function weeklyFeedbackSummary(raw: string | undefined): string {
+  const list = parseWeeklyInsightFeedbackJson(raw);
+  if (!list.length) return t("common.dash");
+  const latest = list[0];
+  const helpfulLabel = latest.helpful
+    ? t("views.profiles.weeklyFeedbackHelpfulYes")
+    : t("views.profiles.weeklyFeedbackHelpfulNo");
+  return t("views.profiles.weeklyFeedbackSummary", {
+    n: list.length,
+    week: latest.weekStart || t("common.dash"),
+    helpful: helpfulLabel,
+  });
+}
+
+function openWeeklyFeedbackDetail(raw: string | undefined): void {
+  weeklyFeedbackDlgJson.value = raw ?? null;
+  weeklyFeedbackDlgOpen.value = true;
+}
+
+function interestNewsCount(raw: string | undefined): number {
+  return parseInterestNewsJson(raw).length;
+}
+
+function interestNewsSummary(raw: string | undefined): string {
+  const list = parseInterestNewsJson(raw);
+  if (!list.length) return t("common.dash");
+  const latest = list[0];
+  const title = (latest.title || latest.tag || "").trim();
+  return t("views.profiles.interestNewsSummary", { n: list.length, title: title || t("common.dash") });
+}
+
+function openInterestNewsDetail(raw: string | undefined): void {
+  interestNewsDlgJson.value = raw ?? null;
+  interestNewsDlgOpen.value = true;
+}
 
 const abstractBlocks = computed(() => {
   void locale.value;
@@ -430,9 +522,18 @@ async function runWeeklyTestPush() {
   }
 }
 
+function goWeeklyFeedback(): void {
+  void router.push("/users/knowledge-planet-weekly-feedback");
+}
+
 onMounted(() => {
   void loadEmbedding();
   void loadList();
+  const q = route.query.userId;
+  const uid = typeof q === "string" ? Number(q) : Array.isArray(q) ? Number(q[0]) : NaN;
+  if (Number.isFinite(uid) && uid > 0) {
+    void openDetail(uid);
+  }
 });
 </script>
 
@@ -507,6 +608,36 @@ onMounted(() => {
 
 .detail-table {
   width: 100%;
+}
+
+.feedback-nested-table {
+  width: 100%;
+}
+
+.tag-value-cell {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.tag-value-compact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
+.tag-value-compact__text {
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: min(360px, 100%);
 }
 
 .detail-alert {

@@ -1,4 +1,4 @@
-package com.aaron.cloud.chat.support;
+package com.aaron.cloud.common.document;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -8,14 +8,18 @@ import java.nio.file.Files;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
 
-class DocumentTextExtractorTest {
+class TikaDocumentTextExtractorTest {
 
-    private final DocumentTextExtractor extractor = new DocumentTextExtractor();
+    private final TikaDocumentTextExtractor extractor =
+            new TikaDocumentTextExtractor(
+                    new LocalChainedImageOcr(
+                            new LocalRapidOcrOnnxImageOcr(false, "ONNX_PPOCR_V3"),
+                            new LocalTesseractImageOcr(false, "eng")));
 
     @Test
     void extractTxt_sampleContainsChinese() throws Exception {
         byte[] bytes =
-                Files.readAllBytes(new ClassPathResource("attachment-samples/sample.txt").getFile().toPath());
+                Files.readAllBytes(new ClassPathResource("document-samples/sample.txt").getFile().toPath());
         String text = extractor.extract(bytes, "sample.txt", "text/plain");
         assertFalse(text.isBlank());
         assertTrue(text.contains("可读中文"));

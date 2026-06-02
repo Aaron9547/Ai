@@ -36,6 +36,10 @@ const router = createRouter({
           path: "users/profiles",
           component: () => import("../views/users/UserProfilesView.vue"),
         },
+        {
+          path: "users/knowledge-planet-weekly-feedback",
+          component: () => import("../views/users/KnowledgePlanetWeeklyFeedbackView.vue"),
+        },
         { path: "users/roles", redirect: "/users" },
         {
           path: "tenant/tenants",

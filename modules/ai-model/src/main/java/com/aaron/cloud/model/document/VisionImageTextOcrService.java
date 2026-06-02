@@ -1,6 +1,7 @@
-package com.aaron.cloud.chat.support;
+package com.aaron.cloud.model.document;
 
 import com.aaron.cloud.common.api.enums.llm.LlmModelStatus;
+import com.aaron.cloud.common.document.VisionModelHints;
 import com.aaron.cloud.common.modelcfg.SysLlmModelRepository;
 import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
 import com.aaron.cloud.common.security.crypto.AesSecretCipher;
@@ -22,16 +23,16 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-/**
- * 图片附件在 Tika 无文本时，尝试用租户已配置的<strong>视觉对话模型</strong>做 OCR 式抽取（OpenAI 兼容 {@code image_url}）。
- */
+/** 租户视觉模型图片 OCR（OpenAI 兼容 {@code image_url}）；由 {@link ChainedImageTextOcrPort} 在本机 OCR 之后调用。 */
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class ChatAttachmentImageOcrService {
+public class VisionImageTextOcrService {
 
     private static final String OCR_USER_PROMPT =
-            "请仅输出图片中的全部可见文字（保持段落与换行），不要解释、不要 Markdown 代码块；若无文字则只回复：无文字";
+            "请完整输出图片中的全部可见文字（含表格：逐行逐列输出，列之间用制表符或竖线分隔，"
+                    + "保留序号、金额与小数，合并单元格按视觉顺序拆到相邻行），"
+                    + "不要省略、不要解释、不要 Markdown 代码块；若无文字则只回复：无文字";
 
     private static final HttpClient HTTP =
             HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
@@ -46,13 +47,15 @@ public class ChatAttachmentImageOcrService {
         }
         Optional<SysLlmModel> model = pickVisionModel(tenantId);
         if (model.isEmpty()) {
-            log.info("[对话附件] 租户 {} 无可用视觉模型（请在管理端配置 VISION 类型或带 vision/vl 标识的语言模型），跳过图片 OCR", tenantId);
+            log.info(
+                    "[文档图片OCR] 租户 {} 无可用视觉模型（请配置 VISION 类型或带 vision/vl 标识的语言模型）",
+                    tenantId);
             return Optional.empty();
         }
         SysLlmModel m = model.get();
         String cipher = m.getApiKeyCipher();
         if (cipher == null || cipher.isBlank()) {
-            log.warn("[对话附件] 视觉模型 {} 未配置 API Key，跳过图片 OCR", m.getAlias());
+            log.warn("[文档图片OCR] 视觉模型 {} 未配置 API Key", m.getAlias());
             return Optional.empty();
         }
         try {
@@ -77,7 +80,7 @@ public class ChatAttachmentImageOcrService {
                     HTTP.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
                 log.warn(
-                        "[对话附件] 图片 OCR 上游 HTTP {}：模型 alias={}，body={}",
+                        "[文档图片OCR] 上游 HTTP {}：模型 alias={}，body={}",
                         resp.statusCode(),
                         m.getAlias(),
                         truncateForLog(resp.body()));
@@ -87,14 +90,10 @@ public class ChatAttachmentImageOcrService {
             if (text == null || text.isBlank() || "无文字".equals(text.trim())) {
                 return Optional.empty();
             }
-            log.info(
-                    "[对话附件] 图片 OCR 成功：租户 {}，模型 {}，字数 {}",
-                    tenantId,
-                    m.getAlias(),
-                    text.length());
+            log.info("[文档图片OCR] 成功：租户 {}，模型 {}，字数 {}", tenantId, m.getAlias(), text.length());
             return Optional.of(text.trim());
         } catch (Exception ex) {
-            log.warn("[对话附件] 图片 OCR 失败：租户 {}，模型 {}", tenantId, m.getAlias(), ex);
+            log.warn("[文档图片OCR] 失败：租户 {}，模型 {}", tenantId, m.getAlias(), ex);
             return Optional.empty();
         }
     }
@@ -108,14 +107,14 @@ public class ChatAttachmentImageOcrService {
         Optional<SysLlmModel> fromCatalog =
                 catalog.stream()
                         .filter(m -> m.getStatus() == LlmModelStatus.ACTIVE)
-                        .filter(ChatAttachmentVisionModelHints::looksVisionCapable)
+                        .filter(VisionModelHints::looksVisionCapable)
                         .findFirst();
         if (fromCatalog.isPresent()) {
             return fromCatalog;
         }
         return llmModelRepository
                 .pickDefaultLanguageModel(tenantId)
-                .filter(ChatAttachmentVisionModelHints::looksVisionCapable);
+                .filter(VisionModelHints::looksVisionCapable);
     }
 
     private static String truncateForLog(String body) {

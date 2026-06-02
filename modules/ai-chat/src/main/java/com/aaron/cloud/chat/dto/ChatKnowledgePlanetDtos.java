@@ -55,9 +55,10 @@ public final class ChatKnowledgePlanetDtos {
     /** @param kind orbit=星球→知识点；relation=知识点间 */
     public record GraphLinkView(String sourceId, String targetId, String kind) {}
 
-    public record WeeklyLatestResponse(LocalDate weekStart, String status, KnowledgeWeeklyPlan plan) {}
+    public record WeeklyLatestResponse(
+            LocalDate weekStart, String status, KnowledgeWeeklyPlan plan, Boolean feedbackHelpful) {}
 
-    public record WeeklyFeedbackBody(boolean helpful) {}
+    public record WeeklyFeedbackBody(boolean helpful, String weekStart) {}
 
     public record LearningGoalBody(String goal) {}
 }

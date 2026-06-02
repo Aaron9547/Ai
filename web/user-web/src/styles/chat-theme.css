@@ -101,6 +101,10 @@
   --sidebar-tab-hover-border: rgba(99, 102, 241, 0.28);
   --sidebar-tab-hover-color: var(--nexus-brand-600);
   --sidebar-tab-hover-shadow: 0 3px 14px rgba(79, 70, 229, 0.14);
+  /* 对话区右侧问题节点轨道 cursor（可改为 pointer / grab / ns-resize 或 url(...) 图片） */
+  --chat-question-rail-cursor: default;
+  --chat-question-rail-cursor-dragging: default;
+  --chat-question-rail-node-cursor: pointer;
   /* Intelligence Dashboard（右侧洞察栏） */
   --rec-width: 320px;
   --rec-bg-panel: var(--nexus-surface);
@@ -767,6 +771,19 @@ html.dark .chat-app .sidebar-rail {
 html.dark .chat-app .sidebar-rail:hover {
   background: var(--sidebar-rail-hover-bg) !important;
   color: var(--sidebar-rail-hover-color) !important;
+}
+
+html.dark .chat-app .thread-scroll-bottom-btn {
+  background: var(--chat-bg-elevated) !important;
+  border-color: rgba(99, 102, 241, 0.28) !important;
+  color: var(--sidebar-rail-hover-color) !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28) !important;
+}
+
+html.dark .chat-app .thread-scroll-bottom-btn:hover {
+  background: var(--sidebar-fab-hover-bg) !important;
+  border-color: var(--sidebar-fab-hover-border) !important;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.22) !important;
 }
 
 html.dark .chat-app .conv-item {

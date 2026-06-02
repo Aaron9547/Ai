@@ -11,6 +11,7 @@ import com.aaron.cloud.common.tenant.SysTenantRepository;
 import com.aaron.cloud.common.tenant.entity.SysTenant;
 import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService;
 import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService.PutItem;
+import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingMessages;
 import com.aaron.cloud.common.knowledgeplanet.KnowledgePlanetScheduledTaskSynchronizer;
 import com.aaron.cloud.common.knowledgeplanet.KnowledgePlanetTenantRuntime;
 import com.aaron.cloud.common.api.enums.message.MessageSceneCode;
@@ -48,6 +49,7 @@ public class TenantShellAdminApplicationService {
     private final SysLlmModelRepository llmModelRepository;
     private final TenantRuntimeSettingApplicationService tenantRuntimeSettingApplicationService;
     private final TenantOutboundResilienceRuntime tenantOutboundResilienceRuntime;
+    private final TenantRuntimeSettingMessages runtimeMessages;
     private final TenantBrandLogoApplicationService tenantBrandLogoApplicationService;
     private final AiOutboundResilienceProperties baselineOutboundProps;
     private final ObjectMapper objectMapper;
@@ -113,7 +115,7 @@ public class TenantShellAdminApplicationService {
             outboundRaw = outboundRaw.trim();
         }
         if (outboundRaw.length() > RUNTIME_JSON_MAX_CHARS) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "出站 JSON 过长");
+            throw runtimeMessages.badRequest(TenantRuntimeSettingMessages.Shell.OUTBOUND_JSON_TOO_LONG);
         }
         PutItem item = new PutItem();
         item.setKey(TenantRuntimeSettingKey.OUTBOUND_RESILIENCE_JSON.getStorage());
@@ -167,7 +169,7 @@ public class TenantShellAdminApplicationService {
                 || cacheJson.length() > RUNTIME_JSON_MAX_CHARS
                 || fixedOutboundJson.length() > RUNTIME_JSON_MAX_CHARS
                 || crawlRuntimeJson.length() > RUNTIME_JSON_MAX_CHARS) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "JSON 字段过长");
+            throw runtimeMessages.badRequest(TenantRuntimeSettingMessages.Shell.JSON_FIELDS_TOO_LONG);
         }
         List<PutItem> items = new ArrayList<>();
         items.add(item(TenantRuntimeSettingKey.MEMORY_EMBEDDING_VECTOR_MODEL_ID, mem));
@@ -233,7 +235,8 @@ public class TenantShellAdminApplicationService {
         if (body == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "body required");
         }
-        validateOptionalChatModelId(tenantId, body.getDigestModelId(), "知识星球模型");
+        validateOptionalChatModelId(
+                tenantId, body.getDigestModelId(), TenantRuntimeSettingKey.KNOWLEDGE_PLANET_DIGEST_MODEL_ID);
         if (body.isEnabled()
                 && body.isEmailEnabled()
                 && !messageSceneReadinessQuery.isSceneConfigured(
@@ -280,7 +283,7 @@ public class TenantShellAdminApplicationService {
                 knowledgePlanetTenantRuntime.weeklyMinNodes(tenantId));
     }
 
-    private void validateOptionalChatModelId(long tenantId, String rawId, String label) {
+    private void validateOptionalChatModelId(long tenantId, String rawId, TenantRuntimeSettingKey fieldKey) {
         if (rawId == null || rawId.isBlank()) {
             return;
         }
@@ -288,17 +291,22 @@ public class TenantShellAdminApplicationService {
         try {
             id = Long.parseLong(rawId.trim());
         } catch (NumberFormatException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, label + " id 无效");
+            throw runtimeMessages.badField(fieldKey, TenantRuntimeSettingMessages.Validation.MODEL_ID_INVALID);
         }
         SysLlmModel model =
                 llmModelRepository
                         .findById(tenantId, id)
-                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, label + " 不存在"));
+                        .orElseThrow(
+                                () ->
+                                        runtimeMessages.badField(
+                                                fieldKey,
+                                                TenantRuntimeSettingMessages.Validation.MODEL_NOT_FOUND_IN_TENANT));
         if (model.getModelKind() != LlmModelKind.LANGUAGE) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, label + " 须为 LANGUAGE 对话模型");
+            throw runtimeMessages.badField(
+                    fieldKey, TenantRuntimeSettingMessages.Validation.MODEL_MUST_BE_LANGUAGE_CHAT);
         }
         if (model.getStatus() != LlmModelStatus.ACTIVE) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, label + " 未启用");
+            throw runtimeMessages.badField(fieldKey, TenantRuntimeSettingMessages.Validation.MODEL_MUST_BE_ACTIVE);
         }
     }
 
@@ -350,8 +358,7 @@ public class TenantShellAdminApplicationService {
         }
         boolean hasFixed = hasNonEmptyFixedSourcesJson(fixedSourcesJson);
         if (!hasArk && !hasFixed) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST, "请至少启用火山联网模型或一个内置固定源");
+            throw runtimeMessages.badRequest(TenantRuntimeSettingMessages.Shell.WEB_SEARCH_GROUNDING_REQUIRED);
         }
     }
 
@@ -363,8 +370,9 @@ public class TenantShellAdminApplicationService {
             com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(json.trim());
             return node.isArray() && !node.isEmpty();
         } catch (Exception e) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST, "WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON 非法 JSON");
+            throw runtimeMessages.badField(
+                    TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON,
+                    TenantRuntimeSettingMessages.Validation.INVALID_JSON);
         }
     }
 
@@ -393,6 +401,7 @@ public class TenantShellAdminApplicationService {
     }
 
     private void validateOptionalRewriteModelId(long tenantId, String rawId) {
+        TenantRuntimeSettingKey fieldKey = TenantRuntimeSettingKey.WEB_SEARCH_QUERY_REWRITE_MODEL_ID;
         if (rawId == null || rawId.isBlank()) {
             return;
         }
@@ -400,17 +409,18 @@ public class TenantShellAdminApplicationService {
         try {
             id = Long.parseLong(rawId.trim());
         } catch (NumberFormatException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "问句重写模型 id 无效");
+            throw runtimeMessages.badField(fieldKey, TenantRuntimeSettingMessages.Validation.MODEL_ID_INVALID);
         }
         SysLlmModel model =
                 llmModelRepository
                         .findById(tenantId, id)
                         .orElseThrow(
                                 () ->
-                                        new ResponseStatusException(
-                                                HttpStatus.BAD_REQUEST, "问句重写模型不存在或不属于本租户"));
+                                        runtimeMessages.badField(
+                                                fieldKey,
+                                                TenantRuntimeSettingMessages.Validation.MODEL_NOT_FOUND_IN_TENANT));
         if (model.getStatus() != LlmModelStatus.ACTIVE) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "问句重写模型须为启用状态");
+            throw runtimeMessages.badField(fieldKey, TenantRuntimeSettingMessages.Validation.MODEL_MUST_BE_ACTIVE);
         }
         LlmModelKind kind = model.getModelKind();
         if (kind == LlmModelKind.LANGUAGE) {
@@ -419,11 +429,12 @@ public class TenantShellAdminApplicationService {
         if (kind == LlmModelKind.WEB_SEARCH) {
             return;
         }
-        throw new ResponseStatusException(
-                HttpStatus.BAD_REQUEST, "问句重写模型须为 LANGUAGE 或 WEB_SEARCH 类型");
+        throw runtimeMessages.badField(
+                fieldKey, TenantRuntimeSettingMessages.Validation.MODEL_MUST_BE_LANGUAGE_OR_WEB_SEARCH);
     }
 
     private void validateOptionalWebSearchModelId(long tenantId, String rawId) {
+        TenantRuntimeSettingKey fieldKey = TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MODEL_ID;
         if (rawId == null || rawId.isBlank()) {
             return;
         }
@@ -431,23 +442,21 @@ public class TenantShellAdminApplicationService {
         try {
             id = Long.parseLong(rawId.trim());
         } catch (NumberFormatException e) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST, "WEB_SEARCH_GROUNDING_MODEL_ID 须为数字主键或留空");
+            throw runtimeMessages.badField(fieldKey, TenantRuntimeSettingMessages.Validation.MODEL_ID_OR_EMPTY);
         }
         SysLlmModel m =
                 llmModelRepository
                         .findById(tenantId, id)
                         .orElseThrow(
                                 () ->
-                                        new ResponseStatusException(
-                                                HttpStatus.BAD_REQUEST,
-                                                "联网检索模型不存在或不属于本租户：" + id));
+                                        runtimeMessages.badField(
+                                                fieldKey,
+                                                TenantRuntimeSettingMessages.Validation.MODEL_NOT_FOUND_IN_TENANT));
         if (m.getModelKind() != LlmModelKind.WEB_SEARCH) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST, "所选模型须为「联网搜索」(WEB_SEARCH) 类型");
+            throw runtimeMessages.badField(fieldKey, TenantRuntimeSettingMessages.Validation.MODEL_MUST_BE_WEB_SEARCH);
         }
         if (m.getStatus() != LlmModelStatus.ACTIVE) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "所选联网搜索模型须为启用状态");
+            throw runtimeMessages.badField(fieldKey, TenantRuntimeSettingMessages.Validation.MODEL_MUST_BE_ACTIVE);
         }
     }
 

@@ -31,7 +31,7 @@ public enum TenantRuntimeSettingKey {
      */
     MEMORY_EMBEDDING_VECTOR_MODEL_ID(
             "MEMORY_EMBEDDING_VECTOR_MODEL_ID",
-            "记忆嵌入模型 id（VECTOR）",
+            "嵌入模型",
             SettingValueKind.STRING,
             "",
             false),
@@ -40,17 +40,17 @@ public enum TenantRuntimeSettingKey {
      */
     WEB_SEARCH_GROUNDING_MODEL_ID(
             "WEB_SEARCH_GROUNDING_MODEL_ID",
-            "联网检索模型 id（WEB_SEARCH）",
+            "联网模型",
             SettingValueKind.STRING,
             "",
             false),
     /**
      * 启用的内置固定联网源：JSON 字符串数组，元素为 {@link com.aaron.cloud.common.api.enums.llm.WebSearchFixedSource#getCode()}。
-     * 与 {@link #WEB_SEARCH_GROUNDING_MODEL_ID}（火山 Ark）组合；至少启用一类源由专页保存校验。
+     * 与 {@link #WEB_SEARCH_GROUNDING_MODEL_ID} 组合；至少启用一类源由专页保存校验。
      */
     WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON(
             "WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON",
-            "内置联网检索源（JSON 数组）",
+            "内置固定源",
             SettingValueKind.STRING,
             "[]",
             false),
@@ -61,7 +61,7 @@ public enum TenantRuntimeSettingKey {
      */
     WEB_SEARCH_QUERY_REWRITE_MODEL_ID(
             "WEB_SEARCH_QUERY_REWRITE_MODEL_ID",
-            "问句重写模型 id（LANGUAGE 或 WEB_SEARCH）",
+            "问句重写",
             SettingValueKind.STRING,
             "",
             false),
@@ -101,7 +101,7 @@ public enum TenantRuntimeSettingKey {
      */
     CHAT_PROMPT_LIMITS_JSON(
             "CHAT_PROMPT_LIMITS_JSON",
-            "对话 system 体量（JSON，{}=默认）",
+            "对话上下文",
             SettingValueKind.STRING,
             "{}",
             false),
@@ -110,7 +110,7 @@ public enum TenantRuntimeSettingKey {
      */
     MEMORY_POLICY_JSON(
             "MEMORY_POLICY_JSON",
-            "用户记忆策略（JSON，{}=默认）",
+            "长期记忆",
             SettingValueKind.STRING,
             "{}",
             false),
@@ -119,7 +119,7 @@ public enum TenantRuntimeSettingKey {
      */
     CHAT_INPUT_GUARD_JSON(
             "CHAT_INPUT_GUARD_JSON",
-            "输入护栏（JSON，{}=默认）",
+            "输入护栏",
             SettingValueKind.STRING,
             "{}",
             false),
@@ -138,7 +138,7 @@ public enum TenantRuntimeSettingKey {
      */
     WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT(
             "WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT",
-            "联网检索轮数（1～10）",
+            "检索轮数",
             SettingValueKind.STRING,
             "3",
             false),
@@ -147,7 +147,7 @@ public enum TenantRuntimeSettingKey {
      */
     WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON(
             "WEB_SEARCH_GROUNDING_ROUND_SUFFIXES_JSON",
-            "各轮问句后缀（JSON 数组）",
+            "各轮检索后缀",
             SettingValueKind.STRING,
             "[]",
             false),
@@ -157,7 +157,7 @@ public enum TenantRuntimeSettingKey {
      */
     WEB_SEARCH_GROUNDING_CACHE_JSON(
             "WEB_SEARCH_GROUNDING_CACHE_JSON",
-            "联网检索缓存（JSON）",
+            "联网缓存",
             SettingValueKind.STRING,
             "{}",
             false),
@@ -167,7 +167,7 @@ public enum TenantRuntimeSettingKey {
      */
     WEB_SEARCH_FIXED_SOURCE_OUTBOUND_JSON(
             "WEB_SEARCH_FIXED_SOURCE_OUTBOUND_JSON",
-            "固定联网源出站代理（JSON）",
+            "固定源代理",
             SettingValueKind.STRING,
             "{}",
             false),
@@ -357,6 +357,11 @@ public enum TenantRuntimeSettingKey {
                     AUTH_REGISTER_VERIFICATION_JSON -> true;
             default -> false;
         };
+    }
+
+    /** 管理端字段中文简述（运行参数列表等）；校验异常请用 {@link TenantRuntimeSettingMessages#fieldLabel}。 */
+    public String getLabel() {
+        return descriptionZh;
     }
 
     public enum SettingValueKind {

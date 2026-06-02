@@ -36,6 +36,7 @@ INSERT IGNORE INTO gw_api_endpoint (path_pattern, http_method, display_name, rem
 ('/open/v1/chat/conversations/*/messages/*/feedback', 'POST', '助手消息赞踩', NULL, 1, 1080, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/conversations/*/messages/*/retry', 'POST', '重新生成助手 SSE', NULL, 1, 1090, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/conversations/*/attachments', 'POST', '会话附件上传', 'multipart', 1, 1100, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/open/v1/chat/conversations/*/attachments/*', 'GET', '会话附件预览下载', 'inline/attachment', 1, 1101, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/starter-prompts', 'GET', 'C端推荐问题抽样', NULL, 1, 2105, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/starter-prompts/events', 'POST', 'C端推荐问题埋点', NULL, 1, 2106, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/conversations/*/messages/*/follow-up-prompts', 'GET', 'C端助手消息后追问推荐', NULL, 1, 2107, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
@@ -75,6 +76,8 @@ INSERT IGNORE INTO gw_api_endpoint (path_pattern, http_method, display_name, rem
 ('/api/v1/admin/user-profiles/memory-embedding-model', 'PUT', '保存记忆向量化模型', NULL, 1, 2194, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/user-profiles/*', 'GET', '用户画像详情', NULL, 1, 2195, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/user-profiles/*/knowledge-planet-weekly-test-push', 'POST', '知识星球周报测试推送', '仅管理端手工测流程', 1, 2196, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/user-profiles/knowledge-planet-weekly-feedback', 'GET', '知识星球周报反馈列表', NULL, 1, 2197, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/user-profiles/*/knowledge-planet-weekly', 'GET', '知识星球指定周成长方案', NULL, 1, 2198, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 -- ---------- API：租户成员 ----------
 ('/api/v1/admin/tenant-members', 'GET', '租户成员列表', NULL, 1, 2200, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/tenant-members', 'POST', '邀请或恢复成员', NULL, 1, 2210, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),

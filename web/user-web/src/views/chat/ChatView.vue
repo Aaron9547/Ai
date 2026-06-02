@@ -382,15 +382,17 @@
                 </button>
                 <div v-if="m.attachments?.length" class="user-msg-attach-strip" role="list">
                   <span class="rag-sources-label">{{ t("chat.attachments") }}</span>
-                  <span
+                  <button
                     v-for="a in m.attachments"
                     :key="a.id"
+                    type="button"
                     class="user-msg-attach-chip"
                     :class="{
                       'user-msg-attach-chip--image': isAttachImageKind(a.kind),
                       'user-msg-attach-chip--warn': a.textExtracted === false,
                     }"
-                    :title="attachChipTitle(a)"
+                    :title="`${attachChipTitle(a)} · ${t('chat.attachPreviewClick')}`"
+                    @click="openSavedAttachmentPreview(a)"
                   >
                     <el-icon v-if="isAttachImageKind(a.kind)" class="user-msg-attach-ico"><Picture /></el-icon>
                     <el-icon v-else class="user-msg-attach-ico"><Document /></el-icon>
@@ -398,7 +400,7 @@
                     <span v-if="a.textExtracted === false" class="user-msg-attach-badge">{{
                       isAttachImageKind(a.kind) ? t("chat.attachParseEmptyImageShort") : t("chat.attachParseEmptyShort")
                     }}</span>
-                  </span>
+                  </button>
                 </div>
               </div>
               <div
@@ -744,6 +746,28 @@
         :mobile="isMobile"
         @navigate="scrollToMessageIndex"
       />
+      <Transition name="thread-scroll-bottom-fade">
+        <div
+          v-if="showThreadScrollBottomFab"
+          class="thread-scroll-bottom-fab"
+          :class="{ 'thread-scroll-bottom-fab--mobile': isMobile }"
+        >
+          <el-tooltip
+            :content="t('chat.questionRailScrollBottom')"
+            placement="left"
+            :show-after="280"
+          >
+            <button
+              type="button"
+              class="thread-scroll-bottom-btn"
+              :aria-label="t('chat.questionRailScrollBottom')"
+              @click="animateMessagesScrollToBottom"
+            >
+              <el-icon :size="14"><ArrowDown /></el-icon>
+            </button>
+          </el-tooltip>
+        </div>
+      </Transition>
       </div>
       </div>
       </Transition>
@@ -773,9 +797,13 @@
                       'attach-chip--warn': p.status === 'done' && p.textExtracted === false,
                     }"
                   >
-                    <div
+                    <button
+                      type="button"
                       class="attach-chip-media"
                       :class="{ 'attach-chip-media--doc': p.kind !== 'image' }"
+                      :title="t('chat.attachPreviewClick')"
+                      :disabled="attachUploadInProgress(p)"
+                      @click="openPendingAttachmentPreview(p)"
                     >
                       <img
                         v-if="p.kind === 'image' && p.previewUrl"
@@ -797,7 +825,7 @@
                       >
                         {{ attachUploadPercent(p) }}%
                       </span>
-                    </div>
+                    </button>
                     <span class="attach-chip-meta">
                       <span class="attach-chip-name" :title="p.fileName">{{ truncateName(p.fileName) }}</span>
                       <span v-if="attachUploadInProgress(p)" class="attach-chip-status">
@@ -1000,6 +1028,43 @@
       :brand-logo-url="logoUrl"
       :brand-title="displayBrandTitle"
     />
+
+    <el-dialog
+      v-model="attachPreview.open"
+      :title="attachPreview.title || t('chat.attachPreview')"
+      width="min(92vw, 720px)"
+      destroy-on-close
+      class="attach-preview-dlg"
+      @closed="closeAttachPreview"
+    >
+      <div v-loading="attachPreview.loading" class="attach-preview-body">
+        <img
+          v-if="attachPreview.kind === 'image' && attachPreview.objectUrl"
+          class="attach-preview-img"
+          :src="attachPreview.objectUrl"
+          :alt="attachPreview.title"
+        />
+        <iframe
+          v-else-if="attachPreview.kind === 'pdf' && attachPreview.objectUrl"
+          class="attach-preview-frame"
+          :src="attachPreview.objectUrl"
+          :title="attachPreview.title"
+        />
+        <pre
+          v-else-if="attachPreview.kind === 'text' && attachPreview.textContent != null"
+          class="attach-preview-text"
+        >{{ attachPreview.textContent }}</pre>
+        <p v-else-if="!attachPreview.loading" class="attach-preview-hint">
+          {{ t("chat.attachPreviewOpenHint") }}
+        </p>
+      </div>
+      <template #footer>
+        <el-button v-if="attachPreview.objectUrl" type="primary" plain @click="downloadAttachPreview">
+          {{ t("chat.attachPreviewDownload") }}
+        </el-button>
+        <el-button @click="attachPreview.open = false">{{ t("common.close") }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -1028,7 +1093,7 @@ import {
   StarFilled,
   User,
 } from "@element-plus/icons-vue";
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
 import { useWindowBreakpoints } from "../../composables/useWindowBreakpoints";
@@ -2478,11 +2543,16 @@ function easeOutCubic(t: number): number {
 }
 
 /** 问题节点跳转：按距离计算时长，向下/向上均有缓动过渡（避免原生 smooth 长距「闪现」感）。 */
-function animateMessagesScrollTo(targetTop: number): void {
+function animateMessagesScrollTo(targetTop: number, opts?: { pinBottom?: boolean }): void {
   const wrap = getMessagesScrollWrap();
   if (!wrap) return;
   cancelMessageScrollAnimation();
-  releaseScrollPin();
+  if (opts?.pinBottom) {
+    cancelPendingScrollToBottom();
+    scrollPinnedToBottom.value = true;
+  } else {
+    releaseScrollPin();
+  }
 
   const startTop = wrap.scrollTop;
   const delta = targetTop - startTop;
@@ -2510,6 +2580,13 @@ function animateMessagesScrollTo(targetTop: number): void {
   messageScrollAnimRaf = requestAnimationFrame(tick);
 }
 
+function animateMessagesScrollToBottom(): void {
+  const wrap = getMessagesScrollWrap();
+  if (!wrap) return;
+  const targetTop = Math.max(0, wrap.scrollHeight - wrap.clientHeight);
+  animateMessagesScrollTo(targetTop, { pinBottom: true });
+}
+
 function scrollToMessageIndex(idx: number): void {
   const wrap = getMessagesScrollWrap();
   if (!wrap) return;
@@ -2521,6 +2598,9 @@ function scrollToMessageIndex(idx: number): void {
 
 /** 用户是否在底部附近；仅贴底时流式输出才自动滚底。 */
 const scrollPinnedToBottom = ref(true);
+const showThreadScrollBottomFab = computed(
+  () => messages.value.length > 0 && !threadLoading.value && !scrollPinnedToBottom.value,
+);
 const SCROLL_PIN_THRESHOLD_PX = 96;
 let scrollPinFromProgrammatic = false;
 let lastKnownScrollTop = 0;
@@ -2787,6 +2867,109 @@ function attachChipTitle(a: chatApi.ChatAttachmentMessage): string {
     parts.push(t("chat.attachParseEmpty"));
   }
   return parts.join(" ");
+}
+
+type AttachPreviewKind = "image" | "pdf" | "text" | "binary";
+
+const attachPreview = reactive({
+  open: false,
+  title: "",
+  kind: "binary" as AttachPreviewKind,
+  objectUrl: null as string | null,
+  ownsObjectUrl: false,
+  textContent: null as string | null,
+  loading: false,
+});
+
+function revokeAttachPreviewObjectUrl() {
+  if (attachPreview.ownsObjectUrl && attachPreview.objectUrl) {
+    URL.revokeObjectURL(attachPreview.objectUrl);
+  }
+  attachPreview.objectUrl = null;
+  attachPreview.ownsObjectUrl = false;
+}
+
+function closeAttachPreview() {
+  attachPreview.open = false;
+  revokeAttachPreviewObjectUrl();
+  attachPreview.textContent = null;
+  attachPreview.loading = false;
+}
+
+function guessAttachPreviewKind(fileName: string, mime: string): AttachPreviewKind {
+  const m = mime.toLowerCase();
+  if (m.startsWith("image/")) return "image";
+  if (m === "application/pdf" || /\.pdf$/i.test(fileName)) return "pdf";
+  if (m.startsWith("text/") || /\.(txt|md|csv)$/i.test(fileName)) return "text";
+  return "binary";
+}
+
+function setAttachPreviewBlob(fileName: string, blob: Blob) {
+  const mime = blob.type || "application/octet-stream";
+  attachPreview.kind = guessAttachPreviewKind(fileName, mime);
+  revokeAttachPreviewObjectUrl();
+  attachPreview.textContent = null;
+  if (attachPreview.kind === "text") {
+    void blob.text().then((text) => {
+      attachPreview.textContent = text;
+    });
+    return;
+  }
+  attachPreview.objectUrl = URL.createObjectURL(blob);
+  attachPreview.ownsObjectUrl = true;
+}
+
+async function openSavedAttachmentPreview(att: chatApi.ChatAttachmentMessage) {
+  if (!convId.value) return;
+  closeAttachPreview();
+  attachPreview.open = true;
+  attachPreview.title = att.fileName;
+  attachPreview.loading = true;
+  try {
+    const blob = await chatApi.fetchChatAttachmentBlob(convId.value, att.id);
+    setAttachPreviewBlob(att.fileName, blob);
+  } catch (e: unknown) {
+    ElMessage.error(apiRequestErrorMessage(e, t("chat.attachPreviewFailed")));
+    attachPreview.open = false;
+  } finally {
+    attachPreview.loading = false;
+  }
+}
+
+function openPendingAttachmentPreview(p: PendingAttachment) {
+  if (attachUploadInProgress(p)) return;
+  closeAttachPreview();
+  attachPreview.open = true;
+  attachPreview.title = p.fileName;
+  attachPreview.loading = false;
+  if (p.status === "done" && p.serverId != null && convId.value) {
+    void openSavedAttachmentPreview({
+      id: p.serverId,
+      fileName: p.fileName,
+      charLength: p.charLength ?? null,
+      textExtracted: p.textExtracted ?? false,
+      kind: p.kind,
+    });
+    return;
+  }
+  if (p.kind === "image" && p.previewUrl) {
+    attachPreview.kind = "image";
+    attachPreview.objectUrl = p.previewUrl;
+    attachPreview.ownsObjectUrl = false;
+    return;
+  }
+  if (p.file) {
+    setAttachPreviewBlob(p.fileName, p.file);
+  }
+}
+
+function downloadAttachPreview() {
+  if (!attachPreview.objectUrl) return;
+  const a = document.createElement("a");
+  a.href = attachPreview.objectUrl;
+  a.download = attachPreview.title || "download";
+  a.rel = "noopener";
+  a.click();
 }
 
 function attachUploadInProgress(p: PendingAttachment): boolean {
@@ -3282,7 +3465,7 @@ onMounted(async () => {
 
 function onFilePick(uploadFile: UploadFile) {
   const raw = uploadFile.raw;
-  if (!raw) return;
+  if (!raw || uploadFile.status !== "ready") return;
   addPendingAttachments([raw]);
 }
 
@@ -4348,7 +4531,91 @@ async function send() {
   min-height: 0;
   display: flex;
   align-items: stretch;
+  position: relative;
   background: var(--chat-bg-main, #fafafa);
+}
+
+.thread-scroll-bottom-fab {
+  position: absolute;
+  right: 0;
+  bottom: 10px;
+  z-index: 13;
+  width: 40px;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.thread-scroll-bottom-fab--mobile {
+  width: 32px;
+  bottom: 8px;
+}
+
+.thread-scroll-bottom-btn {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(79, 70, 229, 0.18);
+  border-radius: 10px;
+  background: var(--chat-bg-elevated, #fff);
+  color: var(--nexus-brand-600, #4f46e5);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.1);
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.thread-scroll-bottom-fab--mobile .thread-scroll-bottom-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 9px;
+}
+
+.thread-scroll-bottom-btn:hover {
+  background: rgba(79, 70, 229, 0.08);
+  border-color: rgba(79, 70, 229, 0.32);
+  color: var(--nexus-brand-700, #4338ca);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.16);
+}
+
+.thread-scroll-bottom-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.12);
+}
+
+.thread-scroll-bottom-btn:focus-visible {
+  outline: 2px solid rgba(79, 70, 229, 0.45);
+  outline-offset: 2px;
+}
+
+.thread-scroll-bottom-fade-enter-active,
+.thread-scroll-bottom-fade-leave-active {
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+}
+
+.thread-scroll-bottom-fade-enter-from,
+.thread-scroll-bottom-fade-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thread-scroll-bottom-fade-enter-active,
+  .thread-scroll-bottom-fade-leave-active {
+    transition-duration: 0.01ms !important;
+  }
 }
 
 .messages-scroll {
@@ -4673,6 +4940,14 @@ async function send() {
   border: 1px solid #e4e4e7;
   font-size: 12px;
   color: #3f3f46;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+
+.user-msg-attach-chip:hover {
+  border-color: #a1a1aa;
+  background: #fafafa;
 }
 
 .user-msg-attach-ico {
@@ -5822,9 +6097,22 @@ async function send() {
   flex-shrink: 0;
   width: 36px;
   height: 36px;
+  padding: 0;
+  border: none;
   border-radius: 8px;
   overflow: hidden;
   background: #e4e4e7;
+  cursor: pointer;
+}
+
+.attach-chip-media:disabled {
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+
+.attach-chip-media:not(:disabled):hover {
+  outline: 2px solid #a1a1aa;
+  outline-offset: 1px;
 }
 
 .attach-chip-media--doc {
@@ -6504,5 +6792,50 @@ html.dark .chat-app:not(.chat-app--mobile) .composer-input :deep(.el-textarea__i
 .msg-actions-dd-popper .el-dropdown-menu__item:not(.is-disabled):hover {
   background: #f1f5f9 !important;
   color: #0f172a !important;
+}
+
+.attach-preview-body {
+  min-height: 120px;
+  max-height: min(70vh, 640px);
+  overflow: auto;
+}
+
+.attach-preview-img {
+  display: block;
+  max-width: 100%;
+  max-height: min(68vh, 600px);
+  margin: 0 auto;
+  object-fit: contain;
+}
+
+.attach-preview-frame {
+  display: block;
+  width: 100%;
+  min-height: 360px;
+  height: min(68vh, 560px);
+  border: none;
+  border-radius: 8px;
+  background: #f4f4f5;
+}
+
+.attach-preview-text {
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: #f4f4f5;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: min(68vh, 560px);
+  overflow: auto;
+}
+
+.attach-preview-hint {
+  margin: 0;
+  padding: 24px 12px;
+  text-align: center;
+  color: #71717a;
+  font-size: 14px;
 }
 </style>

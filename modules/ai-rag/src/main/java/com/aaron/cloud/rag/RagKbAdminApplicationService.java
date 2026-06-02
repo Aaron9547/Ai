@@ -1,6 +1,7 @@
 package com.aaron.cloud.rag;
 
 import com.aaron.cloud.common.api.ports.RagEmbeddingPort;
+import com.aaron.cloud.common.document.TikaDocumentTextExtractor;
 import com.aaron.cloud.rag.runtime.TenantRagRuntimeResolver;
 import com.aaron.cloud.common.api.enums.llm.LlmModelKind;
 import com.aaron.cloud.common.api.enums.llm.LlmModelStatus;
@@ -93,6 +94,7 @@ public class RagKbAdminApplicationService {
     private final RagIngestPreviewApplicationService ragIngestPreviewApplicationService;
     private final RagDocumentChunkPurgeService ragDocumentChunkPurgeService;
     private final RagWebCrawlUrlItemRepository ragWebCrawlUrlItemRepository;
+    private final TikaDocumentTextExtractor documentTextExtractor;
 
     /**
      * 与 {@code /admin/rag-kbs/{tenantCode}/...} 对齐：路径中的租户编码须与当前 {@link TenantContextHolder} 对应行的
@@ -722,7 +724,9 @@ public class RagKbAdminApplicationService {
         }
         String extracted;
         try {
-            extracted = RagUploadTextExtractor.extractFromMultipart(file);
+            extracted =
+                    documentTextExtractor.extractFromMultipart(
+                            file, TikaDocumentTextExtractor.MAX_CHARS_RAG_UPLOAD);
         } catch (Exception e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "failed to parse file: " + e.getMessage());
         }
@@ -775,7 +779,9 @@ public class RagKbAdminApplicationService {
         if (file == null || file.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "empty file");
         }
-        String extracted = RagUploadTextExtractor.extractFromMultipart(file);
+        String extracted =
+                documentTextExtractor.extractFromMultipart(
+                        file, TikaDocumentTextExtractor.MAX_CHARS_RAG_UPLOAD);
         if (extracted.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "no extractable text");
         }

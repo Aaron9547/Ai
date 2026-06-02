@@ -40,7 +40,11 @@ public class ChatKnowledgePlanetController extends OpenV1ControllerBases.Chat {
 
     @PostMapping("/knowledge-planet/weekly/feedback")
     public void weeklyFeedback(@RequestBody WeeklyFeedbackBody body) {
-        weeklyFeedbackService.recordFeedback(body != null && body.helpful());
+        java.time.LocalDate weekStart = null;
+        if (body != null && body.weekStart() != null && !body.weekStart().isBlank()) {
+            weekStart = java.time.LocalDate.parse(body.weekStart().trim());
+        }
+        weeklyFeedbackService.recordFeedback(body != null && body.helpful(), weekStart);
     }
 
     @PutMapping("/knowledge-planet/learning-goal")

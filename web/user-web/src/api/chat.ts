@@ -277,6 +277,17 @@ export async function uploadChatAttachment(
   return one;
 }
 
+export async function fetchChatAttachmentBlob(
+  conversationId: string,
+  attachmentId: number,
+): Promise<Blob> {
+  const { data } = await http.get<Blob>(
+    `/open/v1/chat/conversations/${encodeURIComponent(conversationId)}/attachments/${attachmentId}`,
+    { responseType: "blob" },
+  );
+  return data;
+}
+
 export type ChatResponseLocale = "zh-CN" | "en-US";
 
 export interface ChatSendPayload {

@@ -237,9 +237,16 @@ sequenceDiagram
 |------|------|------|
 | GET | **`/knowledge-planet/summary`** | 是否启用、节点数、最近节点、最新周报摘要摘要 |
 | GET | **`/knowledge-planet/universe`** | 星系数据：`planets` + `nodes`（planet/knowledge）+ `links`（orbit/relation）；供 **3d-force-graph** |
-| GET | **`/knowledge-planet/weekly/latest`** | 当前登录用户最新 READY/SENT 周报（未登录 401） |
-| POST | **`/knowledge-planet/weekly/feedback`** | 周报是否有帮助（写 **`WEEKLY_INSIGHT_FEEDBACK_JSON`**） |
+| GET | **`/knowledge-planet/weekly/latest`** | 当前登录用户最新 READY/SENT 周报（未登录 401）；含 **`feedbackHelpful`**（该方案周是否已反馈） |
+| POST | **`/knowledge-planet/weekly/feedback`** | 周报是否有帮助（写 **`WEEKLY_INSIGHT_FEEDBACK_JSON`**；同自然周覆盖） |
 | PUT | **`/knowledge-planet/learning-goal`** | 显式学习目标（**`LEARNING_GOAL`** tag，冷启动与周报 Prompt） |
+
+**管理端（画像菜单）**
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | **`/api/v1/admin/user-profiles/knowledge-planet-weekly-feedback`** | 租户内周报反馈扁平列表（含 helpful 汇总；网关 **2197**） |
+| GET | **`/api/v1/admin/user-profiles/{userId}/knowledge-planet-weekly`** | 指定用户、周起始的成长方案（弹窗；网关 **2198**） |
 
 **端到端数据流**
 
@@ -376,6 +383,100 @@ flowchart TB
 | **提交前自检** | **`.\scripts\check-project-changelog.ps1 -IncludeUntracked`**：动代码须改 **`PROJECT.md`**；顶节补丁 **≥** `pom` 补丁。 |
 
 ## 变更记录
+
+### 0.1.318-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **对话附件粘贴去重（user-web）**：修复复制文件粘贴到输入区有时出现两个相同附件；剪贴板仅在有 **`files`** 时读 FileList（不再叠加 **items**），批次与待发送列表按 **size+type** 去重；**el-upload** 仅在 **ready** 时入队避免重复回调。
+
+### 0.1.317-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **知识星球周报反馈回显（ai-chat / user-web）**：**`GET …/weekly/latest`** 增加 **`feedbackHelpful`**（按当前方案 **`week_start`** 读取）；提交反馈可带 **`weekStart`** 与方案周对齐。C 端进入后回显已选「有帮助/一般」、高亮选中态、允许修改；未评价与已评价样式区分。**无 DB migrate**。
+
+### 0.1.316-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **知识星球周报反馈 · 查看方案（admin-web / ai-common / ai-identity）**：反馈列表与画像详情内「查看周报」弹窗，调用 **`GET /api/v1/admin/user-profiles/{userId}/knowledge-planet-weekly?weekStart=`** 读取 **`ten_user_weekly_insight.plan_json`** 并结构化展示。**无 DB migrate**；**已建库须手工执行** **`gw_api_endpoint_catalog_inserts.sql`** 含 **2198**。
+- **用户画像 · 标签紧凑展示（admin-web）**：**`INTEREST_NEWS_JSON`**、**`WEEKLY_INSIGHT_FEEDBACK_JSON`** 当前值均改为一行摘要 +「查看明细」弹窗（周报反馈弹窗内可再「查看周报」），不再嵌套大表占满画像详情。
+- **管理端时间展示（admin-web）**：周报「计算时间」、反馈时间等统一 **`formatBeijingDateTime`** 格式化为北京时间 `yyyy-MM-dd HH:mm:ss`（不再裸显 ISO `T` 串）。
+- **成长方案弹窗滚动（admin-web）**：**`KnowledgeWeeklyPlanPreview`** 改用 **`el-scrollbar`** 细窄滑轨 + 圆角内容区，替代原生粗滚动条。
+
+### 0.1.315-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **知识星球周报反馈（user-web / admin-web / ai-common / ai-identity / ai-chat）**：C 端「本周成长方案」书目链接与区块排版优化；反馈区提交后内联感谢文案；同一自然周重复点击覆盖该周记录（非无限追加）。管理端新增 **`GET /api/v1/admin/user-profiles/knowledge-planet-weekly-feedback`**（网关 **2197**）租户反馈列表与汇总；侧栏「知识星球周报反馈」页；用户画像详情内 **`WEEKLY_INSIGHT_FEEDBACK_JSON`** 解析为表格。**无 DB migrate**；**已建库须手工执行** **`gw_api_endpoint_catalog_inserts.sql`** 含 **2197**。
+- **用户画像标签展示（admin-web）**：**`INTEREST_NEWS_JSON`**（今日智能洞察点击）补中文含义/说明；当前值改为一行摘要（条数 + 最近标题）+「查看明细」弹窗，避免嵌套表撑高画像详情。
+
+### 0.1.314-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **租户运行参数校验双语（ai-common、ai-identity）**：新增 `tenant-runtime-meta_zh_CN.properties` / `tenant-runtime-meta_en.properties` 与 `TenantRuntimeSettingMessages`；Shell / `validateAndNormalize` 校验异常按请求 `Accept-Language` 返回中英文字段名与说明（与 admin-web 语言一致）。
+
+### 0.1.313-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **租户运行参数 / Shell 联网检索（ai-common、ai-identity）**：`WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON` 允许空数组 `[]`（仅选联网模型时可保存）；校验异常字段名与说明见 **`tenant-runtime-meta_*.properties`**（0.1.314 起按 `Accept-Language` 双语）。
+
+### 0.1.312-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **租户 Shell 联网检索（admin-web）**：联网检索源 chip 选中态为浅主色底 + 主色描边/外环 + 类型标签实心主色，兼顾美观与可辨。
+
+### 0.1.311-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **租户 Shell 联网检索（admin-web / ai-identity）**：火山联网与内置固定源合并为同一 **联网检索源** 面板（非互斥）；至少启用一项，可同时选火山与多个固定源；撤销 0.1.310 仅能择一限制。
+
+### 0.1.310-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **租户 Shell 联网检索（admin-web / ai-identity）**：「外观与模型调用 → 联网检索」将火山联网与内置固定源合并为单一 **联网检索源** 下拉（分组展示，仅能择一）；固定源代理仅在选中内置源时显示；保存时后端校验二者不可同时启用。
+
+### 0.1.309-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **本机 RapidOCR（ai-common）**：**`pom.xml` / `ai-common`** 声明 **`rapidocr` + `rapidocr-onnx-platform` `0.0.7`**（JVM 内 ONNX，无独立服务）；**`LocalRapidOcrOnnxImageOcr`**（**0.0.7** 经临时文件 **`runOcr(path)`**，无 **`OcrInput`**）+ **`OcrLayoutMarkdownFormatter`**；**`LocalChainedImageOcr`**（Rapid 优先，失败回退 Tesseract）。**`LocalTesseractImageOcr`** 使用 Tess4J **`setVariable`**（非已移除的 **`setTessVariable`**）。缺 Maven 依赖或 **`ai-common`** 编译失败时，IDE 启动可能误报 **`ClassNotFoundException: ChatStarterDailyHotTopicService`**（实为 **`ai-chat`** 未进 classpath）。
+- **对话附件（ai-chat）**：图片抽取仅走 Tika + 本机链，**不再调用视觉模型 OCR**。
+- **配置**：**`com.aaron.cloud.document.local-ocr.rapid`**（`enabled` / `model`）；Tesseract 仍作兜底（**`TESSDATA_PREFIX`** / **`tessdata/`**）。
+
+### 0.1.308-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **图片 OCR 质量（ai-common / ai-chat / ai-model）**：本机 Tesseract 上传前放大短边、多 PSM（6/11/3）取最长结果；对话附件对图片在 Tika/本机 OCR 后**始终尝试视觉模型**并与较长结果合并（**`ImageExtractTexts`**）；视觉 OCR 提示词强调表格行列与数字完整性。
+- **用户端（user-web）**：附件预览弹窗关闭按钮文案 **`common.close`**（中英 i18n）。
+
+### 0.1.307-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **对话附件预览（ai-chat / user-web）**：开放 **`GET /open/v1/chat/conversations/{id}/attachments/{attachmentId}`**（图片/PDF/文本内联预览，其余下载）；上传成功后 **INFO** 日志打印解析正文预览（**`ChatAttachmentExtractLog`**，超长截断）。
+- **用户端（user-web）**：消息气泡与输入区附件 chip **点击预览**（弹窗 + 下载）；已建库须手工执行 **`migrate_0_1_258_chat_attachment_open.sql`**（网关目录 GET 行）。
+
+### 0.1.306-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **本地图片 OCR（ai-common / Tess4J）**：新增 **`LocalTesseractImageOcr`**（Tesseract，不依赖视觉 API）；**`TikaDocumentTextExtractor`** 对图片在 Tika 无文本后自动尝试；**`ChainedImageTextOcrPort`** 链式：本机 OCR → 视觉模型。配置 **`com.aaron.cloud.document.local-ocr`** / **`TESSDATA_PREFIX`**；脚本 **`scripts/setup-tessdata.ps1`** 下载 **`eng`/`chi_sim`** 至项目根 **`tessdata/`**。
+
+### 0.1.305-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **文档正文抽取（ai-common）**：新增 **`com.aaron.cloud.common.document`**——**`TikaDocumentTextExtractor`**（Tika，支持字节流/Multipart、可配置字符上限）、**`UploadFileNames`**、**`UploadedFileKind`**、**`ExtractedDocumentTexts`**、**`VisionModelHints`**；Tika 依赖收敛至 **ai-common**。
+- **图片 OCR 端口（ai-common / ai-model）**：**`ImageTextOcrPort`** + **`VisionImageTextOcrService`**（原对话附件 OCR 实现）；各模块经端口调用，无需依赖 **ai-chat**。
+- **对话附件（ai-chat）** / **RAG 上传（ai-rag）**：改用 common 抽取器；删除 **`RagUploadTextExtractor`** 及 chat 内重复工具类。
 
 ### 0.1.304-SNAPSHOT
 

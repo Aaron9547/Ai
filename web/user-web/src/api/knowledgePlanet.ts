@@ -87,6 +87,7 @@ export type KnowledgePlanetWeeklyLatest = {
   weekStart: string | null;
   status: string | null;
   plan: KnowledgeWeeklyPlan | null;
+  feedbackHelpful?: boolean | null;
 };
 
 export async function fetchKnowledgePlanetSummary(): Promise<KnowledgePlanetSummary> {
@@ -106,8 +107,14 @@ export async function fetchKnowledgePlanetWeeklyLatest(): Promise<KnowledgePlane
   return data;
 }
 
-export async function postKnowledgePlanetWeeklyFeedback(helpful: boolean): Promise<void> {
-  await http.post("/open/v1/chat/knowledge-planet/weekly/feedback", { helpful });
+export async function postKnowledgePlanetWeeklyFeedback(
+  helpful: boolean,
+  weekStart?: string | null,
+): Promise<void> {
+  await http.post("/open/v1/chat/knowledge-planet/weekly/feedback", {
+    helpful,
+    weekStart: weekStart?.trim() || undefined,
+  });
 }
 
 export async function putKnowledgePlanetLearningGoal(goal: string): Promise<void> {

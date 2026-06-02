@@ -249,48 +249,33 @@
             <el-form-item class="outbound-field-span">
               <template #label>
                 <ShellFieldLabel
-                  :label="t('admin.shell.modelCalling.webSearchArkModel')"
-                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.webSearchArkModel"
+                  :label="t('admin.shell.modelCalling.webSearchProvider')"
+                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.webSearchProvider"
                 />
               </template>
-              <el-select
-                v-model="webSearchGroundingModelId"
-                clearable
-                filterable
-                class="outbound-line-input"
-                :placeholder="t('admin.shell.modelCalling.webSearchArkPlaceholder')"
-                :loading="loadingWebSearchModels"
-              >
-                <el-option
-                  v-for="opt in webSearchArkSelectOptions"
-                  :key="opt.id"
-                  :label="opt.label"
-                  :value="opt.id"
-                  :disabled="opt.disabled"
-                />
-              </el-select>
-              <p v-if="!loadingWebSearchModels && webSearchArkSelectOptions.length === 0" class="field-hint">
-                {{ t("admin.shell.modelCalling.webSearchModelsEmpty") }}
-              </p>
-            </el-form-item>
-            <el-form-item class="outbound-field-span">
-              <template #label>
-                <ShellFieldLabel
-                  :label="t('admin.shell.modelCalling.webSearchFixedSources')"
-                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.webSearchFixedSources"
-                />
-              </template>
-              <el-checkbox-group v-model="webSearchFixedSources" class="web-search-source-group">
-                <el-checkbox
-                  v-for="code in webSearchFixedSourceCodes"
-                  :key="code"
-                  :label="code"
+              <div class="web-search-provider-panel">
+                <el-checkbox-group
+                  v-model="webSearchProviderKeys"
+                  class="web-search-provider-chips"
+                  @change="onWebSearchProviderChange"
                 >
-                  {{ t(`admin.shell.modelCalling.fixedSources.${code}`) }}
-                </el-checkbox>
-              </el-checkbox-group>
+                  <el-checkbox-button
+                    v-for="opt in webSearchProviderChipOptions"
+                    :key="opt.key"
+                    :label="opt.key"
+                    :disabled="opt.disabled"
+                    class="web-search-provider-chip"
+                  >
+                    <span class="web-search-chip-kind">{{ opt.kindLabel }}</span>
+                    <span class="web-search-chip-name">{{ opt.name }}</span>
+                  </el-checkbox-button>
+                </el-checkbox-group>
+                <p v-if="!loadingWebSearchModels && webSearchArkSelectOptions.length === 0" class="field-hint">
+                  {{ t("admin.shell.modelCalling.webSearchModelsEmptyHint") }}
+                </p>
+              </div>
             </el-form-item>
-            <el-form-item class="outbound-field-span">
+            <el-form-item v-show="webSearchUsesFixedSource" class="outbound-field-span">
               <template #label>
                 <ShellFieldLabel
                   :label="t('admin.shell.modelCalling.webSearchFixedOutbound')"
@@ -805,10 +790,11 @@ import {
   validateInputGuard,
   parseMemoryEmbeddingModelId,
   parseWebSearchGroundingModelId,
-  parseWebSearchFixedSourcesJson,
   WEB_SEARCH_FIXED_SOURCE_CODES,
   validateMemoryEmbeddingId,
-  type WebSearchFixedSourceCode,
+  normalizeWebSearchProviderKeys,
+  webSearchProviderKeysFromRuntime,
+  webSearchRuntimeFromProviderKeys,
   WEB_SEARCH_CACHE_DEFAULT,
   parseWebSearchCacheJson,
   serializeWebSearchCacheJson,
@@ -876,10 +862,22 @@ const processDefaultVectorDimension = ref(2048);
 const ragVectorDimensionOptions = [512, 768, 1024, 1536, 2048, 3072, 4096];
 const ragRetrievalMode = ref("");
 const ragRetrievalModeEffective = ref("milvus_es_hybrid");
-const webSearchGroundingModelId = ref<number | undefined>(undefined);
+const webSearchProviderKeys = ref<string[]>([]);
 const webSearchQueryRewriteModelId = ref<number | undefined>(undefined);
-const webSearchFixedSources = ref<WebSearchFixedSourceCode[]>([]);
 const webSearchFixedSourceCodes = WEB_SEARCH_FIXED_SOURCE_CODES;
+const webSearchUsesFixedSource = computed(() =>
+  webSearchProviderKeys.value.some((k) => k.startsWith("fixed:")),
+);
+
+function onWebSearchProviderChange(val: string[] | number[] | boolean[]) {
+  webSearchProviderKeys.value = normalizeWebSearchProviderKeys(val.map(String));
+}
+
+const webSearchSelectedModelId = computed(() => {
+  const key = webSearchProviderKeys.value.find((k) => k.startsWith("model:"));
+  if (!key) return undefined;
+  return parseWebSearchGroundingModelId(key.slice("model:".length));
+});
 const vectorModelsForMemory = ref<LlmModelAdminView[]>([]);
 const languageModelsForRewrite = ref<LlmModelAdminView[]>([]);
 const webSearchModelsForBinding = ref<LlmModelAdminView[]>([]);
@@ -1021,7 +1019,7 @@ const queryRewriteWebSearchSelectOptions = computed(() => {
 
 const webSearchArkSelectOptions = computed(() => {
   void locale.value;
-  const selected = webSearchGroundingModelId.value;
+  const selected = webSearchSelectedModelId.value;
   const rows = webSearchModelsForBinding.value
     .filter((m) => (m.integrationBackend ?? "").toUpperCase() === "VOLCENGINE_ARK_BOT")
     .slice()
@@ -1048,6 +1046,25 @@ const webSearchArkSelectOptions = computed(() => {
     ];
   }
   return rows;
+});
+
+const webSearchProviderChipOptions = computed(() => {
+  void locale.value;
+  const modelKind = t("admin.shell.modelCalling.webSearchKindModel");
+  const fixedKind = t("admin.shell.modelCalling.webSearchKindFixed");
+  const models = webSearchArkSelectOptions.value.map((o) => ({
+    key: `model:${o.id}`,
+    kindLabel: modelKind,
+    name: o.label,
+    disabled: o.disabled,
+  }));
+  const fixed = webSearchFixedSourceCodes.map((code) => ({
+    key: `fixed:${code}`,
+    kindLabel: fixedKind,
+    name: t(`admin.shell.modelCalling.fixedSources.${code}`),
+    disabled: false,
+  }));
+  return [...models, ...fixed];
 });
 
 const promptLimitsForm = reactive({ ...CHAT_PROMPT_DEFAULT });
@@ -1136,11 +1153,13 @@ async function applyModelCallingFromApi(mc: TenantShellModelCallingRuntime | und
     return;
   }
   memoryEmbeddingModelId.value = parseMemoryEmbeddingModelId(mc.memoryEmbeddingVectorModelId);
-  webSearchGroundingModelId.value = parseWebSearchGroundingModelId(mc.webSearchGroundingModelId);
   webSearchQueryRewriteModelId.value = parseWebSearchGroundingModelId(
     mc.webSearchQueryRewriteModelId,
   );
-  webSearchFixedSources.value = parseWebSearchFixedSourcesJson(mc.webSearchGroundingFixedSourcesJson);
+  webSearchProviderKeys.value = webSearchProviderKeysFromRuntime(
+    mc.webSearchGroundingModelId,
+    mc.webSearchGroundingFixedSourcesJson,
+  );
   Object.assign(promptLimitsForm, parseChatPromptLimitsJson(mc.chatPromptLimitsJson ?? "{}"));
   Object.assign(memoryPolicyForm, parseMemoryPolicyJson(mc.memoryPolicyJson ?? "{}"));
   Object.assign(inputGuardForm, parseInputGuardJson(mc.chatInputGuardJson ?? "{}"));
@@ -1311,14 +1330,12 @@ async function saveModelCalling() {
     ElMessage.error(t("admin.shell.modelCalling.validation.embeddingId"));
     return;
   }
-  const hasArk = webSearchGroundingModelId.value != null;
-  const hasFixed = webSearchFixedSources.value.length > 0;
-  if (!hasArk && !hasFixed) {
+  if (webSearchProviderKeys.value.length === 0) {
     ElMessage.error(t("admin.shell.modelCalling.validation.webSearchGrounding"));
     return;
   }
-  const webModelStr = hasArk ? String(webSearchGroundingModelId.value) : "";
-  const fixedSourcesJson = JSON.stringify(webSearchFixedSources.value);
+  const { webSearchGroundingModelId: webModelStr, webSearchGroundingFixedSourcesJson: fixedSourcesJson } =
+    webSearchRuntimeFromProviderKeys(webSearchProviderKeys.value);
   if (!validateInputGuard(inputGuardForm)) {
     ElMessage.error(t("admin.shell.modelCalling.validation.guardRange"));
     return;
@@ -1356,7 +1373,7 @@ async function saveModelCalling() {
     window.dispatchEvent(new Event(AI_ADMIN_TENANT_SHELL_CHANGED_EVENT));
   } catch (e: unknown) {
     console.warn("[tenant shell model-calling save]", e);
-    ElMessage.error(apiRequestErrorMessage(e, t("views.runtime.saveFailed")));
+    ElMessage.error(apiRequestErrorMessage(e, t("views.runtime.saveFailed"), locale.value));
   } finally {
     savingModelCalling.value = false;
   }
@@ -1825,6 +1842,99 @@ onMounted(() => {
   line-height: 1.5;
   word-break: break-word;
   font-variant-numeric: tabular-nums;
+}
+
+.web-search-provider-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--el-border-color-lighter, #e4e7ed);
+  background: var(--el-fill-color-blank, #fff);
+}
+
+.web-search-provider-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.web-search-provider-chips :deep(.el-checkbox-button) {
+  margin: 0;
+}
+
+.web-search-provider-chips :deep(.el-checkbox-button__inner) {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: 8px !important;
+  line-height: 1.35;
+  box-shadow: none !important;
+  border: 1px solid var(--el-border-color) !important;
+  background: var(--el-fill-color-blank) !important;
+  color: var(--el-text-color-regular) !important;
+  transition:
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.web-search-provider-chips :deep(.el-checkbox-button:first-child .el-checkbox-button__inner),
+.web-search-provider-chips :deep(.el-checkbox-button:last-child .el-checkbox-button__inner) {
+  border-radius: 8px !important;
+}
+
+.web-search-provider-chips :deep(.el-checkbox-button__inner:hover) {
+  border-color: var(--el-border-color-darker) !important;
+  background: var(--el-fill-color-light) !important;
+  color: var(--el-text-color-primary) !important;
+}
+
+.web-search-provider-chips :deep(.el-checkbox-button.is-checked .el-checkbox-button__inner) {
+  border-color: var(--el-color-primary) !important;
+  background: var(--el-color-primary-light-9) !important;
+  color: var(--el-text-color-primary) !important;
+  box-shadow: 0 0 0 2px var(--el-color-primary-light-8) !important;
+}
+
+.web-search-provider-chips :deep(.el-checkbox-button.is-checked .el-checkbox-button__inner:hover) {
+  border-color: var(--el-color-primary) !important;
+  background: var(--el-color-primary-light-8) !important;
+  box-shadow: 0 0 0 2px var(--el-color-primary-light-7) !important;
+}
+
+.web-search-provider-chips :deep(.el-checkbox-button.is-disabled .el-checkbox-button__inner) {
+  opacity: 0.55;
+}
+
+.web-search-chip-kind {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--el-fill-color);
+  color: var(--el-text-color-secondary);
+}
+
+.web-search-provider-chips :deep(.el-checkbox-button.is-checked) .web-search-chip-kind {
+  background: var(--el-color-primary);
+  color: var(--el-color-white);
+}
+
+.web-search-provider-chips :deep(.el-checkbox-button.is-checked) .web-search-chip-name {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.web-search-chip-name {
+  font-size: 13px;
+  text-align: left;
+  color: inherit;
 }
 
 .web-search-outbound-panel {

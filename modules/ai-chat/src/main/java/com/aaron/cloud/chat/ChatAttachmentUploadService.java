@@ -4,11 +4,11 @@ import com.aaron.cloud.common.chat.ChatAttachmentRepository;
 import com.aaron.cloud.common.chat.ChatConversationRepository;
 import com.aaron.cloud.common.chat.entity.ChatAttachment;
 import com.aaron.cloud.common.context.TenantContextHolder;
-import com.aaron.cloud.chat.support.ChatAttachmentFileKind;
-import com.aaron.cloud.chat.support.ChatAttachmentImageOcrService;
-import com.aaron.cloud.chat.support.ChatAttachmentTexts;
-import com.aaron.cloud.chat.support.ChatAttachmentUploadFileNames;
-import com.aaron.cloud.chat.support.DocumentTextExtractor;
+import com.aaron.cloud.common.document.ExtractedDocumentTexts;
+import com.aaron.cloud.common.document.TikaDocumentTextExtractor;
+import com.aaron.cloud.common.document.UploadFileNames;
+import com.aaron.cloud.common.document.UploadedFileKind;
+import com.aaron.cloud.chat.support.ChatAttachmentExtractLog;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,8 +25,7 @@ public class ChatAttachmentUploadService {
     private final ChatConversationRepository conversationRepository;
     private final ChatAttachmentRepository attachmentRepository;
     private final ChatAttachmentBinStore attachmentBinStore;
-    private final DocumentTextExtractor documentTextExtractor;
-    private final ChatAttachmentImageOcrService chatAttachmentImageOcrService;
+    private final TikaDocumentTextExtractor documentTextExtractor;
 
     public record SaveResult(ChatAttachment attachment, boolean textExtracted, String kind) {}
 
@@ -48,22 +47,16 @@ public class ChatAttachmentUploadService {
                         ? "application/octet-stream"
                         : file.getContentType();
         String original =
-                ChatAttachmentUploadFileNames.normalize(
+                UploadFileNames.normalize(
                         file.getOriginalFilename() == null ? "upload" : file.getOriginalFilename(),
                         mimeType);
         if (!isAllowedExtension(original)) {
             throw new IllegalArgumentException("不支持的文件类型：" + original);
         }
-        String kind = ChatAttachmentFileKind.resolve(original);
+        String kind = UploadedFileKind.resolve(original);
         byte[] bytes = file.getBytes();
         String text =
                 documentTextExtractor.extract(bytes, original, mimeType);
-        if (text.isBlank() && ChatAttachmentFileKind.IMAGE.equals(kind)) {
-            text =
-                    chatAttachmentImageOcrService
-                            .tryExtract(snap.getTenantId(), bytes, mimeType)
-                            .orElse("");
-        }
         boolean textExtracted = !text.isBlank();
         if (!textExtracted) {
             log.warn(
@@ -72,7 +65,7 @@ public class ChatAttachmentUploadService {
                     bytes.length,
                     mimeType,
                     kind);
-            text = ChatAttachmentTexts.EMPTY_EXTRACT_PLACEHOLDER;
+            text = ExtractedDocumentTexts.EMPTY_EXTRACT_PLACEHOLDER;
         }
         var row = new ChatAttachment();
         row.setTenantId(snap.getTenantId());
@@ -83,6 +76,8 @@ public class ChatAttachmentUploadService {
         row.setExtractedText(text);
         attachmentRepository.insert(row);
         attachmentBinStore.persist(snap.getTenantId(), conversationId, row.getId(), bytes);
+        ChatAttachmentExtractLog.logAfterSave(
+                row.getId(), original, mimeType, kind, textExtracted, text);
         return new SaveResult(row, textExtracted, kind);
     }
 

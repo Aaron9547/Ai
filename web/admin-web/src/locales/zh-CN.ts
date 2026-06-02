@@ -265,6 +265,7 @@ export default {
       membersProfiles: "用户与成员",
       users: "成员与账号",
       userProfiles: "画像与记忆",
+      kpWeeklyFeedback: "知识星球周报反馈",
       chatRisk: "对话运营",
       chatConversations: "会话记录",
       sensitiveTerms: "敏感词库",
@@ -291,6 +292,7 @@ export default {
       "/dashboard": "数据概览",
       "/users": "成员与账号",
       "/users/profiles": "画像与记忆",
+      "/users/knowledge-planet-weekly-feedback": "知识星球周报反馈",
       "/tenant/tenants": "租户列表",
       "/system/menu-items": "后台菜单",
       "/gateway/api-rate-limits": "API 限流",
@@ -559,8 +561,9 @@ export default {
         memoryEmbeddingPh: "使用系统默认",
         memoryEmbeddingOrphan: "已配置 id={id}，列表中无此模型",
         vectorModelsLoadFailed: "模型列表加载失败，请刷新页面",
-        webSearchArkModel: "火山联网",
-        webSearchArkPlaceholder: "仅用固定源时可不选",
+        webSearchKindModel: "联网模型",
+        webSearchKindFixed: "内置固定源",
+        webSearchProvider: "联网检索源",
         webSearchFixedSources: "内置固定源",
         webSearchFixedOutbound: "固定源代理",
         webSearchFixedOutboundEnabled: "启用代理",
@@ -568,7 +571,8 @@ export default {
         webSearchFixedOutboundPort: "端口",
         webSearchFixedOutboundType: "类型",
         webSearchModelOrphan: "已配置 id={id}，列表中无此模型",
-        webSearchModelsEmpty: "请先在「大模型管理 → 联网搜索」创建火山联网模型",
+        webSearchModelsEmpty: "请先在「大模型管理 → 联网搜索」创建联网模型",
+        webSearchModelsEmptyHint: "暂无联网模型时，可直接点选下方内置固定源",
         fixedSources: {
           DUCKDUCKGO_HTML: "DuckDuckGo",
           WIKIPEDIA_REST: "维基百科",
@@ -615,7 +619,7 @@ export default {
         hints: {
           queryRewrite: "固定源检索前的问句优化；不选模型则使用默认对话模型。",
           webSearchFixedOutbound:
-            "仅作用于上方勾选的境外固定源，火山联网不受影响。访问不畅时再开代理并填写主机与端口。",
+            "仅作用于上方勾选的境外固定源，联网模型不受影响。访问不畅时再开代理并填写主机与端口。",
           webSearchCache: "减少重复联网；语义命中需 Redis 与上方嵌入模型。",
           sensitiveWords: "每行一个词或短语，命中即拦截。",
           regexPatterns: "留空用内置规则；填写任意一行将替换全部内置规则。",
@@ -632,18 +636,18 @@ export default {
         validation: {
           embeddingId: "记忆嵌入模型 id 须为数字主键或留空",
           webSearchModelId: "联网检索模型 id 须为数字主键或留空",
-          webSearchGrounding: "请至少启用火山联网模型或一个内置固定源",
+          webSearchGrounding: "请至少启用一个联网模型或内置固定源",
           webSearchFixedOutbound: "启用代理时须填写主机，端口 1～65535",
           guardRange: "最短字符须 ≥1，且最长 ≥ 最短",
         },
         tooltips: {
           queryRewriteModel:
             "固定源检索前，结合对话近史将用户问句改写为一条检索问句。\n单次调用，直接使用模型返回的问句；与下方「多轮检索」无关。不选则用默认对话模型。",
-          webSearchArkModel:
-            "对话时通过火山引擎联网模型检索。\n可与下方固定源同时启用；火山联网与固定源至少启用一项。",
+          webSearchProvider:
+            "联网模型与内置固定源合并在同一组按钮中多选，至少启用一项；联网模型至多选一个，固定源可多选。\n国内网络建议勾选「百度新闻」。",
           webSearchFixedSources:
-            "内置新闻/搜索源，与火山联网可同时检索。\n国内网络建议勾选「百度新闻」。",
-          webSearchFixedOutbound: "仅影响固定源联网，不影响火山联网模型。",
+            "内置新闻/搜索源，可与联网模型同时启用。",
+          webSearchFixedOutbound: "仅影响固定源联网，不影响联网模型。",
           memoryEmbedding:
             "用于用户长期记忆的向量化与相似检索。\n在「大模型管理」选择向量模型；不选则效果较弱。",
           ragVectorDimension: "须与嵌入模型、知识库向量维数一致。\n首次保存或已有知识库后不可修改。",

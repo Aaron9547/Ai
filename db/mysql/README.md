@@ -38,6 +38,7 @@
 - **`migrate_0_1_236_repair_after_1364.sql`**：**0.1.236** 部分失败后的修复（补表/补 API）；仅故障恢复时执行。
 - **`migrate_0_1_237_rag_semantic_default_and_crawl_extract.sql`**：新建库默认语义分片、**`extract_config`**、**`preview-chunks`** API；新库以 **`schema_v1.sql`** + 目录清单为准可跳过。
 - **`migrate_0_1_238_rag_parent_child_chunk.sql`**：**`rag_chunk.parent_chunk_id`** 及索引（子母分片母子关联；与 **`RagChunkStrategy.PARENT_CHILD`** 一致）；新库以 **`schema_v1.sql`** 为准可跳过。
+- **`migrate_0_1_258_chat_attachment_open.sql`**：开放 **`GET /open/v1/chat/conversations/*/attachments/*`**（会话附件预览/下载）；新库以 **`schema_v1.sql`** / **`gw_api_endpoint_catalog_inserts.sql`** 为准可跳过。
 - **`migrate_0_1_239_rag_ingest_analyze_api.sql`**：**`POST …/ingest/analyze`**、**`analyze-upload`** 网关目录行；新库以 **`gw_api_endpoint_catalog_inserts.sql`** 为准可跳过。
 - **`migrate/migrate_0_1_257_prompt_template.sql`**：表 **`prompt_template`**、平台默认 LLM 提示词种子（与 **`PromptTemplateBuiltinCatalog`** 一致）、管理端菜单 **`PROMPT_TEMPLATES`** 与 **`/api/v1/admin/prompt-templates`** 网关目录；**已建库须手工执行**；新库 **`schema_v1.sql`** 已含表与平台种子，可只执行菜单/gw 段。
 - **`migrate_0_1_240_chat_starter_prompt.sql`**：表 **`chat_starter_prompt`**、**`chat_starter_daily_batch`**、**`chat_starter_follow_up_cache`**、**`chat_starter_event`** 及推荐问题 Open/Admin API 目录行（与 **`pom.xml` `0.1.240-SNAPSHOT`** / **`PROJECT.md` `### 0.1.240-SNAPSHOT`** 一致）；**已建库（如 test_ai）必须执行**，否则推荐问题 API 报 `Table … doesn't exist`；新库若 **`schema_v1.sql`** 已含表可只补网关 **`INSERT IGNORE`** 段。

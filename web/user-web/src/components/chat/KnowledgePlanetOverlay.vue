@@ -294,42 +294,84 @@
           </template>
 
           <section v-if="weekly?.plan" class="kp-weekly">
-            <h3>{{ t("knowledgePlanet.weeklyTitle") }}</h3>
-            <p class="kp-summary">{{ weekly.plan.summary }}</p>
-            <p v-if="weekly.plan.inferredPersona" class="kp-persona">{{ weekly.plan.inferredPersona }}</p>
-            <p v-if="weekly.plan.progressNotes" class="kp-progress">{{ weekly.plan.progressNotes }}</p>
+            <h3 class="kp-weekly__title">{{ t("knowledgePlanet.weeklyTitle") }}</h3>
+            <p v-if="weekly.weekStart" class="kp-weekly__week">{{ t("knowledgePlanet.weeklyWeekLabel", { week: weekly.weekStart }) }}</p>
+            <p class="kp-summary kp-weekly__summary">{{ weekly.plan.summary }}</p>
+            <p v-if="weekly.plan.inferredPersona" class="kp-persona kp-weekly__note">{{ weekly.plan.inferredPersona }}</p>
+            <p v-if="weekly.plan.progressNotes" class="kp-progress kp-weekly__note">{{ weekly.plan.progressNotes }}</p>
             <div v-if="weekly.plan.thinkDirections?.length" class="kp-weekly-block">
-              <h4>{{ t("knowledgePlanet.think") }}</h4>
-              <ul>
+              <h4 class="kp-weekly-block__title">{{ t("knowledgePlanet.think") }}</h4>
+              <ul class="kp-weekly-list">
                 <li v-for="(item, i) in weekly.plan.thinkDirections" :key="'t' + i">{{ item }}</li>
               </ul>
             </div>
             <div v-if="weekly.plan.gapAreas?.length" class="kp-weekly-block">
-              <h4>{{ t("knowledgePlanet.gaps") }}</h4>
-              <ul>
+              <h4 class="kp-weekly-block__title">{{ t("knowledgePlanet.gaps") }}</h4>
+              <ul class="kp-weekly-list">
                 <li v-for="(item, i) in weekly.plan.gapAreas" :key="'g' + i">{{ item }}</li>
               </ul>
             </div>
             <div v-if="weekly.plan.bookRecommendations?.length" class="kp-weekly-block">
-              <h4>{{ t("knowledgePlanet.books") }}</h4>
+              <h4 class="kp-weekly-block__title">{{ t("knowledgePlanet.books") }}</h4>
               <ul class="kp-books">
-                <li v-for="(book, i) in weekly.plan.bookRecommendations" :key="'b' + i">
-                  <a v-if="book.url" :href="book.url" target="_blank" rel="noopener noreferrer"
-                    >《{{ book.title }}》</a
-                  >
-                  <span v-else>《{{ book.title }}》</span>
-                  <span v-if="book.reason" class="kp-book-reason"> — {{ book.reason }}</span>
+                <li v-for="(book, i) in weekly.plan.bookRecommendations" :key="'b' + i" class="kp-book-item">
+                  <div class="kp-book-item__title">
+                    <a
+                      v-if="book.url"
+                      class="kp-book-link"
+                      :href="book.url"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      >{{ book.title }}</a
+                    >
+                    <span v-else class="kp-book-title">{{ book.title }}</span>
+                  </div>
+                  <p v-if="book.reason" class="kp-book-reason">{{ book.reason }}</p>
                 </li>
               </ul>
             </div>
-            <div class="kp-weekly-feedback">
-              <span>{{ t("knowledgePlanet.weeklyFeedbackPrompt") }}</span>
-              <button type="button" class="kp-tour-btn" @click="submitWeeklyFeedback(true)">
-                {{ t("knowledgePlanet.weeklyFeedbackYes") }}
-              </button>
-              <button type="button" class="kp-tour-btn" @click="submitWeeklyFeedback(false)">
-                {{ t("knowledgePlanet.weeklyFeedbackNo") }}
-              </button>
+            <div
+              class="kp-weekly-feedback"
+              :class="{ 'kp-weekly-feedback--answered': weeklyFeedbackChoice !== null }"
+            >
+              <p class="kp-weekly-feedback__prompt">
+                {{
+                  weeklyFeedbackChoice === null
+                    ? t("knowledgePlanet.weeklyFeedbackPrompt")
+                    : weeklyFeedbackChoice
+                      ? t("knowledgePlanet.weeklyFeedbackAnsweredYes")
+                      : t("knowledgePlanet.weeklyFeedbackAnsweredNo")
+                }}
+              </p>
+              <div class="kp-weekly-feedback__actions">
+                <button
+                  type="button"
+                  class="kp-weekly-feedback__btn kp-weekly-feedback__btn--yes"
+                  :class="{
+                    'kp-weekly-feedback__btn--selected': weeklyFeedbackChoice === true,
+                    'kp-weekly-feedback__btn--dim': weeklyFeedbackChoice === false,
+                  }"
+                  :disabled="weeklyFeedbackSubmitting"
+                  @click="submitWeeklyFeedback(true)"
+                >
+                  {{ t("knowledgePlanet.weeklyFeedbackYes") }}
+                </button>
+                <button
+                  type="button"
+                  class="kp-weekly-feedback__btn kp-weekly-feedback__btn--no"
+                  :class="{
+                    'kp-weekly-feedback__btn--selected': weeklyFeedbackChoice === false,
+                    'kp-weekly-feedback__btn--dim': weeklyFeedbackChoice === true,
+                  }"
+                  :disabled="weeklyFeedbackSubmitting"
+                  @click="submitWeeklyFeedback(false)"
+                >
+                  {{ t("knowledgePlanet.weeklyFeedbackNo") }}
+                </button>
+              </div>
+              <p v-if="weeklyFeedbackChoice !== null" class="kp-weekly-feedback__hint">
+                {{ t("knowledgePlanet.weeklyFeedbackChangeHint") }}
+              </p>
             </div>
           </section>
 
@@ -397,18 +439,32 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const isMobileLayout = computed(() => props.layout === "mobile");
-const weeklyFeedbackSent = ref(false);
+const weeklyFeedbackChoice = ref<boolean | null>(null);
+const weeklyFeedbackSubmitting = ref(false);
+
+watch(
+  () => props.weekly,
+  (w) => {
+    const fb = w?.feedbackHelpful;
+    weeklyFeedbackChoice.value = fb === true || fb === false ? fb : null;
+  },
+  { immediate: true },
+);
 
 async function submitWeeklyFeedback(helpful: boolean) {
-  if (weeklyFeedbackSent.value) {
+  if (weeklyFeedbackSubmitting.value) {
     return;
   }
+  weeklyFeedbackSubmitting.value = true;
+  const prev = weeklyFeedbackChoice.value;
+  weeklyFeedbackChoice.value = helpful;
   try {
-    await postKnowledgePlanetWeeklyFeedback(helpful);
-    weeklyFeedbackSent.value = true;
-    ElMessage.success(t("knowledgePlanet.weeklyFeedbackThanks"));
+    await postKnowledgePlanetWeeklyFeedback(helpful, props.weekly?.weekStart);
   } catch {
+    weeklyFeedbackChoice.value = prev;
     ElMessage.error(t("knowledgePlanet.weeklyFeedbackFail"));
+  } finally {
+    weeklyFeedbackSubmitting.value = false;
   }
 }
 const warpBg = shallowRef<HTMLElement | null>(null);
@@ -1858,8 +1914,193 @@ html.dark .kp-render-toggle__btn--active {
 
 .kp-weekly {
   margin-top: auto;
-  padding-top: 12px;
+  padding: 14px 12px 12px;
+  border-top: 1px solid rgba(0, 242, 254, 0.14);
+  border-radius: 12px;
+  background: rgba(8, 18, 32, 0.45);
+}
+
+.kp-weekly__title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #9ecbff;
+}
+
+.kp-weekly__week {
+  margin: 0 0 10px;
+  font-size: 11px;
+  color: rgba(224, 224, 224, 0.5);
+}
+
+.kp-weekly__summary {
+  margin-bottom: 10px;
+}
+
+.kp-weekly__note {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(224, 224, 224, 0.72);
+}
+
+.kp-weekly-block {
+  margin-bottom: 12px;
+}
+
+.kp-weekly-block__title {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: rgba(158, 203, 255, 0.85);
+}
+
+.kp-weekly-list {
+  margin: 0;
+  padding: 0 0 0 1.1em;
+  font-size: 12px;
+  line-height: 1.55;
+  color: rgba(232, 244, 255, 0.88);
+}
+
+.kp-weekly-list li + li {
+  margin-top: 4px;
+}
+
+.kp-books {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kp-book-item {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 242, 254, 0.12);
+  background: rgba(0, 242, 254, 0.04);
+}
+
+.kp-book-item__title {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.kp-book-link {
+  color: #b8d4ff;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(184, 212, 255, 0.35);
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.kp-book-link:hover {
+  color: #e8f4ff;
+  border-bottom-color: rgba(232, 244, 255, 0.6);
+}
+
+.kp-book-title {
+  color: #e8f4ff;
+}
+
+.kp-book-reason {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: rgba(224, 224, 224, 0.62);
+}
+
+.kp-weekly-feedback {
+  margin-top: 12px;
+  padding: 12px;
   border-top: 1px solid rgba(0, 242, 254, 0.1);
+  border-radius: 10px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.kp-weekly-feedback--answered {
+  background: rgba(0, 242, 254, 0.05);
+  border: 1px solid rgba(0, 242, 254, 0.18);
+  border-top-color: rgba(0, 242, 254, 0.18);
+}
+
+.kp-weekly-feedback__prompt {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: rgba(224, 224, 224, 0.75);
+}
+
+.kp-weekly-feedback--answered .kp-weekly-feedback__prompt {
+  color: rgba(158, 203, 255, 0.95);
+  font-weight: 500;
+}
+
+.kp-weekly-feedback__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.kp-weekly-feedback__btn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 242, 254, 0.25);
+  background: transparent;
+  color: rgba(224, 224, 240, 0.8);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease,
+    transform 0.12s ease;
+}
+
+.kp-weekly-feedback__btn:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.kp-weekly-feedback__btn:hover:not(:disabled) {
+  border-color: rgba(0, 242, 254, 0.45);
+  background: rgba(0, 242, 254, 0.08);
+}
+
+.kp-weekly-feedback__btn--selected {
+  border-color: rgba(0, 242, 254, 0.55);
+  background: rgba(0, 242, 254, 0.2);
+  color: #e8f4ff;
+  box-shadow: 0 0 0 1px rgba(0, 242, 254, 0.25);
+}
+
+.kp-weekly-feedback__btn--yes.kp-weekly-feedback__btn--selected {
+  background: rgba(0, 242, 254, 0.24);
+}
+
+.kp-weekly-feedback__btn--no.kp-weekly-feedback__btn--selected {
+  background: rgba(148, 163, 184, 0.22);
+  border-color: rgba(148, 163, 184, 0.45);
+  color: #e2e8f0;
+  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.2);
+}
+
+.kp-weekly-feedback__btn--dim {
+  opacity: 0.45;
+}
+
+.kp-weekly-feedback__btn--dim:hover:not(:disabled) {
+  opacity: 0.75;
+}
+
+.kp-weekly-feedback__hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: rgba(224, 224, 224, 0.48);
 }
 
 .kp-tour {

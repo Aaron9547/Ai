@@ -39,6 +39,14 @@ public class TenProfileTagRepository {
                         .orderByAsc(TenProfileTag::getTagCode));
     }
 
+    public List<TenProfileTag> listByTenantAndTagCode(long tenantId, ProfileTagCode code) {
+        return mapper.selectList(
+                Wrappers.<TenProfileTag>lambdaQuery()
+                        .eq(TenProfileTag::getTenantId, tenantId)
+                        .eq(TenProfileTag::getTagCode, code)
+                        .orderByDesc(TenProfileTag::getUpdatedAt));
+    }
+
     public int insert(TenProfileTag row) {
         return mapper.insert(row);
     }
