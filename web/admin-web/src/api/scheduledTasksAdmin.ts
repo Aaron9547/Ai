@@ -1,12 +1,21 @@
 import { http } from "@/plugins/http";
 
+export type ScheduledTaskCategoryCode = "TENANT_CRON" | "CHAT_USER_REMINDER";
+
 export interface ScheduledTaskEnumOption {
   code: string;
   label: string;
+  taskCategory?: ScheduledTaskCategoryCode;
   intervalDays?: number;
 }
 
+export interface ScheduledTaskCategoryOption {
+  code: ScheduledTaskCategoryCode;
+  label: string;
+}
+
 export interface ScheduledTaskMeta {
+  categories: ScheduledTaskCategoryOption[];
   executors: ScheduledTaskEnumOption[];
 }
 
@@ -74,9 +83,15 @@ export async function fetchScheduledTaskMeta(): Promise<ScheduledTaskMeta> {
   return data;
 }
 
-export async function fetchScheduledTasks(executorCode?: string): Promise<ScheduledTaskRow[]> {
+export async function fetchScheduledTasks(opts?: {
+  executorCode?: string;
+  taskCategory?: ScheduledTaskCategoryCode;
+}): Promise<ScheduledTaskRow[]> {
+  const params: Record<string, string> = {};
+  if (opts?.executorCode) params.executorCode = opts.executorCode;
+  if (opts?.taskCategory) params.taskCategory = opts.taskCategory;
   const { data } = await http.get<ScheduledTaskRow[]>("/api/v1/admin/scheduled-tasks", {
-    params: executorCode ? { executorCode } : undefined,
+    params: Object.keys(params).length ? params : undefined,
   });
   return data;
 }

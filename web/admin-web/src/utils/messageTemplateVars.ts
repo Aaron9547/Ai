@@ -31,6 +31,11 @@ export const MESSAGE_SCENE_TEMPLATE_VARS: Record<MessageSceneCode, MessageTempla
     { key: "code", labelKey: "admin.message.varCode" },
     { key: "ttlMinutes", labelKey: "admin.message.varTtlMinutes" },
   ],
+  CHAT_USER_REMINDER: [
+    { key: "title", labelKey: "admin.message.varReminderTitle" },
+    { key: "actionText", labelKey: "admin.message.varReminderActionText" },
+    { key: "scheduleType", labelKey: "admin.message.varReminderScheduleType" },
+  ],
 };
 
 export function varsForScene(scene: MessageSceneCode): MessageTemplateVarDef[] {
@@ -64,6 +69,9 @@ export const TEMPLATE_PREVIEW_SAMPLE_VARS: Record<string, string> = {
   thinkDirections: "· 多模态检索\n· 向量索引优化",
   gapAreas: "· 分布式训练",
   books: "· 《深度学习》（示例）",
+  title: "检查日报",
+  actionText: "请在 8 点前提交今日日报。",
+  scheduleType: "每天",
 };
 
 export function insertAtCaret(

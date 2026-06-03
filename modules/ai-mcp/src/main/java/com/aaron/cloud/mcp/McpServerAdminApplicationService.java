@@ -5,6 +5,7 @@ import com.aaron.cloud.common.api.enums.mcp.McpTransportKind;
 import com.aaron.cloud.common.context.TenantContextHolder;
 import com.aaron.cloud.common.mcp.McpServerRegistryRepository;
 import com.aaron.cloud.common.mcp.entity.McpServerRegistry;
+import com.aaron.cloud.mcp.builtin.BuiltinMcpServerNames;
 import com.aaron.cloud.mcp.dto.McpServerAdminDtos.CreateMcpServerRequest;
 import com.aaron.cloud.mcp.dto.McpServerAdminDtos.McpServerAdminView;
 import com.aaron.cloud.mcp.dto.McpServerAdminDtos.UpdateMcpServerRequest;
@@ -36,6 +37,7 @@ public class McpServerAdminApplicationService {
     public McpServerAdminView create(CreateMcpServerRequest req) throws Exception {
         long tenantId = TenantContextHolder.require().getTenantId();
         String name = req.getName().trim();
+        rejectReservedServerName(name);
         String baseUrl = normalizeBaseUrl(req.getBaseUrl().trim());
         if (mcpServerRegistryRepository.countByTenantAndName(tenantId, name, null) > 0) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "mcp server name exists");
@@ -58,6 +60,7 @@ public class McpServerAdminApplicationService {
         var row = requireRow(id, tenantId);
         if (req.getName() != null && !req.getName().isBlank()) {
             String name = req.getName().trim();
+            rejectReservedServerName(name);
             if (mcpServerRegistryRepository.countByTenantAndName(tenantId, name, id) > 0) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "mcp server name exists");
             }
@@ -94,6 +97,13 @@ public class McpServerAdminApplicationService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "mcp server not found");
         }
         return row;
+    }
+
+    private static void rejectReservedServerName(String name) {
+        if (BuiltinMcpServerNames.PLATFORM.equalsIgnoreCase(name.trim())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "server name 'platform' is reserved for builtin tools");
+        }
     }
 
     private static String normalizeBaseUrl(String url) {

@@ -16,6 +16,7 @@ import com.aaron.cloud.common.api.enums.chat.ChatStarterDailyBatchStatus;
 import com.aaron.cloud.common.api.enums.llm.LlmModelKind;
 import com.aaron.cloud.common.api.ports.ModelInvokePort;
 import com.aaron.cloud.common.api.ports.PromptTemplateResolvePort;
+import com.aaron.cloud.common.chat.ChatConversationRepository;
 import com.aaron.cloud.common.chat.ChatUserDailyRecommendRepository;
 import com.aaron.cloud.common.chat.entity.ChatUserDailyRecommend;
 import com.aaron.cloud.common.context.TenantContextHolder;
@@ -27,6 +28,7 @@ import com.aaron.cloud.common.profile.ProfileSubjectKey;
 import com.aaron.cloud.common.profile.UserProfileApplicationService;
 import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService;
 import com.aaron.cloud.common.time.BeijingTime;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -46,6 +48,7 @@ import org.springframework.stereotype.Service;
 public class ChatUserDailyRecommendService {
 
     private final ChatUserDailyRecommendRepository recommendRepository;
+    private final ChatConversationRepository conversationRepository;
     private final ChatDailyRecommendJsonSupport jsonSupport;
     private final SysLlmModelRepository llmModelRepository;
     private final TenantRuntimeSettingApplicationService tenantRuntimeSettingApplicationService;
@@ -60,6 +63,9 @@ public class ChatUserDailyRecommendService {
     private final ConcurrentHashMap<String, Object> generationLocks = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Boolean> generationInflight = new ConcurrentHashMap<>();
 
+    /** 异步任务异常退出后 {@code generationInflight} 可能残留，超时后允许重新调度。 */
+    private static final Duration GENERATION_INFLIGHT_STALE = Duration.ofMinutes(6);
+
     public DailyRecommendResponse getOrGenerateForCurrentSubject() {
         return getOrGenerate(false, false);
     }
@@ -68,10 +74,15 @@ public class ChatUserDailyRecommendService {
         return getOrGenerate(true, false);
     }
 
-    /** 登录后按用户主体强制重新生成（访客阶段推荐不含画像，登录后须换一批）。 */
+    /**
+     * 登录后：仅有活跃会话的主体才强制按画像重生；无会话仍读租户共用冷启动（与访客一致）。
+     */
     public DailyRecommendResponse regenerateForLoggedInUser() {
         TenantSnapshot snap = TenantContextHolder.require();
         if (snap.getUserId() == null) {
+            return getOrGenerate(false, false);
+        }
+        if (!hasPersonalizedRecommendSubject(snap)) {
             return getOrGenerate(false, false);
         }
         return getOrGenerate(false, true);
@@ -98,7 +109,7 @@ public class ChatUserDailyRecommendService {
 
     private DailyRecommendResponse getOrGenerate(boolean forceRetry, boolean forceRegenerate) {
         TenantSnapshot snap = TenantContextHolder.require();
-        String subjectKey = ProfileSubjectKey.fromSnapshot(snap);
+        String subjectKey = resolveRecommendSubjectKey(snap);
         if (subjectKey == null) {
             return emptyResponse(null, BeijingTime.today().toString(), "EMPTY", "未识别用户或设备");
         }
@@ -118,18 +129,27 @@ public class ChatUserDailyRecommendService {
             if (existing.isPresent()) {
                 ChatUserDailyRecommend row = existing.get();
                 if (!forceRetry && !forceRegenerate) {
-                    if (row.getStatus() != ChatStarterDailyBatchStatus.PENDING
-                            || generationInflight.containsKey(lockKey)) {
+                    if (row.getStatus() == ChatStarterDailyBatchStatus.OK) {
                         return toResponse(row);
+                    } else if (row.getStatus() != ChatStarterDailyBatchStatus.PENDING) {
+                        return toResponse(row);
+                    } else if (generationInflight.containsKey(lockKey)
+                            && !isGenerationInflightStale(row)) {
+                        return toResponse(row);
+                    } else {
+                        generationInflight.remove(lockKey);
                     }
                 } else {
-                    if (row.getStatus() != ChatStarterDailyBatchStatus.FAILED) {
+                    if (row.getStatus() == ChatStarterDailyBatchStatus.OK) {
                         return toResponse(row);
                     }
-                    if (row.getRetryUsed() != null && row.getRetryUsed() == 1) {
-                        return toResponse(row);
+                    if (row.getStatus() == ChatStarterDailyBatchStatus.FAILED) {
+                        if (row.getRetryUsed() != null && row.getRetryUsed() == 1) {
+                            return toResponse(row);
+                        }
+                        row.setRetryUsed(1);
                     }
-                    row.setRetryUsed(1);
+                    generationInflight.remove(lockKey);
                     resetBatchToPending(row);
                     existing = recommendRepository.findByTenantSubjectAndDate(tenantId, subjectKey, today);
                 }
@@ -176,6 +196,14 @@ public class ChatUserDailyRecommendService {
         recommendRepository.updateById(batch);
     }
 
+    private boolean isGenerationInflightStale(ChatUserDailyRecommend row) {
+        LocalDateTime ref = row.getUpdatedAt() != null ? row.getUpdatedAt() : row.getCreatedAt();
+        if (ref == null) {
+            return true;
+        }
+        return ref.isBefore(LocalDateTime.now().minus(GENERATION_INFLIGHT_STALE));
+    }
+
     /** 异步联网+结构化，HTTP 立即返回 {@code LOADING}，供前端轮询。 */
     private void scheduleGenerationJob(
             String lockKey,
@@ -216,10 +244,32 @@ public class ChatUserDailyRecommendService {
         return row;
     }
 
+    /**
+     * 今日推荐主体：无活跃会话 → 租户共用 {@code tc:{tenantId}}；有会话 → {@code u:}/{@code d:} 按主体每日一批。
+     */
+    private String resolveRecommendSubjectKey(TenantSnapshot snap) {
+        long tenantId = snap.getTenantId();
+        if (!hasPersonalizedRecommendSubject(snap)) {
+            return ProfileSubjectKey.tenantColdStartKey(tenantId);
+        }
+        return ProfileSubjectKey.fromSnapshot(snap);
+    }
+
+    /** 已登录或访客，只要存在活跃会话即走画像推荐（每日首次进入才触发生成）。 */
+    private boolean hasPersonalizedRecommendSubject(TenantSnapshot snap) {
+        return conversationRepository.hasActiveForSubject(
+                snap.getTenantId(), snap.getUserId(), snap.getDeviceId());
+    }
+
     private void generateAndPersist(TenantSnapshot snap, String subjectKey, ChatUserDailyRecommend batch) {
         long tenantId = snap.getTenantId();
         if (!webSearchGroundingPlanResolver.isAvailable(tenantId)) {
             failBatch(batch, "租户未配置联网检索（火山模型或内置固定源）");
+            return;
+        }
+
+        if (!hasPersonalizedRecommendSubject(snap)) {
+            generateColdStartHotNewsAndPersist(snap, subjectKey, batch);
             return;
         }
 
@@ -272,6 +322,58 @@ public class ChatUserDailyRecommendService {
                     items.size());
         } catch (Exception e) {
             log.warn("[今日推荐] 生成失败 tenantId={} subject={}", tenantId, subjectKey, e);
+            failBatch(batch, truncate(e.getMessage(), 480));
+        }
+    }
+
+    /**
+     * 无历史对话：单次「今日热点」联网检索 + 结构化，不读画像、不跑昨日补充；登录用户与访客同一策略。
+     */
+    private void generateColdStartHotNewsAndPersist(
+            TenantSnapshot snap, String subjectKey, ChatUserDailyRecommend batch) {
+        long tenantId = snap.getTenantId();
+        try {
+            String queryToday = dailyRecommendSearchQuery.buildTodayPrimary(snap, "");
+            WebSearchUserContext ctxToday = WebSearchUserContext.of(queryToday);
+            var groundingToday =
+                    webSearchGroundingService.groundWithRaw(
+                            snap, ctxToday, 0L, ChatStarterPromptSource.DAILY_RECOMMEND);
+            String summary =
+                    groundingToday.bundle().summaryText() == null
+                            ? ""
+                            : groundingToday.bundle().summaryText().trim();
+            if (summary.isBlank()) {
+                failBatch(batch, "联网检索未返回可用摘要");
+                return;
+            }
+
+            List<DailyRecommendItemRecord> items =
+                    structureItems(
+                            tenantId,
+                            "",
+                            summary,
+                            groundingToday.bundle().references());
+            items =
+                    ChatDailyRecommendUrlSupport.attachReferenceUrls(
+                            items, groundingToday.bundle().references());
+            items = normalizeItemDates(items, BeijingTime.today());
+            if (items.isEmpty()) {
+                failBatch(batch, "语言模型未解析出有效推荐条目");
+                return;
+            }
+
+            batch.setStatus(ChatStarterDailyBatchStatus.OK);
+            batch.setItemsJson(jsonSupport.toJsonColdStart(items));
+            batch.setErrorMessage(null);
+            batch.setFetchedAt(LocalDateTime.now());
+            recommendRepository.updateById(batch);
+            log.info(
+                    "[今日推荐] 冷启动热点 tenantId={} subject={} count={}",
+                    tenantId,
+                    subjectKey,
+                    items.size());
+        } catch (Exception e) {
+            log.warn("[今日推荐] 冷启动热点失败 tenantId={} subject={}", tenantId, subjectKey, e);
             failBatch(batch, truncate(e.getMessage(), 480));
         }
     }

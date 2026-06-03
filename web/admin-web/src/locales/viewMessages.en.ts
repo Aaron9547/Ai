@@ -1023,6 +1023,9 @@ export default {
     labelDesc: "Description",
     labelHandler: "Handler",
     labelParamsDivider: "Handler parameters",
+    reminderParseToolLabel: "Utterance parser",
+    reminderParseBuiltin: "Built-in platform parser (recommended)",
+    reminderParseToolHint: "Turns phrases like “remind me…” into schedule and content. Keep the default unless IT configures a remote parser.",
     switchOn: "On",
     switchOff: "Off",
     metaSectionTitle: "Status & order",
@@ -1831,7 +1834,17 @@ export default {
   },
   scheduledTasks: {
     title: "Scheduled tasks",
-    sub: "Manage dispatch registrations (cron + executor). KB crawl: configure sites in Knowledge Center; chat daily hot: executor “Chat starter · daily hot”; prompt pools: Starter prompts menu.",
+    sub: "Two tabs: tenant cron registrations vs chat-created user reminder emails.",
+    tabTenant: "Tenant cron",
+    tabChatReminder: "Chat user reminders",
+    subTenant:
+      "Tenant-level dispatch registrations (cron + executor). KB crawl: configure sites in Knowledge Center; daily hot: executor “Chat starter · daily hot”; prompt pools: Starter prompts menu.",
+    subChatReminder:
+      "Email reminder registrations created by the one-sentence chat intent. Enable/disable, edit cron, or delete here — not creatable from admin.",
+    chatReminderHint:
+      "Created via conversation intent. Users say e.g. “remind me every day at 8”. Requires CHAT_USER_REMINDER message scene and SMTP channel.",
+    emptyTenant: "No tenant cron tasks",
+    emptyChatReminder: "No chat reminder tasks",
     refresh: "Refresh",
     new: "New task",
     empty: "No scheduled tasks",

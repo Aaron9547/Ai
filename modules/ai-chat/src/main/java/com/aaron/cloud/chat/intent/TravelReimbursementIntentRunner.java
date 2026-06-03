@@ -8,8 +8,14 @@ import com.aaron.cloud.chat.intent.coze.TravelCozeWorkflowClient;
 import com.aaron.cloud.chat.intent.flow.IntentFlowSession;
 import com.aaron.cloud.chat.intent.flow.IntentFlowSessionStore;
 import com.aaron.cloud.chat.intent.flow.IntentMatchContext;
+import com.aaron.cloud.chat.intent.followup.IntentFollowUpContext;
+import com.aaron.cloud.chat.intent.followup.IntentFollowUpMetaSupport;
+import com.aaron.cloud.chat.intent.followup.IntentFollowUpPromptCatalog;
+import com.aaron.cloud.chat.intent.followup.IntentKeywordPhraseRules;
+import com.aaron.cloud.chat.intent.followup.IntentSseTurnFinisher;
 import com.aaron.cloud.chat.intent.spi.ChatIntentHandlerPlugin;
 import com.aaron.cloud.common.api.enums.chat.ChatIntentHandlerKind;
+import com.aaron.cloud.common.api.enums.chat.ChatIntentRouterParticipation;
 import com.aaron.cloud.common.api.enums.chat.ChatIntentKeywordKind;
 import com.aaron.cloud.common.api.enums.chat.ChatIntentMatchSource;
 import com.aaron.cloud.common.api.enums.chat.ChatMessageRole;
@@ -151,6 +157,11 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
     @Override
     public ChatIntentHandlerKind kind() {
         return ChatIntentHandlerKind.TRAVEL_REIMBURSEMENT;
+    }
+
+    @Override
+    public ChatIntentRouterParticipation routerParticipation() {
+        return ChatIntentRouterParticipation.FLOW_PINNED;
     }
 
     @Override
@@ -473,6 +484,7 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
                                     plainBuf.toString(),
                                     segments,
                                     matchHit,
+                                    List.of(),
                                     flowIdFinal,
                                     ttlMs);
                             emitter.send(
@@ -506,6 +518,7 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
                                         plainBuf.toString(),
                                         segments,
                                         matchHit,
+                                        List.of(),
                                         flowIdFinal,
                                         ttlMs);
                                 emitter.send(
@@ -550,6 +563,7 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
                                                 plainBuf.toString(),
                                                 segments,
                                                 matchHit,
+                                                List.of(),
                                                 flowIdFinal,
                                                 ttlMs);
                                         emitter.send(
@@ -582,6 +596,7 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
                                             plainBuf.toString(),
                                             segments,
                                             matchHit,
+                                            List.of(),
                                             flowIdFinal,
                                             ttlMs);
                                     emitter.send(
@@ -618,6 +633,9 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
                                     "[意图·出差报销] 材料阶段完成，已切换至行程阶段；请用户再发一条消息继续：租户 {}，会话 {}",
                                     snap.getTenantId(),
                                     conversationId);
+                            IntentFollowUpContext followUpCtx =
+                                    IntentFollowUpContext.travelAfterDocComplete(keywords);
+                            List<String> followUpTexts = IntentFollowUpPromptCatalog.resolve(followUpCtx);
                             finishPersistWithFlow(
                                     snap,
                                     conversationId,
@@ -626,12 +644,11 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
                                     plainBuf.toString(),
                                     segments,
                                     matchHit,
+                                    followUpTexts,
                                     flowIdFinal,
                                     ttlMs);
-                            emitter.send(
-                                    SseEmitter.event()
-                                            .data(ChatIntentSseHelper.sseEnd(objectMapper, seq))
-                                            .id(String.valueOf(seq.incrementAndGet())));
+                            IntentSseTurnFinisher.sendFollowUpAndEnd(
+                                    objectMapper, emitter, seq, followUpTexts);
                             emitter.complete();
                             return;
                         }
@@ -673,6 +690,7 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
                                     plainBuf.toString(),
                                     segments,
                                     matchHit,
+                                    List.of(),
                                     flowIdFinal,
                                     ttlMs);
                             emitter.send(
@@ -961,12 +979,24 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
             String content,
             List<ChatWorkflowSegmentView> segments,
             IntentKeywordMatchHit matchHit) {
+        finishPersist(snap, conversationId, payload, def, content, segments, matchHit, List.of());
+    }
+
+    private void finishPersist(
+            TenantSnapshot snap,
+            long conversationId,
+            ChatSendPayload payload,
+            ChatIntentDefinition def,
+            String content,
+            List<ChatWorkflowSegmentView> segments,
+            IntentKeywordMatchHit matchHit,
+            List<String> followUpPromptTexts) {
         try {
             var asst = new ChatMessage();
             asst.setTenantId(snap.getTenantId());
             asst.setRole(ChatMessageRole.ASSISTANT);
             asst.setContent(content);
-            asst.setMetaJson(buildIntentAssistantMeta(payload, def, segments, matchHit));
+            asst.setMetaJson(buildIntentAssistantMeta(payload, def, segments, matchHit, followUpPromptTexts));
             messageRepository.insert(asst);
             var lnk = new LnkChatConversationMessage();
             lnk.setConversationId(conversationId);
@@ -1018,9 +1048,11 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
             String content,
             List<ChatWorkflowSegmentView> segments,
             IntentKeywordMatchHit matchHit,
+            List<String> followUpPromptTexts,
             String flowId,
             long ttlMs) {
-        finishPersist(snap, conversationId, payload, def, content, segments, matchHit);
+        finishPersist(
+                snap, conversationId, payload, def, content, segments, matchHit, followUpPromptTexts);
         bumpCompletedInteraction(snap.getTenantId(), conversationId, def.getId(), flowId, ttlMs);
     }
 
@@ -1028,7 +1060,8 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
             ChatSendPayload payload,
             ChatIntentDefinition def,
             List<ChatWorkflowSegmentView> segments,
-            IntentKeywordMatchHit matchHit)
+            IntentKeywordMatchHit matchHit,
+            List<String> followUpPromptTexts)
             throws com.fasterxml.jackson.core.JsonProcessingException {
         ObjectNode n = objectMapper.createObjectNode();
         n.put("modelAlias", payload.getModelAlias());
@@ -1068,6 +1101,7 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
             o.put("status", s.status());
             o.put("text", s.text());
         }
+        IntentFollowUpMetaSupport.writePrompts(n, followUpPromptTexts);
         return objectMapper.writeValueAsString(n);
     }
 
@@ -1202,22 +1236,8 @@ public class TravelReimbursementIntentRunner implements ChatIntentHandlerPlugin 
     }
 
     private static List<String> planContinuePhrases(List<ChatIntentKeyword> keywords, String sessionRoundName) {
-        List<String> fromDb =
-                keywords.stream()
-                        .filter(k -> k.getKeywordKind() == ChatIntentKeywordKind.PLAN_CONTINUE)
-                        .filter(k -> k.getEnabled() == ToggleState.ON)
-                        .filter(k -> isApplicableForRound(k, ChatIntentKeywordKind.PLAN_CONTINUE, sessionRoundName))
-                        .map(ChatIntentKeyword::getPhrase)
-                        .map(String::trim)
-                        .filter(s -> !s.isEmpty())
-                        .toList();
-        if (!fromDb.isEmpty()) {
-            return fromDb;
-        }
-        if (TravelReimbursementRound.PLAN.name().equals(sessionRoundName)) {
-            return List.of(DEFAULT_PLAN_CONTINUE_KEYWORDS);
-        }
-        return List.of();
+        return IntentKeywordPhraseRules.planContinuePhrases(
+                keywords, sessionRoundName, List.of(DEFAULT_PLAN_CONTINUE_KEYWORDS));
     }
 
     private static boolean planContinueMatch(String message, List<String> planKws, String sessionRoundName) {

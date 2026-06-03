@@ -39,6 +39,7 @@ declare module 'vue' {
     ElSkeleton: typeof import('element-plus/es')['ElSkeleton']
     ElTooltip: typeof import('element-plus/es')['ElTooltip']
     ElUpload: typeof import('element-plus/es')['ElUpload']
+    IntentQuickPromptBar: typeof import('./components/chat/IntentQuickPromptBar.vue')['default']
     KnowledgePlanetCard: typeof import('./components/chat/KnowledgePlanetCard.vue')['default']
     KnowledgePlanetMobileEntry: typeof import('./components/chat/KnowledgePlanetMobileEntry.vue')['default']
     KnowledgePlanetMobilePage: typeof import('./components/chat/KnowledgePlanetMobilePage.vue')['default']

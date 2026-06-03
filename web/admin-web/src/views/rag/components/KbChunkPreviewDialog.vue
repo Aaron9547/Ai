@@ -1,9 +1,21 @@
 <template>
-  <el-dialog v-model="visible" :title="t('views.kbMatrix.chunkPreviewTitle')" width="760px" destroy-on-close @closed="onClosed">
+  <el-dialog
+    v-model="visible"
+    class="kb-chunk-preview-dlg"
+    :title="t('views.kbMatrix.chunkPreviewTitle')"
+    width="760px"
+    destroy-on-close
+    @closed="onClosed"
+  >
     <div v-if="loading" class="preview-loading">
       <el-skeleton :rows="6" animated />
     </div>
-    <template v-else-if="result">
+    <el-scrollbar
+      v-else-if="result"
+      class="kb-chunk-preview-scroll admin-el-scrollbar"
+      max-height="min(72vh, 640px)"
+    >
+      <div class="kb-chunk-preview-scroll-inner">
       <p class="preview-meta">
         {{
           t("views.kbMatrix.chunkPreviewMeta", {
@@ -40,7 +52,8 @@
           </el-table-column>
         </el-table>
       </div>
-    </template>
+      </div>
+    </el-scrollbar>
     <el-empty v-else :description="t('views.kbMatrix.chunkPreviewEmpty')" />
     <template #footer>
       <el-button @click="visible = false">{{ t("views.kbMatrix.formCancel") }}</el-button>
@@ -131,13 +144,39 @@ defineExpose({ run });
   padding: 8px 0;
 }
 
+.kb-chunk-preview-scroll-inner {
+  padding: 2px 4px 8px;
+}
+
+.kb-chunk-preview-scroll :deep(.el-scrollbar__view) {
+  padding-right: 6px;
+}
+
+.preview-page :deep(.el-table__body-wrapper) {
+  scrollbar-width: thin;
+  scrollbar-color: var(--admin-scroll-thumb) transparent;
+}
+
+.preview-page :deep(.el-table__body-wrapper)::-webkit-scrollbar {
+  width: var(--admin-scroll-size);
+  height: var(--admin-scroll-size);
+}
+
+.preview-page :deep(.el-table__body-wrapper)::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background-color: var(--admin-scroll-thumb);
+}
+
 .preview-md {
   font-size: 12px;
   line-height: 1.5;
-  max-height: 120px;
+  max-height: 140px;
   overflow-x: hidden;
   overflow-y: auto;
   text-align: left;
+  padding: 4px 6px 4px 4px;
+  border-radius: 8px;
+  background: var(--el-fill-color-lighter);
 }
 
 .preview-md :deep(p) {

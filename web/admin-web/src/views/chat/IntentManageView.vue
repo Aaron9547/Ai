@@ -125,12 +125,24 @@
             <el-form-item
               v-for="f in sortedHandlerSchema"
               :key="f.name"
-              :label="f.labelZh"
+              :label="paramLabel(f)"
               :required="f.required"
               class="intent-param-item"
             >
+              <el-select
+                v-if="f.valueKind === 'SELECT'"
+                v-model="handlerParamsForm[f.name]"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="o in f.options ?? []"
+                  :key="o.value"
+                  :label="o.labelZh"
+                  :value="o.value"
+                />
+              </el-select>
               <el-switch
-                v-if="f.valueKind === 'BOOLEAN'"
+                v-else-if="f.valueKind === 'BOOLEAN'"
                 v-model="handlerParamsForm[f.name]"
                 active-value="true"
                 inactive-value="false"
@@ -259,6 +271,7 @@ import { useI18n } from "vue-i18n";
 import * as chatIntentApi from "@/api/chatIntent";
 import { apiRequestErrorMessage } from "@/utils/apiRequestErrorMessage";
 import { mergeIntentExtraFromSchema, readIntentHandlerFormFromExtra } from "./intentAdminMeta";
+import type { IntentHandlerConfigFieldMeta } from "@/api/chatIntent";
 
 const { t, te } = useI18n();
 
@@ -315,6 +328,10 @@ function handlerKindLabelForRow(kind: string) {
   return handlerKindOptions.value.find((x) => x.kind === kind)?.labelZh ?? kind;
 }
 
+function paramLabel(f: IntentHandlerConfigFieldMeta): string {
+  return f.labelZh;
+}
+
 function intFormModel(name: string): number | undefined {
   const s = handlerParamsForm[name];
   if (s === undefined || s === "") return undefined;
@@ -360,6 +377,8 @@ async function loadHandlerSchema(kind: chatIntentApi.ChatIntentHandlerKind) {
   for (const f of handlerSchema.value) {
     if (f.valueKind === "BOOLEAN") {
       handlerParamsForm[f.name] = "true";
+    } else if (f.valueKind === "SELECT") {
+      handlerParamsForm[f.name] = f.options?.[0]?.value ?? "";
     } else if (f.valueKind === "INT") {
       handlerParamsForm[f.name] = "";
     } else {
@@ -374,6 +393,8 @@ function hydrateHandlerParamsFromBaseline() {
     const existing = fromDb[f.name];
     if (existing !== undefined && existing !== "") {
       handlerParamsForm[f.name] = existing;
+    } else if (f.valueKind === "SELECT") {
+      handlerParamsForm[f.name] = existing ?? f.options?.[0]?.value ?? "";
     } else if (f.valueKind === "BOOLEAN") {
       handlerParamsForm[f.name] = "true";
     } else if (f.valueKind === "INT") {

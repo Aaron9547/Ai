@@ -34,8 +34,10 @@ public class AdminTenantScheduledTaskRestController extends ApiV1ControllerBases
     }
 
     @GetMapping
-    public List<ScheduledTaskAdminView> list(@RequestParam(required = false) String executorCode) {
-        return scheduledTaskAdminApplicationService.list(executorCode);
+    public List<ScheduledTaskAdminView> list(
+            @RequestParam(required = false) String executorCode,
+            @RequestParam(required = false) String taskCategory) {
+        return scheduledTaskAdminApplicationService.list(executorCode, taskCategory);
     }
 
     @PostMapping

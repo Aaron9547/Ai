@@ -14,7 +14,8 @@ public enum LlmUsageScene {
     KNOWLEDGE_PLANET("KNOWLEDGE_PLANET", "知识星球"),
     MEMORY_ABSTRACT("MEMORY_ABSTRACT", "记忆摘要"),
     CONVERSATION_DIGEST("CONVERSATION_DIGEST", "对话摘要"),
-    LLM_FOLLOW_UP("LLM_FOLLOW_UP", "猜你想问");
+    LLM_FOLLOW_UP("LLM_FOLLOW_UP", "猜你想问"),
+    INTENT_REMINDER_PARSE("INTENT_REMINDER_PARSE", "一句话办事·话术解析");
 
     private final String code;
     private final String label;

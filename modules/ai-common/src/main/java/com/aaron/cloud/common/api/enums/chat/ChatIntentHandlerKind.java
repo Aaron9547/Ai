@@ -18,7 +18,11 @@ public enum ChatIntentHandlerKind {
     TRAVEL_REIMBURSEMENT(
             0,
             "出差报销（材料与流程编排）",
-            "多阶段 SSE（workflowStage）；先文档解析再行程规划；Coze 与材料策略由处理器参数枚举写入扩展 JSON。");
+            "多阶段 SSE（workflowStage）；先文档解析再行程规划；Coze 与材料策略由处理器参数枚举写入扩展 JSON。"),
+    ONE_SENTENCE_REMINDER(
+            1,
+            "一句话办事（定时邮件提醒）",
+            "用户说「提醒我…」后解析时间与事项，创建/取消全局邮件提醒并登记定时任务；话术解析默认使用平台内置服务。");
 
     @EnumValue
     private final int code;

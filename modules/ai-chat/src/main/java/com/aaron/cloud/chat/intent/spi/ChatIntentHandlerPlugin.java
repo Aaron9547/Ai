@@ -5,6 +5,7 @@ import com.aaron.cloud.chat.intent.IntentKeywordMatchHit;
 import com.aaron.cloud.chat.intent.flow.IntentMatchContext;
 import com.aaron.cloud.common.api.dto.IntentHandlerConfigFieldMeta;
 import com.aaron.cloud.common.api.enums.chat.ChatIntentHandlerKind;
+import com.aaron.cloud.common.api.enums.chat.ChatIntentRouterParticipation;
 import com.aaron.cloud.common.api.intent.IntentHandlerParamSchemaBuilder;
 import com.aaron.cloud.common.chat.entity.ChatAttachment;
 import com.aaron.cloud.common.chat.entity.ChatIntentDefinition;
@@ -25,6 +26,11 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public interface ChatIntentHandlerPlugin {
 
     ChatIntentHandlerKind kind();
+
+    /** 路由候选参与方式；默认 {@link ChatIntentRouterParticipation#SCAN_WITH_OTHERS}。 */
+    default ChatIntentRouterParticipation routerParticipation() {
+        return ChatIntentRouterParticipation.SCAN_WITH_OTHERS;
+    }
 
     Optional<IntentKeywordMatchHit> evaluateKeywordMatch(
             long conversationId,

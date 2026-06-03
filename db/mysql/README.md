@@ -77,5 +77,7 @@
 | 12 | **`migrate_0_1_258_12_planet_ingest_tag_order_v2.sql`** | 知识星球 tag 顺序 v2 |
 | 13 | **`migrate_0_1_258_13_message_template_literal_newlines.sql`** | 邮件模板 **`\\n`** 还原 |
 | 14 | **`migrate_0_1_258_14_mcp_remote_client.sql`** | MCP 注册表扩展 + **`MCP_CHAT_*`** 运行时键 |
+| 15 | **`migrate_0_1_258_15_chat_user_reminder.sql`** | **`chat_user_reminder`** + 意图 **`one_sentence_reminder`** + **`CHAT_USER_REMINDER`** 邮件模板种子 |
+| 15b | **`migrate_0_1_258_15b_chat_user_reminder_email_template.sql`** | 仅补插提醒邮件模板（旧版 258_15 因 `c.enabled` 失败时执行） |
 
 - **`migrate_0_1_258_web_search_query_rewrite.sql`** 等**无编号旧文件名**已重命名为上表；文档引用以 **`_NN_`** 为准。

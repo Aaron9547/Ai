@@ -1,6 +1,7 @@
 package com.aaron.cloud.common.scheduled;
 
 import com.aaron.cloud.common.api.enums.scheduled.TenantScheduledExecutorCode;
+import com.aaron.cloud.common.api.enums.scheduled.TenantScheduledTaskCategory;
 import com.aaron.cloud.common.scheduled.entity.TenantScheduledTask;
 import com.aaron.cloud.common.scheduled.mapper.TenantScheduledTaskMapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
@@ -15,13 +16,20 @@ public class TenantScheduledTaskRepository {
 
     private final TenantScheduledTaskMapper mapper;
 
-    public List<TenantScheduledTask> listByTenant(long tenantId, TenantScheduledExecutorCode executorFilter) {
+    public List<TenantScheduledTask> listByTenant(
+            long tenantId, TenantScheduledExecutorCode executorFilter, TenantScheduledTaskCategory categoryFilter) {
         var q =
                 Wrappers.<TenantScheduledTask>lambdaQuery()
                         .eq(TenantScheduledTask::getTenantId, tenantId)
                         .orderByDesc(TenantScheduledTask::getUpdatedAt);
         if (executorFilter != null) {
             q.eq(TenantScheduledTask::getExecutorCode, executorFilter);
+        } else if (categoryFilter != null) {
+            List<TenantScheduledExecutorCode> codes = TenantScheduledExecutorCode.byTaskCategory(categoryFilter);
+            if (codes.isEmpty()) {
+                return List.of();
+            }
+            q.in(TenantScheduledTask::getExecutorCode, codes);
         }
         return mapper.selectList(q);
     }

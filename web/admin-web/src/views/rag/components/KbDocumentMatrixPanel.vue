@@ -421,12 +421,12 @@
     <el-dialog v-model="chunkDlg" :title="t('views.chunks.dlgEditChunk')" width="800px" destroy-on-close @closed="onChunkDlgClosed">
       <el-tabs v-model="chunkEditTab" class="chunk-edit-tabs">
         <el-tab-pane :label="t('views.chunks.tabChunkPreview')" name="preview">
-          <el-scrollbar class="chunk-edit-scrollbar" max-height="min(62vh, 520px)">
+          <el-scrollbar class="chunk-edit-scrollbar admin-el-scrollbar">
             <div class="chunk-edit-preview chunk-md" v-html="chunkEditMarkdownHtml" />
           </el-scrollbar>
         </el-tab-pane>
         <el-tab-pane :label="t('views.chunks.tabChunkSource')" name="source">
-          <el-input v-model="chunkEditText" type="textarea" :rows="16" class="chunk-edit-source" />
+          <el-input v-model="chunkEditText" type="textarea" :autosize="false" class="chunk-edit-source admin-native-scroll" />
         </el-tab-pane>
       </el-tabs>
       <template #footer>
@@ -2000,20 +2000,35 @@ watch(
 
 .chunk-edit-scrollbar {
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--el-fill-color-blank);
-}
-
-.chunk-edit-scrollbar :deep(.el-scrollbar__wrap) {
-  overflow-x: hidden;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--el-bg-color) 65%, transparent);
 }
 
 .chunk-edit-scrollbar :deep(.el-scrollbar__view) {
-  padding: 10px 12px;
+  padding: 12px 14px;
+}
+
+.chunk-edit-source :deep(.el-textarea) {
+  display: block;
+  height: var(--chunk-edit-pane-h);
+  min-height: var(--chunk-edit-pane-min-h);
+}
+
+.chunk-edit-source :deep(.el-textarea__inner) {
+  height: var(--chunk-edit-pane-h) !important;
+  min-height: var(--chunk-edit-pane-min-h);
+  resize: none;
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  border-radius: 10px;
+  border-color: var(--el-border-color-lighter);
+  background: var(--el-fill-color-blank);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--el-bg-color) 65%, transparent);
 }
 
 .chunk-edit-preview {
-  min-height: 240px;
   padding: 0;
 }
 

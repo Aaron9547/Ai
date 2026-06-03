@@ -34,6 +34,10 @@ export default defineConfig({
           if (id.includes("node_modules/prismjs")) {
             return "prism";
           }
+          if (id.includes("node_modules/three")) return "three";
+          if (id.includes("node_modules/3d-force-graph")) return "force-graph-3d";
+          if (id.includes("node_modules/force-graph")) return "force-graph";
+          if (id.includes("node_modules/gsap")) return "gsap";
         },
       },
     },

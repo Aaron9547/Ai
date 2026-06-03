@@ -1,7 +1,9 @@
 package com.aaron.cloud.common.api.intent;
 
+import com.aaron.cloud.common.api.dto.IntentHandlerConfigOption;
 import com.aaron.cloud.common.api.enums.intent.IntentHandlerConfigValueKind;
 import com.aaron.cloud.common.api.enums.intent.IntentHandlerParamStorage;
+import java.util.List;
 
 /**
  * 意图处理器可配置项在 Java 侧的唯一真源：每个处理器定义一个枚举，枚举常量实现本接口；管理端通过
@@ -36,5 +38,10 @@ public interface IntentHandlerParamSpec {
 
     default Integer intMax() {
         return null;
+    }
+
+    /** 仅当 {@link #valueKind()} 为 {@link IntentHandlerConfigValueKind#SELECT} 时生效。 */
+    default List<IntentHandlerConfigOption> selectOptions() {
+        return List.of();
     }
 }

@@ -1,4 +1,7 @@
-/** 公网穿透域名：未登录时跳转 `/:tenantCode/auth`（可通过 `VITE_AUTH_GATE_HOSTS` 覆盖，设 `false` 关闭）。 */
+/**
+ * 公网 Host 登录门禁域名模式（默认关闭，与本机 IP / localhost 一致允许访客进聊天）。
+ * 部署需强制登录时设置 `VITE_AUTH_GATE_HOSTS=.onecraft.ca`（逗号分隔多个）；设 `false` 显式关闭。
+ */
 export function resolveAuthGateHostPatterns(): string[] {
   const raw = import.meta.env.VITE_AUTH_GATE_HOSTS as string | undefined;
   if (raw === "false" || raw === "0") {
@@ -7,7 +10,7 @@ export function resolveAuthGateHostPatterns(): string[] {
   if (raw?.trim()) {
     return raw.split(",").map((s) => s.trim()).filter(Boolean);
   }
-  return [".onecraft.ca"];
+  return [];
 }
 
 export function hostMatchesPattern(hostname: string, pattern: string): boolean {

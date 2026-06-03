@@ -16,4 +16,7 @@ public record ChatIntentTurnHitView(
         String intentFlowTicket,
         String intentFlowEpisodeId,
         String intentFlowRound,
-        Integer intentFlowRoundSeq) {}
+        Integer intentFlowRoundSeq,
+        /** 一句话办事：当前有效提醒条数 */
+        Integer activeReminderCount,
+        String reminderOp) {}

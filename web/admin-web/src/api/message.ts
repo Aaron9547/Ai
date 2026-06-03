@@ -7,7 +7,8 @@ export type MessageDeliveryStatus = "QUEUED" | "SENDING" | "SUCCEEDED" | "FAILED
 export type MessageSceneCode =
   | "REGISTER_VERIFICATION"
   | "KNOWLEDGE_PLANET_WEEKLY"
-  | "SMS_LOGIN";
+  | "SMS_LOGIN"
+  | "CHAT_USER_REMINDER";
 
 export type MessageChannelRow = {
   id: number;

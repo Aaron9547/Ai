@@ -5,7 +5,17 @@ export type ChatIntentHandlerKind = string;
 
 export type IntentHandlerParamStorage = "HANDLER_PARAMS" | "TRAVEL_ROUTING";
 
-export type IntentHandlerConfigValueKind = "STRING" | "BOOLEAN" | "INT" | "SECRET_STRING";
+export type IntentHandlerConfigValueKind =
+  | "STRING"
+  | "BOOLEAN"
+  | "INT"
+  | "SECRET_STRING"
+  | "SELECT";
+
+export interface IntentHandlerConfigOption {
+  value: string;
+  labelZh: string;
+}
 
 export interface IntentHandlerConfigFieldMeta {
   name: string;
@@ -17,6 +27,7 @@ export interface IntentHandlerConfigFieldMeta {
   paramStorage?: IntentHandlerParamStorage | null;
   intMin?: number | null;
   intMax?: number | null;
+  options?: IntentHandlerConfigOption[];
 }
 
 /** 管理端处理器下拉项（后端 {@code ChatIntentHandlerKind} + 已注册插件） */

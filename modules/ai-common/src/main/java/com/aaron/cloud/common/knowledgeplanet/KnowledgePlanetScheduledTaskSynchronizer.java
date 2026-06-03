@@ -40,7 +40,7 @@ public class KnowledgePlanetScheduledTaskSynchronizer {
             String cron,
             boolean enabled,
             boolean preserveCronOnUpdate) {
-        List<TenantScheduledTask> existing = scheduledTaskRepository.listByTenant(tenantId, executor);
+        List<TenantScheduledTask> existing = scheduledTaskRepository.listByTenant(tenantId, executor, null);
         if (existing.isEmpty()) {
             TenantScheduledTask row = new TenantScheduledTask();
             row.setTenantId(tenantId);

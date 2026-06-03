@@ -150,13 +150,19 @@ export default {
       emailBodyTemplateHint:
         "纯文本邮件：请直接回车换行（勿粘贴字面量 \\n）。发送时会自动生成 HTML 版式；若正文含 <p>、<br> 等标签则按 HTML 发送。不支持 Markdown。",
       defaultBodySmsLogin: "验证码：{code}，{ttlMinutes} 分钟内有效。",
+      defaultSubjectReminder: "【提醒】{title}",
+      defaultBodyReminder: `您好，
+
+这是您设置的提醒：{actionText}
+
+（周期：{scheduleType}）`,
       channelType: {
         EMAIL_SMTP: "邮件（SMTP）",
         SMS_ALIYUN: "短信（阿里云）",
         SMS_TENCENT: "短信（腾讯云）",
       },
       channelTypeHint: {
-        EMAIL_SMTP: "用于注册验证码、知识星球周报等邮件通知",
+        EMAIL_SMTP: "用于注册验证码、知识星球周报、对话用户提醒等邮件通知",
         SMS_ALIYUN: "通过阿里云短信服务发送验证码",
         SMS_TENCENT: "通过腾讯云短信服务发送验证码",
       },
@@ -164,11 +170,13 @@ export default {
         REGISTER_VERIFICATION: "注册邮箱验证码",
         KNOWLEDGE_PLANET_WEEKLY: "知识星球周报邮件",
         SMS_LOGIN: "短信登录验证码",
+        CHAT_USER_REMINDER: "对话用户提醒邮件",
       },
       sceneHint: {
         REGISTER_VERIFICATION: "用户注册时发送到邮箱；须绑定「邮件（SMTP）」通道",
         KNOWLEDGE_PLANET_WEEKLY: "每周推送给用户的知识星球摘要邮件；须绑定「邮件（SMTP）」通道",
         SMS_LOGIN: "手机号登录/验证；须绑定「短信」通道（阿里云或腾讯云）",
+        CHAT_USER_REMINDER: "对话「一句话办事」意图创建的定时邮件提醒；须绑定「邮件（SMTP）」通道",
       },
       enableStatus: {
         ACTIVE: "启用",
@@ -242,6 +250,9 @@ export default {
       varThinkDirections: "思考方向",
       varGapAreas: "知识缺口",
       varBooks: "荐书列表",
+      varReminderTitle: "提醒标题",
+      varReminderActionText: "提醒正文",
+      varReminderScheduleType: "周期说明（每天/每周等）",
       test: "测试",
       testSend: "发送测试",
       testOk: "测试发送成功",

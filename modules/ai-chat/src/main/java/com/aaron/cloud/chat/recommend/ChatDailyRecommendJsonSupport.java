@@ -4,7 +4,9 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
@@ -18,11 +20,38 @@ public class ChatDailyRecommendJsonSupport {
 
     private final ObjectMapper objectMapper;
 
+    public static final String COLD_START_MODE = "COLD_START";
+
     public String toJson(List<DailyRecommendItemRecord> items) {
         try {
             return objectMapper.writeValueAsString(items);
         } catch (Exception e) {
             throw new IllegalStateException("serialize daily recommend items failed", e);
+        }
+    }
+
+    /** 无历史对话冷启动批次：落库带 mode 标记，便于有会话后升级为画像推荐。 */
+    public String toJsonColdStart(List<DailyRecommendItemRecord> items) {
+        try {
+            Map<String, Object> wrapper = new LinkedHashMap<>();
+            wrapper.put("mode", COLD_START_MODE);
+            wrapper.put("items", items);
+            return objectMapper.writeValueAsString(wrapper);
+        } catch (Exception e) {
+            throw new IllegalStateException("serialize cold-start daily recommend failed", e);
+        }
+    }
+
+    public boolean isColdStartBatch(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return false;
+        }
+        try {
+            JsonNode node = objectMapper.readTree(raw.trim());
+            return node.has("mode")
+                    && COLD_START_MODE.equalsIgnoreCase(node.get("mode").asText(""));
+        } catch (Exception ignored) {
+            return false;
         }
     }
 

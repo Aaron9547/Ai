@@ -35,7 +35,9 @@ public final class TenantScheduledTaskAdminDtos {
         private Boolean enabled;
     }
 
-    public record ScheduledTaskMetaView(java.util.List<java.util.Map<String, Object>> executors) {}
+    public record ScheduledTaskMetaView(
+            java.util.List<java.util.Map<String, Object>> categories,
+            java.util.List<java.util.Map<String, Object>> executors) {}
 
     public record ScheduledTaskAdminView(
             long id,

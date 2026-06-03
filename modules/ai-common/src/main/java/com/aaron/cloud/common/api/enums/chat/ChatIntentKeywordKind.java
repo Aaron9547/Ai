@@ -14,7 +14,8 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public enum ChatIntentKeywordKind {
     TRIGGER(0),
-    PLAN_CONTINUE(1);
+    PLAN_CONTINUE(1),
+    CANCEL(2);
 
     @EnumValue
     private final int code;

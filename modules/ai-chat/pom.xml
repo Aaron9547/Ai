@@ -22,6 +22,10 @@
         </dependency>
         <dependency>
             <groupId>com.aaron.cloud</groupId>
+            <artifactId>ai-mcp</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.aaron.cloud</groupId>
             <artifactId>ai-model</artifactId>
         </dependency>
         <dependency>

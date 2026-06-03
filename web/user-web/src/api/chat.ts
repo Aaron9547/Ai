@@ -95,6 +95,9 @@ export interface ChatIntentTurnHit {
   intentFlowEpisodeId?: string | null;
   intentFlowRound?: string | null;
   intentFlowRoundSeq?: number | null;
+  activeReminderCount?: number | null;
+  reminderOp?: string | null;
+  reminderPreview?: { id: number; title: string; scheduleType?: string }[] | null;
 }
 
 /** 用户消息随附的上传文件摘要（与开放接口 {@code ChatMessageView.attachments} 项一致） */
@@ -150,6 +153,8 @@ export interface ChatHistoryMessage {
   workflowSegments?: WorkflowStagePayload[] | null;
   /** 本回合意图命中摘要（用户/助手 meta） */
   intentTurnHit?: ChatIntentTurnHit | null;
+  /** 意图多轮追问 chip（助手 meta intentFollowUpPrompts） */
+  intentFollowUpPrompts?: StarterPromptItem[] | null;
   /** 用户消息关联的上传附件 */
   attachments?: ChatAttachmentMessage[] | null;
 }

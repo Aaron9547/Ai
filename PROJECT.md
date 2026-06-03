@@ -311,7 +311,7 @@ flowchart TB
 > - **多租户切换**：直接修改 URL 为另一租户的 **`/租户编码/chat`**（或从运营下发的带租户前缀的入口进入）。已登录时须 JWT **`tms`** 中拥有该机位，否则接口 **403**。
 > - **登录/注册成功**：前端会 **`router.push`** 到 JWT 主租户对应的 **`/{租户编码}/chat`**。
 > - **`/…/system/me`（设备与登录）**：面向用户的「当前租户」说明以 **`sys_tenant.code`** 为准，**不**展示 **`sys_tenant.id`** 自增主键（与 **`.cursorrules` §7.1** 一致）。
-> - **花生壳 / 内网穿透**：穿透域名（如 **`*.vicp.fun`**、**`onecraft.ca`**）访问 Vite dev 时，须在 **`vite.config.ts`** 配置 **`server.allowedHosts`**（仓库已对 **`.vicp.fun` / `.vicp.cc` / `.onecraft.ca`** 放行，见 **`web/vite-allowed-hosts.ts`**）；若仍被拦截，可用 **`VITE_ADDITIONAL_ALLOWED_HOSTS`** 或 **`__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS`** 追加域名，或本地临时 **`VITE_ALLOWED_HOSTS_ALL=true`**（勿提交仓库）。经公网 Host 访问用户端时，未登录会跳转 **`/{tenantCode}/auth`**（**`VITE_AUTH_GATE_HOSTS`** 可配置）。
+> - **花生壳 / 内网穿透**：穿透域名（如 **`*.vicp.fun`**、**`onecraft.ca`**）访问 Vite dev 时，须在 **`vite.config.ts`** 配置 **`server.allowedHosts`**（仓库已对 **`.vicp.fun` / `.vicp.cc` / `.onecraft.ca`** 放行，见 **`web/vite-allowed-hosts.ts`**）；若仍被拦截，可用 **`VITE_ADDITIONAL_ALLOWED_HOSTS`** 或 **`__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS`** 追加域名，或本地临时 **`VITE_ALLOWED_HOSTS_ALL=true`**（勿提交仓库）。用户端默认允许访客进聊天；仅当部署设置 **`VITE_AUTH_GATE_HOSTS`**（如 **`.onecraft.ca`**）时，未登录才跳转 **`/{tenantCode}/auth`**（分享页 **`tenant-share`** 仍免登录）。
 
 ---
 
@@ -383,6 +383,205 @@ flowchart TB
 | **提交前自检** | **`.\scripts\check-project-changelog.ps1 -IncludeUntracked`**：动代码须改 **`PROJECT.md`**；顶节补丁 **≥** `pom` 补丁。 |
 
 ## 变更记录
+
+### 0.1.350-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **user-web**：补全移动端问题导轨 Popover 按钮文案 `chat.questionJump`（中/英），修复点击节点显示 `chat.questionJump` 键名的问题。**无 DB migrate**。
+
+### 0.1.349-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **user-web**：修复对话页刷新后停在历史顶部时，向下滚动不出现「回到底部」按钮——贴底状态改为按视口实际位置同步，历史加载完成后也会校准。**无 DB migrate**。
+
+### 0.1.348-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **user-web**：修复意图回合（如提醒「没有这个提醒哦！」）流式结束后底部「猜你想问」骨架闪一下再消失——SSE `end` 不再抢先拉取追问，改在 `refresh` 同步后再判定；携带 `intentFlowTicket` 的多轮续聊助手行预标 `intentTurn`。**无 DB migrate**。
+
+### 0.1.347-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **user-web**：意图工作流追问区标题文案由「下一步可点」改为「可继续说」（英文 Tap to continue）。**无 DB migrate**。
+
+### 0.1.346-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **意图多轮追问 chip（ai-chat / user-web）**：差旅材料阶段完成后除日志外，SSE 下发 `followUpPrompts`、写入助手 meta `intentFollowUpPrompts`，并在「流程进度」卡片正文下方展示可点 chip（继续/下一步/安排行程）；提醒意图同步。**无 DB migrate**。
+
+### 0.1.345-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **对话附件 PDF 解析（pom / ai-common）**：纠正 **0.1.342** 误将 PDFBox 升到 **3.0.6**——**Tika 2.9.2** 的 `PDFParser` 依赖 **PDFBox 2.0.31** 的 `PDDocument.load(…, MemoryUsageSetting)`；统一 `pdfbox.version=2.0.31`，移除 `pdfbox-io`（3.x 模块）。**无 DB migrate**。部署须 **Maven Reload + 全量重新编译并重启**。
+
+### 0.1.344-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **对话页·意图工作流深色模式（user-web）**：差旅等工作流阶段（含「材料准备」）壳层、折叠条、正文与加载态改用 `--chat-*` 令牌，并补全 `chat-theme.css` 深色覆盖。**无 DB migrate**。
+
+### 0.1.343-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **一句话提醒·取消流程（ai-common / ai-mcp / ai-chat）**：仅说「取消提醒」且无法按标题唯一匹配时，返回 **NOOP** 与编号清单（`1、标题；2、标题`）；支持 `1` / `1、2` / `1,2` / `1和2` 等按列表序号取消（`12` 在仅两条时返回「没有这个提醒哦！」）；编排层支持批量 `cancelReminderIds`；用户仅回复序号时仍命中取消意图。**无 DB migrate**。
+
+### 0.1.342-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **对话附件 PDF 解析（ai-common）**：根 `pom` 统一 `pdfbox`/`fontbox`/`xmpbox` 等为 **3.0.6**，`ai-common` 显式依赖 `pdfbox` 3.x，修复 Tika 解析 PDF 时 `PDDocument.load(…, MemoryUsageSetting)` 的 `NoSuchMethodError`（与 pdfbox 2.x 混用）。**无 DB migrate**。
+
+### 0.1.341-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **猜你想问（ai-chat / user-web）**：意图回合不再拉取/生成「猜你想问」（`ChatIntentTurnMetaSupport` + `ChatStarterFollowUpService` 短路；对话页流式结束与历史恢复同步跳过）；意图 SSE 追问 chip 仍保留。**无 DB migrate**。
+
+### 0.1.340-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **用户端对话（user-web）**：意图试玩改为仅在发送框内轮播示例话术（约 3.2s 切换，点击即发送）；移除空会话双卡片与有消息时输入框上方 chip 行。**无 DB migrate**。
+
+### 0.1.339-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **定时任务管理（ai-common / ai-job / admin-web）**：新增 `TenantScheduledTaskCategory`；执行器绑定分类；列表 API 支持 `taskCategory`；管理端「定时任务」拆为「租户定时任务」与「对话用户提醒」两个 Tab，提醒类不可手工新建。**无 DB migrate**。
+
+### 0.1.338-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **多轮意图追问（ai-chat）**：新增 `com.aaron.cloud.chat.intent.followup`（`IntentFollowUpContext` / `IntentFollowUpPromptCatalog` / `IntentKeywordPhraseRules` / `IntentSseTurnFinisher`）；出差报销、一句话提醒在回合收尾处声明阶段即可下发 `followUpPrompts`，移除各 Runner 内写死 chip 逻辑；删除 `IntentFollowUpPromptSupport`。**无 DB migrate**。
+
+### 0.1.337-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **用户端对话（user-web）**：输入区与空会话增加「一句话办事 / 出差报销」意图试玩条，轮播触发词、点击即发送。
+- **出差报销意图（ai-chat）**：材料阶段完成后 SSE 下发「继续 / 安排行程」追问 chip，便于进入第二轮。**无 DB migrate**。
+
+### 0.1.336-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **一句话办事 · MCP 用户可见错误（ai-chat）**：`IntentMcpSingleInvoke` 不再向用户展示「MCP 工具返回错误」等空话；优先 JSON `error`/`userMessage`，否则透出响应正文摘要（`McpJsonResult#userFacingMessage`）。**无 DB migrate**。
+
+### 0.1.335-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **一句话办事 · 可观测性（ai-chat / ai-mcp）**：编排 / `IntentMcpSingleInvoke` / 内置 `parse_reminder` 增加 **`[意图·提醒]`、`[意图·MCP]`、`[内置MCP·parse_reminder]`** 分步 INFO/WARN 日志（含 `parseToolKind`、工具名、`op`、业务 `error`、前置失败原因）。**无 DB migrate**。
+
+### 0.1.334-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **一句话办事 · MCP 错误展示（ai-mcp / ai-chat）**：话术解析业务失败不再标记 MCP 协议层 `error`；`IntentMcpSingleInvoke` 兼容旧响应并透出 JSON `error` 中文，避免用户只看到「MCP 工具返回错误」。**无 DB migrate**。
+
+### 0.1.333-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **一句话办事 · 规则解析（ai-mcp）**：话术含「每天/每日」但未写具体时刻时，默认 **9:00**（`platform::parse_reminder`）。**无 DB migrate**。
+
+### 0.1.332-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **今日推荐主体策略（ai-chat / ai-common）**：无活跃会话（未登录无对话、已登录无对话）统一读/写租户级 **`tc:{tenantId}`** 冷启动批次（域名与 IP、多设备同一套）；仅 **有对话** 的 **`u:`/`d:`** 主体按日个性化生成；登录无会话不再 `regenerate-on-login` 强刷。**无 DB migrate**。
+
+### 0.1.331-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **意图 MCP 就绪检查（ai-mcp / ai-chat）**：`IntentMcpToolBinding` 改为 `McpInvokePort#isToolAvailable`；**`platform::`** 内置工具不再通过 `listActiveTools` 枚举租户全部远程 MCP（避免误连 Jina 等）。**无 DB migrate**。
+
+### 0.1.330-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **一句话办事 · 话术解析可配置（ai-common / ai-chat / ai-mcp / admin-web）**：管理端 **`parseToolKind`** 下拉（规则 / 智能 / 规则+智能兜底），映射内置 MCP **`platform::parse_reminder`** / **`parse_reminder_llm`** / **`parse_reminder_hybrid`**；可选 **`parseModelAlias`**；读取仍兼容旧 **`mcpQualifiedToolName`**。新增 **`ReminderParseToolKind`**、**`IntentHandlerConfigValueKind.SELECT`**、**`LlmUsageScene.INTENT_REMINDER_PARSE`**。**无新表 migrate**（种子 JSON 语义更新，已建库可手工改意图 `extra_config_json`）。
+- **管理端意图（admin-web）**：按 schema **`SELECT`** 通用渲染，移除 `mcpQualifiedToolName` 前端特例。**无 DB migrate**。
+
+### 0.1.329-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **用户端访客与公网域名（user-web）**：**`authGateHosts`** 默认不再对 **`.onecraft.ca`** 强制跳转登录（与本机 IP / localhost 一致可访客进聊天）；需门禁时在部署环境设置 **`VITE_AUTH_GATE_HOSTS`**。**无 DB migrate**。
+- **今日推荐冷启动体验（user-web / ai-chat）**：已有冷启动批次时后台升级为个性化推荐，HTTP 仍先返回冷启动内容，避免侧栏长时间 **LOADING**；轮询间隔缩短。首次无批次仍异步 **联网检索 + 语言模型结构化**。**无 DB migrate**。
+
+### 0.1.328-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **一句话办事 · 意图 + 内置 MCP + 邮件提醒（ai-chat / ai-mcp / ai-job / ai-common）**：新增处理器 **`ONE_SENTENCE_REMINDER`**；内置 MCP **`platform::parse_reminder`**（`BuiltinMcpToolRegistry`）；`IntentRoutingPolicies` 多意图旁路；每提醒一行 **`ten_scheduled_task`**（`CHAT_USER_REMINDER`）；表 **`chat_user_reminder`**。**已建库须手工执行** **`db/mysql/migrate/migrate_0_1_258_15_chat_user_reminder.sql`**（模板失败可补 **`migrate_0_1_258_15b_*`**）；新库以 **`schema_v1.sql`** 为准。邮件场景 **`CHAT_USER_REMINDER`**（须配置 `msg_channel` + 模板）。
+- **管理端消息中心（admin-web）**：**`CHAT_USER_REMINDER`** 场景中文/i18n 展示、新建模板默认文案与变量 **`{title}`/`{actionText}`/`{scheduleType}`**。**无 DB migrate**。
+- **管理端意图（admin-web / ai-chat）**：一句话办事参数「话术解析」改为下拉「平台内置」，不再向运营展示 **`platform::parse_reminder`** 英文字面量。**无 DB migrate**（已建库可手工改意图说明文案）。
+- **一句话办事（ai-chat）**：未登录或无邮箱时返回「抱歉」说明并写入助手消息（不调用 MCP）。**无 DB migrate**。
+
+### 0.1.327-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **管理端分片编辑源码 Tab（admin-web）**：修复去掉 `rows` 后源码区高度塌陷——**`global.css`** 中误用 `:deep()` 导致高度/滚动条规则未生效，改为普通后代选择器；**`DocumentChunksManageView` / `KbDocumentMatrixPanel`** 对 textarea 显式使用 **`--chunk-edit-pane-h`**。**无 DB migrate**。
+
+### 0.1.326-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **管理端分片编辑弹窗（admin-web）**：预览 Tab 与源码 Tab **同高**（`min(62vh,520px)`），源码区随预览高度拉满，切换 Tab 无跳动。**无 DB migrate**。
+
+### 0.1.325-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **管理端知识库分片滚动条（admin-web）**：**`global.css`** 统一 **`md-surface-scroll` / `admin-el-scrollbar` / `admin-native-scroll`**（圆角细轨、悬停加深、深色适配）；**分片卡片**、**编辑预览/源码弹窗**、**入库分片预览弹窗**、矩阵内分片编辑均接入。**无 DB migrate**。
+
+### 0.1.324-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **今日洞察 · 无历史对话冷启动（ai-chat）**：**`ChatConversationRepository#hasActiveForSubject`** 判定新设备/访客尚无活跃会话时，**`ChatUserDailyRecommendService`** 走 **单次通用热点联网**（不拼画像、不跑昨日补充），落库 **`COLD_START`** 包装；用户产生会话后同日批次自动 **升级为画像个性化** 重算。已登录用户按 **`user_id`** 汇总会话（换设备有历史仍走画像）。**无 DB migrate**（`items_json` 兼容既有数组格式）。
+
+### 0.1.323-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **按需刷新、避免整页式重载（user-web）**：**今日洞察** 仅 **跨日 / 午夜待刷新且回前台** 时更新侧栏（清昨日本地缓存 + 骨架屏）；**同日切标签不再打 API**；**后台过夜不打 0 点接口**，回前台再拉。**对话** 回前台仅在流式/断连未完成时恢复历史，且 **内容无变化不滚底**。**无 DB migrate**。
+
+### 0.1.322-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **切回浏览器标签误刷新（user-web）**：**`visibilitychange` / `pageshow`** 与断连恢复、今日洞察跨日逻辑叠加，切后台再回前台易重复拉历史或侧栏进 loading。**对话** 仅 bfcache **`pageshow(persisted)`** 或流式/断连未完成时恢复，并 **400ms 防抖**。**今日洞察** 同日回前台 **静默对齐**；仅跨日才全量刷新；空批次日期不再视为「过期」。**无 DB migrate**。
+
+### 0.1.321-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **今日智能洞察跨入口（user-web + ai-chat）**：域名与 IP **localStorage 不共享**，IP 须等服务端批次；域名若仅本地缓存成功而库表仍 **PENDING** 会导致 IP 长时间 **LOADING** 直至前端轮询超时。**前端** 缓存命中后 **后台静默对齐服务端**（不把侧栏打回骨架屏）；轮询结束再多拉一次；超时仅在无缓存展示错误。**后端** **PENDING** 且 **inflight** 超过约 6 分钟视为僵死并重新调度；**retry** 可重置卡住的 **PENDING** 批次。**无 DB migrate**（逻辑与 Java 同集交付）。
+
+### 0.1.320-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **聊天首页首屏加载（user-web）**：**`ChatView`** 租户品牌、模型列表、联网开关、会话列表 **并行** 拉取；历史消息与 token 汇总/猜你想问 **延后**（`requestIdleCallback`）；空会话先展示内置推荐 chips 再后台换运营池。**`useDailyRecommend`** 改为侧栏 **`ensureBootstrapped`**，移动端首屏不再打每日推荐接口。**`DailyRecommendSidebar`** 知识星球 **Overlay 与 Three/3D 依赖懒加载**；星球摘要 **idle** 后请求。**`vite.config`** 拆分 **three / 3d-force-graph / force-graph / gsap** chunk。**无 DB migrate**。
+- **知识星球打不开（user-web 修复）**：**`KnowledgePlanetOverlay`** 对 **`visible`** 的 watch 增加 **`immediate: true`**，修复懒加载 + **`v-if="planetOpen"`** 首次挂载时 **`visible` 已为 true** 却不触发打开动画的问题。
+
+### 0.1.319-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **对话流式断连恢复（user-web）**：切后台、网络中断或 SSE 断开导致本地只剩半截思考/回复时，从服务端拉取已落库完整内容并合并（不覆盖更长的本地半截）；**`visibilitychange` / `pageshow`** 回前台自动恢复；流式结束后轮询最多约 2 分钟直至助手消息落库；区分用户「停止生成」与被动断连（被动断连仍同步历史）。**无 DB migrate**。
 
 ### 0.1.318-SNAPSHOT
 
@@ -620,7 +819,7 @@ flowchart TB
 > **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
 
 - **用户端穿透域名（user-web / admin-web）**：`web/vite-allowed-hosts.ts` 统一 `server.allowedHosts` / `preview.allowedHosts`，默认放行 **`.onecraft.ca`**（及既有 **`.vicp.fun` / `.vicp.cc`**）；支持环境变量 **`VITE_ADDITIONAL_ALLOWED_HOSTS`** / **`__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS`** 追加域名。
-- **用户端公网登录门禁（user-web）**：经 **`onecraft.ca`** 等公网 Host 访问且未登录时，路由跳转 **`/{tenantCode}/auth`** 独立登录页（分享页 **`tenant-share`** 仍免登录）；可通过 **`VITE_AUTH_GATE_HOSTS`** 覆盖或设 **`false`** 关闭。
+- **用户端公网登录门禁（user-web，可选）**：默认关闭；设置 **`VITE_AUTH_GATE_HOSTS`**（如 **`.onecraft.ca`**）后，经匹配 Host 访问且未登录时路由跳转 **`/{tenantCode}/auth`**（**`tenant-share`** 仍免登录）。设 **`false`** 显式关闭。
 
 ### 0.1.281-SNAPSHOT
 

@@ -2,6 +2,7 @@ package com.aaron.cloud.common.api.dto;
 
 import com.aaron.cloud.common.api.enums.intent.IntentHandlerConfigValueKind;
 import com.aaron.cloud.common.api.enums.intent.IntentHandlerParamStorage;
+import java.util.List;
 
 /**
  * 意图处理器在管理端暴露的可配置项元数据；写入位置由 {@link #paramStorage()} 与 {@link #name()} 决定
@@ -16,11 +17,15 @@ public record IntentHandlerConfigFieldMeta(
         String placeholder,
         IntentHandlerParamStorage paramStorage,
         Integer intMin,
-        Integer intMax) {
+        Integer intMax,
+        List<IntentHandlerConfigOption> options) {
 
     public IntentHandlerConfigFieldMeta {
         if (paramStorage == null) {
             paramStorage = IntentHandlerParamStorage.HANDLER_PARAMS;
+        }
+        if (options == null) {
+            options = List.of();
         }
     }
 }

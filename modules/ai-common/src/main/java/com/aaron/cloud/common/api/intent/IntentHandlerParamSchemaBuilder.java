@@ -36,7 +36,8 @@ public final class IntentHandlerParamSchemaBuilder {
                             spec.placeholder().isEmpty() ? null : spec.placeholder(),
                             spec.paramStorage(),
                             spec.intMin(),
-                            spec.intMax()));
+                            spec.intMax(),
+                            spec.selectOptions()));
         }
         out.sort(Comparator.comparingInt(IntentHandlerConfigFieldMeta::sortOrder));
         return List.copyOf(out);

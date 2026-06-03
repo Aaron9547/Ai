@@ -1,16 +1,15 @@
 package com.aaron.cloud.chat.intent;
 
 import com.aaron.cloud.chat.dto.ChatSendPayload;
-import com.aaron.cloud.chat.intent.flow.IntentFlowSession;
 import com.aaron.cloud.chat.intent.flow.IntentFlowSessionStore;
 import com.aaron.cloud.chat.intent.flow.IntentMatchContext;
+import com.aaron.cloud.chat.intent.routing.IntentRoutingPolicies;
 import com.aaron.cloud.chat.intent.spi.ChatIntentHandlerPlugin;
 import com.aaron.cloud.chat.intent.spi.IntentHandlerPluginRegistry;
 import com.aaron.cloud.common.chat.ChatIntentDefinitionRepository;
 import com.aaron.cloud.common.chat.ChatIntentKeywordRepository;
 import com.aaron.cloud.common.chat.entity.ChatAttachment;
 import com.aaron.cloud.common.chat.entity.ChatIntentDefinition;
-import com.aaron.cloud.common.context.TenantContextHolder;
 import com.aaron.cloud.common.context.TenantSnapshot;
 import java.util.List;
 import java.util.Optional;
@@ -21,7 +20,7 @@ import org.springframework.stereotype.Service;
 /**
  * 在对话 SSE 主链之前尝试命中租户已启用意图；命中则返回专用路由结果，否则由调用方走大模型流。
  *
- * <p>处理器由 {@link IntentHandlerPluginRegistry} 按 {@link com.aaron.cloud.common.api.enums.ChatIntentHandlerKind} 解析，禁止在本类写死分支。
+ * <p>处理器由 {@link IntentHandlerPluginRegistry} 按 {@link com.aaron.cloud.common.api.enums.chat.ChatIntentHandlerKind} 解析，禁止在本类写死分支。
  */
 @Slf4j
 @Service
@@ -32,6 +31,7 @@ public class ChatIntentStreamRouter {
     private final ChatIntentKeywordRepository intentKeywordRepository;
     private final IntentHandlerPluginRegistry intentHandlerPluginRegistry;
     private final IntentFlowSessionStore intentFlowSessionStore;
+    private final IntentRoutingPolicies intentRoutingPolicies;
 
     public Optional<IntentSseRoute> maybeRouteIntentStream(
             long conversationId,
@@ -47,23 +47,8 @@ public class ChatIntentStreamRouter {
             return Optional.empty();
         }
         IntentMatchContext flowContext = resolveFlowContext(snap.getTenantId(), conversationId, payload);
-        List<ChatIntentDefinition> defsToScan = defs;
-        if (flowContext.hasValidSession()) {
-            IntentFlowSession fs = flowContext.session().get();
-            defsToScan =
-                    defs.stream()
-                            .filter(d -> d.getId() == fs.getIntentDefinitionId())
-                            .toList();
-            if (defsToScan.isEmpty()) {
-                log.info(
-                        "[意图] 意图流票据有效但对应意图未启用，已忽略：租户 {}，会话 {}，意图编号 {}",
-                        snap.getTenantId(),
-                        conversationId,
-                        fs.getIntentDefinitionId());
-                flowContext = IntentMatchContext.empty();
-                defsToScan = defs;
-            }
-        }
+        List<ChatIntentDefinition> defsToScan =
+                intentRoutingPolicies.filterCandidates(defs, flowContext, intentHandlerPluginRegistry);
         String preview = intentMessagePreview(payload.getContent());
         for (ChatIntentDefinition def : defsToScan) {
             Optional<ChatIntentHandlerPlugin> plugin = intentHandlerPluginRegistry.get(def.getHandlerKind());
@@ -132,7 +117,8 @@ public class ChatIntentStreamRouter {
         if (ticket == null || ticket.isBlank()) {
             return IntentMatchContext.empty();
         }
-        Optional<IntentFlowSession> s = intentFlowSessionStore.findByTicket(tenantId, conversationId, ticket);
+        Optional<com.aaron.cloud.chat.intent.flow.IntentFlowSession> s =
+                intentFlowSessionStore.findByTicket(tenantId, conversationId, ticket);
         if (s.isEmpty()) {
             log.info(
                     "[意图] 意图流票据无效或已过期：租户 {}，会话 {}",
@@ -143,7 +129,6 @@ public class ChatIntentStreamRouter {
         return new IntentMatchContext(s, ticket.trim());
     }
 
-    /** 意图链路日志用：截断用户原文，避免日志过长（与 ly DialogueApiService 预览长度对齐）。 */
     private static String intentMessagePreview(String message) {
         if (message == null) {
             return "";

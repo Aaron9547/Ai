@@ -8,6 +8,8 @@ public enum IntentHandlerConfigValueKind {
     BOOLEAN,
     /** 管理端数字输入；落库为 JSON 整数 */
     INT,
+    /** 管理端下拉；选项见 {@link com.aaron.cloud.common.api.dto.IntentHandlerConfigFieldMeta#options()} */
+    SELECT,
     /** 密码框展示；仍明文存 JSON，须配合 HTTPS 与库权限 */
     SECRET_STRING
 }

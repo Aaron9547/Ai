@@ -1,5 +1,5 @@
 <template>
-  <el-scrollbar v-if="plan" class="kp-plan-scroll" max-height="min(68vh, 520px)">
+  <el-scrollbar v-if="plan" class="kp-plan-scroll admin-el-scrollbar" max-height="min(68vh, 520px)">
     <div class="kp-plan-preview">
     <el-descriptions v-if="meta" :column="2" border size="small" class="kp-plan-meta">
       <el-descriptions-item v-if="meta.weekStart" :label="t('views.kpWeeklyFeedback.planWeek')">
@@ -103,22 +103,6 @@ const hasContent = computed(() => {
 
 .kp-plan-scroll :deep(.el-scrollbar__view) {
   padding: 16px 18px 18px;
-}
-
-.kp-plan-scroll :deep(.el-scrollbar__bar.is-vertical) {
-  width: 6px;
-  right: 2px;
-}
-
-.kp-plan-scroll :deep(.el-scrollbar__thumb) {
-  border-radius: 6px;
-  background-color: var(--el-border-color);
-  opacity: 0.65;
-}
-
-.kp-plan-scroll :deep(.el-scrollbar__thumb:hover) {
-  background-color: var(--el-text-color-placeholder);
-  opacity: 0.85;
 }
 
 .kp-plan-preview {

@@ -1067,6 +1067,8 @@ watch(
       void syncGraph();
     });
   },
+  /** 懒加载 + v-if 首次挂载时 visible 已为 true，须 immediate 才能打开 */
+  { immediate: true },
 );
 
 watch(

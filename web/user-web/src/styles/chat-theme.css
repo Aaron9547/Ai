@@ -29,6 +29,7 @@
   --chat-bg-input: #ffffff;
   --chat-bg-reasoning: rgba(248, 250, 252, 0.6);
   --chat-bg-workflow: #fafafa;
+  --chat-bg-workflow-live: #f0fdf4;
   --chat-bg-highlight-blue: #eef2ff;
   --chat-bg-highlight-green: #ecfdf5;
   --chat-bg-web-refs: #f8fafc;
@@ -151,6 +152,7 @@ html.dark .chat-app {
   --chat-bg-input: #1a1b23;
   --chat-bg-reasoning: rgba(255, 255, 255, 0.02);
   --chat-bg-workflow: #1f1f1f;
+  --chat-bg-workflow-live: rgba(16, 185, 129, 0.12);
   --chat-bg-highlight-blue: #1e293b;
   --chat-bg-highlight-green: #14532d;
   --chat-bg-web-refs: #1e293b;
@@ -496,9 +498,13 @@ html.dark .chat-app .empty-welcome {
   color: var(--chat-text-secondary) !important;
 }
 
-html.dark .chat-app .reasoning,
-html.dark .chat-app .intent-workflow-shell {
+html.dark .chat-app .reasoning {
   background: var(--chat-bg-reasoning) !important;
+  border-color: var(--chat-border-subtle) !important;
+}
+
+html.dark .chat-app .intent-workflow-shell {
+  background: var(--chat-bg-workflow) !important;
   border-color: var(--chat-border-subtle) !important;
 }
 
@@ -508,10 +514,50 @@ html.dark .chat-app .intent-workflow-head {
   color: var(--chat-text-muted) !important;
 }
 
+html.dark .chat-app .wf-step + .wf-step {
+  border-top-color: var(--chat-border-subtle) !important;
+}
+
+html.dark .chat-app .intent-workflow-followups {
+  border-top-color: var(--chat-border-subtle) !important;
+}
+
+html.dark .chat-app .intent-workflow-followups-label {
+  color: var(--chat-text-muted) !important;
+}
+
 html.dark .chat-app .reasoning-bar,
-html.dark .chat-app .reasoning-body,
-html.dark .chat-app .wf-bar {
+html.dark .chat-app .reasoning-body {
   color: var(--chat-text-secondary) !important;
+}
+
+html.dark .chat-app .wf-bar {
+  background: var(--chat-bg-workflow) !important;
+  color: var(--chat-text-secondary) !important;
+}
+
+html.dark .chat-app .wf-bar:hover {
+  background: var(--chat-hover) !important;
+}
+
+html.dark .chat-app .wf-bar-title {
+  color: var(--chat-text-strong) !important;
+}
+
+html.dark .chat-app .wf-bar-chevron {
+  color: var(--chat-text-muted) !important;
+}
+
+html.dark .chat-app .wf-body-md {
+  color: var(--chat-text-body) !important;
+}
+
+html.dark .chat-app .wf-loading {
+  color: var(--chat-text-muted) !important;
+}
+
+html.dark .chat-app .wf-bar-done {
+  color: #34d399 !important;
 }
 
 html.dark .chat-app .reasoning-bar-title,
@@ -576,7 +622,7 @@ html.dark .chat-app .follow-up-prompt-skeleton::after {
 }
 
 html.dark .chat-app .wf-bar--live {
-  background: rgba(16, 185, 129, 0.1) !important;
+  background: var(--chat-bg-workflow-live) !important;
 }
 
 html.dark .chat-app .input-clear-btn {

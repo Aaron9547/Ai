@@ -95,6 +95,7 @@
     />
 
     <KnowledgePlanetOverlay
+      v-if="planetOpen"
       :visible="planetOpen"
       :universe="planetUniverse"
       :weekly="planetWeekly"
@@ -108,13 +109,17 @@
 import { Reading, Refresh } from "@element-plus/icons-vue";
 import SidebarCollapseTab from "./SidebarCollapseTab.vue";
 import { ElMessage } from "element-plus";
-import { computed, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useDailyRecommend } from "../../composables/useDailyRecommend";
+import { scheduleIdle } from "../../utils/scheduleIdle";
 import DailyRecommendCard from "./DailyRecommendCard.vue";
 import DailyRecommendSkeleton from "./DailyRecommendSkeleton.vue";
 import KnowledgePlanetCard from "./KnowledgePlanetCard.vue";
-import KnowledgePlanetOverlay from "./KnowledgePlanetOverlay.vue";
+
+const KnowledgePlanetOverlay = defineAsyncComponent(
+  () => import("./KnowledgePlanetOverlay.vue"),
+);
 import {
   fetchKnowledgePlanetSummary,
   fetchKnowledgePlanetUniverse,
@@ -155,6 +160,7 @@ const {
   retry,
   refresh,
   reloadAfterLogin,
+  ensureBootstrapped,
 } = useDailyRecommend();
 
 const refreshTitle = computed(() => {
@@ -227,7 +233,12 @@ async function openPlanet(origin: KnowledgePlanetWarpOrigin): Promise<void> {
   await reloadPlanetUniverse();
 }
 
-void loadPlanetSummary();
+onMounted(() => {
+  void ensureBootstrapped();
+  scheduleIdle(() => {
+    void loadPlanetSummary();
+  });
+});
 
 </script>
 

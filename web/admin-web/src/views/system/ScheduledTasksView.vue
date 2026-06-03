@@ -5,24 +5,52 @@
         <div class="hdr">
           <div>
             <span class="title">{{ t("views.scheduledTasks.title") }}</span>
-            <p class="sub">{{ t("views.scheduledTasks.sub") }}</p>
-          </div>
-          <div class="actions">
-            <el-select
-              v-model="filterExecutor"
-              clearable
-              :placeholder="t('views.scheduledTasks.filterExecutor')"
-              style="width: 220px"
-              @change="load"
-            >
-              <el-option :label="t('views.scheduledTasks.filterAll')" value="" />
-              <el-option v-for="o in meta.executors" :key="o.code" :label="o.label" :value="o.code" />
-            </el-select>
-            <el-button type="primary" plain :loading="loading" @click="load">{{ t("views.scheduledTasks.refresh") }}</el-button>
-            <el-button type="primary" @click="openCreate">{{ t("views.scheduledTasks.new") }}</el-button>
+            <p class="sub">{{ tabSub }}</p>
           </div>
         </div>
       </template>
+
+      <el-tabs v-model="activeCategory" class="task-tabs" @tab-change="onTabChange">
+        <el-tab-pane
+          :label="t('views.scheduledTasks.tabTenant')"
+          name="TENANT_CRON"
+        />
+        <el-tab-pane
+          :label="t('views.scheduledTasks.tabChatReminder')"
+          name="CHAT_USER_REMINDER"
+        />
+      </el-tabs>
+
+      <div class="toolbar">
+        <el-select
+          v-if="isTenantTab"
+          v-model="filterExecutor"
+          clearable
+          :placeholder="t('views.scheduledTasks.filterExecutor')"
+          style="width: 220px"
+          @change="load"
+        >
+          <el-option :label="t('views.scheduledTasks.filterAll')" value="" />
+          <el-option
+            v-for="o in tenantExecutors"
+            :key="o.code"
+            :label="o.label"
+            :value="o.code"
+          />
+        </el-select>
+        <el-button type="primary" plain :loading="loading" @click="load">{{ t("views.scheduledTasks.refresh") }}</el-button>
+        <el-button v-if="isTenantTab" type="primary" @click="openCreate">{{ t("views.scheduledTasks.new") }}</el-button>
+      </div>
+
+      <el-alert
+        v-if="!isTenantTab"
+        type="info"
+        :closable="false"
+        show-icon
+        class="reminder-hint"
+      >
+        {{ t("views.scheduledTasks.chatReminderHint") }}
+      </el-alert>
 
       <el-alert
         v-if="runningRows.length > 0"
@@ -37,11 +65,11 @@
         </el-button>
       </el-alert>
 
-      <el-table v-loading="loading" :data="rows" stripe border :empty-text="t('views.scheduledTasks.empty')">
-        <el-table-column :label="t('views.scheduledTasks.colExecutor')" width="200">
+      <el-table v-loading="loading" :data="rows" stripe border :empty-text="emptyText">
+        <el-table-column v-if="isTenantTab" :label="t('views.scheduledTasks.colExecutor')" width="200">
           <template #default="{ row }">{{ executorLabel(row) }}</template>
         </el-table-column>
-        <el-table-column prop="name" :label="t('views.scheduledTasks.colName')" min-width="120" />
+        <el-table-column prop="name" :label="t('views.scheduledTasks.colName')" min-width="140" />
         <el-table-column prop="cronExpression" :label="t('views.scheduledTasks.colCron')" min-width="140" />
         <el-table-column :label="t('views.scheduledTasks.colRunStatus')" min-width="200">
           <template #default="{ row }">
@@ -93,13 +121,16 @@
       @closed="resetForm"
     >
       <el-form label-width="120px">
-        <el-form-item :label="t('views.scheduledTasks.labelExecutor')" required>
-          <el-select v-model="form.executorCode" :disabled="editId != null" style="width: 100%">
-            <el-option v-for="o in meta.executors" :key="o.code" :label="o.label" :value="o.code" />
+        <el-form-item v-if="isTenantTab && !editId" :label="t('views.scheduledTasks.labelExecutor')" required>
+          <el-select v-model="form.executorCode" style="width: 100%">
+            <el-option v-for="o in tenantExecutors" :key="o.code" :label="o.label" :value="o.code" />
           </el-select>
         </el-form-item>
+        <el-form-item v-else-if="editId" :label="t('views.scheduledTasks.labelExecutor')">
+          <span class="executor-readonly">{{ executorLabelForCode(form.executorCode) }}</span>
+        </el-form-item>
         <el-form-item :label="t('views.scheduledTasks.labelName')" required>
-          <el-input v-model="form.name" maxlength="128" />
+          <el-input v-model="form.name" maxlength="128" :disabled="!isTenantTab && !editId" />
         </el-form-item>
         <el-form-item :label="t('views.scheduledTasks.labelCron')" required>
           <el-input v-model="form.cronExpression" placeholder="0 0 3 * * *" />
@@ -151,16 +182,37 @@ import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import * as stApi from "@/api/scheduledTasksAdmin";
 import { confirmMessageBox } from "@/utils/messageBoxI18n";
-import type { ScheduledRunDetail, ScheduledTaskMeta, ScheduledTaskRow, TaskProgress } from "@/api/scheduledTasksAdmin";
+import type {
+  ScheduledRunDetail,
+  ScheduledTaskCategoryCode,
+  ScheduledTaskMeta,
+  ScheduledTaskRow,
+  TaskProgress,
+} from "@/api/scheduledTasksAdmin";
 
 const { t } = useI18n();
 
+const activeCategory = ref<ScheduledTaskCategoryCode>("TENANT_CRON");
 const loading = ref(false);
 const saving = ref(false);
 const rows = ref<ScheduledTaskRow[]>([]);
-const meta = ref<ScheduledTaskMeta>({ executors: [] });
+const meta = ref<ScheduledTaskMeta>({ categories: [], executors: [] });
 const filterExecutor = ref("");
 const runSubmittingId = ref<number | null>(null);
+
+const isTenantTab = computed(() => activeCategory.value === "TENANT_CRON");
+
+const tenantExecutors = computed(() =>
+  meta.value.executors.filter((e) => e.taskCategory === "TENANT_CRON" || !e.taskCategory),
+);
+
+const tabSub = computed(() =>
+  isTenantTab.value ? t("views.scheduledTasks.subTenant") : t("views.scheduledTasks.subChatReminder"),
+);
+
+const emptyText = computed(() =>
+  isTenantTab.value ? t("views.scheduledTasks.emptyTenant") : t("views.scheduledTasks.emptyChatReminder"),
+);
 
 const dlg = ref(false);
 const editId = ref<number | null>(null);
@@ -178,7 +230,6 @@ const progressRun = ref<ScheduledRunDetail | null>(null);
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let listPollTimer: ReturnType<typeof setInterval> | null = null;
 
-/** 刷新页面后若仍在监视进度，自动恢复弹窗（见 {@link tryRestoreProgressWatch}）。 */
 const PROGRESS_LS_KEY = "AI_ADMIN_SCHEDULED_TASK_PROGRESS";
 
 const runningRows = computed(() => rows.value.filter(isRunning));
@@ -223,6 +274,7 @@ function persistProgressWatch() {
       JSON.stringify({
         taskId: progressTaskId.value,
         taskName: progressTaskName.value,
+        category: activeCategory.value,
         runId: progressRun.value?.id ?? null,
       }),
     );
@@ -240,15 +292,19 @@ function clearProgressWatch() {
 }
 
 async function tryRestoreProgressWatch() {
-  let saved: { taskId?: number; taskName?: string } | null = null;
+  let saved: { taskId?: number; taskName?: string; category?: ScheduledTaskCategoryCode } | null = null;
   try {
     const raw = sessionStorage.getItem(PROGRESS_LS_KEY);
-    if (raw) saved = JSON.parse(raw) as { taskId?: number; taskName?: string };
+    if (raw) saved = JSON.parse(raw) as { taskId?: number; taskName?: string; category?: ScheduledTaskCategoryCode };
   } catch {
     clearProgressWatch();
     return;
   }
   if (saved?.taskId == null) return;
+  if (saved.category && saved.category !== activeCategory.value) {
+    activeCategory.value = saved.category;
+    await load();
+  }
   const row = rows.value.find((r) => r.id === saved!.taskId);
   if (row && isRunning(row)) {
     openProgress(row, true);
@@ -264,8 +320,12 @@ function formatTime(raw?: string | null) {
 
 function executorLabel(row: ScheduledTaskRow) {
   if (row.executorLabel?.trim()) return row.executorLabel;
-  const hit = meta.value.executors.find((e) => e.code === row.executorCode);
-  return hit?.label || row.executorCode || "—";
+  return executorLabelForCode(row.executorCode);
+}
+
+function executorLabelForCode(code: string) {
+  const hit = meta.value.executors.find((e) => e.code === code);
+  return hit?.label || code || "—";
 }
 
 function isRunning(row: ScheduledTaskRow) {
@@ -282,15 +342,18 @@ function progressStatusTag(status: string) {
 
 async function loadMeta() {
   meta.value = await stApi.fetchScheduledTaskMeta();
-  if (!form.executorCode && meta.value.executors[0]) {
-    form.executorCode = meta.value.executors[0].code;
+  if (!form.executorCode && tenantExecutors.value[0]) {
+    form.executorCode = tenantExecutors.value[0].code;
   }
 }
 
 async function load(silent = false) {
   if (!silent) loading.value = true;
   try {
-    rows.value = await stApi.fetchScheduledTasks(filterExecutor.value || undefined);
+    rows.value = await stApi.fetchScheduledTasks({
+      taskCategory: activeCategory.value,
+      executorCode: isTenantTab.value && filterExecutor.value ? filterExecutor.value : undefined,
+    });
     syncListPoll();
     patchProgressFromListRow();
   } catch {
@@ -300,7 +363,11 @@ async function load(silent = false) {
   }
 }
 
-/** 列表轮询刷新时，同步弹窗内进度（不必等 detail 接口）。 */
+function onTabChange() {
+  filterExecutor.value = "";
+  void load();
+}
+
 function patchProgressFromListRow() {
   if (!progressDlg.value || progressTaskId.value == null || !progressRun.value) return;
   const row = rows.value.find((r) => r.id === progressTaskId.value);
@@ -330,7 +397,7 @@ function stopListPoll() {
 
 function resetForm() {
   editId.value = null;
-  form.executorCode = meta.value.executors[0]?.code ?? "RAG_WEB_CRAWL_DISPATCH";
+  form.executorCode = tenantExecutors.value[0]?.code ?? "RAG_WEB_CRAWL_DISPATCH";
   form.name = "";
   form.cronExpression = "0 0 3 * * *";
   form.enabled = true;
@@ -353,22 +420,29 @@ function openEdit(row: ScheduledTaskRow) {
 async function save() {
   const name = form.name.trim();
   const cron = form.cronExpression.trim();
-  if (!name || !form.executorCode || !cron) {
+  if (!name || !cron) {
+    ElMessage.warning(t("views.scheduledTasks.formRequired"));
+    return;
+  }
+  if (!editId.value && isTenantTab.value && !form.executorCode) {
     ElMessage.warning(t("views.scheduledTasks.formRequired"));
     return;
   }
   saving.value = true;
   try {
-    const body = {
-      executorCode: form.executorCode,
-      name,
-      cronExpression: cron,
-      enabled: form.enabled,
-    };
     if (editId.value != null) {
-      await stApi.updateScheduledTask(editId.value, body);
+      await stApi.updateScheduledTask(editId.value, {
+        name,
+        cronExpression: cron,
+        enabled: form.enabled,
+      });
     } else {
-      await stApi.createScheduledTask(body);
+      await stApi.createScheduledTask({
+        executorCode: form.executorCode,
+        name,
+        cronExpression: cron,
+        enabled: form.enabled,
+      });
     }
     dlg.value = false;
     ElMessage.success(t("views.scheduledTasks.saved"));
@@ -507,13 +581,24 @@ onUnmounted(() => {
   margin: 6px 0 0;
   font-size: 13px;
   color: var(--el-text-color-secondary);
-  max-width: 560px;
+  max-width: 640px;
 }
-.actions {
+.task-tabs {
+  margin-bottom: 12px;
+}
+.toolbar {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.reminder-hint {
+  margin-bottom: 12px;
+}
+.executor-readonly {
+  font-size: 14px;
+  color: var(--el-text-color-regular);
 }
 .cron-hint {
   margin: 6px 0 0;

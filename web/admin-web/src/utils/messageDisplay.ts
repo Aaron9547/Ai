@@ -23,6 +23,7 @@ export const MESSAGE_SCENE_CODES: readonly MessageSceneCode[] = [
   "REGISTER_VERIFICATION",
   "KNOWLEDGE_PLANET_WEEKLY",
   "SMS_LOGIN",
+  "CHAT_USER_REMINDER",
 ] as const;
 
 export const MESSAGE_ENABLE_STATUSES: readonly MessageChannelStatus[] = ["ACTIVE", "DISABLED"] as const;

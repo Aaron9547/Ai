@@ -1,6 +1,7 @@
 package com.aaron.cloud.chat.starter;
 
 import com.aaron.cloud.chat.dto.ChatStarterPromptDtos;
+import com.aaron.cloud.chat.intent.ChatIntentTurnMetaSupport;
 import com.aaron.cloud.common.api.dto.model.ModelChatRequest;
 import com.aaron.cloud.common.api.enums.metering.LlmUsageScene;
 import com.aaron.cloud.common.api.enums.chat.ChatMessageRole;
@@ -63,6 +64,10 @@ public class ChatStarterFollowUpService {
         var snap = TenantContextHolder.require();
         long tenantId = snap.getTenantId();
         assertConversation(conversationId, tenantId);
+
+        if (isIntentHandledTurn(tenantId, conversationId, assistantMessageId)) {
+            return new ChatStarterPromptDtos.StarterPromptListView(List.of(), false);
+        }
 
         var cached = cacheRepository.findByAssistantMessage(tenantId, assistantMessageId);
         if (cached.isPresent()) {
@@ -347,10 +352,21 @@ public class ChatStarterFollowUpService {
         return jsonSupport.parseQuestions(acc.toString());
     }
 
-    private String findPairedUserQuestion(long tenantId, long conversationId, long assistantMessageId) {
+    private boolean isIntentHandledTurn(long tenantId, long conversationId, long assistantMessageId) {
+        return messageRepository
+                .findById(assistantMessageId, tenantId)
+                .map(m -> ChatIntentTurnMetaSupport.isIntentTurnMeta(m.getMetaJson()))
+                .orElse(false)
+                || findPairedUserMessage(tenantId, conversationId, assistantMessageId)
+                        .map(m -> ChatIntentTurnMetaSupport.isIntentTurnMeta(m.getMetaJson()))
+                        .orElse(false);
+    }
+
+    private Optional<ChatMessage> findPairedUserMessage(
+            long tenantId, long conversationId, long assistantMessageId) {
         List<Long> ids = lnkRepository.listMessageIdsByConversationOrderByLinkIdAsc(conversationId);
         if (ids.isEmpty()) {
-            return "";
+            return Optional.empty();
         }
         List<ChatMessage> msgs = messageRepository.listByTenantAndIdsInOrder(tenantId, ids);
         boolean seenAssistant = false;
@@ -361,10 +377,16 @@ public class ChatStarterFollowUpService {
                 continue;
             }
             if (seenAssistant && m.getRole() == ChatMessageRole.USER) {
-                return m.getContent() == null ? "" : m.getContent().trim();
+                return Optional.of(m);
             }
         }
-        return "";
+        return Optional.empty();
+    }
+
+    private String findPairedUserQuestion(long tenantId, long conversationId, long assistantMessageId) {
+        return findPairedUserMessage(tenantId, conversationId, assistantMessageId)
+                .map(m -> m.getContent() == null ? "" : m.getContent().trim())
+                .orElse("");
     }
 
     private ChatStarterPromptDtos.StarterPromptListView fromJson(String json, int limit) {

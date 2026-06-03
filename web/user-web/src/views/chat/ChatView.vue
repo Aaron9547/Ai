@@ -355,6 +355,21 @@
                       </div>
                     </div>
                   </div>
+                  <div
+                    v-if="intentWorkflowFollowUps(m).length"
+                    class="intent-workflow-followups"
+                    role="list"
+                  >
+                    <span class="intent-workflow-followups-label">{{ t("chat.intentFollowUpLabel") }}</span>
+                    <QuickPromptChip
+                      v-for="fp in intentWorkflowFollowUps(m)"
+                      :key="fp.id ?? fp.text"
+                      compact
+                      @click="applyStarterPrompt(fp, 'FOLLOW_UP')"
+                    >
+                      {{ fp.text }}
+                    </QuickPromptChip>
+                  </div>
                 </div>
               </div>
               <div
@@ -416,6 +431,12 @@
                   {{ t("chat.intentFlow") }}
                   <span class="intent-hit-sub">（{{ formatIntentMatchSource(m.intentTurnHit.matchSource) }}）</span>
                 </template>
+                <span
+                  v-if="m.intentTurnHit.activeReminderCount != null && m.intentTurnHit.activeReminderCount >= 0"
+                  class="intent-hit-sub"
+                >
+                  · 有效提醒 {{ m.intentTurnHit.activeReminderCount }} 条
+                </span>
               </div>
               <div
                 v-if="m.role === 'assistant' && m.ragRetrievalTitles?.length"
@@ -944,13 +965,18 @@
                   </template>
                 </el-upload>
                 <div class="composer-input-wrap">
+                  <IntentQuickPromptBar
+                    :visible="!input.trim()"
+                    :disabled="sending || !modelAlias"
+                    @send="onIntentQuickSend"
+                  />
                   <el-input
                     v-model="input"
                     type="textarea"
                     :autosize="composerAutosize"
                     resize="none"
                     maxlength="8000"
-                    :placeholder="t('chat.inputPlaceholder')"
+                    :placeholder="input.trim() ? t('chat.inputPlaceholder') : ' '"
                     class="composer-input"
                     @keydown="onKeydown"
                   />
@@ -1093,7 +1119,7 @@ import {
   StarFilled,
   User,
 } from "@element-plus/icons-vue";
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
 import { useWindowBreakpoints } from "../../composables/useWindowBreakpoints";
@@ -1105,14 +1131,21 @@ import {
 import BrandMark from "../../components/BrandMark.vue";
 import ChatSidebar from "../../components/chat/ChatSidebar.vue";
 import { useTenantBranding } from "../../composables/useTenantBranding";
-import DailyRecommendSidebar from "../../components/chat/DailyRecommendSidebar.vue";
 import QuickPromptChip from "../../components/chat/QuickPromptChip.vue";
+import IntentQuickPromptBar from "../../components/chat/IntentQuickPromptBar.vue";
 import { useDailyRecommend } from "../../composables/useDailyRecommend";
 import { bumpKnowledgePlanetPulse } from "../../composables/useKnowledgePlanetPulse";
 import LocaleThemeToolbar from "../../components/LocaleThemeToolbar.vue";
-import ChatShareDialog from "../../components/chat/ChatShareDialog.vue";
 import ChatThreadQuestionRail from "../../components/chat/ChatThreadQuestionRail.vue";
-import UserAuthDialog from "../../components/UserAuthDialog.vue";
+import { scheduleIdle } from "../../utils/scheduleIdle";
+
+const DailyRecommendSidebar = defineAsyncComponent(
+  () => import("../../components/chat/DailyRecommendSidebar.vue"),
+);
+const ChatShareDialog = defineAsyncComponent(
+  () => import("../../components/chat/ChatShareDialog.vue"),
+);
+const UserAuthDialog = defineAsyncComponent(() => import("../../components/UserAuthDialog.vue"));
 import * as chatApi from "../../api/chat";
 import { ChatStreamHttpError } from "../../api/chat";
 import { AI_USER_ACCESS_TOKEN_KEY, clearUserSession } from "../../plugins/http";
@@ -1122,6 +1155,13 @@ import MarkdownRichContent from "../../components/chat/MarkdownRichContent.vue";
 import { renderMarkdownToSafeHtml } from "../../utils/renderMarkdown";
 import { apiRequestErrorMessage, isConversationNotFoundHttpError } from "../../utils/apiRequestErrorMessage";
 import { isAbortError } from "../../utils/isAbortError";
+import {
+  assistantBodyTextLen,
+  findLastAssistantIndex,
+  shouldPatchLastAssistant,
+  shouldReplaceThreadWithServer,
+  threadNeedsRecovery,
+} from "../../utils/chatThreadRecovery";
 import { toChatResponseLocale } from "../../utils/chatResponseLocale";
 import { useUiPreferencesStore } from "../../stores/uiPreferences";
 
@@ -1176,6 +1216,13 @@ let pendingThreadAction: ThreadPaneAction | null = null;
 /** 每次发起新的助手流式回复自增；丢弃代数已过期的 SSE 分帧，避免上一轮 {@code ragDoc} 写入本轮气泡。 */
 let assistantStreamGeneration = 0;
 let activeStreamAbort: AbortController | null = null;
+/** 用户点击「停止生成」时为 true；与页面隐藏/断连导致的 abort 区分。 */
+let userInitiatedStreamStop = false;
+
+const THREAD_RECOVERY_POLL_MS = 2000;
+const THREAD_RECOVERY_MAX_MS = 120_000;
+let threadRecoveryPollGen = 0;
+let threadRecoveryPollTimer: ReturnType<typeof setTimeout> | null = null;
 
 function cancelActiveStream() {
   assistantStreamGeneration++;
@@ -1332,6 +1379,8 @@ type Msg = {
   followUpPrompts?: chatApi.StarterPromptItem[];
   /** SSE/REST 均未返回时展示骨架气泡 */
   followUpLoading?: boolean;
+  /** 本回合 SSE 已判定为意图流（工作流阶段 / 意图追问帧） */
+  intentTurn?: boolean;
   /** 本轮是否开启联网（用于流式进度展示） */
   webSearchTurnEnabled?: boolean;
   /** 联网检索阶段（SSE {@code webSearchStatus} 或发送时乐观置 searching） */
@@ -1665,6 +1714,9 @@ function mapHistoryToMsgs(rows: chatApi.ChatHistoryMessage[]): Msg[] {
         ? { workflowSegments: decorateHistoryWorkflowSegments([...r.workflowSegments]) }
         : {}),
       ...(r.intentTurnHit ? { intentTurnHit: { ...r.intentTurnHit } } : {}),
+      ...(r.role === "assistant" && r.intentFollowUpPrompts?.length
+        ? { followUpPrompts: [...r.intentFollowUpPrompts] }
+        : {}),
       ...(r.role === "user" && r.attachments && r.attachments.length > 0
         ? { attachments: r.attachments.map((a) => ({ ...a })) }
         : {}),
@@ -1751,7 +1803,19 @@ function stepAssistantVariant(m: Msg, delta: number) {
   syncAssistantActiveToFlat(m);
 }
 
-async function loadMessagesForConv(id: string) {
+type LoadMessagesOptions = { deferExtras?: boolean };
+
+function runPostMessageLoadExtras(id: string, seq: number): void {
+  if (seq !== threadLoadSeq) return;
+  void refreshConversationTokenTotal(id);
+  loadFollowUpForLastAssistant();
+  if (threadNeedsRecovery(messages.value)) {
+    startThreadRecoveryPoll(id);
+  }
+  void scrollToBottom(true);
+}
+
+async function loadMessagesForConv(id: string, options?: LoadMessagesOptions) {
   const seq = ++threadLoadSeq;
   threadLoading.value = true;
   clearThread();
@@ -1759,7 +1823,9 @@ async function loadMessagesForConv(id: string) {
     const rows = await chatApi.listConversationMessages(id);
     if (seq !== threadLoadSeq) return;
     messages.value = mapHistoryToMsgs(rows);
-    await refreshConversationTokenTotal(id);
+    if (!options?.deferExtras) {
+      await refreshConversationTokenTotal(id);
+    }
   } catch (e) {
     if (seq !== threadLoadSeq) return;
     if (isConversationNotFoundHttpError(e)) return;
@@ -1771,8 +1837,14 @@ async function loadMessagesForConv(id: string) {
   }
   if (seq !== threadLoadSeq) return;
   await ensureEmptyStarterPromptsIfNeeded();
+  if (options?.deferExtras) {
+    scheduleIdle(() => runPostMessageLoadExtras(id, seq));
+    return;
+  }
   loadFollowUpForLastAssistant();
-  scrollPinnedToBottom.value = true;
+  if (threadNeedsRecovery(messages.value)) {
+    startThreadRecoveryPoll(id);
+  }
   await scrollToBottom(true);
 }
 
@@ -1839,27 +1911,214 @@ function patchMsgMetadataFromServer(local: Msg, server: Msg): void {
   }
 }
 
-async function syncThreadAfterStream(conversationId: string): Promise<void> {
+function applyServerAssistantFromHistory(local: Msg, server: Msg): void {
+  if (server.replyVariants?.length) {
+    local.replyVariants = deepCloneReplyVariants(server.replyVariants);
+    local.activeVariantIndex = server.activeVariantIndex ?? local.replyVariants.length - 1;
+  }
+  local.content = server.content;
+  local.reasoning = server.reasoning;
+  local.reasoningCollapsed = server.reasoningCollapsed;
+  local.id = server.id;
+  if (server.usage) {
+    local.usage = { ...server.usage };
+  }
+  if (server.turnTotalTokens != null && server.turnTotalTokens > 0) {
+    local.turnTotalTokens = server.turnTotalTokens;
+  }
+  local.modelAlias = server.modelAlias;
+  local.userFeedback = server.userFeedback;
+  if (server.ragRetrievalTitles?.length) {
+    local.ragRetrievalTitles = [...server.ragRetrievalTitles];
+  }
+  if (server.workflowSegments?.length) {
+    local.workflowSegments = [...server.workflowSegments];
+  }
+  if (server.webSearchReferences?.length) {
+    local.webSearchReferences = [...server.webSearchReferences];
+    local.webSearchRefsCollapsed = server.webSearchRefsCollapsed;
+  }
+  if (server.knowledgeBaseReferences?.length) {
+    local.knowledgeBaseReferences = [...server.knowledgeBaseReferences];
+    local.knowledgeBaseRefsCollapsed = server.knowledgeBaseRefsCollapsed;
+  }
+  if (server.intentTurnHit) {
+    local.intentTurnHit = { ...server.intentTurnHit };
+  }
+  if (server.followUpPrompts?.length) {
+    local.followUpPrompts = [...server.followUpPrompts];
+  } else if (server.intentFollowUpPrompts?.length) {
+    local.followUpPrompts = [...server.intentFollowUpPrompts];
+  }
+  finishAssistantStreamState(local);
+  syncAssistantActiveToFlat(local);
+}
+
+function clearStuckSendingIfThreadRecovered(): void {
+  if (!sending.value) {
+    return;
+  }
+  if (threadNeedsRecovery(messages.value)) {
+    return;
+  }
+  sending.value = false;
+  activeStreamAbort = null;
+}
+
+function stopThreadRecoveryPoll(): void {
+  threadRecoveryPollGen += 1;
+  if (threadRecoveryPollTimer != null) {
+    clearTimeout(threadRecoveryPollTimer);
+    threadRecoveryPollTimer = null;
+  }
+}
+
+function startThreadRecoveryPoll(conversationId: string): void {
+  stopThreadRecoveryPoll();
+  const gen = ++threadRecoveryPollGen;
+  const startedAt = Date.now();
+  let lastBodyLen = -1;
+  let stableRounds = 0;
+
+  const schedule = (delayMs: number) => {
+    threadRecoveryPollTimer = setTimeout(() => void tick(), delayMs);
+  };
+
+  const tick = async () => {
+    if (gen !== threadRecoveryPollGen) {
+      return;
+    }
+    if (convId.value !== conversationId) {
+      return;
+    }
+
+    await recoverThreadFromServer(conversationId);
+    clearStuckSendingIfThreadRecovered();
+
+    const idx = findLastAssistantIndex(messages.value);
+    const bodyLen = idx >= 0 ? assistantBodyTextLen(messages.value[idx]!) : 0;
+    const needs = threadNeedsRecovery(messages.value);
+
+    if (!needs) {
+      if (bodyLen === lastBodyLen) {
+        stableRounds += 1;
+      } else {
+        stableRounds = 0;
+        lastBodyLen = bodyLen;
+      }
+      if (stableRounds >= 1) {
+        stopThreadRecoveryPoll();
+        loadFollowUpForLastAssistant();
+        await scrollToBottom();
+        return;
+      }
+    } else {
+      stableRounds = 0;
+      lastBodyLen = bodyLen;
+    }
+
+    if (Date.now() - startedAt > THREAD_RECOVERY_MAX_MS) {
+      stopThreadRecoveryPoll();
+      if (idx >= 0) {
+        const m = messages.value[idx];
+        if (m?.streaming) {
+          finishAssistantStreamState(m);
+        }
+      }
+      clearStuckSendingIfThreadRecovered();
+      loadFollowUpForLastAssistant();
+      return;
+    }
+    schedule(THREAD_RECOVERY_POLL_MS);
+  };
+
+  void tick();
+}
+
+/** 从服务端拉取线程并合并到本地（断连/后台恢复）；不会在服务端更短时覆盖本地半截内容。 */
+async function recoverThreadFromServer(conversationId: string): Promise<boolean> {
+  if (!conversationId) {
+    return false;
+  }
   try {
     const rows = await chatApi.listConversationMessages(conversationId);
     const serverMsgs = mapHistoryToMsgs(rows);
     const local = messages.value;
-    if (!serverMsgs.length || serverMsgs.length !== local.length) {
-      messages.value = serverMsgs;
-      return;
+    if (!serverMsgs.length) {
+      return false;
     }
-    for (let i = 0; i < local.length; i++) {
-      if (!threadContentMatches(local[i]!, serverMsgs[i]!)) {
-        messages.value = serverMsgs;
-        return;
+    if (shouldReplaceThreadWithServer(local, serverMsgs)) {
+      messages.value = serverMsgs;
+      return true;
+    }
+    if (shouldPatchLastAssistant(local, serverMsgs)) {
+      const li = findLastAssistantIndex(local);
+      applyServerAssistantFromHistory(local[li]!, serverMsgs[li]!);
+      return true;
+    }
+    if (local.length === serverMsgs.length) {
+      for (let i = 0; i < local.length; i++) {
+        if (!threadContentMatches(local[i]!, serverMsgs[i]!)) {
+          continue;
+        }
+        patchMsgMetadataFromServer(local[i]!, serverMsgs[i]!);
+        const m = local[i]!;
+        if (m.role === "assistant" && m.streaming && assistantLatestPersistedDbId(m) != null) {
+          finishAssistantStreamState(m);
+        }
       }
     }
-    for (let i = 0; i < local.length; i++) {
-      patchMsgMetadataFromServer(local[i]!, serverMsgs[i]!);
-    }
+    return false;
   } catch {
-    /* 保留本地流式结果，仅缺库表 id 时影响反馈/重新生成 */
+    return false;
   }
+}
+
+async function syncThreadAfterStream(conversationId: string): Promise<void> {
+  await recoverThreadFromServer(conversationId);
+  clearStuckSendingIfThreadRecovered();
+  if (threadNeedsRecovery(messages.value)) {
+    startThreadRecoveryPoll(conversationId);
+  }
+}
+
+let threadVisibilityRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function runThreadRecoveryOnVisible(conversationId: string): Promise<void> {
+  const changed = await recoverThreadFromServer(conversationId);
+  clearStuckSendingIfThreadRecovered();
+  if (threadNeedsRecovery(messages.value)) {
+    startThreadRecoveryPoll(conversationId);
+    return;
+  }
+  if (changed) {
+    loadFollowUpForLastAssistant();
+    await scrollToBottom();
+  }
+}
+
+function onThreadRecoveryVisibility(ev?: Event): void {
+  if (document.visibilityState !== "visible") {
+    return;
+  }
+  /** 普通切标签：visibilitychange 已处理；pageshow 仅用于 bfcache 恢复，避免重复拉历史。 */
+  if (ev?.type === "pageshow" && !(ev as PageTransitionEvent).persisted) {
+    return;
+  }
+  const id = convId.value;
+  if (!id || threadLoading.value) {
+    return;
+  }
+  if (!sending.value && !threadNeedsRecovery(messages.value)) {
+    return;
+  }
+  if (threadVisibilityRecoveryTimer != null) {
+    clearTimeout(threadVisibilityRecoveryTimer);
+  }
+  threadVisibilityRecoveryTimer = setTimeout(() => {
+    threadVisibilityRecoveryTimer = null;
+    void runThreadRecoveryOnVisible(id);
+  }, 400);
 }
 
 /** 思考分片仍在输出且主回复未开始时，展示思考区流式光标 */
@@ -2142,6 +2401,7 @@ function finishAssistantStreamState(m: Msg) {
 }
 
 function applyAssistantStreamPart(m: Msg, part: chatApi.StreamPart, tail: ReplyVariant | null) {
+  markIntentTurnFromStream(m, part);
   const body = tail ?? m;
   if (part.type === "content" && part.v) {
     if (m.webSearchPhase === "searching") {
@@ -2238,12 +2498,7 @@ function applyAssistantStreamPart(m: Msg, part: chatApi.StreamPart, tail: ReplyV
     } else if (convId.value != null) {
       void refreshConversationTokenSummary(convId.value);
     }
-    if (!(m.followUpPrompts?.length)) {
-      beginFollowUpLoading(m);
-      if (m.id != null && convId.value != null) {
-        void loadFollowUpForMessage(m);
-      }
-    }
+    // 猜你想问改由 send() finally 在 refresh/sync 后 loadFollowUpForLastAssistant，避免意图回合 end 瞬间误判而闪骨架
   }
 }
 
@@ -2354,8 +2609,44 @@ const followUpSkeletonWidths = [
   { width: "84px", maxWidth: "44%" },
 ] as const;
 
+/** 本回合走意图处理器：不拉取「猜你想问」，仅展示 SSE 下发的意图追问 chip（若有）。 */
+function isIntentTurnAssistant(m: Msg, idx: number): boolean {
+  if (m.role !== "assistant") return false;
+  if (m.intentTurn) return true;
+  if ((m.workflowSegments?.length ?? 0) > 0) return true;
+  if (m.intentTurnHit) return true;
+  if (idx > 0) {
+    const prev = messages.value[idx - 1];
+    if (prev?.role === "user" && prev.intentTurnHit) return true;
+  }
+  return false;
+}
+
+function markIntentTurnFromStream(m: Msg, part: chatApi.StreamPart) {
+  if (part.type === "workflowStage") {
+    m.intentTurn = true;
+    return;
+  }
+  if (part.type === "followUpPrompts" && part.items?.some((it) => it.source === "INTENT_BUILTIN")) {
+    m.intentTurn = true;
+  }
+}
+
+function intentWorkflowFollowUps(m: Msg): chatApi.StarterPromptItem[] {
+  if (!showIntentWorkflowShell(m)) {
+    return [];
+  }
+  return m.followUpPrompts ?? [];
+}
+
 function showFollowUpPromptsBlock(m: Msg, idx: number): boolean {
   if (m.role !== "assistant" || m.streaming || !isLastAssistantIndex(idx)) {
+    return false;
+  }
+  if (isIntentTurnAssistant(m, idx)) {
+    return false;
+  }
+  if (showIntentWorkflowShell(m) && (m.followUpPrompts?.length ?? 0) > 0) {
     return false;
   }
   if ((m.followUpPrompts?.length ?? 0) > 0) {
@@ -2379,6 +2670,10 @@ function loadFollowUpForLastAssistant() {
   for (let i = messages.value.length - 1; i >= 0; i--) {
     const m = messages.value[i];
     if (m?.role === "assistant" && !m.streaming) {
+      if (isIntentTurnAssistant(m, i)) {
+        finishFollowUpLoading(m);
+        return;
+      }
       void loadFollowUpForMessage(m);
       return;
     }
@@ -2614,6 +2909,14 @@ function isNearMessagesScrollBottom(wrap: HTMLElement, threshold = SCROLL_PIN_TH
   return wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight <= threshold;
 }
 
+/** 按当前视口位置同步贴底状态，避免刷新后停在顶部却误判为已贴底。 */
+function syncScrollPinFromViewport() {
+  const wrap = getMessagesScrollWrap();
+  if (!wrap) return;
+  lastKnownScrollTop = wrap.scrollTop;
+  scrollPinnedToBottom.value = isNearMessagesScrollBottom(wrap);
+}
+
 function cancelPendingScrollToBottom() {
   if (scrollBottomRaf != null) {
     cancelAnimationFrame(scrollBottomRaf);
@@ -2653,10 +2956,13 @@ function onMessagesScroll() {
     lastKnownScrollTop = wrap.scrollTop;
     return;
   }
-  if (wrap.scrollTop < lastKnownScrollTop - 1) {
+  const scrolledUp = wrap.scrollTop < lastKnownScrollTop - 1;
+  if (scrolledUp) {
     releaseScrollPin();
   } else if (isNearMessagesScrollBottom(wrap)) {
     scrollPinnedToBottom.value = true;
+  } else {
+    scrollPinnedToBottom.value = false;
   }
   lastKnownScrollTop = wrap.scrollTop;
 }
@@ -2671,11 +2977,9 @@ async function scrollToBottom(force = false) {
   scrollPinFromProgrammatic = true;
   sb.setScrollTop(wrap.scrollHeight);
   lastKnownScrollTop = wrap.scrollTop;
-  if (force) {
-    scrollPinnedToBottom.value = true;
-  }
   requestAnimationFrame(() => {
     scrollPinFromProgrammatic = false;
+    syncScrollPinFromViewport();
   });
 }
 
@@ -2776,6 +3080,9 @@ function refreshEmptyStarterPrompts() {
 /** 空会话展示推荐问句：首屏若直接打开有历史的会话，此前不会拉取，新建/切换到空会话须显式调用。 */
 async function ensureEmptyStarterPromptsIfNeeded() {
   if (messages.value.length > 0) return;
+  if (!emptyStarterPrompts.value.length) {
+    emptyStarterPrompts.value = fallbackEmptyPrompts.value;
+  }
   emptyPromptExcludeIds.value = [];
   await loadEmptyStarterPrompts(false);
 }
@@ -2804,8 +3111,25 @@ async function applyStarterPrompt(
   }
 }
 
+/** 意图试玩条：回填并立即发送（与库内意图触发词对齐）。 */
+async function onIntentQuickSend(text: string) {
+  if (sending.value || !modelAlias.value) {
+    if (!modelAlias.value) {
+      ElMessage.warning(t("chat.pickModelFirst"));
+    }
+    return;
+  }
+  input.value = text;
+  await send();
+}
+
 async function loadFollowUpForMessage(m: Msg) {
   if (m.role !== "assistant" || m.streaming || m.id == null || convId.value == null) {
+    return;
+  }
+  const idx = messages.value.indexOf(m);
+  if (idx >= 0 && isIntentTurnAssistant(m, idx)) {
+    finishFollowUpLoading(m);
     return;
   }
   if (m.followUpPrompts?.length) {
@@ -3045,6 +3369,13 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  stopThreadRecoveryPoll();
+  if (threadVisibilityRecoveryTimer != null) {
+    clearTimeout(threadVisibilityRecoveryTimer);
+    threadVisibilityRecoveryTimer = null;
+  }
+  document.removeEventListener("visibilitychange", onThreadRecoveryVisibility);
+  window.removeEventListener("pageshow", onThreadRecoveryVisibility);
   cancelActiveStream();
   if (streamElapsedTimer != null) {
     clearInterval(streamElapsedTimer);
@@ -3098,6 +3429,7 @@ function stopGenerating() {
   if (!sending.value) {
     return;
   }
+  userInitiatedStreamStop = true;
   cancelActiveStream();
   for (let i = messages.value.length - 1; i >= 0; i--) {
     const m = messages.value[i];
@@ -3194,13 +3526,14 @@ async function retryAssistantAt(assistantIdx: number) {
     }
   } catch (e: unknown) {
     if (isAbortError(e)) {
-      syncHistory = false;
+      syncHistory = !userInitiatedStreamStop;
     } else {
       ElMessage.error(apiRequestErrorMessage(e, t("chat.regenerateFail")));
     }
   } finally {
     activeStreamAbort = null;
     sending.value = false;
+    userInitiatedStreamStop = false;
     if (syncHistory && convId.value) {
       await syncThreadAfterStream(convId.value);
       loadFollowUpForLastAssistant();
@@ -3234,6 +3567,19 @@ watch(
   () => messages.value.length,
   () => {
     scheduleScrollToBottom();
+  },
+);
+
+watch(
+  () => [threadLoading.value, messages.value.length] as const,
+  ([loading, len]) => {
+    if (loading || len === 0) return;
+    void nextTick(() => {
+      requestAnimationFrame(() => {
+        syncScrollPinFromViewport();
+        requestAnimationFrame(() => syncScrollPinFromViewport());
+      });
+    });
   },
 );
 
@@ -3348,35 +3694,62 @@ const loggedInUsername = ref<string | null>(null);
 /** 避免与 onMounted 首屏加载重复执行 */
 const tenantShellReady = ref(false);
 
-async function loadChatShellForCurrentTenant() {
-  try {
-    models.value = await chatApi.listChatModels();
-    try {
-      const av = await chatApi.getWebSearchAvailability();
-      webSearchAllowed.value = !!av?.allowed;
-    } catch {
-      webSearchAllowed.value = false;
-    }
-    if (!webSearchAllowed.value) {
-      webSearchEnabled.value = false;
-    }
+function isErr<T>(v: T | { __err: unknown }): v is { __err: unknown } {
+  return typeof v === "object" && v !== null && "__err" in v;
+}
+
+/** 阶段 A：租户壳层（品牌、模型、联网、会话列表）并行拉取，不阻塞历史消息。 */
+async function loadChatShellPhaseA(): Promise<void> {
+  const [, modelsRes, webSearchRes, convRes] = await Promise.all([
+    loadTenantBranding(),
+    chatApi.listChatModels().catch((e: unknown) => ({ __err: e })),
+    chatApi.getWebSearchAvailability().catch(() => null),
+    chatApi.listConversations().catch((e: unknown) => ({ __err: e })),
+  ]);
+
+  if (isErr(modelsRes)) {
+    models.value = [];
+    ElMessage.warning(apiRequestErrorMessage(modelsRes.__err, t("chat.loadModelsFail")));
+  } else {
+    models.value = modelsRes;
     if (!models.value.length) {
       ElMessage.warning(t("chat.noModels"));
     } else if (!models.value.some((m) => m.alias === modelAlias.value)) {
       applyDefaultModelAlias();
     }
-  } catch (e: unknown) {
-    models.value = [];
-    ElMessage.warning(apiRequestErrorMessage(e, t("chat.loadModelsFail")));
   }
-  await refresh();
-  if (convId.value) {
-    await loadMessagesForConv(convId.value);
+
+  webSearchAllowed.value = !!webSearchRes?.allowed;
+  if (!webSearchAllowed.value) {
+    webSearchEnabled.value = false;
+  }
+
+  if (isErr(convRes)) {
+    convs.value = [];
+  } else {
+    convs.value = convRes;
+    if (!convId.value && convs.value.length) {
+      convId.value = convs.value[0].id;
+    }
+  }
+}
+
+function scheduleDeferredInitialMessages(id: string): void {
+  void nextTick(() => {
+    void loadMessagesForConv(id, { deferExtras: true });
+  });
+}
+
+async function loadChatShellForCurrentTenant() {
+  await loadChatShellPhaseA();
+  const id = convId.value;
+  if (id) {
+    scheduleDeferredInitialMessages(id);
   } else {
     scrollPinnedToBottom.value = true;
     await scrollToBottom(true);
+    await ensureEmptyStarterPromptsIfNeeded();
   }
-  await ensureEmptyStarterPromptsIfNeeded();
 }
 
 function readJwtSub(token: string | null): string | null {
@@ -3451,14 +3824,14 @@ watch(
     if (!tenantShellReady.value) return;
     clearThread();
     convId.value = null;
-    await loadTenantBranding();
     await loadChatShellForCurrentTenant();
   },
 );
 
 onMounted(async () => {
+  document.addEventListener("visibilitychange", onThreadRecoveryVisibility);
+  window.addEventListener("pageshow", onThreadRecoveryVisibility);
   refreshAuthLabel();
-  await loadTenantBranding();
   await loadChatShellForCurrentTenant();
   tenantShellReady.value = true;
 });
@@ -3653,6 +4026,7 @@ async function send() {
       reasoning: undefined,
       reasoningStreaming: false,
       modelAlias: modelAlias.value,
+      ...(intentFlowTicket ? { intentTurn: true } : {}),
     };
     beginAssistantStreamTiming(assistantRow, useWeb);
     messages.value.push(assistantRow);
@@ -3695,7 +4069,7 @@ async function send() {
       }
     } catch (e: unknown) {
       if (isAbortError(e)) {
-        syncHistory = false;
+        syncHistory = !userInitiatedStreamStop;
       } else if (e instanceof ChatStreamHttpError && e.status === 409) {
         syncHistory = true;
         if (assistantIdx >= 1) {
@@ -3717,6 +4091,7 @@ async function send() {
     }
   } finally {
     sending.value = false;
+    userInitiatedStreamStop = false;
     if (streamStarted && syncHistory) {
       await refresh();
       if (convId.value) {
@@ -4252,9 +4627,9 @@ async function send() {
 }
 
 .intent-workflow-shell {
-  border: 1px solid #e4e4e7;
+  border: 1px solid var(--chat-border-subtle, #e4e4e7);
   border-radius: 10px;
-  background: #fafafa;
+  background: var(--chat-bg-workflow, #fafafa);
   overflow: hidden;
 }
 
@@ -4262,13 +4637,13 @@ async function send() {
   padding: 8px 12px;
   font-size: 12px;
   font-weight: 600;
-  color: #52525b;
-  background: #f4f4f5;
-  border-bottom: 1px solid #e4e4e7;
+  color: var(--chat-text-muted, #52525b);
+  background: var(--chat-bg-muted, #f4f4f5);
+  border-bottom: 1px solid var(--chat-border-subtle, #e4e4e7);
 }
 
 .wf-step + .wf-step {
-  border-top: 1px solid #e4e4e7;
+  border-top: 1px solid var(--chat-border-subtle, #e4e4e7);
 }
 
 .wf-bar-lead {
@@ -4290,20 +4665,20 @@ async function send() {
   width: 100%;
   padding: 10px 12px;
   border: none;
-  background: #fafafa;
+  background: var(--chat-bg-workflow, #fafafa);
   cursor: pointer;
   text-align: left;
   font: inherit;
-  color: #3f3f46;
+  color: var(--chat-text-secondary, #3f3f46);
   transition: background 0.15s ease;
 }
 
 .wf-bar:hover {
-  background: #f4f4f5;
+  background: var(--chat-hover, #f4f4f5);
 }
 
 .wf-bar--live {
-  background: #f0fdf4;
+  background: var(--chat-bg-workflow-live, #f0fdf4);
 }
 
 .wf-bar-title {
@@ -4311,18 +4686,18 @@ async function send() {
   min-width: 0;
   font-size: 13px;
   font-weight: 600;
-  color: #27272a;
+  color: var(--chat-text-strong, #27272a);
 }
 
 .wf-bar-meta {
   flex-shrink: 0;
   font-size: 12px;
-  color: #71717a;
+  color: var(--chat-text-muted, #71717a);
 }
 
 .wf-bar-chevron {
   flex-shrink: 0;
-  color: #a1a1aa;
+  color: var(--chat-text-muted, #a1a1aa);
 }
 
 .wf-body-outer {
@@ -4336,7 +4711,7 @@ async function send() {
   padding-top: 6px;
   font-size: 14px;
   line-height: 1.55;
-  color: #3f3f46;
+  color: var(--chat-text-body, #3f3f46);
   word-break: break-word;
   overflow-wrap: anywhere;
 }
@@ -4346,8 +4721,24 @@ async function send() {
   align-items: center;
   gap: 8px;
   padding-top: 8px;
-  color: #71717a;
+  color: var(--chat-text-muted, #71717a);
   font-size: 13px;
+}
+
+.intent-workflow-followups {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--chat-border-subtle, #e4e4e7);
+}
+
+.intent-workflow-followups-label {
+  flex: 0 0 100%;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--chat-text-muted, #71717a);
 }
 
 .wf-spin {
@@ -5428,6 +5819,7 @@ async function send() {
 }
 
 .composer-input-wrap {
+  position: relative;
   flex: 1;
   min-width: 0;
   padding: 4px 0;

@@ -11,7 +11,8 @@ import lombok.RequiredArgsConstructor;
 public enum MessageSceneCode {
     REGISTER_VERIFICATION("REGISTER_VERIFICATION", "注册验证码"),
     KNOWLEDGE_PLANET_WEEKLY("KNOWLEDGE_PLANET_WEEKLY", "知识星球周报"),
-    SMS_LOGIN("SMS_LOGIN", "短信登录验证码");
+    SMS_LOGIN("SMS_LOGIN", "短信登录验证码"),
+    CHAT_USER_REMINDER("CHAT_USER_REMINDER", "对话用户提醒邮件");
 
     @EnumValue
     private final String code;

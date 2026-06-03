@@ -441,28 +441,168 @@ html.dark .admin-shell .user-trigger:hover {
   padding: 4px 8px;
 }
 
-/* 分片 Markdown 滚动区：细滚动条（对齐 Element Plus 视觉） */
-.md-surface-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: var(--el-border-color-darker) transparent;
+/* 管理端知识库分片等：统一细滚动条（卡片 / 预览弹窗 / 源码） */
+:root {
+  --admin-scroll-size: 7px;
+  --admin-scroll-thumb: color-mix(in srgb, var(--el-text-color-placeholder) 52%, transparent);
+  --admin-scroll-thumb-hover: color-mix(in srgb, var(--el-text-color-secondary) 72%, transparent);
+  --admin-scroll-track: color-mix(in srgb, var(--el-fill-color-darker) 35%, transparent);
 }
 
-.md-surface-scroll::-webkit-scrollbar {
-  width: 6px;
+.md-surface-scroll,
+.admin-native-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--admin-scroll-thumb) transparent;
+  scrollbar-gutter: stable;
+}
+
+.md-surface-scroll::-webkit-scrollbar,
+.admin-native-scroll::-webkit-scrollbar {
+  width: var(--admin-scroll-size);
+  height: var(--admin-scroll-size);
+}
+
+.md-surface-scroll::-webkit-scrollbar-track,
+.admin-native-scroll::-webkit-scrollbar-track {
+  margin: 2px;
+  border-radius: 999px;
+  background: var(--admin-scroll-track);
+}
+
+.md-surface-scroll::-webkit-scrollbar-thumb,
+.admin-native-scroll::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-color: var(--admin-scroll-thumb);
+  background-clip: padding-box;
+}
+
+.md-surface-scroll::-webkit-scrollbar-thumb:hover,
+.admin-native-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: var(--admin-scroll-thumb-hover);
+}
+
+.md-surface-scroll::-webkit-scrollbar-corner,
+.admin-native-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* 分片编辑弹窗：预览 / 源码 Tab 同高 */
+.chunk-edit-tabs {
+  --chunk-edit-pane-h: min(62vh, 520px);
+  --chunk-edit-pane-min-h: 240px;
+}
+
+.chunk-edit-tabs .chunk-edit-scrollbar.el-scrollbar {
+  height: var(--chunk-edit-pane-h);
+  max-height: var(--chunk-edit-pane-h);
+}
+
+.chunk-edit-tabs .chunk-edit-scrollbar .el-scrollbar__wrap {
+  max-height: var(--chunk-edit-pane-h);
+}
+
+.chunk-edit-tabs .chunk-edit-preview {
+  min-height: var(--chunk-edit-pane-min-h);
+}
+
+.chunk-edit-tabs .chunk-edit-source.el-textarea,
+.chunk-edit-tabs .chunk-edit-source .el-textarea {
+  display: block;
+  height: var(--chunk-edit-pane-h);
+  min-height: var(--chunk-edit-pane-min-h);
+}
+
+.chunk-edit-tabs .chunk-edit-source .el-textarea__inner {
+  height: var(--chunk-edit-pane-h) !important;
+  min-height: var(--chunk-edit-pane-min-h);
+  box-sizing: border-box;
+  resize: none;
+}
+
+/* Element Plus el-scrollbar（分片编辑预览等） */
+.admin-el-scrollbar.el-scrollbar {
+  --el-scrollbar-opacity: 0.72;
+  --el-scrollbar-hover-opacity: 0.92;
+  --el-scrollbar-bg-color: var(--admin-scroll-thumb);
+  --el-scrollbar-hover-bg-color: var(--admin-scroll-thumb-hover);
+}
+
+.admin-el-scrollbar .el-scrollbar__wrap {
+  overflow-x: hidden;
+}
+
+.admin-el-scrollbar .el-scrollbar__bar.is-vertical {
+  width: var(--admin-scroll-size);
+  right: 3px;
+}
+
+.admin-el-scrollbar .el-scrollbar__bar.is-horizontal {
+  height: var(--admin-scroll-size);
+  bottom: 3px;
+}
+
+.admin-el-scrollbar .el-scrollbar__thumb {
+  border-radius: 999px;
+  opacity: 0.55;
+  transition:
+    opacity 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.admin-el-scrollbar:hover .el-scrollbar__thumb,
+.admin-el-scrollbar .el-scrollbar__thumb:hover {
+  opacity: 0.9;
+}
+
+/* 源码 Tab：textarea 原生滚动条 */
+.admin-native-scroll .el-textarea__inner {
+  scrollbar-width: thin;
+  scrollbar-color: var(--admin-scroll-thumb) transparent;
+  scrollbar-gutter: stable;
+}
+
+.admin-native-scroll .el-textarea__inner::-webkit-scrollbar {
+  width: var(--admin-scroll-size);
+  height: var(--admin-scroll-size);
+}
+
+.admin-native-scroll .el-textarea__inner::-webkit-scrollbar-track {
+  margin: 2px;
+  border-radius: 999px;
+  background: var(--admin-scroll-track);
+}
+
+.admin-native-scroll .el-textarea__inner::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-color: var(--admin-scroll-thumb);
+  background-clip: padding-box;
+}
+
+.admin-native-scroll .el-textarea__inner::-webkit-scrollbar-thumb:hover {
+  background-color: var(--admin-scroll-thumb-hover);
+}
+
+/* 分片 Markdown 内代码块横向滚动 */
+.chunk-md :deep(pre) {
+  scrollbar-width: thin;
+  scrollbar-color: var(--admin-scroll-thumb) transparent;
+}
+
+.chunk-md :deep(pre)::-webkit-scrollbar {
   height: 6px;
 }
 
-.md-surface-scroll::-webkit-scrollbar-thumb {
-  border-radius: 4px;
-  background-color: var(--el-border-color-darker);
+.chunk-md :deep(pre)::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background-color: var(--admin-scroll-thumb);
 }
 
-.md-surface-scroll::-webkit-scrollbar-thumb:hover {
-  background-color: var(--el-text-color-placeholder);
-}
-
-.md-surface-scroll::-webkit-scrollbar-track {
-  background: transparent;
+html.dark {
+  --admin-scroll-thumb: color-mix(in srgb, var(--el-text-color-secondary) 38%, transparent);
+  --admin-scroll-thumb-hover: color-mix(in srgb, var(--el-text-color-regular) 58%, transparent);
+  --admin-scroll-track: color-mix(in srgb, var(--el-fill-color-darker) 55%, transparent);
 }
 
 /* 卡片/表格预览：缩略图，避免大图撑出横向滚动条 */

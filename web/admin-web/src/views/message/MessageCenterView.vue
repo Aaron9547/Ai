@@ -860,6 +860,9 @@ function defaultSubjectForScene(scene: MessageSceneCode): string {
   if (scene === "KNOWLEDGE_PLANET_WEEKLY") {
     return t("admin.message.defaultSubjectWeekly", { tenantName: ph("tenantName") });
   }
+  if (scene === "CHAT_USER_REMINDER") {
+    return t("admin.message.defaultSubjectReminder", { title: ph("title") });
+  }
   if (scene === "SMS_LOGIN") return "";
   return t("admin.message.defaultSubjectRegister", { tenantName: ph("tenantName") });
 }
@@ -870,6 +873,12 @@ function defaultBodyForScene(scene: MessageSceneCode): string {
       userName: ph("userName"),
       summary: ph("summary"),
       weekLabel: ph("weekLabel"),
+    });
+  }
+  if (scene === "CHAT_USER_REMINDER") {
+    return t("admin.message.defaultBodyReminder", {
+      actionText: ph("actionText"),
+      scheduleType: ph("scheduleType"),
     });
   }
   if (scene === "SMS_LOGIN") {

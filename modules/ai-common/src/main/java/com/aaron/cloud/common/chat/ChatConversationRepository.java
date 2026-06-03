@@ -89,6 +89,11 @@ public class ChatConversationRepository {
                         .last("LIMIT " + limit));
     }
 
+    /** 当前主体（已登录按 user_id，访客按 device_id）是否存在任意活跃会话。 */
+    public boolean hasActiveForSubject(long tenantId, Long userId, String deviceId) {
+        return !listForSubject(tenantId, userId, deviceId, 1).isEmpty();
+    }
+
     public int archive(long id, long tenantId) {
         return mapper.update(
                 null,

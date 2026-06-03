@@ -6,6 +6,7 @@ import com.aaron.cloud.common.document.UploadedFileKind;
 import com.aaron.cloud.chat.intent.ChatIntentStreamRouter;
 import com.aaron.cloud.chat.intent.IntentKeywordMatchHit;
 import com.aaron.cloud.chat.intent.IntentSseRoute;
+import com.aaron.cloud.chat.intent.followup.IntentFollowUpMetaSupport;
 import com.aaron.cloud.common.api.enums.llm.LlmAnonymousAccess;
 import com.aaron.cloud.common.chat.entity.ChatIntentDefinition;
 import com.aaron.cloud.chat.websearch.ChatWebSearchGroundingService;
@@ -1921,6 +1922,7 @@ public class ChatApplicationService {
         List<ChatWorkflowSegmentView> workflowSegments = null;
         List<WebSearchReferenceView> webSearchReferences = null;
         List<WebSearchReferenceView> knowledgeBaseReferences = null;
+        List<ChatStarterPromptDtos.StarterPromptItem> intentFollowUpPrompts = null;
         if (m.getRole() == ChatMessageRole.USER
                 && m.getMetaJson() != null
                 && !m.getMetaJson().isBlank()) {
@@ -2025,6 +2027,15 @@ public class ChatApplicationService {
                 knowledgeBaseReferences =
                         parseReferenceViewsFromRoot(
                                 root, WebSearchGroundingMetaSupport.META_KNOWLEDGE_BASE_REFERENCES);
+                List<IntentFollowUpMetaSupport.IntentFollowUpPromptItem> fu =
+                        IntentFollowUpMetaSupport.parseFromRoot(root);
+                if (!fu.isEmpty()) {
+                    List<ChatStarterPromptDtos.StarterPromptItem> items = new ArrayList<>();
+                    for (IntentFollowUpMetaSupport.IntentFollowUpPromptItem p : fu) {
+                        items.add(new ChatStarterPromptDtos.StarterPromptItem(p.id(), p.text(), p.source()));
+                    }
+                    intentFollowUpPrompts = List.copyOf(items);
+                }
             } catch (Exception ex) {
                 log.warn("[对话] 消息元数据解析失败：消息 {}", m.getId(), ex);
             }
@@ -2052,6 +2063,7 @@ public class ChatApplicationService {
                 knowledgeBaseReferences,
                 contentSummary,
                 intentTurnHit,
+                intentFollowUpPrompts,
                 attachments);
     }
 
@@ -2177,7 +2189,8 @@ public class ChatApplicationService {
                     root.has("intentFlowTicket")
                             && root.get("intentFlowTicket").isTextual()
                             && !root.get("intentFlowTicket").asText().isBlank();
-            if (!routed && !handled && !hasFlowTicket) {
+            boolean hasReminderMeta = root.has("activeReminderCount") && root.get("activeReminderCount").isNumber();
+            if (!routed && !handled && !hasFlowTicket && !hasReminderMeta) {
                 return null;
             }
             long intentId = root.has("intentId") ? root.get("intentId").asLong(0L) : 0L;
@@ -2214,10 +2227,19 @@ public class ChatApplicationService {
             if (root.has("intentFlowRoundSeq") && root.get("intentFlowRoundSeq").isIntegralNumber()) {
                 flowSeq = root.get("intentFlowRoundSeq").asInt();
             }
-            if (intentId <= 0 && code.isEmpty() && !hasFlowTicket) {
+            if (intentId <= 0 && code.isEmpty() && !hasFlowTicket && !hasReminderMeta) {
                 return null;
             }
-            return new ChatIntentTurnHitView(intentId, code, kwId, phrase, kk, src, flowTicket, flowEp, flowRound, flowSeq);
+            Integer reminderCount =
+                    root.has("activeReminderCount") && root.get("activeReminderCount").isNumber()
+                            ? root.get("activeReminderCount").asInt()
+                            : null;
+            String reminderOp =
+                    root.has("reminderOp") && root.get("reminderOp").isTextual()
+                            ? root.get("reminderOp").asText()
+                            : null;
+            return new ChatIntentTurnHitView(
+                    intentId, code, kwId, phrase, kk, src, flowTicket, flowEp, flowRound, flowSeq, reminderCount, reminderOp);
         } catch (Exception ex) {
             log.warn("[意图] 解析用户消息意图命中元数据失败：消息 {}", messageId, ex);
             return null;

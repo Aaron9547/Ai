@@ -44,13 +44,33 @@ public class McpRemoteSessionService {
             throws Exception {
         List<McpToolDescriptor> all = new ArrayList<>();
         for (McpServerRegistry server : activeServers(tenantId, serverIds)) {
-            try (McpSyncClient client = mcpRemoteClientFactory.open(tenantId, server, timeout)) {
-                client.initialize();
-                var tools = client.listTools();
-                all.addAll(mcpToolSchemaMapper.toDescriptors(server, tools.tools()));
-            }
+            all.addAll(listToolsOnServer(tenantId, server, timeout));
         }
         return all;
+    }
+
+    /** 仅连接指定名称的远程 MCP（用于意图单工具就绪检查，避免拉起租户其它 MCP）。 */
+    public List<McpToolDescriptor> listToolsForServerName(
+            long tenantId, String serverName, Duration timeout) throws Exception {
+        if (serverName == null || serverName.isBlank()) {
+            return List.of();
+        }
+        String want = serverName.trim();
+        for (McpServerRegistry server : activeServers(tenantId, null)) {
+            if (server.getName() != null && server.getName().equalsIgnoreCase(want)) {
+                return listToolsOnServer(tenantId, server, timeout);
+            }
+        }
+        return List.of();
+    }
+
+    private List<McpToolDescriptor> listToolsOnServer(
+            long tenantId, McpServerRegistry server, Duration timeout) throws Exception {
+        try (McpSyncClient client = mcpRemoteClientFactory.open(tenantId, server, timeout)) {
+            client.initialize();
+            var tools = client.listTools();
+            return mcpToolSchemaMapper.toDescriptors(server, tools.tools());
+        }
     }
 
     public McpToolInvokeResult invokeTool(

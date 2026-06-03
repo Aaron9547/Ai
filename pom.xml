@@ -49,6 +49,8 @@
         <archunit.version>1.4.2</archunit.version>
         <ip2region.version>2.7.0</ip2region.version>
         <rapidocr.version>0.0.7</rapidocr.version>
+        <!-- 与 tika-parsers-standard-package 2.9.2 对齐（其 PDF 解析基于 PDFBox 2.0.31）；勿升到 3.x 直至 Tika 3.x -->
+        <pdfbox.version>2.0.31</pdfbox.version>
     </properties>
 
     <dependencyManagement>
@@ -201,6 +203,26 @@
                 <groupId>org.apache.tika</groupId>
                 <artifactId>tika-parsers-standard-package</artifactId>
                 <version>2.9.2</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.pdfbox</groupId>
+                <artifactId>pdfbox</artifactId>
+                <version>${pdfbox.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.pdfbox</groupId>
+                <artifactId>fontbox</artifactId>
+                <version>${pdfbox.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.pdfbox</groupId>
+                <artifactId>xmpbox</artifactId>
+                <version>${pdfbox.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.pdfbox</groupId>
+                <artifactId>pdfbox-tools</artifactId>
+                <version>${pdfbox.version}</version>
             </dependency>
             <dependency>
                 <groupId>net.sourceforge.tess4j</groupId>

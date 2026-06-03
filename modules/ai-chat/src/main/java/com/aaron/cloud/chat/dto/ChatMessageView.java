@@ -35,5 +35,7 @@ public record ChatMessageView(
         String contentSummary,
         /** 本回合意图命中摘要（user/assistant meta 中 intentRouted / intentHandled 等）；无则 {@code null} */
         ChatIntentTurnHitView intentTurnHit,
+        /** 意图多轮追问 chip（助手 meta {@code intentFollowUpPrompts}）；无则 {@code null} 或空 */
+        List<ChatStarterPromptDtos.StarterPromptItem> intentFollowUpPrompts,
         /** 用户消息 meta 中 {@code attachmentIds} 解析并关联 {@code chat_attachment}；非用户消息或非附件轮次为空列表 */
         List<ChatAttachmentMessageView> attachments) {}

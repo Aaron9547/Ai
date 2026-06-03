@@ -2,6 +2,7 @@ package com.aaron.cloud.scheduled;
 
 import com.aaron.cloud.common.api.enums.scheduled.ScheduledRunTrigger;
 import com.aaron.cloud.common.api.enums.scheduled.TenantScheduledExecutorCode;
+import com.aaron.cloud.common.api.enums.scheduled.TenantScheduledTaskCategory;
 import com.aaron.cloud.common.context.TenantContextHolder;
 import com.aaron.cloud.common.scheduled.TenantScheduledRunRepository;
 import com.aaron.cloud.common.scheduled.TenantScheduledTaskRepository;
@@ -35,21 +36,36 @@ public class TenantScheduledTaskAdminApplicationService {
     private final TenantScheduledRunOrchestrator runOrchestrator;
 
     public ScheduledTaskMetaView meta() {
-        return new ScheduledTaskMetaView(TenantScheduledExecutorCode.metaList());
+        return new ScheduledTaskMetaView(
+                TenantScheduledTaskCategory.metaList(), TenantScheduledExecutorCode.metaList());
     }
 
-    public List<ScheduledTaskAdminView> list(String executorFilter) {
+    public List<ScheduledTaskAdminView> list(String executorFilter, String taskCategory) {
         long tenantId = TenantContextHolder.require().getTenantId();
         TenantScheduledExecutorCode code =
                 executorFilter != null && !executorFilter.isBlank()
                         ? TenantScheduledExecutorCode.fromCode(executorFilter)
                         : null;
-        return taskRepository.listByTenant(tenantId, code).stream().map(this::toView).toList();
+        TenantScheduledTaskCategory category =
+                taskCategory != null && !taskCategory.isBlank()
+                        ? TenantScheduledTaskCategory.fromCode(taskCategory)
+                        : null;
+        if (code != null && category != null && code.getTaskCategory() != category) {
+            return List.of();
+        }
+        TenantScheduledTaskCategory effectiveCategory = code != null ? null : category;
+        return taskRepository.listByTenant(tenantId, code, effectiveCategory).stream()
+                .map(this::toView)
+                .toList();
     }
 
     public ScheduledTaskAdminView create(CreateScheduledTaskRequest req) {
         long tenantId = TenantContextHolder.require().getTenantId();
         TenantScheduledExecutorCode executor = TenantScheduledExecutorCode.fromCode(req.getExecutorCode());
+        if (executor.getTaskCategory() == TenantScheduledTaskCategory.CHAT_USER_REMINDER) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "chat user reminder tasks are created via conversation intent only");
+        }
         validateCron(req.getCronExpression());
         var row = new TenantScheduledTask();
         row.setTenantId(tenantId);

@@ -1018,6 +1018,9 @@ export default {
     labelDesc: "说明",
     labelHandler: "处理器",
     labelParamsDivider: "处理器参数",
+    reminderParseToolLabel: "话术解析服务",
+    reminderParseBuiltin: "平台内置（推荐，无需修改）",
+    reminderParseToolHint: "将用户说的「提醒我…」解析为提醒时间与事项；一般保持默认即可。",
     switchOn: "开",
     switchOff: "关",
     metaSectionTitle: "状态与排序",
@@ -1820,7 +1823,17 @@ export default {
   },
   scheduledTasks: {
     title: "定时任务",
-    sub: "管理调度注册项（Cron 与执行器）。知识库爬站请在知识库配置站点；对话推荐热点请选执行器「对话推荐问题·每日热点」，问句池在「推荐问题与猜你想问」维护。",
+    sub: "按类型分 Tab 管理：租户级 Cron 注册与用户对话创建的邮件提醒。",
+    tabTenant: "租户定时任务",
+    tabChatReminder: "对话用户提醒",
+    subTenant:
+      "管理租户级调度注册（Cron 与执行器）。知识库爬站请在知识库配置站点；对话推荐热点请选「对话推荐问题·每日热点」，问句池在「推荐问题与猜你想问」维护。",
+    subChatReminder:
+      "由用户端「一句话办事」意图自动创建的邮件提醒注册项；可在此启停、改 Cron 或删除，不可手工新建。",
+    chatReminderHint:
+      "此类任务由对话意图创建。新建提醒请用户在对话中说「每天8点提醒我…」；须已配置「对话用户提醒」邮件场景与 SMTP 通道。",
+    emptyTenant: "暂无租户定时任务",
+    emptyChatReminder: "暂无对话用户提醒任务",
     refresh: "刷新",
     new: "新建任务",
     empty: "暂无定时任务",
