@@ -384,6 +384,47 @@ flowchart TB
 
 ## 变更记录
 
+### 0.1.356-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **知识星球周报收件人（ai-common / ai-chat / ai-identity）**：新增 **`KnowledgePlanetWeeklyRecipientGate`**；周一邮件与方案计算仅面向 **`sec_user_account.status=ACTIVE`** 且当前租户 **`sys_tenant_member.status=ACTIVE`** 的用户；禁用账号/成员跳过发信并标记 **`SKIPPED`**（如「账号已禁用」「成员已禁用」）。**无 DB migrate**。
+
+### 0.1.355-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **RAG LTR Job 环依赖治理（ai-common / ai-rag / ai-job）**：新增 **`JobTaskAsyncDispatcher`**（ai-common，MQ 优先 / 无 MQ 时进程内异步）；LTR 训练执行拆为 **`RagLtrTrainJobRunner`**（仅 ai-job 调度），**`RagLtrTrainingService`** 仅入队与查状态；**`RagApplicationService`** 复用同一派发器。**Maven 依赖仍为 ai-job → ai-rag，无反向依赖**。**无 DB migrate**。
+
+### 0.1.354-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **RAG 检索调优（ai-common / ai-chat / ai-rag / ai-job / ai-prompt / admin-web）**：新增租户键 **`RAG_RETRIEVAL_TUNING_JSON`** 与 **`RagRetrievalTuningRuntime`**（问句改写语义门控默认 80%、简单/复杂分流快通道、混合 LTR 开关）；对话链路 **`RagRetrievalQueryPlanner`**（LLM 改写 + embedding 语义校验 + **`RagRetrievalProfile`** 分流）；**`RagQueryBridgeService`** 简单问句强制 Milvus、复杂问句混合召回 + **LTR 线性重排**（builtin 权重 / **`file_object_meta`** 训练产物）；**`JobTaskType.RAG_LTR_TRAIN`** 弱监督训练任务；管理端 **`POST/GET /api/v1/admin/rag-ltr/*`** 与 Shell「RAG 检索调优」表单。**改写语义阈值与 `chat_vector_min_cosine_score` 独立**。提示词 **`rag_query_rewrite_*`** 已入 **`PromptTemplateBuiltinCatalog`**；**已建库须手工执行** **`db/mysql/migrate/migrate_0_1_258_17_rag_retrieval_tuning.sql`**。**无新表**。
+
+### 0.1.353-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **链路可观测可读化（ai-common / ai-gateway / ai-rag / admin-web）**：管理端 MCP / RAG 命中 / 质量报告列表与详情补齐 **会话标题、用户提问、知识库名、文档/分片标签**；筛选改为 **会话标题 / 提问关键词 / 知识库名称**；Trace ID 等内部标识移至详情区；**详情弹窗改为结构化可读展示**（召回/引用/忠实度分段、MCP 参数键值、RAG 批次摘要），不再展示原始 JSON。**无 DB migrate**。
+
+### 0.1.352-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **MCP 跟踪链（ai-common / ai-mcp / ai-chat / ai-gateway）**：新增 **`obs_mcp_trace_event`**；**`McpInvokePortAdapter`** 旁路异步落库；对话 MCP 多轮经 **`ObservabilityTraceContext`** 关联 **`orchestrationTraceId`**；管理端 **`GET /api/v1/admin/observability/mcp-traces`** 等。
+- **RAG 命中链路（ai-common / ai-chat / ai-gateway）**：新增 **`obs_rag_hit_event`**；对话 RAG 引用后异步写入命中事件，助手落库后回填 **`assistant_message_id`**；90 天 retention 分批清理。
+- **RAG 质量评测（ai-rag / admin-web）**：新增 **`rag_quality_assessment`**；管理端手动 POST 异步评测（召回命中率本地计算 + 引用准确率/忠实度 LLM judge）；结果持久化可重复查看；180 天 retention。
+- **管理端**：**`TraceObservabilityView`** 三 Tab（MCP / RAG 命中 / 质量报告）；**`OBSERVABILITY`** 菜单码；会话审计块「质量评测」；**zh-CN / en-US + 日夜模式** 完整 i18n。
+- **配置**：**`ai.observability.*`**、**`ai.rag.quality-assessment.*`**（**`application.yml`**）。
+- **已建库须手工执行**：**`db/mysql/migrate/migrate_0_1_258_16_obs_trace_and_rag_quality.sql`**；**`schema_v1.sql`** 已含三表；**`gw_api_endpoint_catalog_inserts.sql`** 已登记 observability / rag-quality API。
+
+### 0.1.351-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **一句话提醒·取消选号误触（ai-common / ai-chat / user-web / admin-web）**：取消编号续轮仅在上一轮助手 meta **`reminderCancelSelectionPending=true`**（展示编号清单后）才参与路由；序号解析忽略英文数字混排（如 `bgem3`）；新增 **`ChatIntentMatchSource.CANCEL_PHRASE` / `CANCEL_INDEX_REPLY`** 与 **`OneSentenceReminderRound`**（CREATE / CANCEL / CANCEL_SELECT）；用户端意图命中提示优先展示轮次说明；管理端关键词类型补 **CANCEL**。**无 DB migrate**。
+
 ### 0.1.350-SNAPSHOT
 
 > **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**

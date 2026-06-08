@@ -233,6 +233,7 @@
           <el-select v-model="kwForm.keywordKind" style="width: 100%">
             <el-option :label="kwKindLabel('TRIGGER')" value="TRIGGER" />
             <el-option :label="kwKindLabel('PLAN_CONTINUE')" value="PLAN_CONTINUE" />
+            <el-option :label="kwKindLabel('CANCEL')" value="CANCEL" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('views.intent.targetRoundLabel')">

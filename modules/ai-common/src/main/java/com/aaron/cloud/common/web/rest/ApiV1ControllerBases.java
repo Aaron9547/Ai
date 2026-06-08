@@ -64,6 +64,15 @@ public final class ApiV1ControllerBases {
     @RequestMapping(AbstractApiV1Controller.PREFIX + "/admin/chat")
     public static abstract class AdminChat extends AbstractApiV1Controller {}
 
+    @RequestMapping(AbstractApiV1Controller.PREFIX + "/admin/observability")
+    public static abstract class AdminObservability extends AbstractApiV1Controller {}
+
+    @RequestMapping(AbstractApiV1Controller.PREFIX + "/admin/rag-quality")
+    public static abstract class AdminRagQuality extends AbstractApiV1Controller {}
+
+    @RequestMapping(AbstractApiV1Controller.PREFIX + "/admin/rag-ltr")
+    public static abstract class AdminRagLtr extends AbstractApiV1Controller {}
+
     @RequestMapping(AbstractApiV1Controller.PREFIX + "/mcp/tools")
     public static abstract class McpTools extends AbstractApiV1Controller {}
 

@@ -173,6 +173,22 @@ ai:
       preview-max-chunks: ${AI_RAG_SITE_CRAWL_PREVIEW_MAX_CHUNKS:20}
       preview-max-body-bytes: ${AI_RAG_SITE_CRAWL_PREVIEW_MAX_BODY_BYTES:512000}
       preview-site-sample-urls: ${AI_RAG_SITE_CRAWL_PREVIEW_SITE_SAMPLE_URLS:3}
+    quality-assessment:
+      enabled: ${AI_RAG_QA_ENABLED:true}
+      judge-enabled: ${AI_RAG_QA_JUDGE_ENABLED:true}
+      retention-days: ${AI_RAG_QA_RETENTION_DAYS:180}
+    # RAG 检索调优进程默认；租户覆盖见 ten_runtime_setting.RAG_RETRIEVAL_TUNING_JSON
+    retrieval-tuning:
+      rewrite-enabled: ${AI_RAG_REWRITE_ENABLED:true}
+      rewrite-semantic-min-similarity: ${AI_RAG_REWRITE_SEMANTIC_MIN:0.80}
+      rewrite-context-max-chars: ${AI_RAG_REWRITE_CONTEXT_MAX_CHARS:2000}
+      simple-query-fast-path-enabled: ${AI_RAG_SIMPLE_FAST_PATH:true}
+      simple-query-max-chars: ${AI_RAG_SIMPLE_QUERY_MAX_CHARS:32}
+      hybrid-ltr-enabled: ${AI_RAG_HYBRID_LTR_ENABLED:true}
+      ltr-candidate-multiplier: ${AI_RAG_LTR_CANDIDATE_MULTIPLIER:5}
+      ltr-model-version: ${AI_RAG_LTR_MODEL_VERSION:builtin-v1}
+      top-k: ${AI_RAG_QA_TOP_K:10}
+      retention-cron: ${AI_RAG_QA_RETENTION_CRON:0 45 4 * * *}
   # jwt-local 签名密钥；须足够长，勿提交生产明文。email 为注册验证码进程级默认（租户可覆盖见 AUTH_REGISTER_VERIFICATION_JSON）。
   auth:
     jwt-local:
@@ -201,6 +217,11 @@ ai:
   # 管理端 llm_model API Key 等 AES-GCM 加密；须配置随机密钥。可选 ai.cors.fallback-when-no-enabled-rows：库表无启用 CORS 行时的兜底 Origin 列表。
   llm-model:
     api-key-encryption-secret: ${AI_LLM_MODEL_KEY_SECRET:}
+  observability:
+    enabled: ${AI_OBSERVABILITY_ENABLED:true}
+    retention-days: ${AI_OBSERVABILITY_RETENTION_DAYS:90}
+    purge-batch-size: ${AI_OBSERVABILITY_PURGE_BATCH:5000}
+    retention-cron: ${AI_OBSERVABILITY_RETENTION_CRON:0 15 4 * * *}
 
 management:
   endpoints:

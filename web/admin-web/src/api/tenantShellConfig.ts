@@ -41,6 +41,7 @@ export type TenantShellModelCallingRuntime = {
   /** RAG_RETRIEVAL_MODE；空=走 ai.rag.retrieval-mode */
   ragRetrievalMode: string;
   ragRetrievalModeEffective: string;
+  ragRetrievalTuningJson: string;
   processDefaultVectorDimension: number;
 };
 
@@ -109,6 +110,7 @@ export type TenantShellModelCallingPutBody = Pick<
   | "siteCrawlRuntimeJson"
   | "ragVectorDimension"
   | "ragRetrievalMode"
+  | "ragRetrievalTuningJson"
 >;
 
 export async function fetchSiteCrawlRuntimeTemplate(

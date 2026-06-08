@@ -29,6 +29,12 @@ public final class AdminHttpMenuRoutes {
         if (uri.startsWith("/api/v1/admin/access-logs")) {
             return AdminMenuCode.ACCESS_LOGS;
         }
+        if (uri.startsWith("/api/v1/admin/observability")) {
+            return AdminMenuCode.OBSERVABILITY;
+        }
+        if (uri.startsWith("/api/v1/admin/rag-quality")) {
+            return AdminMenuCode.OBSERVABILITY;
+        }
         if (uri.startsWith("/api/v1/admin/audit-events")) {
             return AdminMenuCode.AUDIT_EVENTS;
         }

@@ -266,6 +266,36 @@ public final class PromptTemplateBuiltinCatalog {
                 "zh-CN",
                 "（若与当前问题无关请忽略，并优先依据联网检索结果作答）");
         register(
+                "rag_query_rewrite_system",
+                PromptTemplateKind.SYSTEM,
+                PromptTemplateDomain.RAG,
+                "zh-CN",
+                """
+                你是知识库检索问句专家。结合对话近史与当前用户消息，输出一行用于向量/关键词检索的查询文本（不是回答用户）。
+
+                规则：
+                1. 只输出一行检索问句，≤ 80 个汉字；禁止解释、markdown、引号、编号、换行。
+                2. 保留主题词、专有名词、实体与时间意图；多主题用空格分隔，尽量不用完整礼貌问句。
+                3. 删除：对 AI 的称呼、礼貌用语、「在知识库/查文档/检索」等动作词。
+                4. 追问、指代须结合近史补全检索意图，禁止脱离上文改写成无关主题。
+                """);
+        register(
+                "rag_query_rewrite_user",
+                PromptTemplateKind.USER,
+                PromptTemplateDomain.RAG,
+                "zh-CN",
+                """
+                当前日期：${today}（${year} 年）
+
+                【对话近史】
+                ${conversation_history}
+
+                【当前用户消息】
+                ${user_message}
+
+                输出一行知识库检索问句（仅输出问句本身）：
+                """);
+        register(
                 "web_search_query_rewrite_system",
                 PromptTemplateKind.SYSTEM,
                 PromptTemplateDomain.WEB,

@@ -13,6 +13,7 @@ import com.aaron.cloud.common.task.LongRunningTaskProgressSupport;
 import com.aaron.cloud.common.context.TenantContextHolder;
 import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.rag.RagVectorInfrastructure;
+import com.aaron.cloud.rag.ltr.RagLtrTrainJobRunner;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +30,7 @@ public class JobTaskExecutionService implements JobTaskExecutionPort {
     private final RagIngestOrchestrationService ragIngestOrchestrationService;
     private final RagLocalSiteCrawlOrchestrationService ragLocalSiteCrawlOrchestrationService;
     private final RagVectorInfrastructure ragVectorInfrastructure;
+    private final RagLtrTrainJobRunner ragLtrTrainJobRunner;
 
     @Override
     public void processTask(long jobTaskId, long tenantId) {
@@ -73,6 +75,7 @@ public class JobTaskExecutionService implements JobTaskExecutionPort {
                         case RAG_URL_IMPORT -> handleRagUrlImport(task);
                         case RAG_FILE_IMPORT -> handleRagFileImport(task);
                         case RAG_SITE_CRAWL -> handleRagSiteCrawl(task, progress);
+                        case RAG_LTR_TRAIN -> ragLtrTrainJobRunner.runTrainingJob(tenantId, jobTaskId);
                     };
             jobTaskRepository.updateStatus(jobTaskId, tenantId, JobTaskStatus.SUCCEEDED, resultJson);
         } catch (Exception e) {

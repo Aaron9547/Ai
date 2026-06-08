@@ -21,7 +21,7 @@
           {{ message.completionTokens ?? "—" }}）
         </div>
         <div v-if="message.ragCitations?.length" class="msg-rag-wrap">
-          <div class="msg-rag-hdr">知识引用</div>
+          <div class="msg-rag-hdr">{{ t("views.chatDrawerAudit.ragHdr") }}</div>
           <div class="msg-rag-tags">
             <el-tag
               v-for="(c, ci) in message.ragCitations"
@@ -36,7 +36,7 @@
           </div>
         </div>
         <div v-if="message.webSearchReferences?.length" class="msg-web-wrap">
-          <div class="msg-web-hdr">联网参考</div>
+          <div class="msg-web-hdr">{{ t("views.chatDrawerAudit.webHdr") }}</div>
           <div class="msg-web-chips">
             <template v-for="(w, wi) in message.webSearchReferences" :key="wi">
               <a
@@ -58,6 +58,28 @@
                 {{ webRefLabel(w) }}
               </span>
             </template>
+          </div>
+        </div>
+        <div v-if="canAssessQuality" class="msg-qa-wrap">
+          <el-button
+            size="small"
+            type="primary"
+            plain
+            :loading="qaLoading"
+            @click.stop="runQualityAssessment"
+          >
+            {{ qaLoading ? t("views.ragQuality.assessRunning") : t("views.ragQuality.assessBtn") }}
+          </el-button>
+          <div v-if="qaResult && showQaScores" class="msg-qa-scores">
+            <span class="msg-qa-score">
+              {{ t("views.ragQuality.scoreRecall") }} {{ formatPct(qaResult.recallHitRate) }}
+            </span>
+            <span class="msg-qa-score">
+              {{ t("views.ragQuality.scoreCitation") }} {{ formatPct(qaResult.citationAccuracy) }}
+            </span>
+            <span class="msg-qa-score">
+              {{ t("views.ragQuality.scoreFaithfulness") }} {{ formatPct(qaResult.faithfulnessScore) }}
+            </span>
           </div>
         </div>
       </div>
@@ -107,7 +129,7 @@
         本条约 {{ message.totalTokens }} tokens（提示 {{ message.promptTokens ?? "—" }} / 生成 {{ message.completionTokens ?? "—" }}）
       </div>
       <div v-if="message.ragCitations?.length" class="msg-rag-wrap">
-        <div class="msg-rag-hdr">知识引用</div>
+        <div class="msg-rag-hdr">{{ t("views.chatDrawerAudit.ragHdr") }}</div>
         <div class="msg-rag-tags">
           <el-tag
             v-for="(c, ci) in message.ragCitations"
@@ -122,7 +144,7 @@
         </div>
       </div>
       <div v-if="message.webSearchReferences?.length" class="msg-web-wrap">
-        <div class="msg-web-hdr">联网参考</div>
+        <div class="msg-web-hdr">{{ t("views.chatDrawerAudit.webHdr") }}</div>
         <div class="msg-web-chips">
           <template v-for="(w, wi) in message.webSearchReferences" :key="wi">
             <a
@@ -146,30 +168,150 @@
           </template>
         </div>
       </div>
+      <div v-if="canAssessQuality" class="msg-qa-wrap">
+        <el-button
+          size="small"
+          type="primary"
+          plain
+          :loading="qaLoading"
+          @click.stop="runQualityAssessment"
+        >
+          {{ qaLoading ? t("views.ragQuality.assessRunning") : t("views.ragQuality.assessBtn") }}
+        </el-button>
+        <div v-if="qaResult && showQaScores" class="msg-qa-scores">
+          <span class="msg-qa-score">
+            {{ t("views.ragQuality.scoreRecall") }} {{ formatPct(qaResult.recallHitRate) }}
+          </span>
+          <span class="msg-qa-score">
+            {{ t("views.ragQuality.scoreCitation") }} {{ formatPct(qaResult.citationAccuracy) }}
+          </span>
+          <span class="msg-qa-score">
+            {{ t("views.ragQuality.scoreFaithfulness") }} {{ formatPct(qaResult.faithfulnessScore) }}
+          </span>
+        </div>
+      </div>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed, onUnmounted, ref } from "vue";
+import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
+import * as obsApi from "../../../api/observabilityAdmin";
+import type { RagQualityAssessmentView } from "../../../api/observabilityAdmin";
 import type { ChatMessageAdminRow, RagCitationAdmin, WebSearchRefAdmin } from "../../../api/chatAdmin";
 import MarkdownRichContent from "../../../components/markdown/MarkdownRichContent.vue";
 
-defineProps<{ message: ChatMessageAdminRow }>();
+const props = defineProps<{
+  message: ChatMessageAdminRow;
+  conversationId?: number | null;
+  userMessageId?: number | null;
+  userQueryText?: string | null;
+}>();
 const emit = defineEmits<{ (e: "open-rag-citation", c: RagCitationAdmin): void }>();
 const { t } = useI18n();
 
+const qaLoading = ref(false);
+const qaResult = ref<RagQualityAssessmentView | null>(null);
+let qaPollTimer: ReturnType<typeof setInterval> | null = null;
+
+const canAssessQuality = computed(
+  () =>
+    props.conversationId != null &&
+    props.userMessageId != null &&
+    (props.message.ragCitations?.length ?? 0) > 0,
+);
+
+const showQaScores = computed(
+  () => qaResult.value?.status === "SUCCEEDED" || qaResult.value?.status === "FAILED",
+);
+
+function formatPct(v: number | null | undefined): string {
+  if (v == null) return "—";
+  return `${(Number(v) * 100).toFixed(1)}%`;
+}
+
+function stopQaPoll() {
+  if (qaPollTimer != null) {
+    clearInterval(qaPollTimer);
+    qaPollTimer = null;
+  }
+}
+
+onUnmounted(() => {
+  stopQaPoll();
+});
+
+function pollQualityAssessment(runId: string) {
+  stopQaPoll();
+  qaPollTimer = setInterval(() => {
+    void (async () => {
+      try {
+        const view = await obsApi.fetchRagQualityAssessment(runId);
+        qaResult.value = view;
+        if (view.status === "SUCCEEDED" || view.status === "FAILED") {
+          stopQaPoll();
+          qaLoading.value = false;
+          if (view.status === "FAILED") {
+            ElMessage.error(t("views.ragQuality.assessFailed"));
+          } else {
+            ElMessage.success(t("views.ragQuality.assessDone"));
+          }
+        }
+      } catch {
+        /* ignore poll errors */
+      }
+    })();
+  }, 2000);
+}
+
+async function runQualityAssessment() {
+  if (!canAssessQuality.value || props.conversationId == null || props.userMessageId == null) {
+    return;
+  }
+  stopQaPoll();
+  qaLoading.value = true;
+  qaResult.value = null;
+  try {
+    const kbId = props.message.ragCitations?.[0]?.kbId;
+    const initial = await obsApi.submitRagQualityAssessment({
+      scope: "MESSAGE_TURN",
+      conversationId: props.conversationId,
+      userMessageId: props.userMessageId,
+      assistantMessageId: props.message.id,
+      kbId,
+      queryText: (props.userQueryText ?? "").trim() || undefined,
+      assistantAnswer: props.message.content ?? "",
+    });
+    qaResult.value = initial;
+    if (initial.status === "SUCCEEDED" || initial.status === "FAILED") {
+      qaLoading.value = false;
+      if (initial.status === "FAILED") {
+        ElMessage.error(t("views.ragQuality.assessFailed"));
+      } else {
+        ElMessage.success(t("views.ragQuality.assessDone"));
+      }
+      return;
+    }
+    pollQualityAssessment(initial.runId);
+  } catch {
+    qaLoading.value = false;
+    ElMessage.error(t("views.ragQuality.assessFailed"));
+  }
+}
+
 function ragCitationLabel(c: RagCitationAdmin): string {
-  const t = (c.documentTitle || "文档").trim();
-  const short = t.length > 18 ? `${t.slice(0, 18)}…` : t;
-  return `${short} · 第 ${c.chunkSeq + 1} 片`;
+  const title = (c.documentTitle || t("views.chatDrawerAudit.docFallback")).trim();
+  const short = title.length > 18 ? `${title.slice(0, 18)}…` : title;
+  return t("views.chatDrawerAudit.citationLabel", { title: short, n: c.chunkSeq + 1 });
 }
 
 function webRefLabel(w: WebSearchRefAdmin): string {
-  const t = (w.title || "").trim();
+  const title = (w.title || "").trim();
   const site = (w.siteName || "").trim();
-  if (t && site) return `${t} · ${site}`;
-  if (t) return t;
+  if (title && site) return `${title} · ${site}`;
+  if (title) return title;
   if (site) return site;
   const u = (w.url || "").trim();
   if (u) {
@@ -179,7 +321,7 @@ function webRefLabel(w: WebSearchRefAdmin): string {
       return u.length > 40 ? `${u.slice(0, 40)}…` : u;
     }
   }
-  return "链接";
+  return t("views.chatDrawerAudit.linkFallback");
 }
 </script>
 
@@ -543,6 +685,36 @@ function webRefLabel(w: WebSearchRefAdmin): string {
   margin-top: 6px;
   font-size: 11px;
   color: var(--el-text-color-secondary);
+}
+
+.msg-qa-wrap {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--el-border-color-lighter);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.msg-qa-scores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.msg-qa-score {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  border: 1px solid var(--el-color-primary-light-5);
+}
+
+:global(html.dark) .msg-qa-score {
+  color: var(--el-color-primary-light-3);
+  background: var(--el-fill-color);
+  border-color: var(--el-border-color);
 }
 
 :global(html.dark) .msg-version-label {

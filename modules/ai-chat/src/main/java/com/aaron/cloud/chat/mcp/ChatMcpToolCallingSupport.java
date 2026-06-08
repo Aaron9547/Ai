@@ -10,6 +10,7 @@ import com.aaron.cloud.common.api.enums.tenant.TenantRuntimeSettingKey;
 import com.aaron.cloud.common.api.ports.McpInvokePort;
 import com.aaron.cloud.common.api.ports.ModelInvokePort;
 import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService;
+import com.aaron.cloud.common.observability.ObservabilityTraceContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
@@ -51,6 +52,7 @@ public class ChatMcpToolCallingSupport {
         StringBuilder finalContent = new StringBuilder();
 
         for (int round = 0; round < maxRounds; round++) {
+            ObservabilityTraceContext.setLlmRound(round + 1);
             ModelStreamResult result = modelInvokePort.streamCompletionWithResult(modelReq, onContentToken);
             if (result.getContent() != null && !result.getContent().isBlank()) {
                 finalContent.setLength(0);

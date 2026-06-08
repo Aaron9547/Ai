@@ -29,6 +29,9 @@ public class AiRagProperties {
     /** 租户通用定时任务调度（扫描 ten_scheduled_task）。 */
     private final ScheduledTasks scheduledTasks = new ScheduledTasks();
 
+    /** 进程默认 RAG 检索调优；租户 {@code RAG_RETRIEVAL_TUNING_JSON} 覆盖同名字段。 */
+    private final RetrievalTuning retrievalTuning = new RetrievalTuning();
+
     public RagRetrievalMode resolvedRetrievalMode() {
         return RagRetrievalMode.fromYaml(retrievalMode);
     }
@@ -109,5 +112,19 @@ public class AiRagProperties {
 
         /** 单条注册项/站点入队锁 TTL（秒）。 */
         private long taskLockTtlSeconds = 300L;
+    }
+
+    /** 与 {@link com.aaron.cloud.common.tenant.runtime.RagRetrievalTuningRuntime} 字段同形（yml 兜底）。 */
+    @Data
+    public static class RetrievalTuning {
+        private boolean rewriteEnabled = true;
+        private double rewriteSemanticMinSimilarity = 0.80d;
+        private String rewriteModelId = "";
+        private int rewriteContextMaxChars = 2000;
+        private boolean simpleQueryFastPathEnabled = true;
+        private int simpleQueryMaxChars = 32;
+        private boolean hybridLtrEnabled = true;
+        private int ltrCandidateMultiplier = 5;
+        private String ltrModelVersion = "builtin-v1";
     }
 }

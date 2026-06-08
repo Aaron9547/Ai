@@ -6,22 +6,17 @@ import com.aaron.cloud.common.api.enums.job.JobTaskType;
 import com.aaron.cloud.common.api.enums.rag.RagChunkStrategy;
 import com.aaron.cloud.common.api.enums.rag.RagWebCrawlSyncMode;
 import com.aaron.cloud.common.context.TenantContextHolder;
+import com.aaron.cloud.common.jobmeta.JobTaskAsyncDispatcher;
 import com.aaron.cloud.common.jobmeta.JobTaskRepository;
 import com.aaron.cloud.common.jobmeta.entity.JobTask;
 import com.aaron.cloud.common.rag.RagKbDocumentCategoryRepository;
 import com.aaron.cloud.common.rag.RagKnowledgeBaseRepository;
 import com.aaron.cloud.common.rag.entity.RagKbDocumentCategory;
 import com.aaron.cloud.common.rag.entity.RagKnowledgeBase;
-import com.aaron.cloud.common.api.dto.job.JobDispatchMessage;
-import com.aaron.cloud.common.api.ports.JobPublisherPort;
-import com.aaron.cloud.common.api.ports.JobTaskExecutionPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.MDC;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -32,8 +27,7 @@ public class RagApplicationService {
     private final RagKbDocumentCategoryRepository ragKbDocumentCategoryRepository;
     private final JobTaskRepository jobTaskRepository;
     private final ObjectMapper objectMapper;
-    private final ObjectProvider<JobPublisherPort> jobPublisher;
-    private final JobTaskExecutionPort jobTaskExecutionPort;
+    private final JobTaskAsyncDispatcher jobTaskAsyncDispatcher;
     private final RagKbVectorModelGuard ragKbVectorModelGuard;
 
     public RagKnowledgeBase createKb(String name) {
@@ -265,26 +259,7 @@ public class RagApplicationService {
         return task.getId();
     }
 
-    /**
-     * 任务入队后异步执行：优先 RocketMQ；未启用 MQ 时走后台线程，避免 HTTP 请求同步跑完整站爬取。
-     */
     private void dispatchJobTask(JobTask task) {
-        dispatchJobTask(task.getId(), task.getTenantId(), task.getDeviceId(), task.getUserId());
-    }
-
-    private void dispatchJobTask(long jobTaskId, long tenantId, String deviceId, Long userId) {
-        JobPublisherPort pub = jobPublisher.getIfAvailable();
-        if (pub != null) {
-            pub.publish(
-                    JobDispatchMessage.builder()
-                            .traceId(MDC.get("traceId"))
-                            .tenantId(tenantId)
-                            .deviceId(deviceId)
-                            .userId(userId)
-                            .jobTaskId(jobTaskId)
-                            .build());
-            return;
-        }
-        CompletableFuture.runAsync(() -> jobTaskExecutionPort.processTask(jobTaskId, tenantId));
+        jobTaskAsyncDispatcher.dispatch(task);
     }
 }

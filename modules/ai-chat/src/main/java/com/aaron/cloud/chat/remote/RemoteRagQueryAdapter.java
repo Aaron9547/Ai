@@ -3,8 +3,8 @@ package com.aaron.cloud.chat.remote;
 import com.aaron.cloud.common.api.dto.RagCitationHit;
 import com.aaron.cloud.common.api.dto.rag.RagQueryCitationHitsRequest;
 import com.aaron.cloud.common.api.dto.rag.RagQuerySnippetsRequest;
+import com.aaron.cloud.common.api.enums.rag.RagRetrievalProfile;
 import com.aaron.cloud.common.api.ports.RagQueryPort;
-import com.aaron.cloud.chat.remote.RemoteRagQueryClient;
 import feign.FeignException;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -21,7 +21,8 @@ public class RemoteRagQueryAdapter implements RagQueryPort {
     private final RemoteRagQueryClient remoteRagQueryClient;
 
     @Override
-    public List<String> searchSnippets(Long tenantId, Long kbId, String query, int topK) {
+    public List<String> searchSnippets(
+            Long tenantId, Long kbId, String query, int topK, RagRetrievalProfile profile) {
         return invokeSnippets(
                 RagQuerySnippetsRequest.builder()
                         .tenantId(tenantId)
@@ -29,11 +30,13 @@ public class RemoteRagQueryAdapter implements RagQueryPort {
                         .query(query)
                         .topK(topK)
                         .acrossKnowledgeBases(false)
+                        .profile(profile)
                         .build());
     }
 
     @Override
-    public List<RagCitationHit> searchCitationHits(Long tenantId, Long kbId, String query, int topK) {
+    public List<RagCitationHit> searchCitationHits(
+            Long tenantId, Long kbId, String query, int topK, RagRetrievalProfile profile) {
         return invokeCitationHits(
                 RagQueryCitationHitsRequest.builder()
                         .tenantId(tenantId)
@@ -41,12 +44,13 @@ public class RemoteRagQueryAdapter implements RagQueryPort {
                         .query(query)
                         .topK(topK)
                         .acrossKnowledgeBases(false)
+                        .profile(profile)
                         .build());
     }
 
     @Override
     public List<String> searchSnippetsAcrossKnowledgeBases(
-            Long tenantId, List<Long> kbIds, String query, int topK) {
+            Long tenantId, List<Long> kbIds, String query, int topK, RagRetrievalProfile profile) {
         return invokeSnippets(
                 RagQuerySnippetsRequest.builder()
                         .tenantId(tenantId)
@@ -54,12 +58,13 @@ public class RemoteRagQueryAdapter implements RagQueryPort {
                         .query(query)
                         .topK(topK)
                         .acrossKnowledgeBases(true)
+                        .profile(profile)
                         .build());
     }
 
     @Override
     public List<RagCitationHit> searchCitationHitsAcrossKnowledgeBases(
-            Long tenantId, List<Long> kbIds, String query, int topK) {
+            Long tenantId, List<Long> kbIds, String query, int topK, RagRetrievalProfile profile) {
         return invokeCitationHits(
                 RagQueryCitationHitsRequest.builder()
                         .tenantId(tenantId)
@@ -67,6 +72,7 @@ public class RemoteRagQueryAdapter implements RagQueryPort {
                         .query(query)
                         .topK(topK)
                         .acrossKnowledgeBases(true)
+                        .profile(profile)
                         .build());
     }
 

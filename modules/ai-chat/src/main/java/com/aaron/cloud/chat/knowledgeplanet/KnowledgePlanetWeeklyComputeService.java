@@ -5,6 +5,7 @@ import com.aaron.cloud.common.api.ports.PromptTemplateResolvePort;
 import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.knowledgeplanet.KnowledgePlanetSubjectSupport;
 import com.aaron.cloud.common.knowledgeplanet.KnowledgePlanetTenantRuntime;
+import com.aaron.cloud.common.knowledgeplanet.KnowledgePlanetWeeklyRecipientGate;
 import com.aaron.cloud.common.knowledgeplanet.KnowledgeWeeklyPlan;
 import com.aaron.cloud.common.knowledgeplanet.KnowledgeWeeklyProgressLedger;
 import com.aaron.cloud.common.knowledgeplanet.TenUserKnowledgeNodeRepository;
@@ -48,6 +49,7 @@ public class KnowledgePlanetWeeklyComputeService {
     private final KnowledgePlanetWeeklyBookSearchSupport bookSearchSupport;
     private final KnowledgePlanetWeeklyBookEnrichSupport bookEnrichSupport;
     private final KnowledgePlanetLearnerProfileService learnerProfileService;
+    private final KnowledgePlanetWeeklyRecipientGate recipientGate;
 
     public WeeklyComputeResult computeForTenant(long tenantId) {
         if (!planetRuntime.isEnabled(tenantId)) {
@@ -69,6 +71,10 @@ public class KnowledgePlanetWeeklyComputeService {
         int skipped = 0;
         int failed = 0;
         for (Long userId : userIds) {
+            if (!recipientGate.isEligible(tenantId, userId)) {
+                skipped++;
+                continue;
+            }
             try {
                 ComputeUserResult r = computeForUser(tenantId, userId, weekStart, true);
                 if (r.outcome() == ComputeOutcome.COMPUTED) {
@@ -95,6 +101,9 @@ public class KnowledgePlanetWeeklyComputeService {
         LocalDate ws = weekStart != null ? weekStart : mondayOfCurrentWeek();
         if (!planetRuntime.isEnabled(tenantId)) {
             return new ComputeUserResult(ComputeOutcome.SKIPPED, "租户未启用知识星球", ws, null, false);
+        }
+        if (!recipientGate.isEligible(tenantId, userId)) {
+            return new ComputeUserResult(ComputeOutcome.SKIPPED, "用户未启用", ws, null, false);
         }
         Optional<SysLlmModel> model = llmSupport.resolveLanguageModel(tenantId, null);
         if (model.isEmpty()) {

@@ -12,7 +12,9 @@ public enum JobTaskType {
     /** 文件入知识库：解析、分块、向量化（流水线占位，与 file 域对接后扩展）。 */
     RAG_FILE_IMPORT("RAG_FILE_IMPORT"),
     /** 站点本地规则一条龙网页爬取（发现链接 + 批量入库）。 */
-    RAG_SITE_CRAWL("RAG_SITE_CRAWL");
+    RAG_SITE_CRAWL("RAG_SITE_CRAWL"),
+    /** 租户级 RAG 混合检索 LTR 模型离线训练（产物存 file_object_meta）。 */
+    RAG_LTR_TRAIN("RAG_LTR_TRAIN");
 
     @EnumValue private final String code;
 }

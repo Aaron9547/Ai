@@ -57,6 +57,24 @@ public class RagKnowledgeBaseRepository {
         return mapper.updateById(row);
     }
 
+    /** 管理端：按名称模糊匹配知识库 id。 */
+    public List<Long> listIdsByNameLike(Long filterTenantIdOrNull, String keyword, int limit) {
+        if (keyword == null || keyword.isBlank()) {
+            return List.of();
+        }
+        var q =
+                Wrappers.<RagKnowledgeBase>lambdaQuery()
+                        .select(RagKnowledgeBase::getId)
+                        .like(RagKnowledgeBase::getName, keyword.trim());
+        if (filterTenantIdOrNull != null) {
+            q.eq(RagKnowledgeBase::getTenantId, filterTenantIdOrNull);
+        }
+        return mapper.selectList(q.orderByDesc(RagKnowledgeBase::getUpdatedAt).last("LIMIT " + Math.max(1, Math.min(limit, 200))))
+                .stream()
+                .map(RagKnowledgeBase::getId)
+                .toList();
+    }
+
     public int deleteByIdAndTenant(long id, long tenantId) {
         return mapper.delete(
                 Wrappers.<RagKnowledgeBase>lambdaQuery()

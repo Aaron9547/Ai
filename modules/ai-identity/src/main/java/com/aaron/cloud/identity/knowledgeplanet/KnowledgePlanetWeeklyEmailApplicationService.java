@@ -7,6 +7,7 @@ import com.aaron.cloud.common.api.enums.message.MessageSceneCode;
 import com.aaron.cloud.common.api.enums.profile.KnowledgeWeeklyInsightStatus;
 import com.aaron.cloud.common.api.ports.MessageSendPort;
 import com.aaron.cloud.common.knowledgeplanet.KnowledgePlanetTenantRuntime;
+import com.aaron.cloud.common.knowledgeplanet.KnowledgePlanetWeeklyRecipientGate;
 import com.aaron.cloud.common.knowledgeplanet.KnowledgeWeeklyPlan;
 import com.aaron.cloud.common.knowledgeplanet.TenUserWeeklyInsightRepository;
 import com.aaron.cloud.common.knowledgeplanet.entity.TenUserWeeklyInsight;
@@ -34,6 +35,7 @@ public class KnowledgePlanetWeeklyEmailApplicationService {
     private final MessageSendPort messageSendPort;
     private final TenUserWeeklyInsightRepository insightRepository;
     private final SecUserAccountRepository userAccountRepository;
+    private final KnowledgePlanetWeeklyRecipientGate recipientGate;
     private final SysTenantRepository tenantRepository;
     private final ObjectMapper objectMapper;
 
@@ -57,6 +59,12 @@ public class KnowledgePlanetWeeklyEmailApplicationService {
 
         for (TenUserWeeklyInsight ins : ready) {
             try {
+                var ineligible = recipientGate.skipReason(tenantId, ins.getUserId());
+                if (ineligible.isPresent()) {
+                    markSkipped(ins, ineligible.get());
+                    skipped++;
+                    continue;
+                }
                 SecUserAccount user =
                         userAccountRepository
                                 .findById(ins.getUserId())
@@ -184,6 +192,10 @@ public class KnowledgePlanetWeeklyEmailApplicationService {
         SecUserAccount user = userAccountRepository.findById(userId).orElse(null);
         if (user == null || user.getEmail() == null || user.getEmail().isBlank()) {
             return new SingleWeeklyEmailResult("SKIPPED", "用户未绑定邮箱", null);
+        }
+        var ineligible = recipientGate.skipReason(tenantId, userId);
+        if (ineligible.isPresent()) {
+            return new SingleWeeklyEmailResult("SKIPPED", ineligible.get(), null);
         }
 
         String tenantName = tenantRepository.findById(tenantId).map(t -> t.getName()).orElse("AI");

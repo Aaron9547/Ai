@@ -492,3 +492,54 @@ export function serializeWebSearchCacheJson(form: WebSearchCacheForm): string {
     ),
   });
 }
+
+export type RagRetrievalTuningForm = {
+  rewriteEnabled: boolean;
+  rewriteSemanticMinSimilarity: number;
+  rewriteModelId: string;
+  rewriteContextMaxChars: number;
+  simpleQueryFastPathEnabled: boolean;
+  simpleQueryMaxChars: number;
+  hybridLtrEnabled: boolean;
+  ltrCandidateMultiplier: number;
+  ltrModelVersion: string;
+};
+
+export const RAG_RETRIEVAL_TUNING_DEFAULT: RagRetrievalTuningForm = {
+  rewriteEnabled: true,
+  rewriteSemanticMinSimilarity: 0.8,
+  rewriteModelId: "",
+  rewriteContextMaxChars: 2000,
+  simpleQueryFastPathEnabled: true,
+  simpleQueryMaxChars: 32,
+  hybridLtrEnabled: true,
+  ltrCandidateMultiplier: 5,
+  ltrModelVersion: "builtin-v1",
+};
+
+export function parseRagRetrievalTuningJson(raw: string): RagRetrievalTuningForm {
+  const d = { ...RAG_RETRIEVAL_TUNING_DEFAULT };
+  try {
+    const o = JSON.parse(raw || "{}");
+    if (!isRecord(o)) return d;
+    return {
+      rewriteEnabled: bool(o.rewriteEnabled, d.rewriteEnabled),
+      rewriteSemanticMinSimilarity: num(o.rewriteSemanticMinSimilarity, d.rewriteSemanticMinSimilarity),
+      rewriteModelId: typeof o.rewriteModelId === "string" ? o.rewriteModelId : d.rewriteModelId,
+      rewriteContextMaxChars: num(o.rewriteContextMaxChars, d.rewriteContextMaxChars),
+      simpleQueryFastPathEnabled: bool(o.simpleQueryFastPathEnabled, d.simpleQueryFastPathEnabled),
+      simpleQueryMaxChars: num(o.simpleQueryMaxChars, d.simpleQueryMaxChars),
+      hybridLtrEnabled: bool(o.hybridLtrEnabled, d.hybridLtrEnabled),
+      ltrCandidateMultiplier: num(o.ltrCandidateMultiplier, d.ltrCandidateMultiplier),
+      ltrModelVersion: typeof o.ltrModelVersion === "string" ? o.ltrModelVersion : d.ltrModelVersion,
+    };
+  } catch {
+    return d;
+  }
+}
+
+export function serializeRagRetrievalTuningJson(form: RagRetrievalTuningForm): string {
+  const payload: Record<string, unknown> = { ...form };
+  if (!form.rewriteModelId.trim()) delete payload.rewriteModelId;
+  return JSON.stringify(payload);
+}

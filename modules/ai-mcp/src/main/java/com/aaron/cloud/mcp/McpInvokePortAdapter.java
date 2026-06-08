@@ -4,6 +4,8 @@ import com.aaron.cloud.common.api.dto.mcp.McpServerProbeResult;
 import com.aaron.cloud.common.api.dto.mcp.McpToolDescriptor;
 import com.aaron.cloud.common.api.dto.mcp.McpToolInvokeResult;
 import com.aaron.cloud.common.api.ports.McpInvokePort;
+import com.aaron.cloud.common.observability.ObservabilityEventSink;
+import com.aaron.cloud.common.observability.ObservabilityTraceContext;
 import com.aaron.cloud.mcp.builtin.BuiltinMcpToolRegistry;
 import com.aaron.cloud.mcp.remote.McpQualifiedToolName;
 import com.aaron.cloud.mcp.remote.McpRemoteSessionService;
@@ -21,6 +23,7 @@ public class McpInvokePortAdapter implements McpInvokePort {
     private final McpRemoteSessionService mcpRemoteSessionService;
     private final BuiltinMcpToolRegistry builtinMcpToolRegistry;
     private final McpInvokeTimeouts mcpInvokeTimeouts;
+    private final ObservabilityEventSink observabilityEventSink;
 
     @Override
     public List<McpToolDescriptor> listActiveTools(long tenantId, List<Long> serverIds) {
@@ -61,12 +64,48 @@ public class McpInvokePortAdapter implements McpInvokePort {
     @Override
     public McpToolInvokeResult invokeTool(long tenantId, String qualifiedName, JsonNode arguments)
             throws Exception {
-        Optional<McpToolInvokeResult> builtin = builtinMcpToolRegistry.tryInvoke(qualifiedName, arguments);
-        if (builtin.isPresent()) {
-            return builtin.get();
+        long t0 = System.nanoTime();
+        McpToolInvokeResult result = null;
+        boolean success = false;
+        String errorCode = null;
+        Long serverId = null;
+        try {
+            Optional<McpToolInvokeResult> builtin = builtinMcpToolRegistry.tryInvoke(qualifiedName, arguments);
+            if (builtin.isPresent()) {
+                result = builtin.get();
+                success = result != null && !result.isError();
+                if (!success) {
+                    errorCode = "BUILTIN_ERROR";
+                }
+                return result;
+            }
+            result =
+                    mcpRemoteSessionService.invokeTool(
+                            tenantId, qualifiedName, arguments, mcpInvokeTimeouts.toolTimeout(tenantId));
+            success = result != null && !result.isError();
+            if (!success) {
+                errorCode = "REMOTE_ERROR";
+            }
+            if (result != null) {
+                serverId = result.getServerId();
+            }
+            return result;
+        } catch (Exception e) {
+            errorCode = e.getClass().getSimpleName();
+            throw e;
+        } finally {
+            long elapsedMs = (System.nanoTime() - t0) / 1_000_000;
+            observabilityEventSink.recordMcpTrace(
+                    tenantId,
+                    qualifiedName,
+                    serverId,
+                    arguments,
+                    result,
+                    success,
+                    errorCode,
+                    elapsedMs,
+                    ObservabilityTraceContext.current());
         }
-        return mcpRemoteSessionService.invokeTool(
-                tenantId, qualifiedName, arguments, mcpInvokeTimeouts.toolTimeout(tenantId));
     }
 
     @Override

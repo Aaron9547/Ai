@@ -2,6 +2,7 @@ package com.aaron.cloud.chat.reminder;
 
 import com.aaron.cloud.chat.dto.ChatSendPayload;
 import com.aaron.cloud.chat.intent.IntentKeywordMatchHit;
+import com.aaron.cloud.chat.intent.ReminderCancelSelectionGate;
 import com.aaron.cloud.chat.intent.mcp.IntentMcpSingleInvoke;
 import com.aaron.cloud.chat.intent.mcp.IntentMcpToolBinding;
 import com.aaron.cloud.chat.intent.reminder.ReminderHandlerParams;
@@ -398,6 +399,12 @@ public class ChatUserReminderOrchestrator {
                 }
                 n.put("activeReminderCount", active.size());
                 n.put("reminderOp", op);
+                n.put(
+                        ReminderCancelSelectionGate.META_CANCEL_SELECTION_PENDING,
+                        "NOOP".equals(op));
+                if (hit.intentFlowRound() != null) {
+                    n.put("intentFlowRound", hit.intentFlowRound());
+                }
                 ArrayNode preview = n.putArray("reminderPreview");
                 int limit = Math.min(3, active.size());
                 for (int i = 0; i < limit; i++) {

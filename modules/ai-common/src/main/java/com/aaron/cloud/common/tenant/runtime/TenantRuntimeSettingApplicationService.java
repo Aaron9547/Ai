@@ -627,6 +627,7 @@ public class TenantRuntimeSettingApplicationService {
         if (key == TenantRuntimeSettingKey.CHAT_PROMPT_LIMITS_JSON
                 || key == TenantRuntimeSettingKey.MEMORY_POLICY_JSON
                 || key == TenantRuntimeSettingKey.CHAT_INPUT_GUARD_JSON
+                || key == TenantRuntimeSettingKey.RAG_RETRIEVAL_TUNING_JSON
                 || key == TenantRuntimeSettingKey.OUTBOUND_RESILIENCE_JSON) {
             if (valueText == null || valueText.isBlank()) {
                 return "{}";

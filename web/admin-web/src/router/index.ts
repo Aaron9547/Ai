@@ -76,6 +76,10 @@ const router = createRouter({
           component: () => import("../views/audit/AuditEventsView.vue"),
         },
         {
+          path: "audit/observability",
+          component: () => import("../views/audit/TraceObservabilityView.vue"),
+        },
+        {
           path: "billing/metering",
           component: () => import("../views/billing/MeteringView.vue"),
         },

@@ -191,6 +191,16 @@ public enum TenantRuntimeSettingKey {
             "",
             false),
     /**
+     * RAG 检索调优（JSON 对象，键见 {@link com.aaron.cloud.common.tenant.runtime.RagRetrievalTuningRuntime}：问句改写语义门控、
+     * 简单/复杂分流、混合 LTR 与 {@code activeLtrFileObjectId} 指针）；空对象表示代码默认。
+     */
+    RAG_RETRIEVAL_TUNING_JSON(
+            "RAG_RETRIEVAL_TUNING_JSON",
+            "RAG 检索调优（JSON）",
+            SettingValueKind.STRING,
+            "{}",
+            false),
+    /**
      * 知识库站点爬取快捷档位：{@code CONSERVATIVE} / {@code BALANCED}（默认）/ {@code AGGRESSIVE} / {@code CUSTOM}；
      * 仅在租户 Shell「外观与模型调用」配置。
      */
@@ -330,6 +340,7 @@ public enum TenantRuntimeSettingKey {
             case OUTBOUND_RESILIENCE_JSON,
                     RAG_VECTOR_DIMENSION,
                     RAG_RETRIEVAL_MODE,
+                    RAG_RETRIEVAL_TUNING_JSON,
                     MEMORY_EMBEDDING_VECTOR_MODEL_ID,
                     WEB_SEARCH_GROUNDING_MODEL_ID,
                     WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON,

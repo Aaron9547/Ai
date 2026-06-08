@@ -37,7 +37,7 @@ export interface IntentHandlerKindOption {
   description: string;
 }
 export type ToggleState = "OFF" | "ON";
-export type ChatIntentKeywordKind = "TRIGGER" | "PLAN_CONTINUE";
+export type ChatIntentKeywordKind = "TRIGGER" | "PLAN_CONTINUE" | "CANCEL";
 
 /** 管理端意图列表项（仅当前 JWT 工作区租户，响应不含 tenantId） */
 export interface IntentRow {

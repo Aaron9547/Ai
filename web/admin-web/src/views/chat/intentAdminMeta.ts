@@ -3,6 +3,7 @@ import type { IntentHandlerConfigFieldMeta } from "@/api/chatIntent";
 export function keywordKindLabel(kind: string): string {
   if (kind === "TRIGGER") return "首轮 / 单轮进入";
   if (kind === "PLAN_CONTINUE") return "流程续接（多轮）";
+  if (kind === "CANCEL") return "取消 / 关闭（提醒类）";
   return String(kind);
 }
 

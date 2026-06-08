@@ -15,7 +15,8 @@ public enum LlmUsageScene {
     MEMORY_ABSTRACT("MEMORY_ABSTRACT", "记忆摘要"),
     CONVERSATION_DIGEST("CONVERSATION_DIGEST", "对话摘要"),
     LLM_FOLLOW_UP("LLM_FOLLOW_UP", "猜你想问"),
-    INTENT_REMINDER_PARSE("INTENT_REMINDER_PARSE", "一句话办事·话术解析");
+    INTENT_REMINDER_PARSE("INTENT_REMINDER_PARSE", "一句话办事·话术解析"),
+    RAG_QUERY_REWRITE("RAG_QUERY_REWRITE", "RAG 问句改写");
 
     private final String code;
     private final String label;

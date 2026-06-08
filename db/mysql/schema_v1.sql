@@ -497,6 +497,90 @@ CREATE TABLE IF NOT EXISTS sys_audit_event (
   KEY idx_audit_tenant_time (tenant_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='业务审计事件 append-only';
 
+CREATE TABLE IF NOT EXISTS obs_mcp_trace_event (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  trace_id VARCHAR(64) NOT NULL COMMENT '单次 MCP 调用 traceId',
+  orchestration_trace_id VARCHAR(64) NULL COMMENT '编排层 traceId',
+  http_trace_id VARCHAR(64) NULL COMMENT 'HTTP/MDC traceId',
+  tenant_id BIGINT NOT NULL COMMENT '租户 ID',
+  user_id BIGINT NULL COMMENT '用户 ID',
+  conversation_id BIGINT NULL COMMENT '会话 ID',
+  conversation_public_id VARCHAR(64) NULL COMMENT '会话 public_id',
+  source_scene VARCHAR(32) NOT NULL COMMENT 'McpTraceSourceScene',
+  llm_round INT NULL COMMENT 'MCP 多轮序号',
+  qualified_tool_name VARCHAR(256) NOT NULL COMMENT '限定工具名',
+  server_id BIGINT NULL COMMENT 'MCP 服务 ID',
+  success TINYINT(1) NOT NULL COMMENT '是否成功',
+  error_code VARCHAR(128) NULL COMMENT '错误码',
+  latency_ms BIGINT NOT NULL COMMENT '耗时毫秒',
+  arguments_json TEXT NULL COMMENT '参数摘要',
+  result_json TEXT NULL COMMENT '结果摘要',
+  created_at DATETIME(3) NOT NULL COMMENT '创建时间 UTC',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_obs_mcp_trace_id (trace_id),
+  KEY idx_obs_mcp_tenant_time (tenant_id, created_at),
+  KEY idx_obs_mcp_conv_time (conversation_id, created_at),
+  KEY idx_obs_mcp_orch (orchestration_trace_id),
+  KEY idx_obs_mcp_http (http_trace_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='MCP 工具调用跟踪事件';
+
+CREATE TABLE IF NOT EXISTS obs_rag_hit_event (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  hit_trace_id VARCHAR(64) NOT NULL COMMENT '同批检索 traceId',
+  http_trace_id VARCHAR(64) NULL COMMENT 'HTTP traceId',
+  tenant_id BIGINT NOT NULL COMMENT '租户 ID',
+  user_id BIGINT NULL COMMENT '用户 ID',
+  conversation_id BIGINT NULL COMMENT '会话 ID',
+  user_message_id BIGINT NULL COMMENT '用户消息 ID',
+  assistant_message_id BIGINT NULL COMMENT '助手消息 ID',
+  kb_id BIGINT NOT NULL COMMENT '知识库 ID',
+  document_id BIGINT NOT NULL COMMENT '文档 ID',
+  chunk_id BIGINT NOT NULL COMMENT '分片 ID',
+  chunk_seq INT NULL COMMENT '分片序号',
+  retrieval_mode VARCHAR(32) NULL COMMENT 'RagRetrievalMode',
+  hit_source VARCHAR(16) NULL COMMENT 'RagRetrievalHitSource',
+  vector_similarity DECIMAL(8,6) NULL COMMENT '向量相似度',
+  keyword_score DECIMAL(8,6) NULL COMMENT 'ES BM25',
+  query_text VARCHAR(1024) NULL COMMENT '检索 query',
+  rank_in_batch INT NOT NULL COMMENT '同批排名',
+  created_at DATETIME(3) NOT NULL COMMENT '创建时间 UTC',
+  PRIMARY KEY (id),
+  KEY idx_obs_rag_tenant_time (tenant_id, created_at),
+  KEY idx_obs_rag_conv_time (conversation_id, created_at),
+  KEY idx_obs_rag_chunk_time (chunk_id, created_at),
+  KEY idx_obs_rag_kb_time (kb_id, created_at),
+  KEY idx_obs_rag_hit_trace (hit_trace_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='RAG 命中链路事件';
+
+CREATE TABLE IF NOT EXISTS rag_quality_assessment (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  run_id VARCHAR(64) NOT NULL COMMENT '对外 runId',
+  tenant_id BIGINT NOT NULL COMMENT '租户 ID',
+  scope VARCHAR(32) NOT NULL COMMENT 'RagQualityAssessmentScope',
+  status VARCHAR(16) NOT NULL COMMENT 'EvalRunStatus',
+  conversation_id BIGINT NULL COMMENT '会话 ID',
+  user_message_id BIGINT NULL COMMENT '用户消息 ID',
+  assistant_message_id BIGINT NULL COMMENT '助手消息 ID',
+  kb_id BIGINT NULL COMMENT '知识库 ID',
+  chunk_id BIGINT NULL COMMENT '分片 ID',
+  query_text VARCHAR(1024) NULL COMMENT '检索 query',
+  assistant_answer TEXT NULL COMMENT '助手回答快照',
+  triggered_by_admin_id BIGINT NULL COMMENT '触发管理员',
+  recall_hit_rate DECIMAL(5,4) NULL COMMENT '召回命中率',
+  citation_accuracy DECIMAL(5,4) NULL COMMENT '引用准确率',
+  faithfulness_score DECIMAL(5,4) NULL COMMENT '答案忠实度',
+  result_json LONGTEXT NULL COMMENT '完整报告 JSON',
+  error_code VARCHAR(128) NULL COMMENT '错误码',
+  error_message VARCHAR(1024) NULL COMMENT '错误信息',
+  created_at DATETIME(3) NOT NULL COMMENT '创建时间 UTC',
+  finished_at DATETIME(3) NULL COMMENT '完成时间 UTC',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_rag_qa_run_id (run_id),
+  KEY idx_rag_qa_tenant_time (tenant_id, created_at),
+  KEY idx_rag_qa_asst_msg (assistant_message_id),
+  KEY idx_rag_qa_chunk_time (chunk_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='RAG 质量评测（手动触发）';
+
 -- ---------------------------------------------------------------------------
 -- 计量
 -- ---------------------------------------------------------------------------
@@ -777,6 +861,8 @@ INSERT IGNORE INTO prompt_template (tenant_id, prompt_code, prompt_kind, domain,
 INSERT IGNORE INTO prompt_template (tenant_id, prompt_code, prompt_kind, domain, locale, content, variables_schema_json, version, enabled, remark, sort_order, created_at, updated_at) VALUES (0, 'profile_guard_first_turn_extra', 'FRAGMENT', 'GUARD', 'en-US', 'This window has no prior turns: treat the latest user message as their first question in this chat unless history below shows otherwise.', NULL, 1, 1, 'platform default', 0, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
 INSERT IGNORE INTO prompt_template (tenant_id, prompt_code, prompt_kind, domain, locale, content, variables_schema_json, version, enabled, remark, sort_order, created_at, updated_at) VALUES (0, 'rag_snippet_header', 'FRAGMENT', 'RAG', 'zh-CN', '可参考知识片段', NULL, 1, 1, 'platform default', 0, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
 INSERT IGNORE INTO prompt_template (tenant_id, prompt_code, prompt_kind, domain, locale, content, variables_schema_json, version, enabled, remark, sort_order, created_at, updated_at) VALUES (0, 'rag_snippet_header_web_hint', 'FRAGMENT', 'RAG', 'zh-CN', '（若与当前问题无关请忽略，并优先依据联网检索结果作答）', NULL, 1, 1, 'platform default', 0, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
+INSERT IGNORE INTO prompt_template (tenant_id, prompt_code, prompt_kind, domain, locale, content, variables_schema_json, version, enabled, remark, sort_order, created_at, updated_at) VALUES (0, 'rag_query_rewrite_system', 'SYSTEM', 'RAG', 'zh-CN', '你是知识库检索问句专家。结合对话近史与当前用户消息，输出一行用于向量/关键词检索的查询文本（不是回答用户）。\n\n规则：\n1. 只输出一行检索问句，≤ 80 个汉字；禁止解释、markdown、引号、编号、换行。\n2. 保留主题词、专有名词、实体与时间意图；多主题用空格分隔，尽量不用完整礼貌问句。\n3. 删除：对 AI 的称呼、礼貌用语、「在知识库/查文档/检索」等动作词。\n4. 追问、指代须结合近史补全检索意图，禁止脱离上文改写成无关主题。', NULL, 1, 1, 'platform default', 0, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
+INSERT IGNORE INTO prompt_template (tenant_id, prompt_code, prompt_kind, domain, locale, content, variables_schema_json, version, enabled, remark, sort_order, created_at, updated_at) VALUES (0, 'rag_query_rewrite_user', 'USER', 'RAG', 'zh-CN', '当前日期：${today}（${year} 年）\n\n【对话近史】\n${conversation_history}\n\n【当前用户消息】\n${user_message}\n\n输出一行知识库检索问句（仅输出问句本身）：', NULL, 1, 1, 'platform default', 0, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
 INSERT IGNORE INTO prompt_template (tenant_id, prompt_code, prompt_kind, domain, locale, content, variables_schema_json, version, enabled, remark, sort_order, created_at, updated_at) VALUES (0, 'web_search_query_rewrite_system', 'SYSTEM', 'WEB', 'zh-CN', '你是搜索引擎检索词专家。把用户的聊天内容压缩成一行「检索查询词」，供新闻站、RSS、HTML 搜索等抓取；不是写给 AI 的回答。\n\n规则：\n1. 只输出一行检索词，≤ 60 个汉字（或等价英文词）；禁止解释、markdown、引号、编号、换行。\n2. 保留：主题词、专有名词、地域（如中国/上海）、时间意图（今日/本周/最近/${year}年）；多主题用空格分隔，不要写成完整问句。\n3. 删除：对 AI 的称呼与指令、礼貌用语（请/帮我）、「联网/搜索/查一下」等动作词、与检索无关的格式要求。\n4. 热点/资讯类可保留「热点 资讯 最新」等检索常用词；用户已列出关键词时做去重与归一化，勿擅自编造具体日期（除非用户写明）。\n5. 禁止拒答或说明无法联网；只做关键词抽取。\n\n示例：\n用户：请联网搜今天中国科技财经教育热点\n检索词：中国 科技 财经 教育 热点 资讯 今日 最新\n\n用户：2026年6G进展\n检索词：6G 进展 中国 ${year} 最新', NULL, 1, 1, 'platform default', 0, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
 INSERT IGNORE INTO prompt_template (tenant_id, prompt_code, prompt_kind, domain, locale, content, variables_schema_json, version, enabled, remark, sort_order, created_at, updated_at) VALUES (0, 'web_search_query_rewrite_user', 'USER', 'WEB', 'zh-CN', '当前日期：${today}（${year} 年）\n将下列用户消息改写为一行检索查询词（仅输出检索词本身）：\n\n${user_message}', NULL, 1, 1, 'platform default', 0, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
 INSERT IGNORE INTO prompt_template (tenant_id, prompt_code, prompt_kind, domain, locale, content, variables_schema_json, version, enabled, remark, sort_order, created_at, updated_at) VALUES (0, 'web_search_fixed_keywords_system', 'SYSTEM', 'WEB', 'zh-CN', '你是检索关键词拆分器。结合对话中已给出的最近几轮 user/assistant 与「当前这一轮」用户消息，拆成恰好 3 个短检索词，供 DuckDuckGo、新闻 RSS、HTML 源并行抓取。\n\n规则：\n1. 只输出 JSON 数组，恰好 3 个字符串；禁止 markdown、解释、换行。\n2. 每个关键词 2～12 个汉字（或等价英文词）；覆盖不同检索角度（主题/实体/时间或地域）。\n3. 删除礼貌用语与「联网/搜索」等动作词；可保留今日/最近/${year} 等时间意图。\n4. 追问、指代（如「那昨天呢」）须结合上文补全检索意图，禁止脱离上文改写成无关主题。\n5. 禁止拒答。\n\n示例：[\"6G 试点\",\"中国 通信\",\"${year} 进展\"]', NULL, 1, 1, 'platform default', 0, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
@@ -1267,6 +1353,7 @@ CROSS JOIN (
     UNION ALL SELECT 'TENANTS'
     UNION ALL SELECT 'ACCESS_LOGS'
     UNION ALL SELECT 'AUDIT_EVENTS'
+    UNION ALL SELECT 'OBSERVABILITY'
     UNION ALL SELECT 'METERING'
     UNION ALL SELECT 'LLM_MODELS'
     UNION ALL SELECT 'PROMPT_TEMPLATES'
@@ -1296,6 +1383,7 @@ CROSS JOIN (
     UNION ALL SELECT 'TENANTS'
     UNION ALL SELECT 'ACCESS_LOGS'
     UNION ALL SELECT 'AUDIT_EVENTS'
+    UNION ALL SELECT 'OBSERVABILITY'
     UNION ALL SELECT 'METERING'
     UNION ALL SELECT 'LLM_MODELS'
     UNION ALL SELECT 'PROMPT_TEMPLATES'
@@ -1323,6 +1411,7 @@ INSERT IGNORE INTO sys_admin_menu_item (menu_code, title_zh, route_path, sort_or
 ('GATEWAY_API', '接口与限流', '/gateway/api-rate-limits', 28, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('ACCESS_LOGS', '访问日志', '/gateway/access-logs', 30, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('AUDIT_EVENTS', '审计事件', '/audit/events', 40, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('OBSERVABILITY', '链路可观测', '/audit/observability', 45, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('METERING', '计量', '/billing/metering', 50, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('LLM_MODELS', '模型管理', '/model/llm-models', 60, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('PROMPT_TEMPLATES', '提示词工程', '/prompt/templates', 62, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),

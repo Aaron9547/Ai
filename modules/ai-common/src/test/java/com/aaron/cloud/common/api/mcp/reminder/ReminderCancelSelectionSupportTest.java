@@ -54,4 +54,10 @@ class ReminderCancelSelectionSupportTest {
         assertEquals(IndexParseKind.VALID, o.kind());
         assertEquals(List.of(1, 2), o.indices());
     }
+
+    @Test
+    void alphanumericWithoutSeparators_notSelection() {
+        var o = ReminderCancelSelectionSupport.parseListIndices("我想用来跑bgem3", 1);
+        assertEquals(IndexParseKind.NOT_SELECTION, o.kind());
+    }
 }

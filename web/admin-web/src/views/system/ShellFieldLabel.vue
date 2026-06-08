@@ -1,19 +1,23 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { InfoFilled } from "@element-plus/icons-vue";
 
 /** 完整 i18n 路径，如 admin.shell.modelCalling.tooltips.ragSnippetMaxChars */
 const props = defineProps<{
   label: string;
-  tooltipI18nKey: string;
+  tooltipI18nKey?: string;
   required?: boolean;
 }>();
 
 const { t } = useI18n();
 
 function tooltipText(): string {
-  return t(props.tooltipI18nKey);
+  const key = props.tooltipI18nKey?.trim();
+  return key ? t(key) : "";
 }
+
+const hasTooltip = computed(() => Boolean(props.tooltipI18nKey?.trim()));
 </script>
 
 <template>
@@ -21,6 +25,7 @@ function tooltipText(): string {
     <span v-if="required" class="shell-field-required" :aria-label="t('admin.shell.fieldRequired')">*</span>
     <span class="shell-field-label-text">{{ label }}</span>
     <el-tooltip
+      v-if="hasTooltip"
       :content="tooltipText()"
       placement="top"
       :show-after="200"

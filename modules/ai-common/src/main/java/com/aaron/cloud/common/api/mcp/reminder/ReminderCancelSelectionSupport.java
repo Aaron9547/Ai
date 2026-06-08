@@ -111,9 +111,17 @@ public final class ReminderCancelSelectionSupport {
     }
 
     private static boolean looksLikeIndexSelection(String t) {
-        return LIST_INDEX_LEAD.matcher(t).find()
-                || INDEX_SEPARATORS.matcher(t).find()
-                || t.chars().allMatch(Character::isDigit);
+        if (t.chars().allMatch(Character::isDigit)) {
+            return true;
+        }
+        if (INDEX_SEPARATORS.matcher(t).find()) {
+            return true;
+        }
+        // 英文/数字混排且无分隔（如 bgem3、v2api）不应视为序号回复
+        if (t.chars().anyMatch(c -> (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'))) {
+            return false;
+        }
+        return LIST_INDEX_LEAD.matcher(t).find();
     }
 
     private static List<ActiveReminderRef> matchByTitle(String utterance, List<ActiveReminderRef> active) {

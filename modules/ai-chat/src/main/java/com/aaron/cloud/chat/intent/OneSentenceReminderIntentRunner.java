@@ -99,10 +99,14 @@ public class OneSentenceReminderIntentRunner implements ChatIntentHandlerPlugin 
         return matchCancelIndexReply(conversationId, tenantId, msg);
     }
 
-    /** 上一轮已展示编号清单后，用户仅回复「1」「1、2」等仍走取消提醒意图。 */
+    /** 上一轮助手已展示取消编号清单后，用户仅回复「1」「1、2」等仍走取消提醒意图。 */
     private Optional<IntentKeywordMatchHit> matchCancelIndexReply(
             long conversationId, long tenantId, String message) {
         if (message == null || message.isBlank()) {
+            return Optional.empty();
+        }
+        if (!ReminderCancelSelectionGate.isAwaitingSelection(
+                conversationId, tenantId, messageRepository, lnkRepository, objectMapper)) {
             return Optional.empty();
         }
         return conversationRepository
@@ -122,16 +126,20 @@ public class OneSentenceReminderIntentRunner implements ChatIntentHandlerPlugin 
                                     ReminderCancelSelectionSupport.parseListIndices(
                                             ReminderCancelSelectionSupport.stripCancelNoise(message),
                                             activeCount);
-                            if (outcome.kind() != IndexParseKind.VALID
-                                    && outcome.kind() != IndexParseKind.INVALID) {
+                            if (outcome.kind() == IndexParseKind.NOT_SELECTION) {
                                 return Optional.empty();
                             }
                             return Optional.of(
                                     IntentKeywordMatchHit.create(
-                                            null,
-                                            message.strip(),
-                                            ChatIntentKeywordKind.CANCEL,
-                                            ChatIntentMatchSource.TRIGGER_PHRASE));
+                                                    null,
+                                                    message.strip(),
+                                                    ChatIntentKeywordKind.CANCEL,
+                                                    ChatIntentMatchSource.CANCEL_INDEX_REPLY)
+                                            .withFlowMeta(
+                                                    null,
+                                                    null,
+                                                    OneSentenceReminderRound.CANCEL_SELECT.name(),
+                                                    null));
                         });
     }
 
@@ -258,6 +266,14 @@ public class OneSentenceReminderIntentRunner implements ChatIntentHandlerPlugin 
         if (message == null || message.isEmpty()) {
             return Optional.empty();
         }
+        OneSentenceReminderRound round =
+                kind == ChatIntentKeywordKind.CANCEL
+                        ? OneSentenceReminderRound.CANCEL
+                        : OneSentenceReminderRound.CREATE;
+        ChatIntentMatchSource source =
+                kind == ChatIntentKeywordKind.CANCEL
+                        ? ChatIntentMatchSource.CANCEL_PHRASE
+                        : ChatIntentMatchSource.TRIGGER_PHRASE;
         for (ChatIntentKeyword k : keywords) {
             if (k.getKeywordKind() != kind || k.getEnabled() != ToggleState.ON) {
                 continue;
@@ -265,13 +281,8 @@ public class OneSentenceReminderIntentRunner implements ChatIntentHandlerPlugin 
             String p = k.getPhrase() == null ? "" : k.getPhrase().trim();
             if (!p.isEmpty() && message.contains(p)) {
                 return Optional.of(
-                        IntentKeywordMatchHit.create(
-                                k.getId(),
-                                p,
-                                kind,
-                                kind == ChatIntentKeywordKind.CANCEL
-                                        ? ChatIntentMatchSource.TRIGGER_PHRASE
-                                        : ChatIntentMatchSource.TRIGGER_PHRASE));
+                        IntentKeywordMatchHit.create(k.getId(), p, kind, source)
+                                .withFlowMeta(null, null, round.name(), null));
             }
         }
         return Optional.empty();

@@ -176,8 +176,7 @@ public class TenantShellAdminApplicationService {
         items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MODEL_ID, webModelId));
         items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON, fixedSourcesJson));
         items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_QUERY_REWRITE_MODEL_ID, rewriteModelId));
-        items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_QUERY_REWRITE_LANGUAGE_MODEL_ID, ""));
-        items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_QUERY_REWRITE_WEB_SEARCH_MODEL_ID, ""));
+        items.addAll(clearLegacyWebSearchQueryRewriteModelKeys());
         items.add(item(TenantRuntimeSettingKey.CHAT_PROMPT_LIMITS_JSON, limits));
         items.add(item(TenantRuntimeSettingKey.MEMORY_POLICY_JSON, memPol));
         items.add(item(TenantRuntimeSettingKey.CHAT_INPUT_GUARD_JSON, guard));
@@ -191,6 +190,11 @@ public class TenantShellAdminApplicationService {
             items.add(item(TenantRuntimeSettingKey.RAG_VECTOR_DIMENSION, ragDimPersist));
         }
         items.add(item(TenantRuntimeSettingKey.RAG_RETRIEVAL_MODE, ragRetrieval));
+        String ragTuning = jsonOrDefault(body.getRagRetrievalTuningJson(), "{}");
+        if (ragTuning.length() > RUNTIME_JSON_MAX_CHARS) {
+            throw runtimeMessages.badRequest(TenantRuntimeSettingMessages.Shell.JSON_FIELDS_TOO_LONG);
+        }
+        items.add(item(TenantRuntimeSettingKey.RAG_RETRIEVAL_TUNING_JSON, ragTuning));
         tenantRuntimeSettingApplicationService.replace(tenantId, items);
         return load(tenantId);
     }
@@ -377,27 +381,17 @@ public class TenantShellAdminApplicationService {
     }
 
     private String effectiveQueryRewriteModelId(long tenantId) {
-        String primary =
-                tenantRuntimeSettingApplicationService
-                        .getEffectiveValueText(
-                                tenantId, TenantRuntimeSettingKey.WEB_SEARCH_QUERY_REWRITE_MODEL_ID)
-                        .trim();
-        if (!primary.isEmpty()) {
-            return primary;
-        }
-        String legacyLang =
-                tenantRuntimeSettingApplicationService
-                        .getEffectiveValueText(
-                                tenantId,
-                                TenantRuntimeSettingKey.WEB_SEARCH_QUERY_REWRITE_LANGUAGE_MODEL_ID)
-                        .trim();
-        if (!legacyLang.isEmpty()) {
-            return legacyLang;
-        }
         return tenantRuntimeSettingApplicationService
-                .getEffectiveValueText(
-                        tenantId, TenantRuntimeSettingKey.WEB_SEARCH_QUERY_REWRITE_WEB_SEARCH_MODEL_ID)
-                .trim();
+                .webSearchQueryRewriteModelId(tenantId)
+                .map(String::valueOf)
+                .orElse("");
+    }
+
+    @SuppressWarnings("deprecation")
+    private static List<PutItem> clearLegacyWebSearchQueryRewriteModelKeys() {
+        return List.of(
+                item(TenantRuntimeSettingKey.WEB_SEARCH_QUERY_REWRITE_LANGUAGE_MODEL_ID, ""),
+                item(TenantRuntimeSettingKey.WEB_SEARCH_QUERY_REWRITE_WEB_SEARCH_MODEL_ID, ""));
     }
 
     private void validateOptionalRewriteModelId(long tenantId, String rawId) {
@@ -496,7 +490,9 @@ public class TenantShellAdminApplicationService {
                 tenantRagRuntimePort.isVectorDimensionLocked(tenantId),
                 ragRetStored,
                 ragRetEffective,
-                tenantRagRuntimePort.processDefaultVectorDimension());
+                tenantRagRuntimePort.processDefaultVectorDimension(),
+                tenantRuntimeSettingApplicationService.getEffectiveValueText(
+                        tenantId, TenantRuntimeSettingKey.RAG_RETRIEVAL_TUNING_JSON));
     }
 
     private static ShellBrandingPutBody toBrandingBody(ShellPutBody body) {
@@ -582,7 +578,8 @@ public class TenantShellAdminApplicationService {
             boolean ragVectorDimensionLocked,
             String ragRetrievalMode,
             String ragRetrievalModeEffective,
-            int processDefaultVectorDimension) {}
+            int processDefaultVectorDimension,
+            String ragRetrievalTuningJson) {}
 
     public record BrandingDto(
             String logoUrl, String portalTitle, String footerText, String portalTitleResolved) {}
@@ -649,6 +646,8 @@ public class TenantShellAdminApplicationService {
         private String ragVectorDimension;
         /** {@link TenantRuntimeSettingKey#RAG_RETRIEVAL_MODE}；空表示走 {@code ai.rag.retrieval-mode} */
         private String ragRetrievalMode;
+        /** {@link TenantRuntimeSettingKey#RAG_RETRIEVAL_TUNING_JSON} */
+        private String ragRetrievalTuningJson;
     }
 
     @Data

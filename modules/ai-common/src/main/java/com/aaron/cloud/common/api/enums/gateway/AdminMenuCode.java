@@ -41,6 +41,8 @@ public enum AdminMenuCode {
     SYSTEM_SETTINGS("SYSTEM_SETTINGS"),
     /** 管理端侧栏菜单项元数据（展示名、排序、路由提示等） */
     MENU_CATALOG("MENU_CATALOG"),
+    /** 链路追踪与 RAG 可观测（MCP 跟踪 / 命中链路 / 质量报告） */
+    OBSERVABILITY("OBSERVABILITY"),
     /** 接口清单与按路径的限流策略 */
     GATEWAY_API("GATEWAY_API");
 

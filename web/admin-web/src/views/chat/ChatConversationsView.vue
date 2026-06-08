@@ -139,6 +139,9 @@
                 </div>
                 <ChatDrawerAssistantAuditBlock
                   :message="seg.assistant"
+                  :conversation-id="detailConv?.id"
+                  :user-message-id="seg.user.id"
+                  :user-query-text="seg.user.content"
                   @open-rag-citation="openRagCitation"
                 />
               </section>

@@ -29,20 +29,36 @@ public class RagInternalRestController {
     List<String> searchSnippets(@RequestBody RagQuerySnippetsRequest request) {
         if (request.isAcrossKnowledgeBases()) {
             return ragQueryBridgeService.searchSnippetsAcrossKnowledgeBases(
-                    request.getTenantId(), request.getKbIds(), request.getQuery(), request.getTopK());
+                    request.getTenantId(),
+                    request.getKbIds(),
+                    request.getQuery(),
+                    request.getTopK(),
+                    request.getProfile());
         }
         return ragQueryBridgeService.searchSnippets(
-                request.getTenantId(), request.getKbId(), request.getQuery(), request.getTopK());
+                request.getTenantId(),
+                request.getKbId(),
+                request.getQuery(),
+                request.getTopK(),
+                request.getProfile());
     }
 
     @PostMapping("/query/citation-hits")
     List<RagCitationHit> searchCitationHits(@RequestBody RagQueryCitationHitsRequest request) {
         if (request.isAcrossKnowledgeBases()) {
             return ragQueryBridgeService.searchCitationHitsAcrossKnowledgeBases(
-                    request.getTenantId(), request.getKbIds(), request.getQuery(), request.getTopK());
+                    request.getTenantId(),
+                    request.getKbIds(),
+                    request.getQuery(),
+                    request.getTopK(),
+                    request.getProfile());
         }
         return ragQueryBridgeService.searchCitationHits(
-                request.getTenantId(), request.getKbId(), request.getQuery(), request.getTopK());
+                request.getTenantId(),
+                request.getKbId(),
+                request.getQuery(),
+                request.getTopK(),
+                request.getProfile());
     }
 
     @GetMapping("/embed/dimensions")

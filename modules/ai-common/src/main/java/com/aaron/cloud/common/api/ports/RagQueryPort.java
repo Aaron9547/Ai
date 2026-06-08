@@ -1,20 +1,38 @@
 package com.aaron.cloud.common.api.ports;
 
 import com.aaron.cloud.common.api.dto.RagCitationHit;
+import com.aaron.cloud.common.api.enums.rag.RagRetrievalProfile;
 import java.util.List;
 
 public interface RagQueryPort {
 
-    List<String> searchSnippets(Long tenantId, Long kbId, String query, int topK);
+    default List<String> searchSnippets(Long tenantId, Long kbId, String query, int topK) {
+        return searchSnippets(tenantId, kbId, query, topK, null);
+    }
 
-    /**
-     * 结构化引用命中（当前实现为 MySQL 词法路径；与 {@link #searchSnippets} 在词法模式下可并行调用）。
-     */
-    List<RagCitationHit> searchCitationHits(Long tenantId, Long kbId, String query, int topK);
+    List<String> searchSnippets(
+            Long tenantId, Long kbId, String query, int topK, RagRetrievalProfile profile);
 
-    /** 在多个知识库内合并检索片段（受 {@code ai.rag.retrieval-mode} 路由）。 */
-    List<String> searchSnippetsAcrossKnowledgeBases(Long tenantId, List<Long> kbIds, String query, int topK);
+    default List<RagCitationHit> searchCitationHits(Long tenantId, Long kbId, String query, int topK) {
+        return searchCitationHits(tenantId, kbId, query, topK, null);
+    }
 
-    /** 多库词法引用（供 meta 与命中统计）；与向量模式独立、语义稳定。 */
-    List<RagCitationHit> searchCitationHitsAcrossKnowledgeBases(Long tenantId, List<Long> kbIds, String query, int topK);
+    List<RagCitationHit> searchCitationHits(
+            Long tenantId, Long kbId, String query, int topK, RagRetrievalProfile profile);
+
+    default List<String> searchSnippetsAcrossKnowledgeBases(
+            Long tenantId, List<Long> kbIds, String query, int topK) {
+        return searchSnippetsAcrossKnowledgeBases(tenantId, kbIds, query, topK, null);
+    }
+
+    List<String> searchSnippetsAcrossKnowledgeBases(
+            Long tenantId, List<Long> kbIds, String query, int topK, RagRetrievalProfile profile);
+
+    default List<RagCitationHit> searchCitationHitsAcrossKnowledgeBases(
+            Long tenantId, List<Long> kbIds, String query, int topK) {
+        return searchCitationHitsAcrossKnowledgeBases(tenantId, kbIds, query, topK, null);
+    }
+
+    List<RagCitationHit> searchCitationHitsAcrossKnowledgeBases(
+            Long tenantId, List<Long> kbIds, String query, int topK, RagRetrievalProfile profile);
 }

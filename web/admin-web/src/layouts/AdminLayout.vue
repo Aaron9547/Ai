@@ -134,7 +134,7 @@
 
         <!-- 5. 合规留痕与计费类用量 -->
         <el-sub-menu
-          v-if="menuAllowed('AUDIT_EVENTS') || menuAllowed('METERING')"
+          v-if="menuAllowed('AUDIT_EVENTS') || menuAllowed('OBSERVABILITY') || menuAllowed('METERING')"
           index="grp-audit-metering"
         >
           <template #title>
@@ -144,6 +144,10 @@
           <el-menu-item v-if="menuAllowed('AUDIT_EVENTS')" index="/audit/events">
             <el-icon><Document /></el-icon>
             <span>{{ t("admin.menu.auditEvents") }}</span>
+          </el-menu-item>
+          <el-menu-item v-if="menuAllowed('OBSERVABILITY')" index="/audit/observability">
+            <el-icon><View /></el-icon>
+            <span>{{ t("admin.menu.observability") }}</span>
           </el-menu-item>
           <el-menu-item v-if="menuAllowed('METERING')" index="/billing/metering">
             <el-icon><Histogram /></el-icon>
@@ -279,6 +283,7 @@ import {
   TrendCharts,
   User,
   UserFilled,
+  View,
   Warning,
 } from "@element-plus/icons-vue";
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";

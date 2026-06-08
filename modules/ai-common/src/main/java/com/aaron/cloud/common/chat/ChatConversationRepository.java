@@ -129,6 +129,24 @@ public class ChatConversationRepository {
         return mapper.updateById(row);
     }
 
+    /** 管理端：按标题模糊匹配会话 id（最多 {@code limit} 条）。 */
+    public List<Long> listIdsByTitleLike(Long filterTenantIdOrNull, String keyword, int limit) {
+        if (keyword == null || keyword.isBlank()) {
+            return List.of();
+        }
+        var q =
+                Wrappers.<ChatConversation>lambdaQuery()
+                        .select(ChatConversation::getId)
+                        .like(ChatConversation::getTitle, keyword.trim());
+        if (filterTenantIdOrNull != null) {
+            q.eq(ChatConversation::getTenantId, filterTenantIdOrNull);
+        }
+        return mapper.selectList(q.orderByDesc(ChatConversation::getUpdatedAt).last("LIMIT " + Math.max(1, Math.min(limit, 500))))
+                .stream()
+                .map(ChatConversation::getId)
+                .toList();
+    }
+
     public int updateTitle(long id, long tenantId, String title) {
         if (title == null || title.isBlank()) {
             return 0;

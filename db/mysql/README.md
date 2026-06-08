@@ -79,5 +79,7 @@
 | 14 | **`migrate_0_1_258_14_mcp_remote_client.sql`** | MCP 注册表扩展 + **`MCP_CHAT_*`** 运行时键 |
 | 15 | **`migrate_0_1_258_15_chat_user_reminder.sql`** | **`chat_user_reminder`** + 意图 **`one_sentence_reminder`** + **`CHAT_USER_REMINDER`** 邮件模板种子 |
 | 15b | **`migrate_0_1_258_15b_chat_user_reminder_email_template.sql`** | 仅补插提醒邮件模板（旧版 258_15 因 `c.enabled` 失败时执行） |
+| 16 | **`migrate_0_1_258_16_obs_trace_and_rag_quality.sql`** | **`obs_mcp_trace_event`** / **`obs_rag_hit_event`** / **`rag_quality_assessment`**（MCP 跟踪、RAG 命中链路、手动质量评测） |
+| 17 | **`migrate_0_1_258_17_rag_retrieval_tuning.sql`** | RAG 问句改写提示词种子 + **`/api/v1/admin/rag-ltr/*`** 网关目录 |
 
 - **`migrate_0_1_258_web_search_query_rewrite.sql`** 等**无编号旧文件名**已重命名为上表；文档引用以 **`_NN_`** 为准。

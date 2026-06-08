@@ -48,6 +48,13 @@ import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationServ
 import com.aaron.cloud.common.config.properties.AiProvidersProperties;
 import com.aaron.cloud.common.api.ports.TenantRagRuntimePort;
 import com.aaron.cloud.common.api.enums.infra.VectorStoreProviderMode;
+import com.aaron.cloud.common.api.enums.observability.McpTraceSourceScene;
+import com.aaron.cloud.chat.rag.RagRetrievalQueryPlan;
+import com.aaron.cloud.chat.rag.RagRetrievalQueryPlanner;
+import com.aaron.cloud.common.api.enums.rag.RagRetrievalMode;
+import com.aaron.cloud.common.api.enums.rag.RagRetrievalProfile;
+import com.aaron.cloud.common.observability.ObservabilityEventSink;
+import com.aaron.cloud.common.observability.ObservabilityTraceContext;
 import com.aaron.cloud.common.context.TenantContextHolder;
 import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.tenant.SysTenantRepository;
@@ -91,6 +98,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -132,6 +140,8 @@ public class ChatApplicationService {
     private final ChatStarterFollowUpService chatStarterFollowUpService;
     private final ChatSendIdempotencyGuard chatSendIdempotencyGuard;
     private final ChatMcpToolCallingSupport chatMcpToolCallingSupport;
+    private final ObservabilityEventSink observabilityEventSink;
+    private final RagRetrievalQueryPlanner ragRetrievalQueryPlanner;
 
     public ChatConversation createConversation(String title) {
         var snap = TenantContextHolder.require();
@@ -655,16 +665,28 @@ public class ChatApplicationService {
                 conversationId,
                 millisSince(openT0));
         IntentRoute baseIntent = chatRagKbIds.isEmpty() ? IntentRoute.CHAT_ONLY : IntentRoute.RAG;
-        String ragLexicalQuery = buildRagLexicalSearchQuery(payload, augmentedUserText);
+        String ragLexicalOriginal = buildRagLexicalSearchQuery(payload, augmentedUserText);
+        ChatPromptLimitsRuntime promptLimitsEarly =
+                tenantRuntimeSettingApplicationService.chatPromptLimits(snap.getTenantId());
+        List<ModelChatRequest.MessageTurn> historyForRag =
+                buildPromptHistoryTurns(
+                        snap.getTenantId(), conversationId, pairedUserMessageId, promptLimitsEarly);
+        RagRetrievalQueryPlan ragPlan =
+                ragRetrievalQueryPlanner.plan(snap, historyForRag, ragLexicalOriginal, conversationId);
+        String ragLexicalQuery = ragPlan.retrievalQuery();
+        RagRetrievalProfile ragProfile = ragPlan.profile();
         IntentRoute routeIntent =
                 baseIntent == IntentRoute.RAG && ragLexicalQuery.isBlank()
                         ? IntentRoute.CHAT_ONLY
                         : baseIntent;
         log.info(
-                "[对话] ⑦ 检索路由判定：初始={}，当前={}，检索用词 {} 字；租户 {}，会话 {}，耗时 {}ms",
+                "[对话] ⑦ 检索路由判定：初始={}，当前={}，检索用词 {} 字，分流={}，改写={}，语义拒绝={}；租户 {}，会话 {}，耗时 {}ms",
                 PipelineLogZh.intentRoute(baseIntent),
                 PipelineLogZh.intentRoute(routeIntent),
                 ragLexicalQuery.length(),
+                ragProfile,
+                ragPlan.rewriteApplied(),
+                ragPlan.rewriteRejected(),
                 snap.getTenantId(),
                 conversationId,
                 millisSince(openT0));
@@ -683,13 +705,21 @@ public class ChatApplicationService {
                     CompletableFuture.supplyAsync(
                             () ->
                                     requireRagQueryPort().searchCitationHitsAcrossKnowledgeBases(
-                                            snap.getTenantId(), chatRagKbIds, ragLexicalQuery, 3),
+                                            snap.getTenantId(),
+                                            chatRagKbIds,
+                                            ragLexicalQuery,
+                                            3,
+                                            ragProfile),
                             command -> Thread.startVirtualThread(command));
             CompletableFuture<List<String>> snippetFuture =
                     CompletableFuture.supplyAsync(
                             () ->
                                     requireRagQueryPort().searchSnippetsAcrossKnowledgeBases(
-                                            snap.getTenantId(), chatRagKbIds, ragLexicalQuery, 3),
+                                            snap.getTenantId(),
+                                            chatRagKbIds,
+                                            ragLexicalQuery,
+                                            3,
+                                            ragProfile),
                             command -> Thread.startVirtualThread(command));
             ragCitationHits = List.copyOf(citationFuture.join());
             log.info(
@@ -716,6 +746,31 @@ public class ChatApplicationService {
         }
         final IntentRoute intent = routeIntent;
         final List<RagCitationHit> ragHitsForStream = ragCitationHits;
+        RagRetrievalMode ragModeForObs = tenantRagRuntimePort.resolveRetrievalMode(snap.getTenantId());
+        String convPublicId =
+                conversationRepository
+                        .findById(conversationId, snap.getTenantId())
+                        .map(ChatConversation::getPublicId)
+                        .orElse(null);
+        ObservabilityTraceContext.Snapshot obsBaseSnapshot =
+                ObservabilityTraceContext.Snapshot.builder()
+                        .httpTraceId(MDC.get("traceId"))
+                        .tenantId(snap.getTenantId())
+                        .userId(snap.getUserId())
+                        .conversationId(conversationId)
+                        .conversationPublicId(convPublicId)
+                        .userMessageId(pairedUserMessageId)
+                        .ragQueryText(ragLexicalQuery)
+                        .retrievalMode(ragModeForObs)
+                        .build();
+        if (!ragCitationHits.isEmpty()) {
+            observabilityEventSink.recordRagHits(snap.getTenantId(), ragCitationHits, ragModeForObs, obsBaseSnapshot);
+        }
+        final ObservabilityTraceContext.Snapshot obsStreamSnapshot =
+                obsBaseSnapshot.toBuilder()
+                        .orchestrationTraceId(ObservabilityEventSink.newTraceId())
+                        .sourceScene(McpTraceSourceScene.CHAT_MCP_LOOP)
+                        .build();
         log.info(
                 "[对话] ⑫ 知识库检索汇总：最终路由={}，可引用分片 {} 条，提示词片段 {} 条；租户 {}，会话 {}，累计 {}ms",
                 PipelineLogZh.intentRoute(intent),
@@ -885,6 +940,7 @@ public class ChatApplicationService {
         Runnable run =
                 () -> {
                     TenantContextHolder.set(snap);
+                    ObservabilityTraceContext.open(obsStreamSnapshot);
                     final int meteringBaseline =
                             conversationTokenTotalFromMetering(snap.getTenantId(), conversationId);
                     try {
@@ -1103,6 +1159,10 @@ public class ChatApplicationService {
                                     WebSearchQueryNormalizer.normalize(augmentedUserText));
                         }
                         ragRetrievalHitCounter.recordHits(snap.getTenantId(), ragHitsForStream);
+                        if (pairedUserMessageId != null) {
+                            observabilityEventSink.backfillAssistantMessageId(
+                                    conversationId, pairedUserMessageId, asst.getId());
+                        }
                         log.info(
                                 "[对话] ⑲ 流式回答已完成：租户 {}，会话 {}，路由={}，生成 {} 字，总耗时 {}ms，消耗 token {}；",
                                 snap.getTenantId(),
@@ -1197,6 +1257,7 @@ public class ChatApplicationService {
                         }
                         sseGate.complete();
                     } finally {
+                        ObservabilityTraceContext.clear();
                         TenantContextHolder.clear();
                     }
                 };

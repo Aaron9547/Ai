@@ -22,4 +22,17 @@ public final class IntentLogZh {
             default -> roundName;
         };
     }
+
+    /** 一句话提醒意图阶段（{@code OneSentenceReminderRound} 存储名）。 */
+    public static String reminderRound(String roundName) {
+        if (roundName == null || roundName.isBlank()) {
+            return "未知";
+        }
+        return switch (roundName.trim().toUpperCase()) {
+            case "CREATE" -> "新建提醒";
+            case "CANCEL" -> "取消提醒";
+            case "CANCEL_SELECT" -> "选择取消编号";
+            default -> roundName;
+        };
+    }
 }

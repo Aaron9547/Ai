@@ -4,10 +4,12 @@ import com.aaron.cloud.common.api.dto.RagCitationHit;
 import com.aaron.cloud.common.api.dto.RagVectorRecallHit;
 import com.aaron.cloud.common.api.enums.rag.RagRetrievalHitSource;
 import com.aaron.cloud.common.api.enums.rag.RagRetrievalMode;
+import com.aaron.cloud.common.api.enums.rag.RagRetrievalProfile;
 import com.aaron.cloud.common.api.ports.RagEmbeddingPort;
 import com.aaron.cloud.common.config.properties.AiProvidersProperties;
 import com.aaron.cloud.common.api.enums.infra.VectorStoreProviderMode;
 import com.aaron.cloud.rag.runtime.TenantRagRuntimeResolver;
+import com.aaron.cloud.rag.ltr.RagRetrievalLtrService;
 import com.aaron.cloud.common.rag.RagChunkRepository;
 import com.aaron.cloud.common.rag.RagKnowledgeBaseRepository;
 import com.aaron.cloud.common.rag.entity.RagKnowledgeBase;
@@ -46,17 +48,23 @@ public class RagQueryBridgeService {
     private final RagKnowledgeBaseRepository ragKnowledgeBaseRepository;
     private final VectorStorePort vectorStorePort;
     private final ObjectProvider<ElasticsearchRagSearchClient> elasticsearchRagSearchClient;
+    private final RagRetrievalLtrService ragRetrievalLtrService;
 
     /** 与 {@code rag_knowledge_base.chat_vector_min_cosine_score} 列默认一致（旧行未迁移时兜底）。 */
     private static final double DEFAULT_KB_CHAT_VECTOR_MIN_COSINE = 0.65d;
 
     public List<String> searchSnippets(Long tenantId, Long kbId, String query, int topK) {
+        return searchSnippets(tenantId, kbId, query, topK, null);
+    }
+
+    public List<String> searchSnippets(
+            Long tenantId, Long kbId, String query, int topK, RagRetrievalProfile profile) {
         if (aiProvidersProperties.resolvedVectorStore() != VectorStoreProviderMode.milvus) {
             return List.of();
         }
         long tid = tenantId == null ? 0L : tenantId;
         long kb = kbId == null ? 0L : kbId;
-        RagRetrievalMode mode = tenantRagRuntimeResolver.resolveRetrievalMode(tid);
+        RagRetrievalMode mode = resolveEffectiveMode(tid, profile);
         List<String> out =
                 switch (mode) {
                     case MILVUS -> searchMilvusSnippets(tid, kb, query, topK);
@@ -74,16 +82,22 @@ public class RagQueryBridgeService {
     }
 
     public List<RagCitationHit> searchCitationHits(Long tenantId, Long kbId, String query, int topK) {
+        return searchCitationHits(tenantId, kbId, query, topK, null);
+    }
+
+    public List<RagCitationHit> searchCitationHits(
+            Long tenantId, Long kbId, String query, int topK, RagRetrievalProfile profile) {
         if (aiProvidersProperties.resolvedVectorStore() != VectorStoreProviderMode.milvus) {
             return List.of();
         }
         long tid = tenantId == null ? 0L : tenantId;
         long kb = kbId == null ? 0L : kbId;
-        RagRetrievalMode mode = tenantRagRuntimeResolver.resolveRetrievalMode(tid);
+        RagRetrievalMode mode = resolveEffectiveMode(tid, profile);
         List<RagCitationHit> out =
                 switch (mode) {
                     case MILVUS -> searchMilvusCitations(tid, kb, query, topK);
-                    case MILVUS_ES_HYBRID -> searchHybridCitations(tid, kb, query, topK);
+                    case MILVUS_ES_HYBRID ->
+                            searchHybridCitationsWithOptionalLtr(tid, kb, query, topK, profile);
                 };
         log.info(
                 "[知识库检索] 单库可引用分片检索完成：租户 {}，知识库 {}，模式={}，最多 {} 条，查询 {} 字，命中 {} 条",
@@ -97,6 +111,11 @@ public class RagQueryBridgeService {
     }
 
     public List<String> searchSnippetsAcrossKnowledgeBases(Long tenantId, List<Long> kbIds, String query, int topK) {
+        return searchSnippetsAcrossKnowledgeBases(tenantId, kbIds, query, topK, null);
+    }
+
+    public List<String> searchSnippetsAcrossKnowledgeBases(
+            Long tenantId, List<Long> kbIds, String query, int topK, RagRetrievalProfile profile) {
         long tid = tenantId == null ? 0L : tenantId;
         if (kbIds == null || kbIds.isEmpty()) {
             log.info("[知识库检索] 跳过多库片段检索：未指定知识库，租户 {}", tid);
@@ -105,7 +124,7 @@ public class RagQueryBridgeService {
         if (aiProvidersProperties.resolvedVectorStore() != VectorStoreProviderMode.milvus) {
             return List.of();
         }
-        RagRetrievalMode mode = tenantRagRuntimeResolver.resolveRetrievalMode(tid);
+        RagRetrievalMode mode = resolveEffectiveMode(tid, profile);
         List<String> out =
                 switch (mode) {
                     case MILVUS -> mergeSnippetListsInKbOrder(
@@ -126,6 +145,11 @@ public class RagQueryBridgeService {
 
     public List<RagCitationHit> searchCitationHitsAcrossKnowledgeBases(
             Long tenantId, List<Long> kbIds, String query, int topK) {
+        return searchCitationHitsAcrossKnowledgeBases(tenantId, kbIds, query, topK, null);
+    }
+
+    public List<RagCitationHit> searchCitationHitsAcrossKnowledgeBases(
+            Long tenantId, List<Long> kbIds, String query, int topK, RagRetrievalProfile profile) {
         long tid = tenantId == null ? 0L : tenantId;
         if (kbIds == null || kbIds.isEmpty()) {
             log.info("[知识库检索] 跳过多库可引用分片检索：未指定知识库，租户 {}", tid);
@@ -134,7 +158,7 @@ public class RagQueryBridgeService {
         if (aiProvidersProperties.resolvedVectorStore() != VectorStoreProviderMode.milvus) {
             return List.of();
         }
-        RagRetrievalMode mode = tenantRagRuntimeResolver.resolveRetrievalMode(tid);
+        RagRetrievalMode mode = resolveEffectiveMode(tid, profile);
         List<RagCitationHit> out =
                 switch (mode) {
                     case MILVUS -> mergeCitationHitsInKbOrder(
@@ -632,19 +656,92 @@ public class RagQueryBridgeService {
             int topK,
             List<RagVectorRecallHit> milvusHits,
             double minCos) {
+        int candidateK = ragRetrievalLtrService.candidatePoolSize(tenantId, topK);
         List<RagRetrievalScoredHit> mil =
-                milvusHitsToScoredCitationsHybrid(tenantId, kbId, milvusHits, topK, minCos);
+                milvusHitsToScoredCitationsHybrid(tenantId, kbId, milvusHits, candidateK, minCos);
+        List<RagRetrievalScoredHit> pool;
         if (mil.isEmpty()) {
-            return esKeywordScoredHitsOnly(tenantId, kbId, query, topK);
+            pool = esKeywordScoredHitsOnly(tenantId, kbId, query, candidateK);
+        } else {
+            Map<Long, Double> milvusRawByChunk = milvusRawScoreByChunkId(milvusHits);
+            Map<Long, RagRetrievalScoredHit> merged = new LinkedHashMap<>();
+            for (RagRetrievalScoredHit h : mil) {
+                merged.putIfAbsent(h.citation().chunkId(), h);
+            }
+            mergeEsScoredHitsUnlimited(merged, tenantId, kbId, query, candidateK, milvusRawByChunk);
+            pool = new ArrayList<>(merged.values());
         }
-        Map<Long, Double> milvusRawByChunk = milvusRawScoreByChunkId(milvusHits);
-        Map<Long, RagRetrievalScoredHit> merged = new LinkedHashMap<>();
+        List<RagRetrievalScoredHit> ranked =
+                ragRetrievalLtrService.rerankIfEnabled(tenantId, query, pool);
+        return applyHybridDocumentCap(ranked, topK);
+    }
+
+    private List<RagRetrievalScoredHit> applyHybridDocumentCap(
+            List<RagRetrievalScoredHit> ranked, int topK) {
+        List<RagRetrievalScoredHit> out = new ArrayList<>();
         Set<Long> seenDocIds = new LinkedHashSet<>();
-        for (RagRetrievalScoredHit h : mil) {
-            putHybridScoredHit(merged, seenDocIds, h, topK);
+        for (RagRetrievalScoredHit h : ranked) {
+            if (out.size() >= topK) {
+                break;
+            }
+            long docId = h.citation().documentId();
+            if (seenDocIds.contains(docId)) {
+                continue;
+            }
+            seenDocIds.add(docId);
+            out.add(h);
         }
-        mergeEsScoredHits(merged, seenDocIds, tenantId, kbId, query, topK, milvusRawByChunk);
-        return new ArrayList<>(merged.values());
+        return out;
+    }
+
+    private void mergeEsScoredHitsUnlimited(
+            Map<Long, RagRetrievalScoredHit> merged,
+            long tenantId,
+            long kbId,
+            String query,
+            int candidateK,
+            Map<Long, Double> milvusRawByChunk) {
+        ElasticsearchRagSearchClient esClient = elasticsearchRagSearchClient.getIfAvailable();
+        if (esClient == null) {
+            return;
+        }
+        for (ElasticsearchScoredCitationHit es :
+                esClient.searchScoredCitationHits(tenantId, kbId, query, candidateK)) {
+            if (merged.size() >= candidateK) {
+                break;
+            }
+            RagCitationHit c = es.citation();
+            merged.putIfAbsent(
+                    c.chunkId(),
+                    new RagRetrievalScoredHit(
+                            c,
+                            RagRetrievalHitSource.ES,
+                            milvusRawByChunk.get(c.chunkId()),
+                            es.score()));
+        }
+    }
+
+    private List<RagCitationHit> searchHybridCitationsWithOptionalLtr(
+            long tenantId, long kbId, String query, int topK, RagRetrievalProfile profile) {
+        if (RagRetrievalProfile.effective(profile) != RagRetrievalProfile.COMPLEX_HYBRID) {
+            return searchHybridCitations(tenantId, kbId, query, topK);
+        }
+        String q = query == null ? "" : query;
+        float[] vec = ragEmbeddingPort.embed(tenantId, kbId, q);
+        int candidateK = ragRetrievalLtrService.candidatePoolSize(tenantId, topK);
+        List<RagVectorRecallHit> milvusHits =
+                vectorStorePort.searchVectors(tenantId, collectionName(kbId), vec, candidateK);
+        double minCos = resolveChatVectorMinCosineScore(tenantId, kbId);
+        List<RagRetrievalScoredHit> scored =
+                searchHybridScoredCitations(tenantId, kbId, q, topK, milvusHits, minCos);
+        return scored.stream().map(RagRetrievalScoredHit::citation).toList();
+    }
+
+    private RagRetrievalMode resolveEffectiveMode(long tenantId, RagRetrievalProfile profile) {
+        if (RagRetrievalProfile.effective(profile) == RagRetrievalProfile.SIMPLE_VECTOR) {
+            return RagRetrievalMode.MILVUS;
+        }
+        return tenantRagRuntimeResolver.resolveRetrievalMode(tenantId);
     }
 
     private void mergeEsScoredHits(

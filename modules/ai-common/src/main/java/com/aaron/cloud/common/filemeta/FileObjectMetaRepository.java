@@ -24,4 +24,12 @@ public class FileObjectMetaRepository {
     public int insert(FileObjectMeta row) {
         return mapper.insert(row);
     }
+
+    public java.util.Optional<FileObjectMeta> findByIdAndTenant(long id, long tenantId) {
+        return java.util.Optional.ofNullable(
+                mapper.selectOne(
+                        Wrappers.<FileObjectMeta>lambdaQuery()
+                                .eq(FileObjectMeta::getId, id)
+                                .eq(FileObjectMeta::getTenantId, tenantId)));
+    }
 }

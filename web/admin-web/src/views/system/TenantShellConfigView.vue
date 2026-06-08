@@ -165,6 +165,97 @@
             </el-form-item>
           </div>
 
+          <div class="outbound-section-head">{{ t("admin.shell.modelCalling.sectionRagRetrievalTuning") }}</div>
+          <div class="outbound-fields-grid">
+            <el-form-item>
+              <template #label>
+                <ShellFieldLabel
+                  :label="t('admin.shell.modelCalling.fields.rewriteEnabled')"
+                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.rewriteEnabled"
+                />
+              </template>
+              <el-switch v-model="ragRetrievalTuningForm.rewriteEnabled" />
+            </el-form-item>
+            <el-form-item>
+              <template #label>
+                <ShellFieldLabel
+                  :label="t('admin.shell.modelCalling.fields.rewriteSemanticMinSimilarity')"
+                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.rewriteSemanticMinSimilarity"
+                />
+              </template>
+              <el-slider
+                v-model="ragRetrievalTuningForm.rewriteSemanticMinSimilarity"
+                :min="0.5"
+                :max="0.99"
+                :step="0.01"
+                :format-tooltip="(v: number) => `${Math.round(v * 100)}%`"
+                style="max-width: 280px"
+              />
+            </el-form-item>
+            <el-form-item>
+              <template #label>
+                <ShellFieldLabel
+                  :label="t('admin.shell.modelCalling.fields.simpleQueryFastPathEnabled')"
+                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.simpleQueryFastPathEnabled"
+                />
+              </template>
+              <el-switch v-model="ragRetrievalTuningForm.simpleQueryFastPathEnabled" />
+            </el-form-item>
+            <el-form-item>
+              <template #label>
+                <ShellFieldLabel
+                  :label="t('admin.shell.modelCalling.fields.simpleQueryMaxChars')"
+                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.simpleQueryMaxChars"
+                />
+              </template>
+              <el-input-number
+                v-model="ragRetrievalTuningForm.simpleQueryMaxChars"
+                :min="8"
+                :max="128"
+                controls-position="right"
+                class="num-wide"
+              />
+            </el-form-item>
+            <el-form-item>
+              <template #label>
+                <ShellFieldLabel
+                  :label="t('admin.shell.modelCalling.fields.hybridLtrEnabled')"
+                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.hybridLtrEnabled"
+                />
+              </template>
+              <el-switch v-model="ragRetrievalTuningForm.hybridLtrEnabled" />
+            </el-form-item>
+            <el-form-item>
+              <template #label>
+                <ShellFieldLabel
+                  :label="t('admin.shell.modelCalling.fields.ltrCandidateMultiplier')"
+                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.ltrCandidateMultiplier"
+                />
+              </template>
+              <el-input-number
+                v-model="ragRetrievalTuningForm.ltrCandidateMultiplier"
+                :min="2"
+                :max="20"
+                controls-position="right"
+                class="num-wide"
+              />
+            </el-form-item>
+            <el-form-item>
+              <template #label>
+                <ShellFieldLabel
+                  :label="t('admin.shell.modelCalling.fields.ltrModelVersion')"
+                  tooltip-i18n-key="admin.shell.modelCalling.tooltips.ltrModelVersion"
+                />
+              </template>
+              <el-input v-model="ltrStatus.ltrModelVersion" disabled class="outbound-line-input" />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" plain :loading="ltrTraining" @click="onTriggerLtrTrain">
+                {{ t("admin.shell.modelCalling.triggerLtrTrain") }}
+              </el-button>
+            </el-form-item>
+          </div>
+
           <div class="outbound-section-head">{{ t("admin.shell.modelCalling.sectionChatPrompt") }}</div>
           <div class="outbound-fields-grid">
             <el-form-item><template #label><ShellFieldLabel :label="t('admin.shell.modelCalling.fields.ragSnippetMaxChars')" tooltip-i18n-key="admin.shell.modelCalling.tooltips.ragSnippetMaxChars" /></template><el-input-number v-model="promptLimitsForm.ragSnippetMaxChars" :min="120" :max="16000" :step="10" controls-position="right" class="num-wide" /></el-form-item>
@@ -804,7 +895,12 @@ import {
   validateWebSearchFixedOutbound,
   normalizeSiteCrawlPreset,
   type SiteCrawlPresetValue,
+  RAG_RETRIEVAL_TUNING_DEFAULT,
+  parseRagRetrievalTuningJson,
+  serializeRagRetrievalTuningJson,
+  type RagRetrievalTuningForm,
 } from "@/views/system/modelCallingRuntimeFormModel";
+import * as ragLtrAdmin from "@/api/ragLtrAdmin";
 import SiteCrawlPresetPicker from "@/views/system/components/SiteCrawlPresetPicker.vue";
 import SiteCrawlRuntimeFields from "@/views/system/components/SiteCrawlRuntimeFields.vue";
 import AuthRegisterShellBlock from "@/components/system/AuthRegisterShellBlock.vue";
@@ -862,6 +958,9 @@ const processDefaultVectorDimension = ref(2048);
 const ragVectorDimensionOptions = [512, 768, 1024, 1536, 2048, 3072, 4096];
 const ragRetrievalMode = ref("");
 const ragRetrievalModeEffective = ref("milvus_es_hybrid");
+const ragRetrievalTuningForm = ref<RagRetrievalTuningForm>({ ...RAG_RETRIEVAL_TUNING_DEFAULT });
+const ltrStatus = ref({ ltrModelVersion: "builtin-v1" });
+const ltrTraining = ref(false);
 const webSearchProviderKeys = ref<string[]>([]);
 const webSearchQueryRewriteModelId = ref<number | undefined>(undefined);
 const webSearchFixedSourceCodes = WEB_SEARCH_FIXED_SOURCE_CODES;
@@ -1191,6 +1290,8 @@ async function applyModelCallingFromApi(mc: TenantShellModelCallingRuntime | und
   }
   ragRetrievalMode.value = mc.ragRetrievalMode?.trim() ?? "";
   ragRetrievalModeEffective.value = mc.ragRetrievalModeEffective?.trim() || "milvus_es_hybrid";
+  ragRetrievalTuningForm.value = parseRagRetrievalTuningJson(mc.ragRetrievalTuningJson ?? "{}");
+  void refreshLtrStatus();
 }
 
 async function reload() {
@@ -1366,6 +1467,7 @@ async function saveModelCalling() {
         siteCrawlPreset.value === "CUSTOM" ? serializeSiteCrawlRuntimeJson(siteCrawlForm) : "{}",
       ragVectorDimension: ragVectorDimension.value.trim(),
       ragRetrievalMode: ragRetrievalMode.value.trim(),
+      ragRetrievalTuningJson: serializeRagRetrievalTuningJson(ragRetrievalTuningForm.value),
     };
     const data = await tenantShellApi.putTenantShellModelCallingRuntime(body);
     await applyModelCallingFromApi(data.modelCallingRuntime);
@@ -1376,6 +1478,28 @@ async function saveModelCalling() {
     ElMessage.error(apiRequestErrorMessage(e, t("views.runtime.saveFailed"), locale.value));
   } finally {
     savingModelCalling.value = false;
+  }
+}
+
+async function refreshLtrStatus() {
+  try {
+    const st = await ragLtrAdmin.fetchRagLtrStatus();
+    ltrStatus.value = { ltrModelVersion: st.ltrModelVersion || "builtin-v1" };
+  } catch {
+    ltrStatus.value = { ltrModelVersion: ragRetrievalTuningForm.value.ltrModelVersion || "builtin-v1" };
+  }
+}
+
+async function onTriggerLtrTrain() {
+  ltrTraining.value = true;
+  try {
+    const res = await ragLtrAdmin.triggerRagLtrTrain({ days: 30, maxSamples: 5000 });
+    ElMessage.success(t("admin.shell.modelCalling.ltrTrainQueued", { id: res.jobTaskId }));
+    await refreshLtrStatus();
+  } catch (e: unknown) {
+    ElMessage.error(apiRequestErrorMessage(e, t("common.saveFailed"), locale.value));
+  } finally {
+    ltrTraining.value = false;
   }
 }
 

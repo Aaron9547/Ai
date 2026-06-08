@@ -423,13 +423,22 @@
                 class="intent-hit-hint"
                 role="note"
               >
-                <template v-if="m.intentTurnHit.keywordPhrase">
+                <template v-if="m.intentTurnHit.keywordPhrase && m.intentTurnHit.keywordId">
                   {{ t("chat.intentKeyword", { phrase: m.intentTurnHit.keywordPhrase }) }}
-                  <span class="intent-hit-sub">（{{ formatIntentMatchSource(m.intentTurnHit.matchSource) }}）</span>
+                  <span class="intent-hit-sub">（{{ formatIntentHitStage(m.intentTurnHit) }}）</span>
+                </template>
+                <template v-else-if="m.intentTurnHit.matchSource === 'CANCEL_INDEX_REPLY'">
+                  {{ t("chat.intentCancelIndex") }}
+                  <span v-if="m.intentTurnHit.keywordPhrase" class="intent-hit-sub">「{{ m.intentTurnHit.keywordPhrase }}」</span>
+                  <span class="intent-hit-sub">（{{ formatIntentHitStage(m.intentTurnHit) }}）</span>
+                </template>
+                <template v-else-if="m.intentTurnHit.keywordPhrase">
+                  {{ t("chat.intentKeyword", { phrase: m.intentTurnHit.keywordPhrase }) }}
+                  <span class="intent-hit-sub">（{{ formatIntentHitStage(m.intentTurnHit) }}）</span>
                 </template>
                 <template v-else>
                   {{ t("chat.intentFlow") }}
-                  <span class="intent-hit-sub">（{{ formatIntentMatchSource(m.intentTurnHit.matchSource) }}）</span>
+                  <span class="intent-hit-sub">（{{ formatIntentHitStage(m.intentTurnHit) }}）</span>
                 </template>
                 <span
                   v-if="m.intentTurnHit.activeReminderCount != null && m.intentTurnHit.activeReminderCount >= 0"
@@ -1563,6 +1572,8 @@ function formatIntentMatchSource(src: string | null | undefined): string {
   if (!src) return t("chat.intentMatchFallback");
   const map: Record<string, string> = {
     TRIGGER_PHRASE: "chat.intentSrcTrigger",
+    CANCEL_PHRASE: "chat.intentSrcCancelPhrase",
+    CANCEL_INDEX_REPLY: "chat.intentSrcCancelIndexReply",
     PLAN_CONTINUE_PHRASE: "chat.intentSrcPlanContinue",
     PLAN_CONTINUE_DEFAULT_PHRASE: "chat.intentSrcPlanContinueDefault",
     PLAN_CONTINUE_REGEX: "chat.intentSrcPlanContinueRegex",
@@ -1570,6 +1581,34 @@ function formatIntentMatchSource(src: string | null | undefined): string {
   };
   const key = map[src];
   return key ? t(key) : src.replace(/_/g, " ");
+}
+
+function formatIntentFlowRound(round: string, intentCode?: string | null): string {
+  const r = round.trim().toUpperCase();
+  if (intentCode === "one_sentence_reminder") {
+    const map: Record<string, string> = {
+      CREATE: "chat.intentRoundCreate",
+      CANCEL: "chat.intentRoundCancel",
+      CANCEL_SELECT: "chat.intentRoundCancelSelect",
+    };
+    const key = map[r];
+    if (key) return t(key);
+  }
+  const travelMap: Record<string, string> = {
+    DOC: "chat.intentRoundDoc",
+    PLAN: "chat.intentRoundPlan",
+  };
+  const travelKey = travelMap[r];
+  if (travelKey) return t(travelKey);
+  return round.replace(/_/g, " ");
+}
+
+/** 优先展示处理器轮次，否则展示匹配来源 */
+function formatIntentHitStage(hit: chatApi.ChatIntentTurnHit): string {
+  if (hit.intentFlowRound) {
+    return formatIntentFlowRound(hit.intentFlowRound, hit.intentCode);
+  }
+  return formatIntentMatchSource(hit.matchSource);
 }
 
 function assistantTokenMetaLabel(m: Msg): string {
