@@ -55,6 +55,17 @@ class WebSearchQueryRewriteServiceTest {
     }
 
     @Test
+    void heuristicRewriteForRetrievalInput_preservesAttachmentEntities() {
+        String input =
+                "用户问题：分析这个户型\n"
+                        + "上传文件摘要（改写检索词须保留其中的楼盘名/编号/地名等实体，勿编造附件未出现的词）："
+                        + "碧桂园江山赋 YJ215 货量区彩户示意图";
+        String out = WebSearchQueryRewriteService.heuristicRewriteForRetrievalInput(input);
+        assertTrue(out.contains("碧桂园") || out.contains("YJ215"));
+        assertTrue(out.contains("户型") || out.contains("分析"));
+    }
+
+    @Test
     void heuristicKeywords_returnsThree() {
         List<String> keys =
                 WebSearchQueryRewriteService.heuristicKeywords(

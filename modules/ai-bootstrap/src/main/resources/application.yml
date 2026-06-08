@@ -211,6 +211,8 @@ ai:
     attachment:
       # 会话附件原始文件落盘根目录（不入库）；路径段为 tenantId/conversationId/attachmentId
       bin-dir: ${AI_CHAT_ATTACHMENT_BIN_DIR:${user.dir}/data/chat-attachment-bin}
+      # 本机 OCR 仅为尺寸表格噪声时，回退租户视觉模型读图（需 VISION / vl 模型）
+      vision-ocr-fallback: ${AI_CHAT_ATTACHMENT_VISION_OCR_FALLBACK:true}
     starter-prompts:
       # 已废弃：每日热点改由 ten_scheduled_task（CHAT_STARTER_DAILY_HOT）+ ai.rag.scheduled-tasks 统一 poller
       poller-cron: ${AI_CHAT_STARTER_POLLER_CRON:0 * * * * *}

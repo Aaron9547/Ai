@@ -44,7 +44,10 @@ public class WebSearchGroundingCacheService {
     }
 
     public String configScopeHash(
-            int configuredRounds, List<String> suffixes, List<String> sortedFixedSourceCodes, Long arkModelId) {
+            int configuredRounds,
+            List<String> suffixes,
+            List<String> sortedFixedSourceCodes,
+            List<Long> arkModelIds) {
         StringBuilder sb = new StringBuilder();
         sb.append(configuredRounds).append('|');
         if (suffixes != null) {
@@ -53,8 +56,12 @@ public class WebSearchGroundingCacheService {
             }
         }
         sb.append('|');
-        if (arkModelId != null && arkModelId > 0L) {
-            sb.append("ark:").append(arkModelId).append(',');
+        if (arkModelIds != null) {
+            for (Long id : arkModelIds.stream().sorted().toList()) {
+                if (id != null && id > 0L) {
+                    sb.append("ark:").append(id).append(',');
+                }
+            }
         }
         if (sortedFixedSourceCodes != null) {
             for (String code : sortedFixedSourceCodes) {

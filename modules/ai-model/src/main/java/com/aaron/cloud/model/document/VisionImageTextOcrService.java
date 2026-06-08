@@ -30,9 +30,11 @@ import org.springframework.stereotype.Service;
 public class VisionImageTextOcrService {
 
     private static final String OCR_USER_PROMPT =
-            "请完整输出图片中的全部可见文字（含表格：逐行逐列输出，列之间用制表符或竖线分隔，"
-                    + "保留序号、金额与小数，合并单元格按视觉顺序拆到相邻行），"
-                    + "不要省略、不要解释、不要 Markdown 代码块；若无文字则只回复：无文字";
+            "请识别图片中的全部可见文字，按从上到下、从左到右的阅读顺序逐行输出。"
+                    + "重点保留：标题、项目名称、楼盘/户型编号、房间名称（客厅、卧室、厨房、阳台、卫、玄关等）、"
+                    + "图中中文标注与英文型号。"
+                    + "纯尺寸数字、表格边框线可省略；不要输出 Markdown 表格、不要解释、不要总结。"
+                    + "若无文字则只回复：无文字";
 
     private static final HttpClient HTTP =
             HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();

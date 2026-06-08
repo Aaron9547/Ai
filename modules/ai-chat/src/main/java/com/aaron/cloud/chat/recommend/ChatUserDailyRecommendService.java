@@ -5,10 +5,11 @@ import com.aaron.cloud.chat.dto.ChatDailyRecommendDtos.DailyRecommendItemView;
 import com.aaron.cloud.chat.dto.ChatDailyRecommendDtos.DailyRecommendResponse;
 import com.aaron.cloud.chat.recommend.ChatDailyRecommendJsonSupport.DailyRecommendItemRecord;
 import com.aaron.cloud.chat.websearch.ChatWebSearchGroundingService;
+import com.aaron.cloud.chat.websearch.WebGroundingBundle;
+import com.aaron.cloud.chat.websearch.WebSearchGroundingPlan;
 import com.aaron.cloud.chat.websearch.WebSearchGroundingPlanResolver;
 import com.aaron.cloud.chat.websearch.WebSearchReference;
 import com.aaron.cloud.chat.websearch.WebSearchUserContext;
-import com.aaron.cloud.chat.websearch.cache.WebSearchGroundingMergeSupport;
 import com.aaron.cloud.common.api.enums.chat.ChatStarterPromptSource;
 import com.aaron.cloud.common.api.dto.model.ModelChatRequest;
 import com.aaron.cloud.common.api.enums.metering.LlmUsageScene;
@@ -263,33 +264,21 @@ public class ChatUserDailyRecommendService {
 
     private void generateAndPersist(TenantSnapshot snap, String subjectKey, ChatUserDailyRecommend batch) {
         long tenantId = snap.getTenantId();
-        if (!webSearchGroundingPlanResolver.isAvailable(tenantId)) {
-            failBatch(batch, "租户未配置联网检索（火山模型或内置固定源）");
+        WebSearchGroundingPlan groundingPlan = webSearchGroundingPlanResolver.resolveModelsOnly(tenantId);
+        if (!groundingPlan.hasAnyModel()) {
+            failBatch(batch, "租户未配置联网检索模型（请在「联网检索源」勾选联网模型）");
             return;
         }
 
         if (!hasPersonalizedRecommendSubject(snap)) {
-            generateColdStartHotNewsAndPersist(snap, subjectKey, batch);
+            generateColdStartHotNewsAndPersist(snap, subjectKey, batch, groundingPlan);
             return;
         }
 
         String profileHint =
                 userProfileApplicationService.buildPromptAddendum(snap, "今日资讯推荐", false);
         try {
-            String queryToday = dailyRecommendSearchQuery.buildTodayPrimary(snap, profileHint);
-            WebSearchUserContext ctxToday = WebSearchUserContext.of(queryToday);
-            var groundingToday =
-                    webSearchGroundingService.groundWithRaw(
-                            snap, ctxToday, 0L, ChatStarterPromptSource.DAILY_RECOMMEND);
-            String queryYesterday =
-                    dailyRecommendSearchQuery.buildYesterdaySecondary(snap, profileHint);
-            WebSearchUserContext ctxYesterday = WebSearchUserContext.of(queryYesterday);
-            var groundingYesterday =
-                    webSearchGroundingService.groundWithRaw(
-                            snap, ctxYesterday, 0L, ChatStarterPromptSource.DAILY_RECOMMEND);
-            var mergedBundle =
-                    WebSearchGroundingMergeSupport.merge(
-                            groundingToday.bundle(), groundingYesterday.bundle());
+            var mergedBundle = fetchDailyRecommendGrounding(snap, profileHint, groundingPlan);
             String summary =
                     mergedBundle.summaryText() == null ? "" : mergedBundle.summaryText().trim();
             if (summary.isBlank()) {
@@ -330,32 +319,24 @@ public class ChatUserDailyRecommendService {
      * 无历史对话：单次「今日热点」联网检索 + 结构化，不读画像、不跑昨日补充；登录用户与访客同一策略。
      */
     private void generateColdStartHotNewsAndPersist(
-            TenantSnapshot snap, String subjectKey, ChatUserDailyRecommend batch) {
+            TenantSnapshot snap,
+            String subjectKey,
+            ChatUserDailyRecommend batch,
+            WebSearchGroundingPlan groundingPlan) {
         long tenantId = snap.getTenantId();
         try {
-            String queryToday = dailyRecommendSearchQuery.buildTodayPrimary(snap, "");
-            WebSearchUserContext ctxToday = WebSearchUserContext.of(queryToday);
-            var groundingToday =
-                    webSearchGroundingService.groundWithRaw(
-                            snap, ctxToday, 0L, ChatStarterPromptSource.DAILY_RECOMMEND);
+            var groundingBundle = fetchDailyRecommendGrounding(snap, "", groundingPlan);
             String summary =
-                    groundingToday.bundle().summaryText() == null
-                            ? ""
-                            : groundingToday.bundle().summaryText().trim();
+                    groundingBundle.summaryText() == null ? "" : groundingBundle.summaryText().trim();
             if (summary.isBlank()) {
                 failBatch(batch, "联网检索未返回可用摘要");
                 return;
             }
 
             List<DailyRecommendItemRecord> items =
-                    structureItems(
-                            tenantId,
-                            "",
-                            summary,
-                            groundingToday.bundle().references());
+                    structureItems(tenantId, "", summary, groundingBundle.references());
             items =
-                    ChatDailyRecommendUrlSupport.attachReferenceUrls(
-                            items, groundingToday.bundle().references());
+                    ChatDailyRecommendUrlSupport.attachReferenceUrls(items, groundingBundle.references());
             items = normalizeItemDates(items, BeijingTime.today());
             if (items.isEmpty()) {
                 failBatch(batch, "语言模型未解析出有效推荐条目");
@@ -376,6 +357,21 @@ public class ChatUserDailyRecommendService {
             log.warn("[今日推荐] 冷启动热点失败 tenantId={} subject={}", tenantId, subjectKey, e);
             failBatch(batch, truncate(e.getMessage(), 480));
         }
+    }
+
+    /** 今日洞察联网：单次本日检索词；仅用联网模型（忽略内置固定源），多模型并行外呼后合并。 */
+    private WebGroundingBundle fetchDailyRecommendGrounding(
+            TenantSnapshot snap, String profileHint, WebSearchGroundingPlan groundingPlan)
+            throws Exception {
+        String queryToday = dailyRecommendSearchQuery.buildTodayPrimary(snap, profileHint);
+        return webSearchGroundingService
+                .groundWithRaw(
+                        snap,
+                        WebSearchUserContext.of(queryToday),
+                        0L,
+                        ChatStarterPromptSource.DAILY_RECOMMEND,
+                        groundingPlan)
+                .bundle();
     }
 
     private List<DailyRecommendItemRecord> structureItems(

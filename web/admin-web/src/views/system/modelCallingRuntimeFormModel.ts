@@ -256,13 +256,46 @@ export type WebSearchFixedSourceCode = (typeof WEB_SEARCH_FIXED_SOURCE_CODES)[nu
 export const WEB_SEARCH_PROVIDER_MODEL_PREFIX = "model:";
 export const WEB_SEARCH_PROVIDER_FIXED_PREFIX = "fixed:";
 
+export function parseWebSearchGroundingModelIdsJson(
+  raw: string | undefined | null,
+): number[] {
+  const rawStr = String(raw ?? "").trim();
+  if (!rawStr || rawStr === "[]") {
+    return [];
+  }
+  try {
+    const parsed: unknown = JSON.parse(rawStr);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    const out: number[] = [];
+    for (const item of parsed) {
+      const n = Number(item);
+      if (Number.isSafeInteger(n) && n > 0 && !out.includes(n)) {
+        out.push(n);
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 export function webSearchProviderKeysFromRuntime(
   arkModelIdRaw: string | undefined | null,
   fixedSourcesJson: string | undefined | null,
+  modelIdsJson?: string | undefined | null,
 ): string[] {
   const keys: string[] = [];
-  const arkId = parseWebSearchGroundingModelId(arkModelIdRaw);
-  if (arkId != null) keys.push(`${WEB_SEARCH_PROVIDER_MODEL_PREFIX}${arkId}`);
+  const modelIds = parseWebSearchGroundingModelIdsJson(modelIdsJson);
+  if (modelIds.length > 0) {
+    for (const id of modelIds) {
+      keys.push(`${WEB_SEARCH_PROVIDER_MODEL_PREFIX}${id}`);
+    }
+  } else {
+    const arkId = parseWebSearchGroundingModelId(arkModelIdRaw);
+    if (arkId != null) keys.push(`${WEB_SEARCH_PROVIDER_MODEL_PREFIX}${arkId}`);
+  }
   for (const code of parseWebSearchFixedSourcesJson(fixedSourcesJson)) {
     keys.push(`${WEB_SEARCH_PROVIDER_FIXED_PREFIX}${code}`);
   }
@@ -272,19 +305,30 @@ export function webSearchProviderKeysFromRuntime(
 export function normalizeWebSearchProviderKeys(keys: string[]): string[] {
   const fixed = keys.filter((k) => k.startsWith(WEB_SEARCH_PROVIDER_FIXED_PREFIX));
   const models = keys.filter((k) => k.startsWith(WEB_SEARCH_PROVIDER_MODEL_PREFIX));
-  const model = models.length > 0 ? [models[models.length - 1]!] : [];
-  return [...model, ...fixed];
+  const seen = new Set<string>();
+  const uniqueModels: string[] = [];
+  for (const k of models) {
+    if (!seen.has(k)) {
+      seen.add(k);
+      uniqueModels.push(k);
+    }
+  }
+  return [...uniqueModels, ...fixed];
 }
 
 export function webSearchRuntimeFromProviderKeys(keys: string[]): {
   webSearchGroundingModelId: string;
+  webSearchGroundingModelIdsJson: string;
   webSearchGroundingFixedSourcesJson: string;
 } {
-  let modelId = "";
+  const modelIds: number[] = [];
   const fixed: WebSearchFixedSourceCode[] = [];
   for (const k of keys) {
     if (k.startsWith(WEB_SEARCH_PROVIDER_MODEL_PREFIX)) {
-      modelId = k.slice(WEB_SEARCH_PROVIDER_MODEL_PREFIX.length);
+      const id = Number(k.slice(WEB_SEARCH_PROVIDER_MODEL_PREFIX.length));
+      if (Number.isSafeInteger(id) && id > 0 && !modelIds.includes(id)) {
+        modelIds.push(id);
+      }
     } else if (k.startsWith(WEB_SEARCH_PROVIDER_FIXED_PREFIX)) {
       const code = k.slice(WEB_SEARCH_PROVIDER_FIXED_PREFIX.length);
       if (
@@ -296,7 +340,8 @@ export function webSearchRuntimeFromProviderKeys(keys: string[]): {
     }
   }
   return {
-    webSearchGroundingModelId: modelId,
+    webSearchGroundingModelId: modelIds.length > 0 ? String(modelIds[0]) : "",
+    webSearchGroundingModelIdsJson: JSON.stringify(modelIds),
     webSearchGroundingFixedSourcesJson: JSON.stringify(fixed),
   };
 }

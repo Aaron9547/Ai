@@ -1258,6 +1258,7 @@ async function applyModelCallingFromApi(mc: TenantShellModelCallingRuntime | und
   webSearchProviderKeys.value = webSearchProviderKeysFromRuntime(
     mc.webSearchGroundingModelId,
     mc.webSearchGroundingFixedSourcesJson,
+    mc.webSearchGroundingModelIdsJson,
   );
   Object.assign(promptLimitsForm, parseChatPromptLimitsJson(mc.chatPromptLimitsJson ?? "{}"));
   Object.assign(memoryPolicyForm, parseMemoryPolicyJson(mc.memoryPolicyJson ?? "{}"));
@@ -1435,8 +1436,11 @@ async function saveModelCalling() {
     ElMessage.error(t("admin.shell.modelCalling.validation.webSearchGrounding"));
     return;
   }
-  const { webSearchGroundingModelId: webModelStr, webSearchGroundingFixedSourcesJson: fixedSourcesJson } =
-    webSearchRuntimeFromProviderKeys(webSearchProviderKeys.value);
+  const {
+    webSearchGroundingModelId: webModelStr,
+    webSearchGroundingModelIdsJson: webModelIdsJson,
+    webSearchGroundingFixedSourcesJson: fixedSourcesJson,
+  } = webSearchRuntimeFromProviderKeys(webSearchProviderKeys.value);
   if (!validateInputGuard(inputGuardForm)) {
     ElMessage.error(t("admin.shell.modelCalling.validation.guardRange"));
     return;
@@ -1450,6 +1454,7 @@ async function saveModelCalling() {
     const body: tenantShellApi.TenantShellModelCallingPutBody = {
       memoryEmbeddingVectorModelId: embStr.trim(),
       webSearchGroundingModelId: webModelStr.trim(),
+      webSearchGroundingModelIdsJson: webModelIdsJson,
       webSearchGroundingFixedSourcesJson: fixedSourcesJson,
       webSearchQueryRewriteModelId:
         webSearchQueryRewriteModelId.value != null

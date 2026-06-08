@@ -6,10 +6,12 @@ import java.util.List;
 
 /**
  * 联网编排：Ark 与固定源关键词 LLM 共用 {@link #recentHistoryForArk()}（近 1～2 轮 user/assistant，无画像）；
- * 当前轮正文为 {@link #keywordSourceText()}。
+ * 当前轮正文为 {@link #keywordSourceText()}（不含附件 OCR 长文）。
  */
 public record WebSearchUserContext(
-        String keywordSourceText, List<ModelChatRequest.MessageTurn> recentHistoryForArk) {
+        String keywordSourceText,
+        List<ModelChatRequest.MessageTurn> recentHistoryForArk,
+        boolean conservativeKeywordRewrite) {
 
     public WebSearchUserContext {
         keywordSourceText = keywordSourceText == null ? "" : keywordSourceText.trim();
@@ -17,8 +19,12 @@ public record WebSearchUserContext(
                 recentHistoryForArk == null ? List.of() : List.copyOf(recentHistoryForArk);
     }
 
+    public WebSearchUserContext(String keywordSourceText, List<ModelChatRequest.MessageTurn> recentHistoryForArk) {
+        this(keywordSourceText, recentHistoryForArk, false);
+    }
+
     public static WebSearchUserContext of(String currentTurnText) {
-        return new WebSearchUserContext(currentTurnText, List.of());
+        return new WebSearchUserContext(currentTurnText, List.of(), false);
     }
 
     /**
@@ -28,7 +34,18 @@ public record WebSearchUserContext(
             String currentTurnText,
             List<ModelChatRequest.MessageTurn> historyTurns,
             int maxTurnPairs) {
-        return new WebSearchUserContext(currentTurnText, tailHistoryForArk(historyTurns, maxTurnPairs));
+        return forConversation(currentTurnText, historyTurns, maxTurnPairs, false);
+    }
+
+    public static WebSearchUserContext forConversation(
+            String currentTurnText,
+            List<ModelChatRequest.MessageTurn> historyTurns,
+            int maxTurnPairs,
+            boolean conservativeKeywordRewrite) {
+        return new WebSearchUserContext(
+                currentTurnText,
+                tailHistoryForArk(historyTurns, maxTurnPairs),
+                conservativeKeywordRewrite);
     }
 
     /** @deprecated 使用 {@link #of(String)} */

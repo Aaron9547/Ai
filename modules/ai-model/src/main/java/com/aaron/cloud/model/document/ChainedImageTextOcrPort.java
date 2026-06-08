@@ -7,8 +7,9 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
 /**
- * 图片 OCR 云端回退（可选）。本机 RapidOCR / Tesseract 已由
- * {@link com.aaron.cloud.common.document.TikaDocumentTextExtractor} 处理；对话附件上传默认不注入此链。
+ * 图片 OCR 云端回退：租户视觉大模型读图（OpenAI 兼容 {@code image_url}）。
+ * 本机 RapidOCR/Tesseract 由 {@link com.aaron.cloud.common.document.TikaDocumentTextExtractor} 处理；
+ * 对话图片在本机 OCR 质量不足时由 {@link com.aaron.cloud.chat.ChatAttachmentUploadService} 调用。
  */
 @Primary
 @Service

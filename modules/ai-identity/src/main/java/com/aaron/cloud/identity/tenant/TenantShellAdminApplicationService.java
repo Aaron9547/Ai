@@ -132,9 +132,11 @@ public class TenantShellAdminApplicationService {
         String mem = body.getMemoryEmbeddingVectorModelId() == null ? "" : body.getMemoryEmbeddingVectorModelId().trim();
         String webModelId =
                 body.getWebSearchGroundingModelId() == null ? "" : body.getWebSearchGroundingModelId().trim();
+        String webModelIdsJson =
+                jsonArrayOrDefault(body.getWebSearchGroundingModelIdsJson(), "[]");
         String fixedSourcesJson =
                 jsonArrayOrDefault(body.getWebSearchGroundingFixedSourcesJson(), "[]");
-        validateWebSearchGroundingSelection(tenantId, webModelId, fixedSourcesJson);
+        validateWebSearchGroundingSelection(tenantId, webModelId, webModelIdsJson, fixedSourcesJson);
         String rewriteModelId =
                 body.getWebSearchQueryRewriteModelId() == null
                         ? ""
@@ -174,6 +176,7 @@ public class TenantShellAdminApplicationService {
         List<PutItem> items = new ArrayList<>();
         items.add(item(TenantRuntimeSettingKey.MEMORY_EMBEDDING_VECTOR_MODEL_ID, mem));
         items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MODEL_ID, webModelId));
+        items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MODEL_IDS_JSON, webModelIdsJson));
         items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON, fixedSourcesJson));
         items.add(item(TenantRuntimeSettingKey.WEB_SEARCH_QUERY_REWRITE_MODEL_ID, rewriteModelId));
         items.addAll(clearLegacyWebSearchQueryRewriteModelKeys());
@@ -355,14 +358,45 @@ public class TenantShellAdminApplicationService {
     }
 
     private void validateWebSearchGroundingSelection(
-            long tenantId, String arkModelId, String fixedSourcesJson) {
+            long tenantId, String arkModelId, String arkModelIdsJson, String fixedSourcesJson) {
         boolean hasArk = arkModelId != null && !arkModelId.isBlank();
         if (hasArk) {
             validateOptionalWebSearchModelId(tenantId, arkModelId);
         }
+        for (String id : parseWebSearchModelIdsFromJson(arkModelIdsJson)) {
+            validateOptionalWebSearchModelId(tenantId, id);
+        }
+        boolean hasModelList = !parseWebSearchModelIdsFromJson(arkModelIdsJson).isEmpty();
         boolean hasFixed = hasNonEmptyFixedSourcesJson(fixedSourcesJson);
-        if (!hasArk && !hasFixed) {
+        if (!hasArk && !hasModelList && !hasFixed) {
             throw runtimeMessages.badRequest(TenantRuntimeSettingMessages.Shell.WEB_SEARCH_GROUNDING_REQUIRED);
+        }
+    }
+
+    private List<String> parseWebSearchModelIdsFromJson(String json) {
+        if (json == null || json.isBlank() || "[]".equals(json.trim())) {
+            return List.of();
+        }
+        try {
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(json.trim());
+            if (!node.isArray()) {
+                return List.of();
+            }
+            List<String> out = new ArrayList<>();
+            for (com.fasterxml.jackson.databind.JsonNode n : node) {
+                if (n == null || n.isNull()) {
+                    continue;
+                }
+                String text = n.isNumber() ? n.asText() : n.asText("");
+                if (text != null && !text.isBlank() && !out.contains(text.trim())) {
+                    out.add(text.trim());
+                }
+            }
+            return out;
+        } catch (Exception e) {
+            throw runtimeMessages.badField(
+                    TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MODEL_IDS_JSON,
+                    TenantRuntimeSettingMessages.Validation.INVALID_JSON);
         }
     }
 
@@ -465,6 +499,8 @@ public class TenantShellAdminApplicationService {
                 tenantRuntimeSettingApplicationService.getEffectiveValueText(
                         tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MODEL_ID),
                 tenantRuntimeSettingApplicationService.getEffectiveValueText(
+                        tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MODEL_IDS_JSON),
+                tenantRuntimeSettingApplicationService.getEffectiveValueText(
                         tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON),
                 effectiveQueryRewriteModelId(tenantId),
                 tenantRuntimeSettingApplicationService.getEffectiveValueText(
@@ -562,6 +598,7 @@ public class TenantShellAdminApplicationService {
     public record ModelCallingRuntimeDto(
             String memoryEmbeddingVectorModelId,
             String webSearchGroundingModelId,
+            String webSearchGroundingModelIdsJson,
             String webSearchGroundingFixedSourcesJson,
             String webSearchQueryRewriteModelId,
             String chatPromptLimitsJson,
@@ -624,6 +661,8 @@ public class TenantShellAdminApplicationService {
         private String memoryEmbeddingVectorModelId;
         /** {@link TenantRuntimeSettingKey#WEB_SEARCH_GROUNDING_MODEL_ID}；火山 Ark，可留空 */
         private String webSearchGroundingModelId;
+        /** {@link TenantRuntimeSettingKey#WEB_SEARCH_GROUNDING_MODEL_IDS_JSON}；联网模型 id 数组 */
+        private String webSearchGroundingModelIdsJson;
         /** {@link TenantRuntimeSettingKey#WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON}；内置固定源代码数组 */
         private String webSearchGroundingFixedSourcesJson;
         /** {@link TenantRuntimeSettingKey#WEB_SEARCH_QUERY_REWRITE_MODEL_ID} */

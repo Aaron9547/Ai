@@ -87,7 +87,19 @@ public class ChatWebSearchGroundingService {
             long conversationId,
             Consumer<List<WebSearchReference>> onCumulativeReferences,
             ChatStarterPromptSource webKnowledgeSource) {
-        WebSearchGroundingPlan plan = planResolver.resolve(snap.getTenantId());
+        return groundMultiRoundsWithRaw(
+                snap, userContext, conversationId, onCumulativeReferences, webKnowledgeSource, null);
+    }
+
+    public WebGroundingBundle groundMultiRoundsWithRaw(
+            TenantSnapshot snap,
+            WebSearchUserContext userContext,
+            long conversationId,
+            Consumer<List<WebSearchReference>> onCumulativeReferences,
+            ChatStarterPromptSource webKnowledgeSource,
+            WebSearchGroundingPlan planOverride) {
+        WebSearchGroundingPlan plan =
+                planOverride != null ? planOverride : planResolver.resolve(snap.getTenantId());
         if (!plan.hasAnySource()) {
             throw new IllegalStateException("未配置联网检索（火山模型或内置固定源至少启用一项）");
         }
@@ -104,11 +116,7 @@ public class ChatWebSearchGroundingService {
         List<String> roundSuffixes = multi.suffixes();
         int configuredRounds = multi.rounds();
         WebSearchGroundingCachePolicy cachePolicy = webSearchGroundingCacheService.policy(snap.getTenantId());
-        List<String> fixedCodes = WebSearchModelScopeSupport.sortedFixedSourceCodes(plan.fixedSources());
-        Long arkId = plan.arkModel().map(SysLlmModel::getId).orElse(null);
-        String configScope =
-                webSearchGroundingCacheService.configScopeHash(configuredRounds, roundSuffixes, fixedCodes, arkId);
-        long cacheModelKey = WebSearchModelScopeSupport.cacheScopeModelKey(arkId, fixedCodes);
+        PlanCacheScope cacheScope = planCacheScope(plan, configuredRounds, roundSuffixes);
 
         Optional<WebGroundingBundle> localHit =
                 lookupLocalGroundingBundle(
@@ -123,8 +131,8 @@ public class ChatWebSearchGroundingService {
             WebGroundingBundle b = localHit.get();
             return finalizeGrounding(
                     snap,
-                    cacheModelKey,
-                    configScope,
+                    cacheScope.cacheModelKey(),
+                    cacheScope.configScope(),
                     normalized,
                     base,
                     b,
@@ -136,7 +144,11 @@ public class ChatWebSearchGroundingService {
 
         Optional<WebSearchGroundingCacheLookup> cached =
                 webSearchGroundingCacheService.lookup(
-                        snap.getTenantId(), cacheModelKey, configScope, normalized, cachePolicy);
+                        snap.getTenantId(),
+                        cacheScope.cacheModelKey(),
+                        cacheScope.configScope(),
+                        normalized,
+                        cachePolicy);
         int effectiveRounds = configuredRounds;
         WebGroundingBundle seed = null;
         WebSearchCacheTier tier = WebSearchCacheTier.MISS;
@@ -158,8 +170,8 @@ public class ChatWebSearchGroundingService {
         if (effectiveRounds <= 0 && seed != null) {
             return finalizeGrounding(
                     snap,
-                    cacheModelKey,
-                    configScope,
+                    cacheScope.cacheModelKey(),
+                    cacheScope.configScope(),
                     normalized,
                     base,
                     seed,
@@ -186,8 +198,8 @@ public class ChatWebSearchGroundingService {
         WebGroundingBundle merged = seed == null ? live : WebSearchGroundingMergeSupport.merge(seed, live);
         return finalizeGrounding(
                 snap,
-                cacheModelKey,
-                configScope,
+                cacheScope.cacheModelKey(),
+                cacheScope.configScope(),
                 normalized,
                 base,
                 merged,
@@ -267,15 +279,14 @@ public class ChatWebSearchGroundingService {
         if (plan == null || !plan.hasAnySource()) {
             return Optional.empty();
         }
-        List<String> fixedCodes = WebSearchModelScopeSupport.sortedFixedSourceCodes(plan.fixedSources());
-        Long arkId = plan.arkModel().map(SysLlmModel::getId).orElse(null);
-        String configScope =
-                webSearchGroundingCacheService.configScopeHash(
-                        configuredRounds, roundSuffixes, fixedCodes, arkId);
-        long cacheModelKey = WebSearchModelScopeSupport.cacheScopeModelKey(arkId, fixedCodes);
+        PlanCacheScope cacheScope = planCacheScope(plan, configuredRounds, roundSuffixes);
         Optional<WebSearchGroundingCacheLookup> cached =
                 webSearchGroundingCacheService.lookup(
-                        tenantId, cacheModelKey, configScope, normalized, cachePolicy);
+                        tenantId,
+                        cacheScope.cacheModelKey(),
+                        cacheScope.configScope(),
+                        normalized,
+                        cachePolicy);
         if (cached.isPresent() && cached.get().usable()) {
             WebSearchGroundingCacheLookup hit = cached.get();
             int effectiveRounds = cachePolicy.effectiveRoundsForTier(hit.tier(), configuredRounds);
@@ -350,11 +361,7 @@ public class ChatWebSearchGroundingService {
         List<String> roundSuffixes = multi.suffixes();
         int configuredRounds = multi.rounds();
         WebSearchGroundingCachePolicy cachePolicy = webSearchGroundingCacheService.policy(snap.getTenantId());
-        List<String> fixedCodes = WebSearchModelScopeSupport.sortedFixedSourceCodes(plan.fixedSources());
-        Long arkId = plan.arkModel().map(SysLlmModel::getId).orElse(null);
-        String configScope =
-                webSearchGroundingCacheService.configScopeHash(configuredRounds, roundSuffixes, fixedCodes, arkId);
-        long cacheModelKey = WebSearchModelScopeSupport.cacheScopeModelKey(arkId, fixedCodes);
+        PlanCacheScope cacheScope = planCacheScope(plan, configuredRounds, roundSuffixes);
 
         Optional<WebGroundingBundle> localHit =
                 lookupLocalGroundingBundle(
@@ -369,8 +376,8 @@ public class ChatWebSearchGroundingService {
             WebGroundingBundle b = localHit.get();
             finalizeGrounding(
                     snap,
-                    cacheModelKey,
-                    configScope,
+                    cacheScope.cacheModelKey(),
+                    cacheScope.configScope(),
                     normalized,
                     base,
                     b,
@@ -383,7 +390,11 @@ public class ChatWebSearchGroundingService {
 
         Optional<WebSearchGroundingCacheLookup> cached =
                 webSearchGroundingCacheService.lookup(
-                        snap.getTenantId(), cacheModelKey, configScope, normalized, cachePolicy);
+                        snap.getTenantId(),
+                        cacheScope.cacheModelKey(),
+                        cacheScope.configScope(),
+                        normalized,
+                        cachePolicy);
         int effectiveRounds = configuredRounds;
         WebGroundingBundle seed = null;
         if (cached.isPresent() && cached.get().usable()) {
@@ -403,8 +414,8 @@ public class ChatWebSearchGroundingService {
         if (effectiveRounds <= 0 && seed != null) {
             finalizeGrounding(
                     snap,
-                    cacheModelKey,
-                    configScope,
+                    cacheScope.cacheModelKey(),
+                    cacheScope.configScope(),
                     normalized,
                     base,
                     seed,
@@ -433,8 +444,8 @@ public class ChatWebSearchGroundingService {
                     seed == null ? live : WebSearchGroundingMergeSupport.merge(seed, live);
             finalizeGrounding(
                     snap,
-                    cacheModelKey,
-                    configScope,
+                    cacheScope.cacheModelKey(),
+                    cacheScope.configScope(),
                     normalized,
                     base,
                     merged,
@@ -481,8 +492,8 @@ public class ChatWebSearchGroundingService {
                                             false);
                             finalizeGrounding(
                                     snap,
-                                    cacheModelKey,
-                                    configScope,
+                                    cacheScope.cacheModelKey(),
+                                    cacheScope.configScope(),
                                     normalized,
                                     base,
                                     rest,
@@ -516,10 +527,33 @@ public class ChatWebSearchGroundingService {
             WebSearchUserContext userContext,
             long conversationId,
             ChatStarterPromptSource webKnowledgeSource) {
+        return groundWithRaw(snap, userContext, conversationId, webKnowledgeSource, null);
+    }
+
+    public WebSearchExecutionResult groundWithRaw(
+            TenantSnapshot snap,
+            WebSearchUserContext userContext,
+            long conversationId,
+            ChatStarterPromptSource webKnowledgeSource,
+            WebSearchGroundingPlan planOverride) {
         WebGroundingBundle b =
-                groundMultiRoundsWithRaw(snap, userContext, conversationId, null, webKnowledgeSource);
+                groundMultiRoundsWithRaw(
+                        snap, userContext, conversationId, null, webKnowledgeSource, planOverride);
         return new WebSearchExecutionResult(b, null);
     }
+
+    private PlanCacheScope planCacheScope(
+            WebSearchGroundingPlan plan, int configuredRounds, List<String> roundSuffixes) {
+        List<String> fixedCodes = WebSearchModelScopeSupport.sortedFixedSourceCodes(plan.fixedSources());
+        List<Long> arkIds = WebSearchModelScopeSupport.sortedArkModelIds(plan.arkModels());
+        String configScope =
+                webSearchGroundingCacheService.configScopeHash(
+                        configuredRounds, roundSuffixes, fixedCodes, arkIds);
+        long cacheModelKey = WebSearchModelScopeSupport.cacheScopeModelKey(arkIds, fixedCodes);
+        return new PlanCacheScope(cacheModelKey, configScope);
+    }
+
+    private record PlanCacheScope(long cacheModelKey, String configScope) {}
 
     private WebGroundingBundle executeRounds(
             List<GroundingSourceExecution> executions,
@@ -656,7 +690,12 @@ public class ChatWebSearchGroundingService {
         }
         List<String> keywords =
                 webSearchQueryRewriteService.rewriteKeywordsForFixedSources(
-                        snap, ctx.keywordSourceText(), ctx.recentHistoryForArk(), conversationId, usageScene);
+                        snap,
+                        ctx.keywordSourceText(),
+                        ctx.recentHistoryForArk(),
+                        conversationId,
+                        usageScene,
+                        ctx.conservativeKeywordRewrite());
         if (!keywords.isEmpty()) {
             log.info(
                     "[联网搜索] 固定源检索问句（多轮共用）：租户 {}，{}",
@@ -1329,34 +1368,25 @@ public class ChatWebSearchGroundingService {
 
     private List<GroundingSourceExecution> buildExecutions(TenantSnapshot snap, WebSearchGroundingPlan plan) {
         List<GroundingSourceExecution> out = new ArrayList<>();
-        plan.arkModel()
-                .ifPresent(
-                        model -> {
-                            var webProv = model.resolveWebSearchProvider();
-                            if (webProv == null || webProv != LlmWebSearchProvider.VOLCENGINE_ARK_BOT) {
-                                throw new IllegalStateException(
-                                        "联网搜索模型须为火山 Ark Bot：" + model.getAlias());
-                            }
-                            if (model.getApiKeyCipher() == null || model.getApiKeyCipher().isBlank()) {
-                                throw new IllegalStateException("联网搜索模型未配置 API Key：" + model.getAlias());
-                            }
-                            String apiKey;
-                            try {
-                                apiKey = aesSecretCipher.decryptFromBase64(model.getApiKeyCipher());
-                            } catch (Exception e) {
-                                throw new IllegalStateException(
-                                        "联网搜索 API Key 解密失败：" + model.getAlias(), e);
-                            }
-                            WebSearchModelProvider provider = registry.require(webProv);
-                            out.add(new GroundingSourceExecution(
-                                    sourceLabel(model),
-                                    snap,
-                                    model,
-                                    provider,
-                                    apiKey,
-                                    null,
-                                    null));
-                        });
+        for (SysLlmModel model : plan.arkModels()) {
+            var webProv = model.resolveWebSearchProvider();
+            if (webProv == null || webProv != LlmWebSearchProvider.VOLCENGINE_ARK_BOT) {
+                throw new IllegalStateException("联网搜索模型须为火山 Ark Bot：" + model.getAlias());
+            }
+            if (model.getApiKeyCipher() == null || model.getApiKeyCipher().isBlank()) {
+                throw new IllegalStateException("联网搜索模型未配置 API Key：" + model.getAlias());
+            }
+            String apiKey;
+            try {
+                apiKey = aesSecretCipher.decryptFromBase64(model.getApiKeyCipher());
+            } catch (Exception e) {
+                throw new IllegalStateException("联网搜索 API Key 解密失败：" + model.getAlias(), e);
+            }
+            WebSearchModelProvider provider = registry.require(webProv);
+            out.add(
+                    new GroundingSourceExecution(
+                            sourceLabel(model), snap, model, provider, apiKey, null, null));
+        }
         if (plan.fixedSources() != null) {
             for (WebSearchFixedSource src : plan.fixedSources()) {
                 WebSearchFixedSourceProvider provider = fixedSourceRegistry.require(src);

@@ -19,6 +19,8 @@ export type TenantShellModelCallingRuntime = {
   memoryEmbeddingVectorModelId: string;
   /** WEB_SEARCH_GROUNDING_MODEL_ID；火山 Ark（可留空） */
   webSearchGroundingModelId: string;
+  /** WEB_SEARCH_GROUNDING_MODEL_IDS_JSON；联网模型 id 数组（可多选） */
+  webSearchGroundingModelIdsJson: string;
   /** WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON；内置固定源代码数组 */
   webSearchGroundingFixedSourcesJson: string;
   /** WEB_SEARCH_QUERY_REWRITE_MODEL_ID；LANGUAGE 或 WEB_SEARCH */
@@ -97,6 +99,7 @@ export type TenantShellModelCallingPutBody = Pick<
   TenantShellModelCallingRuntime,
   | "memoryEmbeddingVectorModelId"
   | "webSearchGroundingModelId"
+  | "webSearchGroundingModelIdsJson"
   | "webSearchGroundingFixedSourcesJson"
   | "webSearchQueryRewriteModelId"
   | "chatPromptLimitsJson"

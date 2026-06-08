@@ -1,6 +1,7 @@
 package com.aaron.cloud.chat;
 
 import com.aaron.cloud.chat.dto.*;
+import com.aaron.cloud.chat.starter.ChatStarterFollowUpService;
 import com.aaron.cloud.common.document.ExtractedDocumentTexts;
 import com.aaron.cloud.common.document.UploadedFileKind;
 import com.aaron.cloud.chat.intent.ChatIntentStreamRouter;
@@ -16,7 +17,7 @@ import com.aaron.cloud.chat.websearch.WebSearchStreamGroundingSession;
 import com.aaron.cloud.chat.knowledgeplanet.KnowledgePlanetIngestService;
 import com.aaron.cloud.chat.mcp.ChatMcpToolCallingSupport;
 import com.aaron.cloud.chat.mcp.ChatMcpToolCallingSupport.McpToolCallSummary;
-import com.aaron.cloud.chat.starter.ChatStarterFollowUpService;
+import com.aaron.cloud.chat.support.ChatAttachmentRetrievalSupport;
 import com.aaron.cloud.chat.websearch.WebSearchReference;
 import com.aaron.cloud.chat.websearch.WebSearchUserContext;
 import com.aaron.cloud.chat.websearch.cache.WebSearchGroundingMetaSupport;
@@ -473,10 +474,9 @@ public class ChatApplicationService {
     }
 
     private void assertWebSearchQuotaAllowsSend(long tenantId) {
-        webSearchGroundingPlanResolver
-                .resolve(tenantId)
-                .arkModel()
-                .ifPresent(llmTokenQuotaCoordinator::assertQuotaAllowsSend);
+        for (var model : webSearchGroundingPlanResolver.resolve(tenantId).arkModels()) {
+            llmTokenQuotaCoordinator.assertQuotaAllowsSend(model);
+        }
     }
 
     public SseEmitter streamUserMessage(long conversationId, ChatSendPayload payload) {
@@ -664,15 +664,27 @@ public class ChatApplicationService {
                 snap.getTenantId(),
                 conversationId,
                 millisSince(openT0));
-        IntentRoute baseIntent = chatRagKbIds.isEmpty() ? IntentRoute.CHAT_ONLY : IntentRoute.RAG;
-        String ragLexicalOriginal = buildRagLexicalSearchQuery(payload, augmentedUserText);
+        IntentRoute baseIntent =
+                chatRagKbIds.isEmpty() || ChatAttachmentRetrievalSupport.shouldSkipRag(attachments)
+                        ? IntentRoute.CHAT_ONLY
+                        : IntentRoute.RAG;
+        String retrievalKeywordSource =
+                ChatAttachmentRetrievalSupport.retrievalKeywordSource(
+                        payload, augmentedUserText, ASSISTANT_REGENERATE_INSTRUCTION, attachments);
+        String ragLexicalOriginal = retrievalKeywordSource;
         ChatPromptLimitsRuntime promptLimitsEarly =
                 tenantRuntimeSettingApplicationService.chatPromptLimits(snap.getTenantId());
         List<ModelChatRequest.MessageTurn> historyForRag =
                 buildPromptHistoryTurns(
                         snap.getTenantId(), conversationId, pairedUserMessageId, promptLimitsEarly);
         RagRetrievalQueryPlan ragPlan =
-                ragRetrievalQueryPlanner.plan(snap, historyForRag, ragLexicalOriginal, conversationId);
+                ragRetrievalQueryPlanner.plan(
+                        snap,
+                        historyForRag,
+                        ragLexicalOriginal,
+                        conversationId,
+                        chatRagKbIds.isEmpty() ? null : chatRagKbIds.getFirst(),
+                        ChatAttachmentRetrievalSupport.shouldSkipRagQueryRewrite(attachments));
         String ragLexicalQuery = ragPlan.retrievalQuery();
         RagRetrievalProfile ragProfile = ragPlan.profile();
         IntentRoute routeIntent =
@@ -857,10 +869,22 @@ public class ChatApplicationService {
                 snap.getTenantId(),
                 conversationId,
                 millisSince(openT0));
-        final boolean webSearchActiveForStream =
+        final boolean webSearchEnabledAndAvailable =
                 payload.isWebSearchEnabled()
                         && webSearchGroundingPlanResolver.isAvailable(snap.getTenantId());
-        if (payload.isWebSearchEnabled() && !webSearchActiveForStream) {
+        final boolean webSearchActiveForStream =
+                webSearchEnabledAndAvailable
+                        && !ChatAttachmentRetrievalSupport.shouldDeferWebSearch(
+                                attachments, payload.getContent());
+        if (payload.isWebSearchEnabled()
+                && webSearchGroundingPlanResolver.isAvailable(snap.getTenantId())
+                && !webSearchActiveForStream) {
+            log.info(
+                    "[对话] 联网搜索跳过（附件 OCR 无可用实体且用户在指代上传内容）：租户 {}，会话 {}",
+                    snap.getTenantId(),
+                    conversationId);
+        }
+        if (payload.isWebSearchEnabled() && !webSearchEnabledAndAvailable) {
             throw new IllegalStateException("联网检索不可用");
         }
         final ArrayList<WebSearchReference> webSearchRefsForStream = new ArrayList<>();
@@ -959,7 +983,11 @@ public class ChatApplicationService {
                             long tWeb = System.currentTimeMillis();
                             WebSearchUserContext webCtx =
                                     WebSearchUserContext.forConversation(
-                                            augmentedUserText, historyTurns, 2);
+                                            retrievalKeywordSource,
+                                            historyTurns,
+                                            2,
+                                            ChatAttachmentRetrievalSupport.useConservativeWebKeywordRewrite(
+                                                    attachments));
                             WebSearchStreamGroundingSession webSession =
                                     chatWebSearchGroundingService.groundForChatStream(
                                             snap,
@@ -988,7 +1016,11 @@ public class ChatApplicationService {
                         } else {
                             WebSearchUserContext webCtx =
                                     WebSearchUserContext.forConversation(
-                                            augmentedUserText, historyTurns, 2);
+                                            retrievalKeywordSource,
+                                            historyTurns,
+                                            2,
+                                            ChatAttachmentRetrievalSupport.useConservativeWebKeywordRewrite(
+                                                    attachments));
                             Optional<WebGroundingBundle> localKb =
                                     chatWebSearchGroundingService.tryLocalGroundingWithoutOutbound(
                                             snap, webCtx, conversationId, null);
@@ -1156,7 +1188,7 @@ public class ChatApplicationService {
                                     pairedUserMessageId,
                                     snap.getTenantId(),
                                     webSearchRefsForStream,
-                                    WebSearchQueryNormalizer.normalize(augmentedUserText));
+                                    WebSearchQueryNormalizer.normalize(retrievalKeywordSource));
                         }
                         ragRetrievalHitCounter.recordHits(snap.getTenantId(), ragHitsForStream);
                         if (pairedUserMessageId != null) {
@@ -2592,37 +2624,14 @@ public class ChatApplicationService {
     /** 涓?{@link #buildRegenerateUserPromptForModel} 鎷兼帴涓€鑷达紝渚?RAG 璇嶆硶妫€绱㈡娊鍙栫湡瀹炵敤鎴烽棶鍙ワ紙閬垮厤鎸囦护鍓嶇紑鍗犳弧 LIKE 绐楀彛锛夈€?*/
     private static final String REGENERATE_USER_QUESTION_MARKER = "我的问题是：";
 
-    private static final String USER_ATTACHMENT_BLOCK_MARKER = "\n\n【以下为用户上传文档摘要，请结合回答】";
-
     /**
      * RAG 检索（向量 + 词法）使用的查询串：仅本轮用户输入 {@link ChatSendPayload#getContent()}，不包含合并进 user
      * 消息的附件长文，避免嵌入/关键词被文摘稀释或与「本轮一句话」语义无关仍强相关。重新生成场景仍从合成 user 正文中截取「我的问题是：」后的真实提问。
      */
-    private static String buildRagLexicalSearchQuery(ChatSendPayload payload, String augmentedUserText) {
-        String aug = augmentedUserText == null ? "" : augmentedUserText.trim();
-        if (aug.startsWith(ASSISTANT_REGENERATE_INSTRUCTION)) {
-            int mi = aug.indexOf(REGENERATE_USER_QUESTION_MARKER);
-            if (mi >= 0) {
-                int bodyStart = mi + REGENERATE_USER_QUESTION_MARKER.length();
-                int att = aug.indexOf(USER_ATTACHMENT_BLOCK_MARKER);
-                String slice =
-                        att >= bodyStart ? aug.substring(bodyStart, att).trim() : aug.substring(bodyStart).trim();
-                if (!slice.isEmpty()) {
-                    return slice;
-                }
-            }
-        }
-        String userOnly = payload.getContent() == null ? "" : payload.getContent().trim();
-        if (!userOnly.isEmpty()) {
-            return userOnly;
-        }
-        if (!aug.isEmpty()) {
-            int att = aug.indexOf(USER_ATTACHMENT_BLOCK_MARKER);
-            if (att > 0) {
-                return aug.substring(0, att).trim();
-            }
-        }
-        return "";
+    private static String buildRagLexicalSearchQuery(
+            ChatSendPayload payload, String augmentedUserText, List<ChatAttachment> attachments) {
+        return ChatAttachmentRetrievalSupport.retrievalKeywordSource(
+                payload, augmentedUserText, ASSISTANT_REGENERATE_INSTRUCTION, attachments);
     }
 
     private static long millisSince(long t0) {
@@ -2745,7 +2754,7 @@ public class ChatApplicationService {
             return userText;
         }
         StringBuilder sb = new StringBuilder(userText);
-        sb.append(USER_ATTACHMENT_BLOCK_MARKER).append("\n");
+        sb.append(ChatAttachmentRetrievalSupport.USER_ATTACHMENT_BLOCK_MARKER).append("\n");
         for (ChatAttachment a : attachments) {
             sb.append("\n--- 文件：")
                     .append(a.getFileName())

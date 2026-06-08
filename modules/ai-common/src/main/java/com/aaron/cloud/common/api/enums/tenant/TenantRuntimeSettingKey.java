@@ -86,12 +86,12 @@ public enum TenantRuntimeSettingKey {
             "",
             false),
     /**
-     * 已改为 {@link #WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON} + 单 Ark {@link #WEB_SEARCH_GROUNDING_MODEL_ID}；仅作读兼容。
+     * 启用的联网模型 id 列表（JSON 十进制数组）；与 {@link #WEB_SEARCH_GROUNDING_MODEL_ID} 首项对齐。
+     * 管理端「联网检索源」可多选联网模型；对话联网与今日洞察均读取本键。
      */
-    @Deprecated
     WEB_SEARCH_GROUNDING_MODEL_IDS_JSON(
             "WEB_SEARCH_GROUNDING_MODEL_IDS_JSON",
-            "（已废弃）联网模型 id 列表",
+            "联网模型列表",
             SettingValueKind.STRING,
             "[]",
             false),
@@ -343,8 +343,8 @@ public enum TenantRuntimeSettingKey {
                     RAG_RETRIEVAL_TUNING_JSON,
                     MEMORY_EMBEDDING_VECTOR_MODEL_ID,
                     WEB_SEARCH_GROUNDING_MODEL_ID,
-                    WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON,
                     WEB_SEARCH_GROUNDING_MODEL_IDS_JSON,
+                    WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON,
                     WEB_SEARCH_QUERY_REWRITE_MODEL_ID,
                     WEB_SEARCH_QUERY_REWRITE_LANGUAGE_MODEL_ID,
                     WEB_SEARCH_QUERY_REWRITE_WEB_SEARCH_MODEL_ID,

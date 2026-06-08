@@ -228,7 +228,7 @@ sequenceDiagram
 |------|------------|
 | 对话后沉淀 | **`KnowledgePlanetIngestService`**（**`ai-chat`**，`com.aaron.cloud.chat.knowledgeplanet`）；**`ChatApplicationService`** 助手流式落库后虚拟线程调用 |
 | 周一方案计算 | **`KnowledgePlanetWeeklyComputeService`** + **`KnowledgePlanetWeeklyContextBuilder`** + **`KnowledgePlanetWeeklyBookSearchSupport`** / **`KnowledgePlanetWeeklyBookEnrichSupport`** + **`KnowledgePlanetLearnerProfileService`** + **`KnowledgePlanetWeeklyComputeJobHandler`**（**`ai-job`**） |
-| 周一邮件 | **`KnowledgePlanetWeeklyEmailApplicationService`**（**`ai-identity`**）+ **`KnowledgePlanetWeeklyEmailJobHandler`** |
+| 周一邮件 | **`KnowledgePlanetWeeklyEmailApplicationService`**（**`ai-identity`**）+ **`KnowledgePlanetWeeklyEmailJobHandler`**；收件人经 **`KnowledgePlanetWeeklyRecipientGate`**（账号与租户成员均 ACTIVE） |
 | C 端查询 / 反馈 | **`KnowledgePlanetQueryService`**、**`KnowledgePlanetWeeklyFeedbackService`**、**`ChatKnowledgePlanetController`** |
 
 **Open API**（前缀 **`/open/v1/chat`**，网关目录 **2112～2116**）
@@ -383,6 +383,48 @@ flowchart TB
 | **提交前自检** | **`.\scripts\check-project-changelog.ps1 -IncludeUntracked`**：动代码须改 **`PROJECT.md`**；顶节补丁 **≥** `pom` 补丁。 |
 
 ## 变更记录
+
+### 0.1.363-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **今日智能洞察（ai-chat）**：有画像用户不再跑昨日补充检索，统一**单次本日**联网外呼（检索词仍含画像关键词）。**无 DB migrate**。
+
+### 0.1.362-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **今日智能洞察 · 联网源（ai-chat / ai-common / ai-identity / admin-web）**：洞察生成**仅用「联网检索源」中的联网模型**（火山 Ark），**忽略内置固定源**；多选联网模型时并行外呼后合并；轮数/缓存等仍读租户 **`WEB_SEARCH_GROUNDING_*`** 运行参数。恢复 **`WEB_SEARCH_GROUNDING_MODEL_IDS_JSON`** 多模型列表；管理端联网检索源支持多选模型。**已建库须手工执行** **`db/mysql/migrate/migrate_0_1_258_18_web_search_model_ids_json.sql`**（将已有单模型 id 回填为 JSON 数组）。
+
+### 0.1.361-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **对话图片附件视觉 OCR 回退（ai-common / ai-chat / ai-model）**：本机 RapidOCR 对户型图等常只得到尺寸表格噪声；新增 **`AttachmentOcrTextQuality`**；**`ChatAttachmentUploadService`** 在质量不足时调用 **`ImageTextOcrPort`**（租户 VISION/vl 模型）重新读图；**`ai.chat.attachment.vision-ocr-fallback`**（默认 true）。**无 DB migrate**。
+
+### 0.1.360-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **对话附件 OCR 噪声过滤（ai-chat）**：`ChatAttachmentRetrievalSupport` 丢弃 Markdown 表格/纯尺寸数字等 OCR 碎片，仅在有中文主题、型号或有意义文件名时才注入检索摘要；否则检索输入回落为用户原问句。附件轮跳过 RAG LLM 改写；OCR 不可用且用户指代上传内容（如「这咋样」）时跳过联网外呼。**无 DB migrate**。
+
+### 0.1.359-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **对话附件检索策略修正（ai-chat）**：检索输入改为 **用户问句 + 附件 OCR/文件名实体摘要**（`retrievalKeywordSource`），再经问句改写/联网外呼；指代问句（如「分析这个户型」）可落到「碧桂园江山赋 YJ215」等附件实体，不再仅用原问句或 LLM 泛化热点词。OCR 为空时回退文件名。**无 DB migrate**。
+
+### 0.1.358-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **对话附件检索策略（ai-chat）**：新增 **`ChatAttachmentRetrievalSupport`**；有附件时不检索租户 KB；联网/RAG 关键词仅用用户原问句（不含 OCR 长文）；附件轮跳过 LLM 问句泛化改写；用户主要在问「这张图/文档」时跳过联网外呼（仍可通过「查一下最新房价」等显式外部意图触发）。**无 DB migrate**。
+
+### 0.1.357-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **RAG 问句改写语义门控（ai-chat）**：**`RagRewriteSemanticGate`** 不再误用 **`kbId=0`** 调嵌入；优先用参与对话检索的首个知识库 VECTOR 模型，无库时回退租户 **`MEMORY_EMBEDDING_VECTOR_MODEL_ID`** / hash 占位，修复开启改写时对话 500。**无 DB migrate**。
 
 ### 0.1.356-SNAPSHOT
 

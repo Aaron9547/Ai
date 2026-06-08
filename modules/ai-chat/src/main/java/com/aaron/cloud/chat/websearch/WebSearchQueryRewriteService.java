@@ -1,5 +1,6 @@
 package com.aaron.cloud.chat.websearch;
 
+import com.aaron.cloud.chat.support.ChatAttachmentRetrievalSupport;
 import com.aaron.cloud.common.api.dto.model.ModelChatRequest;
 import com.aaron.cloud.common.api.dto.model.ModelTokenUsage;
 import com.aaron.cloud.common.api.enums.llm.LlmModelKind;
@@ -120,7 +121,7 @@ public class WebSearchQueryRewriteService {
                     tenantId,
                     clipForLog(original));
         }
-        String heuristic = heuristicRewrite(original);
+        String heuristic = heuristicRewriteForRetrievalInput(original);
         log.info(
                 "[联网搜索] 问句重写（规则）：租户 {}，原文 [{}]，检索词 [{}]",
                 tenantId,
@@ -154,6 +155,17 @@ public class WebSearchQueryRewriteService {
             List<ModelChatRequest.MessageTurn> recentHistory,
             long conversationId,
             LlmUsageScene usageScene) {
+        return rewriteKeywordsForFixedSources(
+                snap, userQueryPlaintext, recentHistory, conversationId, usageScene, false);
+    }
+
+    public List<String> rewriteKeywordsForFixedSources(
+            TenantSnapshot snap,
+            String userQueryPlaintext,
+            List<ModelChatRequest.MessageTurn> recentHistory,
+            long conversationId,
+            LlmUsageScene usageScene,
+            boolean conservativeRewrite) {
         String original = userQueryPlaintext == null ? "" : userQueryPlaintext.trim();
         if (original.isEmpty()) {
             return List.of();
@@ -162,6 +174,16 @@ public class WebSearchQueryRewriteService {
                 recentHistory == null ? List.of() : List.copyOf(recentHistory);
         boolean hasHistory = !history.isEmpty();
         long tenantId = snap.getTenantId();
+        if (conservativeRewrite) {
+            String heuristic = heuristicRewriteForRetrievalInput(heuristicKeywordSource(original, history));
+            log.info(
+                    "[联网搜索] 固定源检索问句（附件轮保守规则）：租户 {}，原文 [{}]，近史 {} 条，问句 [{}]",
+                    tenantId,
+                    clipForLog(original),
+                    history.size(),
+                    clipForLog(heuristic));
+            return heuristic.isBlank() ? List.of() : List.of(heuristic);
+        }
         ResolvedRewriteModel resolved = resolveRewriteModel(tenantId);
         boolean tryModel =
                 resolved != null && (original.length() >= MIN_LEN_FOR_LLM_REWRITE || hasHistory);
@@ -207,7 +229,8 @@ public class WebSearchQueryRewriteService {
                         e);
             }
         }
-        String heuristic = heuristicRewrite(heuristicKeywordSource(original, history));
+        String heuristic =
+                heuristicRewriteForRetrievalInput(heuristicKeywordSource(original, history));
         log.info(
                 "[联网搜索] 固定源检索问句（规则）：租户 {}，原文 [{}]，近史 {} 条，问句 [{}]",
                 tenantId,
@@ -562,6 +585,13 @@ public class WebSearchQueryRewriteService {
                         .orElse("");
         line = line.replaceAll("^[\"'「『【]+|[\"'」』】]+$", "").trim();
         return clampQuery(line);
+    }
+
+    /** 含附件摘要结构时优先保留附件实体 + 用户意图，避免泛化为无关热点词。 */
+    static String heuristicRewriteForRetrievalInput(String raw) {
+        return clampQuery(
+                ChatAttachmentRetrievalSupport.heuristicRewriteForRetrievalInput(
+                        raw, WebSearchQueryRewriteService::heuristicRewrite));
     }
 
     static String heuristicRewrite(String raw) {

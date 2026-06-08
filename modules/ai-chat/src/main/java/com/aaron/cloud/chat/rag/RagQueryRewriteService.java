@@ -10,6 +10,7 @@ import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.modelcfg.LlmModelKindPolicy;
 import com.aaron.cloud.common.modelcfg.SysLlmModelRepository;
 import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
+import com.aaron.cloud.chat.support.ChatAttachmentRetrievalSupport;
 import com.aaron.cloud.common.tenant.runtime.RagRetrievalTuningRuntime;
 import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService;
 import com.aaron.cloud.common.util.TextClamp;
@@ -75,7 +76,9 @@ public class RagQueryRewriteService {
                         e.toString());
             }
         }
-        return clampQuery(heuristicRewrite(original));
+        return clampQuery(
+                ChatAttachmentRetrievalSupport.heuristicRewriteForRetrievalInput(
+                        original, RagQueryRewriteService::heuristicRewrite));
     }
 
     private SysLlmModel resolveRewriteLanguageModel(long tenantId, RagRetrievalTuningRuntime tuning) {

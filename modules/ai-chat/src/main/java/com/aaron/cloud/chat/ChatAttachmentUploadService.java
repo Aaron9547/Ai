@@ -1,10 +1,14 @@
 package com.aaron.cloud.chat;
 
+import com.aaron.cloud.common.api.ports.ImageTextOcrPort;
 import com.aaron.cloud.common.chat.ChatAttachmentRepository;
 import com.aaron.cloud.common.chat.ChatConversationRepository;
 import com.aaron.cloud.common.chat.entity.ChatAttachment;
+import com.aaron.cloud.common.config.properties.AiChatAttachmentProperties;
 import com.aaron.cloud.common.context.TenantContextHolder;
+import com.aaron.cloud.common.document.AttachmentOcrTextQuality;
 import com.aaron.cloud.common.document.ExtractedDocumentTexts;
+import com.aaron.cloud.common.document.ImageExtractTexts;
 import com.aaron.cloud.common.document.TikaDocumentTextExtractor;
 import com.aaron.cloud.common.document.UploadFileNames;
 import com.aaron.cloud.common.document.UploadedFileKind;
@@ -26,6 +30,8 @@ public class ChatAttachmentUploadService {
     private final ChatAttachmentRepository attachmentRepository;
     private final ChatAttachmentBinStore attachmentBinStore;
     private final TikaDocumentTextExtractor documentTextExtractor;
+    private final ImageTextOcrPort imageTextOcrPort;
+    private final AiChatAttachmentProperties attachmentProperties;
 
     public record SaveResult(ChatAttachment attachment, boolean textExtracted, String kind) {}
 
@@ -55,8 +61,12 @@ public class ChatAttachmentUploadService {
         }
         String kind = UploadedFileKind.resolve(original);
         byte[] bytes = file.getBytes();
+        String localText = documentTextExtractor.extract(bytes, original, mimeType);
         String text =
-                documentTextExtractor.extract(bytes, original, mimeType);
+                UploadedFileKind.IMAGE.equals(kind)
+                        ? enrichImageExtractText(
+                                snap.getTenantId(), bytes, mimeType, original, localText)
+                        : localText;
         boolean textExtracted = !text.isBlank();
         if (!textExtracted) {
             log.warn(
@@ -79,6 +89,43 @@ public class ChatAttachmentUploadService {
         ChatAttachmentExtractLog.logAfterSave(
                 row.getId(), original, mimeType, kind, textExtracted, text);
         return new SaveResult(row, textExtracted, kind);
+    }
+
+    /**
+     * 本机 OCR 对户型图/平面图常只得到尺寸表格噪声；质量不足时用租户视觉模型读图并取更完整的一路结果。
+     */
+    private String enrichImageExtractText(
+            long tenantId, byte[] bytes, String mimeType, String fileName, String localText) {
+        if (!attachmentProperties.isVisionOcrFallback()) {
+            return localText == null ? "" : localText;
+        }
+        if (!AttachmentOcrTextQuality.needsVisionFallback(localText)) {
+            return localText;
+        }
+        log.info(
+                "[对话附件] 本机 OCR 质量不足，尝试视觉模型读图：文件={}，本机 {} 字",
+                fileName,
+                localText == null ? 0 : localText.length());
+        var vision =
+                imageTextOcrPort.tryExtract(
+                        tenantId, bytes, mimeType == null ? "image/png" : mimeType);
+        if (vision.isEmpty()) {
+            log.info("[对话附件] 视觉模型 OCR 未返回可用正文：文件={}", fileName);
+            return localText == null ? "" : localText;
+        }
+        String merged = ImageExtractTexts.pickRicher(localText, vision.get());
+        if (AttachmentOcrTextQuality.isUsableEntityHint(merged)) {
+            log.info(
+                    "[对话附件] 视觉模型 OCR 已采用：文件={}，合并后 {} 字",
+                    fileName,
+                    merged.length());
+        } else {
+            log.info(
+                    "[对话附件] 视觉模型 OCR 仍无可用实体，保留较长一路：文件={}，{} 字",
+                    fileName,
+                    merged.length());
+        }
+        return merged;
     }
 
     private static boolean isAllowedExtension(String name) {

@@ -25,7 +25,18 @@ public class RagRetrievalQueryPlanner {
             TenantSnapshot snap,
             List<ModelChatRequest.MessageTurn> history,
             String originalQuery,
-            long conversationId) {
+            long conversationId,
+            Long embeddingKbId) {
+        return plan(snap, history, originalQuery, conversationId, embeddingKbId, false);
+    }
+
+    public RagRetrievalQueryPlan plan(
+            TenantSnapshot snap,
+            List<ModelChatRequest.MessageTurn> history,
+            String originalQuery,
+            long conversationId,
+            Long embeddingKbId,
+            boolean skipRewrite) {
         String original = originalQuery == null ? "" : originalQuery.trim();
         if (original.isEmpty()) {
             return new RagRetrievalQueryPlan(
@@ -37,7 +48,7 @@ public class RagRetrievalQueryPlanner {
         boolean rewriteRejected = false;
         Double rewriteSimilarity = null;
 
-        if (tuning.rewriteEnabled()) {
+        if (!skipRewrite && tuning.rewriteEnabled()) {
             String rewritten =
                     ragQueryRewriteService.rewriteForRetrieval(
                             snap, original, history, conversationId, tuning);
@@ -45,10 +56,10 @@ public class RagRetrievalQueryPlanner {
                 RagRewriteSemanticGate.GateOutcome gate =
                         ragRewriteSemanticGate.evaluate(
                                 snap.getTenantId(),
+                                embeddingKbId,
                                 history,
                                 rewritten,
-                                tuning,
-                                conversationId > 0 ? conversationId : null);
+                                tuning);
                 rewriteSimilarity = gate.similarity();
                 if (gate.accepted()) {
                     candidate = rewritten;

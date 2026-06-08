@@ -49,7 +49,25 @@ public class TenantRuntimeSettingApplicationService {
 
     /** 对话联网检索：{@code sys_llm_model.id}，未配置或非法时为空（由仓储回退 {@code sort_order} 默认）。 */
     public java.util.Optional<Long> webSearchGroundingModelId(long tenantId) {
-        return parseOptionalLlmModelId(tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MODEL_ID);
+        List<Long> ids = webSearchGroundingModelIds(tenantId);
+        return ids.isEmpty() ? java.util.Optional.empty() : java.util.Optional.of(ids.getFirst());
+    }
+
+    /**
+     * 租户启用的联网模型 id 列表（{@link TenantRuntimeSettingKey#WEB_SEARCH_GROUNDING_MODEL_IDS_JSON}；
+     * 空列表时回退 {@link TenantRuntimeSettingKey#WEB_SEARCH_GROUNDING_MODEL_ID} 单键）。
+     */
+    public List<Long> webSearchGroundingModelIds(long tenantId) {
+        String raw =
+                effectiveValueText(tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MODEL_IDS_JSON)
+                        .trim();
+        List<Long> parsed = parseWebSearchGroundingModelIdsJson(raw);
+        if (!parsed.isEmpty()) {
+            return parsed;
+        }
+        return parseOptionalLlmModelId(tenantId, TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MODEL_ID)
+                .map(List::of)
+                .orElse(List.of());
     }
 
     /**
@@ -403,6 +421,58 @@ public class TenantRuntimeSettingApplicationService {
         return fromDb;
     }
 
+    private List<Long> parseWebSearchGroundingModelIdsJson(String raw) {
+        return parseWebSearchGroundingModelIdsJson(raw, false);
+    }
+
+    private List<Long> parseWebSearchGroundingModelIdsJson(String raw, boolean strict) {
+        TenantRuntimeSettingKey key = TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MODEL_IDS_JSON;
+        if (raw == null || raw.isBlank() || "[]".equals(raw.trim())) {
+            return List.of();
+        }
+        try {
+            JsonNode node = objectMapper.readTree(raw.trim());
+            if (!node.isArray()) {
+                if (strict) {
+                    throw runtimeMessages.badField(
+                            key, TenantRuntimeSettingMessages.Validation.MUST_BE_JSON_ARRAY);
+                }
+                return List.of();
+            }
+            List<Long> out = new ArrayList<>();
+            for (JsonNode n : node) {
+                if (n == null || n.isNull()) {
+                    continue;
+                }
+                String text = n.isNumber() ? n.asText() : n.asText("");
+                if (text == null || text.isBlank()) {
+                    if (strict) {
+                        throw runtimeMessages.badField(key, TenantRuntimeSettingMessages.Validation.MODEL_ID_OR_EMPTY);
+                    }
+                    continue;
+                }
+                try {
+                    long id = Long.parseLong(text.trim());
+                    if (id > 0L && !out.contains(id)) {
+                        out.add(id);
+                    }
+                } catch (NumberFormatException e) {
+                    if (strict) {
+                        throw runtimeMessages.badField(key, TenantRuntimeSettingMessages.Validation.MODEL_ID_OR_EMPTY);
+                    }
+                }
+            }
+            return out;
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            if (strict) {
+                throw runtimeMessages.badField(key, TenantRuntimeSettingMessages.Validation.INVALID_JSON);
+            }
+            return List.of();
+        }
+    }
+
     private List<com.aaron.cloud.common.api.enums.llm.WebSearchFixedSource> parseWebSearchFixedSourcesJson(
             String raw, boolean strict) {
         TenantRuntimeSettingKey key = TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_FIXED_SOURCES_JSON;
@@ -485,6 +555,14 @@ public class TenantRuntimeSettingApplicationService {
             }
             String t = valueText.trim();
             parseWebSearchFixedSourcesJson(t, true);
+            return t;
+        }
+        if (key == TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MODEL_IDS_JSON) {
+            if (valueText == null || valueText.isBlank()) {
+                return "[]";
+            }
+            String t = valueText.trim();
+            parseWebSearchGroundingModelIdsJson(t, true);
             return t;
         }
         if (key == TenantRuntimeSettingKey.WEB_SEARCH_GROUNDING_MULTI_ROUND_COUNT) {
