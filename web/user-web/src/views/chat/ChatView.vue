@@ -4795,7 +4795,25 @@ async function send() {
 }
 
 .bubble-md {
+  min-width: 0;
+  max-width: 100%;
   min-height: 0;
+}
+
+.bubble-md :deep(.markdown-rich__html img),
+.bubble-md :deep(.markdown-rich__html video),
+.reasoning-md :deep(.markdown-rich__html img),
+.wf-body-md :deep(.markdown-rich__html img) {
+  max-width: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.bubble-md :deep(.markdown-rich__html img) {
+  display: block;
+  margin: 0.5em 0;
+  border-radius: 8px;
 }
 
 /* 松散列表常见结构 <li><p>…</p></li>，去掉内部 p 的外边距，避免「1.」与加粗标题错开多行 */
@@ -5287,6 +5305,10 @@ async function send() {
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--chat-text-body, #1e293b);
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  box-sizing: border-box;
 }
 
 .bubble-row.assistant .bubble-inner {

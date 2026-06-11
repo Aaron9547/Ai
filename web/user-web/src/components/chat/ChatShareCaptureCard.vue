@@ -23,7 +23,7 @@
               <el-icon :size="15"><User /></el-icon>
             </div>
             <div class="share-capture-msg__bubble share-capture-msg__bubble--user">
-              {{ turn.userPlain }}
+              <ShareUserMessageBody :text="turn.userPlain" :attachments="turn.userAttachments" />
             </div>
           </div>
           <div class="share-capture-msg share-capture-msg--assistant">
@@ -48,11 +48,14 @@ import { ref } from "vue";
 import { useI18n } from "vue-i18n";
 import BrandMark from "@/components/BrandMark.vue";
 import MarkdownRichContent from "./MarkdownRichContent.vue";
+import ShareUserMessageBody from "./ShareUserMessageBody.vue";
+import type { ShareCaptureUserAttachment } from "@/utils/chatShareAttachments";
 
 export type ShareCaptureTurn = {
   turnIndex: number;
   userPlain: string;
   assistantSource: string;
+  userAttachments?: ShareCaptureUserAttachment[];
 };
 
 withDefaults(
@@ -180,6 +183,8 @@ defineExpose({
   min-width: 0;
   max-width: calc(100% - 42px);
   box-sizing: border-box;
+  overflow-x: auto;
+  overflow-wrap: anywhere;
 }
 
 .share-capture-msg__bubble--user {

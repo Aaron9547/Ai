@@ -18,6 +18,8 @@ import org.springframework.util.StringUtils;
  * <p>Redis：{@code ai.redis.mode} 为 {@code cluster} 时桥接 {@code spring.data.redis.cluster.nodes}；为 {@code sentinel} 时桥接
  * {@code spring.data.redis.sentinel.master}、{@code sentinel.nodes}，并在开启 {@code ai.redis.sentinel.send-auth-to-sentinel} 时写入
  * {@code spring.data.redis.sentinel.password}（优先 {@code ai.redis.sentinel.password}，否则回退 {@code spring.data.redis.password}，解决 Sentinel requirepass 下 NOAUTH HELLO）。
+ * 对端 {@code spring.redis.hostPort}（分号/逗号多节点）在 {@code ai.redis.cluster.nodes} 未填时可作 Cluster 节点源；{@code ai.redis.mode} 未设且
+ * hostPort 多节点时自动 {@code cluster}。{@code spring.redis.host/port/password/database/timeout} 在 {@code spring.data.redis.*} 未填时桥接。
  * <p>Actuator 的 {@code management.health.elasticsearch.enabled} 仅由 {@code MANAGEMENT_HEALTH_ELASTICSEARCH_ENABLED} 桥接（默认 false），与
  * {@code AI_RAG_ES_ENABLED} / RAG ES 客户端开关解耦，避免已开 RAG ES 但集群未就绪时出现 {@code ElasticsearchRestClientHealthIndicator} 反复 WARN。
  */
@@ -66,7 +68,8 @@ public class AiEnvironmentBridgePostProcessor implements EnvironmentPostProcesso
             bridge.put("rocketmq.producer.group", mqGroup);
         }
 
-        // 5) Redis：ai.redis.mode → Spring Data Lettuce（与对端 spring.redis 26379 段对应关系：对端为 Sentinel 入口，本处 mode=sentinel 桥接 sentinel.nodes）。
+        // 5) Redis：对端 spring.redis.* / hostPort 兼容 → spring.data.redis.*；ai.redis.mode 驱动 Cluster/Sentinel 拓扑。
+        applyLegacySpringRedisBridge(environment, bridge);
         String redisMode = resolveRedisMode(environment);
         if ("cluster".equals(redisMode)) {
             applyRedisClusterBridge(environment, bridge);
@@ -86,18 +89,67 @@ public class AiEnvironmentBridgePostProcessor implements EnvironmentPostProcesso
 
     static String resolveRedisMode(ConfigurableEnvironment environment) {
         String mode = environment.getProperty("ai.redis.mode", "");
-        if (!StringUtils.hasText(mode)) {
-            return "";
+        if (StringUtils.hasText(mode)) {
+            return mode.trim().toLowerCase(Locale.ROOT);
         }
-        return mode.trim().toLowerCase(Locale.ROOT);
+        String nodes = resolveRedisClusterNodesRaw(environment);
+        if (StringUtils.hasText(nodes) && countHostPortParts(nodes) > 1) {
+            return "cluster";
+        }
+        return "";
+    }
+
+    /** 优先 {@code ai.redis.cluster.nodes}，否则对端 {@code spring.redis.hostPort} / {@code host-port}。 */
+    static String resolveRedisClusterNodesRaw(ConfigurableEnvironment environment) {
+        String nodes = environment.getProperty("ai.redis.cluster.nodes", "");
+        if (StringUtils.hasText(nodes)) {
+            return nodes.trim();
+        }
+        String hostPort = environment.getProperty("spring.redis.hostPort", "");
+        if (!StringUtils.hasText(hostPort)) {
+            hostPort = environment.getProperty("spring.redis.host-port", "");
+        }
+        return StringUtils.hasText(hostPort) ? hostPort.trim() : "";
+    }
+
+    static int countHostPortParts(String nodes) {
+        if (!StringUtils.hasText(nodes)) {
+            return 0;
+        }
+        int count = 0;
+        for (String part : nodes.replace(';', ',').split(",")) {
+            if (StringUtils.hasText(part.trim())) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static void applyLegacySpringRedisBridge(ConfigurableEnvironment environment, Map<String, Object> bridge) {
+        bridgeLegacyRedisProperty(environment, bridge, "spring.redis.host", "spring.data.redis.host");
+        bridgeLegacyRedisProperty(environment, bridge, "spring.redis.port", "spring.data.redis.port");
+        bridgeLegacyRedisProperty(environment, bridge, "spring.redis.password", "spring.data.redis.password");
+        bridgeLegacyRedisProperty(environment, bridge, "spring.redis.database", "spring.data.redis.database");
+        bridgeLegacyRedisProperty(environment, bridge, "spring.redis.timeout", "spring.data.redis.timeout");
+    }
+
+    private static void bridgeLegacyRedisProperty(
+            ConfigurableEnvironment environment, Map<String, Object> bridge, String legacyKey, String targetKey) {
+        if (StringUtils.hasText(environment.getProperty(targetKey, ""))) {
+            return;
+        }
+        String legacy = environment.getProperty(legacyKey, "");
+        if (StringUtils.hasText(legacy)) {
+            bridge.put(targetKey, legacy);
+        }
     }
 
     private static void applyRedisClusterBridge(ConfigurableEnvironment environment, Map<String, Object> bridge) {
-        String redisClusterNodes = environment.getProperty("ai.redis.cluster.nodes", "");
+        String redisClusterNodes = resolveRedisClusterNodesRaw(environment);
         if (!StringUtils.hasText(redisClusterNodes)) {
             throw new IllegalStateException(
-                    "ai.redis.mode=cluster 时必须配置 ai.redis.cluster.nodes（或环境变量 AI_REDIS_CLUSTER_NODES），"
-                            + "逗号或分号分隔 host:port，例如 192.168.1.1:6379,192.168.1.2:6379");
+                    "ai.redis.mode=cluster 时必须配置 ai.redis.cluster.nodes、AI_REDIS_CLUSTER_NODES，"
+                            + "或对端 spring.redis.hostPort（逗号/分号分隔 host:port）");
         }
         int idx = 0;
         String normalized = redisClusterNodes.replace(';', ',');
@@ -119,8 +171,7 @@ public class AiEnvironmentBridgePostProcessor implements EnvironmentPostProcesso
     }
 
     /**
-     * 对端常见 {@code spring.redis.port=26379} 与 {@code hostPort} 多节点为 <strong>Sentinel</strong> 拓扑（非 Redis Cluster 数据端口）。
-     * 本工程通过 {@code ai.redis.mode=sentinel} 写入 {@code spring.data.redis.sentinel.*}，由 Lettuce 经 Sentinel 发现主库再读写。
+     * 对端 {@code spring.redis.hostPort} 多节点在现网多为 Redis Cluster；Sentinel 须显式 {@code ai.redis.mode=sentinel}。
      */
     private static void applyRedisSentinelBridge(ConfigurableEnvironment environment, Map<String, Object> bridge) {
         String master = environment.getProperty("ai.redis.sentinel.master", "");
@@ -155,7 +206,9 @@ public class AiEnvironmentBridgePostProcessor implements EnvironmentPostProcesso
         if (sendAuth) {
             String sentinelPassword = environment.getProperty("ai.redis.sentinel.password", "");
             if (!StringUtils.hasText(sentinelPassword)) {
-                sentinelPassword = environment.getProperty("spring.data.redis.password", "");
+                sentinelPassword = firstNonBlank(
+                        environment.getProperty("spring.data.redis.password", ""),
+                        environment.getProperty("spring.redis.password", ""));
             }
             if (StringUtils.hasText(sentinelPassword)) {
                 bridge.put("spring.data.redis.sentinel.password", sentinelPassword);
@@ -165,5 +218,14 @@ public class AiEnvironmentBridgePostProcessor implements EnvironmentPostProcesso
         if (StringUtils.hasText(sentinelUsername)) {
             bridge.put("spring.data.redis.sentinel.username", sentinelUsername.trim());
         }
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (StringUtils.hasText(value)) {
+                return value.trim();
+            }
+        }
+        return "";
     }
 }

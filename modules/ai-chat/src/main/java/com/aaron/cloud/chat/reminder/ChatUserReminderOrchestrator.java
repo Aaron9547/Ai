@@ -10,6 +10,7 @@ import com.aaron.cloud.common.api.enums.chat.ChatIntentKeywordKind;
 import com.aaron.cloud.common.api.enums.chat.ChatUserReminderStatus;
 import com.aaron.cloud.common.api.enums.chat.ReminderScheduleType;
 import com.aaron.cloud.common.api.enums.scheduled.TenantScheduledExecutorCode;
+import com.aaron.cloud.common.api.mcp.reminder.ReminderCronSupport;
 import com.aaron.cloud.common.api.mcp.reminder.ReminderParseContracts;
 import com.aaron.cloud.common.api.mcp.reminder.ReminderParseContracts.ActiveReminderRef;
 import com.aaron.cloud.common.api.mcp.reminder.ReminderParseContracts.ReminderParseRequest;
@@ -210,12 +211,12 @@ public class ChatUserReminderOrchestrator {
             ReminderParseRequest mcpReq,
             ReminderParseResponse parsed,
             List<ChatUserReminder> active) {
-        String cron = parsed.cronExpression();
+        String cron = ReminderCronSupport.normalizeSpringCron(parsed.cronExpression());
         if (cron == null || cron.isBlank()) {
             return TurnResult.fail("未能解析提醒时间，请补充例如「每天8点」");
         }
         try {
-            CronExpression.parse(cron.trim());
+            ReminderCronSupport.assertValidSpringCron(cron);
         } catch (Exception e) {
             return TurnResult.fail("提醒时间表达式无效，请换一种说法");
         }

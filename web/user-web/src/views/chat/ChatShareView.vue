@@ -38,7 +38,11 @@
                 m.role === 'user' ? 'share-page-bubble--user' : 'share-page-bubble--assistant bubble-md',
               ]"
             >
-              <div v-if="m.role === 'user'" class="share-page-user-text">{{ m.content }}</div>
+              <ShareUserMessageBody
+                v-if="m.role === 'user'"
+                :text="m.content"
+                :attachments="userAttachmentsForMessage(m)"
+              />
               <MarkdownRichContent
                 v-else
                 class="bubble-md"
@@ -56,13 +60,19 @@
 
 <script setup lang="ts">
 import { ChatLineRound, User } from "@element-plus/icons-vue";
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
 import * as chatApi from "../../api/chat";
 import BrandMark from "../../components/BrandMark.vue";
 import MarkdownRichContent from "../../components/chat/MarkdownRichContent.vue";
+import ShareUserMessageBody from "../../components/chat/ShareUserMessageBody.vue";
 import { useTenantBranding } from "../../composables/useTenantBranding";
+import {
+  prefetchShareImageAttachments,
+  revokeShareAttachmentBlobUrls,
+  type ShareCaptureUserAttachment,
+} from "../../utils/chatShareAttachments";
 
 const { t } = useI18n();
 const { logoUrl, displayBrandTitle, loadTenantBranding } = useTenantBranding();
@@ -70,7 +80,10 @@ const route = useRoute();
 
 const title = ref("");
 const sharedAt = ref("");
+const conversationId = ref("");
 const messages = ref<chatApi.ChatHistoryMessage[]>([]);
+const userAttachmentPreviews = ref<Map<number, ShareCaptureUserAttachment[]>>(new Map());
+const prefetchedBlobUrls = ref<string[]>([]);
 const loading = ref(true);
 const error = ref("");
 
@@ -96,6 +109,31 @@ const messageBlocks = computed(() => {
   return blocks;
 });
 
+function userAttachmentsForMessage(m: chatApi.ChatHistoryMessage): ShareCaptureUserAttachment[] {
+  return userAttachmentPreviews.value.get(m.id) ?? m.attachments?.map((a) => ({ ...a })) ?? [];
+}
+
+async function loadUserAttachmentPreviews() {
+  revokeShareAttachmentBlobUrls(prefetchedBlobUrls.value);
+  prefetchedBlobUrls.value = [];
+  userAttachmentPreviews.value = new Map();
+  if (!conversationId.value) {
+    return;
+  }
+  for (const m of messages.value) {
+    if (m.role !== "user" || !m.attachments?.length) {
+      continue;
+    }
+    const { items, blobUrls } = await prefetchShareImageAttachments(conversationId.value, m.attachments);
+    prefetchedBlobUrls.value.push(...blobUrls);
+    userAttachmentPreviews.value.set(m.id, items);
+  }
+}
+
+onBeforeUnmount(() => {
+  revokeShareAttachmentBlobUrls(prefetchedBlobUrls.value);
+});
+
 function assistantMarkdownSource(m: chatApi.ChatHistoryMessage): string {
   if (m.workflowSegments?.length) {
     return m.workflowSegments
@@ -118,7 +156,9 @@ onMounted(async () => {
     const data = await chatApi.getPublicShare(code);
     title.value = data.title;
     messages.value = data.messages ?? [];
+    conversationId.value = data.conversationId ?? "";
     sharedAt.value = data.sharedAt ? new Date(data.sharedAt).toLocaleString() : "";
+    await loadUserAttachmentPreviews();
   } catch {
     error.value = t("chat.shareNotFound");
   } finally {
@@ -233,6 +273,8 @@ onMounted(async () => {
   min-width: 0;
   max-width: calc(100% - 42px);
   box-sizing: border-box;
+  overflow-x: auto;
+  overflow-wrap: anywhere;
 }
 
 .share-page-msg--assistant .share-page-bubble {
@@ -266,6 +308,11 @@ onMounted(async () => {
   border: 1px solid #f0f0f2;
   font-size: 14px;
   line-height: 1.6;
+}
+
+.share-page-bubble--assistant :deep(.markdown-rich) {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .share-page-foot {

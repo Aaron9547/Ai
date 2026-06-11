@@ -49,6 +49,7 @@ declare module 'vue' {
     QuickPromptChip: typeof import('./components/chat/QuickPromptChip.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    ShareUserMessageBody: typeof import('./components/chat/ShareUserMessageBody.vue')['default']
     SidebarCollapseTab: typeof import('./components/chat/SidebarCollapseTab.vue')['default']
     UserAuthDialog: typeof import('./components/UserAuthDialog.vue')['default']
   }

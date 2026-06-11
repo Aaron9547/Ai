@@ -4,6 +4,7 @@ import com.aaron.cloud.common.api.dto.model.ModelChatRequest;
 import com.aaron.cloud.common.api.enums.llm.LlmModelKind;
 import com.aaron.cloud.common.api.enums.metering.LlmUsageScene;
 import com.aaron.cloud.common.api.mcp.reminder.ReminderCancelSelectionSupport;
+import com.aaron.cloud.common.api.mcp.reminder.ReminderCronSupport;
 import com.aaron.cloud.common.api.mcp.reminder.ReminderParseContracts;
 import com.aaron.cloud.common.api.mcp.reminder.ReminderParseContracts.ReminderParseRequest;
 import com.aaron.cloud.common.api.mcp.reminder.ReminderParseContracts.ReminderParseResponse;
@@ -26,13 +27,13 @@ public class ReminderParseLlmService {
 
     private static final String SYSTEM_PROMPT =
             """
-            你是「一句话邮件提醒」话术解析器。根据用户中文输入，输出唯一 JSON 对象（不要 markdown 代码块），字段如下：
+            你是「一句话邮件提醒」话术解析器。根据用户输入（中文或英文，见请求 JSON 的 locale/utterance），输出唯一 JSON 对象（不要 markdown 代码块），字段如下：
             - contractVersion: 固定为 1
             - op: CREATE | CANCEL | NOOP
             - title: 提醒标题（CREATE 时必填，简短）
             - actionText: 邮件正文动作描述（CREATE 时可选）
             - scheduleType: DAILY | WEEKLY | MONTHLY | ONCE（CREATE 时）
-            - cronExpression: Spring 6 域 cron，时区 Asia/Shanghai（CREATE 时必填）
+            - cronExpression: Spring 6 段 cron（秒 分 时 日 月 周），时区 Asia/Shanghai；日/周用 * 不用 Quartz 的 ?（CREATE 时必填）
             - endsAt: ISO-8601 结束时间或 null（可选）
             - cancelReminderId: 取消时匹配到的提醒 id（CANCEL 时，单条）
             - cancelReminderIds: 批量取消时的 id 数组（可选）
@@ -40,9 +41,11 @@ public class ReminderParseLlmService {
             - userMessage: 给用户的简短确认话术（成功时）
             - error: 无法解析时的中文原因；成功时必须为 null 或空字符串
 
-            规则：CREATE 用于「提醒我…」；CANCEL 用于「取消提醒」并明确序号或标题。
-            仅说「取消提醒」且无法唯一匹配时：op=NOOP，userMessage 列出「1、标题；2、标题」式编号清单。
+            规则：CREATE 用于「提醒我…」/ remind me to … / every day at …；CANCEL 用于「取消提醒」/ cancel reminder 并尽量匹配序号或标题。
+            时间写法示例：每天九点、每晚9:30、every day at 9am、every Monday at 8、明天八点、tomorrow at 9。
+            仅说取消且无法唯一匹配时：op=NOOP，userMessage 按 locale 列出编号清单（中文「1、标题；2、标题」或英文「1. title; 2. title」）。
             用户回复序号时按 activeReminders 列表顺序（1 表示第一条）解析，不要误把列表序号当成数据库 id。
+            userMessage 与 error 语种与 locale 一致（zh-CN 用中文，en-US 用英文）。
             """;
 
     private final ModelInvokePort modelInvokePort;
@@ -77,8 +80,30 @@ public class ReminderParseLlmService {
                 return parsed;
             }
             String op = parsed.op() == null ? "NOOP" : parsed.op().trim().toUpperCase(Locale.ROOT);
-            if ("CREATE".equals(op) && (parsed.cronExpression() == null || parsed.cronExpression().isBlank())) {
-                return error("未能解析提醒时间，请补充例如「每天8点」");
+            if ("CREATE".equals(op)) {
+                String cron = ReminderCronSupport.normalizeSpringCron(parsed.cronExpression());
+                if (cron == null || cron.isBlank()) {
+                    return error("未能解析提醒时间，请补充例如「每天8点」");
+                }
+                try {
+                    ReminderCronSupport.assertValidSpringCron(cron);
+                } catch (Exception ignored) {
+                    return error("提醒时间表达式无效，请换一种说法");
+                }
+                parsed =
+                        new ReminderParseContracts.ReminderParseResponse(
+                                parsed.contractVersion(),
+                                parsed.op(),
+                                parsed.title(),
+                                parsed.actionText(),
+                                parsed.scheduleType(),
+                                cron,
+                                parsed.endsAt(),
+                                parsed.cancelReminderId(),
+                                parsed.cancelReminderIds(),
+                                parsed.cancelMatch(),
+                                parsed.userMessage(),
+                                parsed.error());
             }
             if ("CANCEL".equals(op)) {
                 boolean missingId =
@@ -88,7 +113,7 @@ public class ReminderParseLlmService {
                 if (missingId
                         || (parsed.error() != null && !parsed.error().isBlank())) {
                     return ReminderCancelSelectionSupport.resolveCancel(
-                            utterance, req.activeReminders());
+                            utterance, req.activeReminders(), req.locale());
                 }
             }
             return parsed;

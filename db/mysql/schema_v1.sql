@@ -1464,9 +1464,13 @@ SELECT @def_tid, @rem_iid, '提醒我', 0, 1, 10, UTC_TIMESTAMP(3), UTC_TIMESTAM
 INSERT IGNORE INTO chat_intent_keyword (tenant_id, intent_id, phrase, keyword_kind, enabled, sort_order, created_at, updated_at)
 SELECT @def_tid, @rem_iid, '定时提醒', 0, 1, 11, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3) FROM DUAL WHERE @rem_iid IS NOT NULL;
 INSERT IGNORE INTO chat_intent_keyword (tenant_id, intent_id, phrase, keyword_kind, enabled, sort_order, created_at, updated_at)
+SELECT @def_tid, @rem_iid, 'remind me', 0, 1, 12, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3) FROM DUAL WHERE @rem_iid IS NOT NULL;
+INSERT IGNORE INTO chat_intent_keyword (tenant_id, intent_id, phrase, keyword_kind, enabled, sort_order, created_at, updated_at)
 SELECT @def_tid, @rem_iid, '取消提醒', 2, 1, 20, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3) FROM DUAL WHERE @rem_iid IS NOT NULL;
 INSERT IGNORE INTO chat_intent_keyword (tenant_id, intent_id, phrase, keyword_kind, enabled, sort_order, created_at, updated_at)
 SELECT @def_tid, @rem_iid, '关闭提醒', 2, 1, 21, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3) FROM DUAL WHERE @rem_iid IS NOT NULL;
+INSERT IGNORE INTO chat_intent_keyword (tenant_id, intent_id, phrase, keyword_kind, enabled, sort_order, created_at, updated_at)
+SELECT @def_tid, @rem_iid, 'cancel reminder', 2, 1, 22, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3) FROM DUAL WHERE @rem_iid IS NOT NULL;
 
 -- -----------------------------------------------------------------------------
 -- CORS 默认来源（幂等；本地开发与文档约定端口）

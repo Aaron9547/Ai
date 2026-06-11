@@ -22,8 +22,13 @@ public final class ReminderCancelSelectionSupport {
     private ReminderCancelSelectionSupport() {}
 
     public static ReminderParseResponse resolveCancel(String utterance, List<ActiveReminderRef> active) {
+        return resolveCancel(utterance, active, null);
+    }
+
+    public static ReminderParseResponse resolveCancel(
+            String utterance, List<ActiveReminderRef> active, String locale) {
         if (active == null || active.isEmpty()) {
-            return error("当前没有可取消的提醒");
+            return error(prefersEnglish(locale) ? "No active reminders to cancel." : "当前没有可取消的提醒");
         }
         String normalized = normalize(utterance);
         List<ActiveReminderRef> titleHits = matchByTitle(normalized, active);
@@ -31,32 +36,41 @@ public final class ReminderCancelSelectionSupport {
             return cancelOne(titleHits.getFirst());
         }
         if (titleHits.size() > 1) {
-            return promptChooseList(active);
+            return promptChooseList(active, locale);
         }
 
-        String selection = stripCancelNoise(normalized);
+        String selection = stripCancelNoise(normalized, locale);
         if (selection.isEmpty()) {
-            return promptChooseList(active);
+            return promptChooseList(active, locale);
         }
 
         IndexParseOutcome indices = parseListIndices(selection, active.size());
         return switch (indices.kind()) {
-            case NOT_SELECTION -> promptChooseList(active);
-            case INVALID -> error(INVALID_INDEX_USER_MESSAGE);
+            case NOT_SELECTION -> promptChooseList(active, locale);
+            case INVALID -> error(invalidIndexMessage(locale));
             case VALID -> cancelByIndices(active, indices.indices());
         };
     }
 
     public static String formatChoiceList(List<ActiveReminderRef> active) {
-        StringBuilder sb = new StringBuilder("请选择要取消的提醒编号：");
+        return formatChoiceList(active, null);
+    }
+
+    public static String formatChoiceList(List<ActiveReminderRef> active, String locale) {
+        boolean en = prefersEnglish(locale);
+        StringBuilder sb =
+                new StringBuilder(
+                        en ? "Choose a reminder number to cancel: " : "请选择要取消的提醒编号：");
+        String sep = en ? "; " : "；";
+        String unnamed = en ? "Untitled" : "未命名";
         for (int i = 0; i < active.size(); i++) {
             if (i > 0) {
-                sb.append('；');
+                sb.append(sep);
             }
             ActiveReminderRef r = active.get(i);
             String title =
-                    r.title() == null || r.title().isBlank() ? "未命名" : r.title().strip();
-            sb.append(i + 1).append('、').append(title);
+                    r.title() == null || r.title().isBlank() ? unnamed : r.title().strip();
+            sb.append(i + 1).append(en ? ". " : "、").append(title);
         }
         return sb.toString();
     }
@@ -104,10 +118,29 @@ public final class ReminderCancelSelectionSupport {
     }
 
     public static String stripCancelNoise(String utterance) {
+        return stripCancelNoise(utterance, null);
+    }
+
+    public static String stripCancelNoise(String utterance, String locale) {
         String t = normalize(utterance);
         t = t.replaceAll("取消提醒|关闭提醒|不要提醒|停止提醒|取消通知", "");
+        t =
+                t.replaceAll(
+                        "(?i)cancel\\s+reminder|delete\\s+reminder|stop\\s+reminder|remove\\s+reminder",
+                        "");
         t = t.replaceAll("取消|关闭|停止", "");
+        if (prefersEnglish(locale)) {
+            t = t.replaceAll("(?i)cancel|delete|stop|remove", "");
+        }
         return t.strip();
+    }
+
+    private static boolean prefersEnglish(String locale) {
+        return locale != null && locale.toLowerCase(Locale.ROOT).startsWith("en");
+    }
+
+    private static String invalidIndexMessage(String locale) {
+        return prefersEnglish(locale) ? "That reminder number does not exist." : INVALID_INDEX_USER_MESSAGE;
     }
 
     private static boolean looksLikeIndexSelection(String t) {
@@ -197,7 +230,7 @@ public final class ReminderCancelSelectionSupport {
                 null);
     }
 
-    private static ReminderParseResponse promptChooseList(List<ActiveReminderRef> active) {
+    private static ReminderParseResponse promptChooseList(List<ActiveReminderRef> active, String locale) {
         return new ReminderParseResponse(
                 ReminderParseContracts.CONTRACT_VERSION,
                 "NOOP",
@@ -209,7 +242,7 @@ public final class ReminderCancelSelectionSupport {
                 null,
                 null,
                 null,
-                formatChoiceList(active),
+                formatChoiceList(active, locale),
                 null);
     }
 

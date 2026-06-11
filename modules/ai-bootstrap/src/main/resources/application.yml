@@ -25,13 +25,22 @@ spring:
     username: ${MYSQL_USERNAME:root}
     password: ${MYSQL_PASSWORD:37621040}
     driver-class-name: com.mysql.cj.jdbc.Driver
+  # 与对端工程同形（自研 cache 工具读 hostPort）；EPP 桥接到 spring.data.redis.*，多节点 hostPort 自动 Cluster。
+  redis:
+    database: ${SPRING_REDIS_DATABASE:0}
+    hostPort: ${SPRING_REDIS_HOST_PORT:192.168.37.17:26379;192.168.37.17:26380;192.168.37.17:26381}
+    host: ${SPRING_REDIS_HOST:192.168.37.17}
+    port: ${SPRING_REDIS_PORT:26379}
+    password: "${SPRING_REDIS_PASSWORD:37621040}"
+    timeout: ${SPRING_REDIS_TIMEOUT:5000ms}
   data:
     redis:
-      database: ${SPRING_DATA_REDIS_DATABASE:0}
-      host: ${SPRING_DATA_REDIS_HOST:192.168.35.210}
-      port: ${SPRING_DATA_REDIS_PORT:16377}
-      password: "${SPRING_DATA_REDIS_PASSWORD:Ly@!37621040}"
-      timeout: ${SPRING_DATA_REDIS_TIMEOUT:20000ms}
+      # 未填时由 EPP 从 spring.redis.* 桥接；Cluster 节点优先 ai.redis.cluster.nodes，否则 spring.redis.hostPort
+      database: ${SPRING_DATA_REDIS_DATABASE:}
+      host: ${SPRING_DATA_REDIS_HOST:}
+      port: ${SPRING_DATA_REDIS_PORT:}
+      password: "${SPRING_DATA_REDIS_PASSWORD:}"
+      timeout: ${SPRING_DATA_REDIS_TIMEOUT:}
   autoconfigure:
     # 注册验证码走租户 SMTP（OpenRegistrationVerificationSender），不用 spring.mail 全局 Bean，避免 MailHealthIndicator 无密码 WARN
     exclude:
@@ -63,6 +72,12 @@ eureka:
 ai:
   discovery:
     enabled: ${AI_DISCOVERY_ENABLED:true}
+  # Redis：mode 空且 spring.redis.hostPort 多节点 → 自动 cluster；显式覆盖 AI_REDIS_MODE=standalone|sentinel|cluster
+  redis:
+    mode: ${AI_REDIS_MODE:}
+    cluster:
+      nodes: ${AI_REDIS_CLUSTER_NODES:}
+      max-redirects: ${AI_REDIS_CLUSTER_MAX_REDIRECTS:16}
   # 模型用量事件：写 Redis 队列；可与 RocketMQ 投递联动（见 ai.rocketmq）。
   llm-usage:
     redis-queue-key: ${AI_LLM_USAGE_REDIS_QUEUE:ai:queue:llm-usage}

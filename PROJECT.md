@@ -384,6 +384,72 @@ flowchart TB
 
 ## 变更记录
 
+### 0.1.374-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **一句话提醒·中英文多写法规则解析（ai-mcp / ai-chat / ai-common / db）**：新增 **`ReminderScheduleExtractor`**，规则解析支持中文（九点/九点半/每晚/明天/每周一等）与英文（every day at 9am、half past 8、tomorrow at 9 等）；**`ReminderParseService`** 按 **`locale`** 返回中英文话术/错误；**`ReminderCancelSelectionSupport`** 英文取消清单；LLM 解析提示词双语。**已建库**须手工执行 **`db/mysql/migrate/migrate_0_1_258_reminder_i18n_keywords.sql`**（意图关键词 **`remind me`** / **`cancel reminder`**）。
+
+### 0.1.373-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **一句话提醒·中文时刻解析（ai-mcp / ai-chat / ai-common）**：**`ReminderParseService`** 规则解析支持「九点」「十一点」等中文数字时刻（如「提醒我每天九点签到」）；事项标题剥离中文时刻残留。**`ReminderCronSupport`** 将 LLM/Quartz 风格 **`?`** 归一为 Spring 6 段 cron；**`ChatUserReminderOrchestrator`**、**`ReminderParseLlmService`** 创建前校验。**无 DB migrate**。
+
+### 0.1.372-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **Redis 对端配置兼容（ai-common / ai-bootstrap）**：**`AiEnvironmentBridgePostProcessor`** 桥接 **`spring.redis.host/port/password/database/timeout`** → **`spring.data.redis.*`**；**`spring.redis.hostPort`**（分号/逗号多节点）在 **`ai.redis.cluster.nodes` 未填**时作 Cluster 节点，**`ai.redis.mode` 未设且多节点时自动 cluster**。**`application.yml`** 增加对端同形 **`spring.redis`** 段。**无 DB migrate**。
+
+### 0.1.371-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **Redis Cluster 默认（ai-bootstrap / ai-chat）**：现网 **`192.168.37.17:26379–26381`** 为 **Cluster**（非 standalone）；**`application.yml`** 默认 **`AI_REDIS_MODE=cluster`** + **`ai.redis.cluster.nodes`**，避免 MOVED → **`RedisSystemException`**。**`ChatSendIdempotencyGuard`** Redis 异常时降级放行发消息。**无 DB migrate**。
+
+### 0.1.370-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **对话外链图片 CORS（ai-chat / ai-common / user-web）**：新增 **`GET /open/v1/chat/external-images/proxy?url=`**（`ChatExternalImageController`、`ChatExternalImageProxyService`；出站 SSRF 防护 **`SafeOutboundUrlGuard`**）；C 端 Markdown 外链图默认改走同源代理（`chatExternalImageProxy`、`MarkdownRichContent`），分享长图截图同步代理内联。**无 DB migrate**；网关目录已登记 **`gw_api_endpoint_catalog_inserts.sql`**。
+
+### 0.1.369-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **分享长图/分享页用户图片附件（user-web / ai-chat）**：分享截图前预取图片附件 blob 并渲染 `<img>`（`ShareUserMessageBody`、`chatShareAttachments`）；`chatShareImage` 支持 `blob:` 内联；公开分享 API 增加 `conversationId` 供分享页拉取附件。**无 DB migrate**。
+
+### 0.1.368-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **分享长图全绿块（user-web）**：`chatShareImage` 禁止对未声明 crossOrigin 的跨域图做 canvas 导出（避免污染绿块）；跨域优先 fetch，同源 canvas/fetch 回退；校验 blob 为图片后再内联；移除会拉伸成色块的透明 placeholder。**无 DB migrate**。
+
+### 0.1.367-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **分享长图不含对话图片（user-web）**：`chatShareImage` 先等 Markdown 图片加载，再按 canvas → crossOrigin 重载 → fetch（跨域 `omit` 凭证）内联；失败时保留原 URL，不再替换透明占位图；截图前 `nextTick` 等待卡片渲染。**无 DB migrate**。
+
+### 0.1.366-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **对话页 Markdown 图片溢出（user-web）**：`chat-theme.css` 全局约束气泡内 `img`/`video`（覆盖 v-html）；`ChatView` 气泡 `min-width: 0` + 横向滚动；`MarkdownRichContent` 强化宽高限制。**无 DB migrate**。
+
+### 0.1.365-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **分享对话截图含图失败（user-web）**：`chatShareImage` 关闭 `cacheBust`（避免破坏预签名 URL）、截图前内联/等待 Markdown 图片、单张失败用占位图且 `onImageErrorHandler` 不中断整图；过大图片先缩至卡片宽度。**无 DB migrate**。
+
+### 0.1.364-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **对话分享页图片溢出（user-web）**：`MarkdownRichContent` 为 Markdown 图片/视频增加 `max-width: 100%` 约束；`ChatShareView` / `ChatShareCaptureCard` 气泡补充横向滚动与 `min-width: 0`，避免分享页大图撑破对话框。**无 DB migrate**。
+
 ### 0.1.363-SNAPSHOT
 
 > **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**

@@ -56,10 +56,10 @@
 
     <div ref="captureHostRef" class="share-capture-host" aria-hidden="true">
       <ChatShareCaptureCard
-        v-if="captureTurns.length"
+        v-if="captureRenderTurns.length"
         ref="captureCardRef"
         :title="conversationTitle"
-        :turns="captureTurns"
+        :turns="captureRenderTurns"
         :footer="t('chat.shareSnippetFooter')"
         :brand-logo-url="brandLogoUrl"
         :brand-title="brandTitle"
@@ -94,7 +94,7 @@
 
 <script setup lang="ts">
 import { Check } from "@element-plus/icons-vue";
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import ChatShareCaptureCard, { type ShareCaptureTurn } from "./ChatShareCaptureCard.vue";
@@ -110,6 +110,10 @@ import {
   copyImageBlobToClipboard,
   downloadBlob,
 } from "../../utils/chatShareImage";
+import {
+  prefetchShareImageAttachments,
+  revokeShareAttachmentBlobUrls,
+} from "../../utils/chatShareAttachments";
 import { copyTextToUserClipboard } from "../../utils/clipboard";
 import { buildShareClipboardText } from "../../utils/chatShareClipboard";
 
@@ -118,6 +122,7 @@ export type ShareDialogMsg = {
   role: "user" | "assistant" | "system";
   content?: string;
   workflowSegments?: { text?: string | null; status: string }[];
+  attachments?: chatApi.ChatAttachmentMessage[];
 };
 
 const props = defineProps<{
@@ -197,7 +202,10 @@ const canCreateLink = computed(() => {
   return ids.length > 0;
 });
 
-const captureTurns = computed((): ShareCaptureTurn[] => {
+const captureRenderTurns = ref<ShareCaptureTurn[]>([]);
+const prefetchedAttachmentBlobUrls = ref<string[]>([]);
+
+function buildBaseCaptureTurns(): ShareCaptureTurn[] {
   const sel = new Set(selectedTurnIndexes.value);
   const result: ShareCaptureTurn[] = [];
   for (const turn of turns.value) {
@@ -213,10 +221,34 @@ const captureTurns = computed((): ShareCaptureTurn[] => {
       turnIndex: turn.index,
       userPlain: user.content ?? "",
       assistantSource: assistantMarkdownSource(assistant),
+      userAttachments: user.attachments?.map((a) => ({ ...a })) ?? [],
     });
   }
   return result;
-});
+}
+
+function revokeCaptureAttachmentUrls() {
+  revokeShareAttachmentBlobUrls(prefetchedAttachmentBlobUrls.value);
+  prefetchedAttachmentBlobUrls.value = [];
+}
+
+async function resolveCaptureRenderTurns(): Promise<ShareCaptureTurn[]> {
+  revokeCaptureAttachmentUrls();
+  const base = buildBaseCaptureTurns();
+  if (!props.conversationId) {
+    return base;
+  }
+  const resolved: ShareCaptureTurn[] = [];
+  for (const turn of base) {
+    const { items, blobUrls } = await prefetchShareImageAttachments(
+      props.conversationId,
+      turn.userAttachments,
+    );
+    prefetchedAttachmentBlobUrls.value.push(...blobUrls);
+    resolved.push({ ...turn, userAttachments: items });
+  }
+  return resolved;
+}
 
 function assistantMarkdownSource(m: ShareDialogMsg): string {
   if ((m.workflowSegments?.length ?? 0) > 0) {
@@ -255,15 +287,22 @@ function revokePreview() {
   }
   previewUrl.value = "";
   previewBlob.value = null;
+  revokeCaptureAttachmentUrls();
+  captureRenderTurns.value = [];
 }
 
 async function generatePreview() {
-  if (!captureTurns.value.length) {
+  if (!buildBaseCaptureTurns().length) {
     revokePreview();
     return;
   }
   imageGenerating.value = true;
   try {
+    captureRenderTurns.value = await resolveCaptureRenderTurns();
+    if (!captureRenderTurns.value.length) {
+      return;
+    }
+    await nextTick();
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     const el = captureCardRef.value?.getElement();
     if (!el) {

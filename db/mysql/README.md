@@ -79,6 +79,7 @@
 | 14 | **`migrate_0_1_258_14_mcp_remote_client.sql`** | MCP 注册表扩展 + **`MCP_CHAT_*`** 运行时键 |
 | 15 | **`migrate_0_1_258_15_chat_user_reminder.sql`** | **`chat_user_reminder`** + 意图 **`one_sentence_reminder`** + **`CHAT_USER_REMINDER`** 邮件模板种子 |
 | 15b | **`migrate_0_1_258_15b_chat_user_reminder_email_template.sql`** | 仅补插提醒邮件模板（旧版 258_15 因 `c.enabled` 失败时执行） |
+| 15c | **`migrate_0_1_258_reminder_i18n_keywords.sql`** | 一句话提醒意图补充英文关键词 **`remind me`** / **`cancel reminder`** |
 | 16 | **`migrate_0_1_258_16_obs_trace_and_rag_quality.sql`** | **`obs_mcp_trace_event`** / **`obs_rag_hit_event`** / **`rag_quality_assessment`**（MCP 跟踪、RAG 命中链路、手动质量评测） |
 | 17 | **`migrate_0_1_258_17_rag_retrieval_tuning.sql`** | RAG 问句改写提示词种子 + **`/api/v1/admin/rag-ltr/*`** 网关目录 |
 | 18 | **`migrate_0_1_258_18_web_search_model_ids_json.sql`** | 联网模型多选列表 **`WEB_SEARCH_GROUNDING_MODEL_IDS_JSON`** 回填 |

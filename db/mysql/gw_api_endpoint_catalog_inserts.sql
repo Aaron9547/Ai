@@ -37,6 +37,7 @@ INSERT IGNORE INTO gw_api_endpoint (path_pattern, http_method, display_name, rem
 ('/open/v1/chat/conversations/*/messages/*/retry', 'POST', '重新生成助手 SSE', NULL, 1, 1090, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/conversations/*/attachments', 'POST', '会话附件上传', 'multipart', 1, 1100, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/conversations/*/attachments/*', 'GET', '会话附件预览下载', 'inline/attachment', 1, 1101, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/open/v1/chat/external-images/proxy', 'GET', '对话外链图片代理', 'C 端 Markdown/分享长图', 1, 1102, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/starter-prompts', 'GET', 'C端推荐问题抽样', NULL, 1, 2105, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/starter-prompts/events', 'POST', 'C端推荐问题埋点', NULL, 1, 2106, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/conversations/*/messages/*/follow-up-prompts', 'GET', 'C端助手消息后追问推荐', NULL, 1, 2107, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),

@@ -132,7 +132,14 @@ public class ChatConversationShareService {
                     messages.add(objectMapper.treeToValue(n, ChatMessageView.class));
                 }
             }
-            return new ChatSharePublicView(title, messages, row.getCreatedAt());
+            return new ChatSharePublicView(
+                    title,
+                    messages,
+                    row.getCreatedAt(),
+                    conversationRepository
+                            .findById(row.getConversationId(), snap.getTenantId())
+                            .map(c -> c.getPublicId())
+                            .orElse(null));
         } catch (JsonProcessingException e) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "分享数据损坏");
         }

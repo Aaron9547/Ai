@@ -93,6 +93,63 @@ class AiEnvironmentBridgePostProcessorTest {
     }
 
     @Test
+    void legacyHostPort_withoutMode_autoClusterBridge() {
+        StandardEnvironment env = new StandardEnvironment();
+        env.getPropertySources()
+                .addFirst(
+                        new MapPropertySource(
+                                "in",
+                                Map.of(
+                                        "spring.redis.hostPort",
+                                        "192.168.37.17:26379;192.168.37.17:26380;192.168.37.17:26381",
+                                        "spring.redis.password",
+                                        "37621040")));
+
+        new AiEnvironmentBridgePostProcessor().postProcessEnvironment(env, new SpringApplication());
+
+        assertEquals("192.168.37.17:26379", env.getProperty("spring.data.redis.cluster.nodes[0]"));
+        assertEquals("192.168.37.17:26380", env.getProperty("spring.data.redis.cluster.nodes[1]"));
+        assertEquals("192.168.37.17:26381", env.getProperty("spring.data.redis.cluster.nodes[2]"));
+        assertEquals("37621040", env.getProperty("spring.data.redis.password"));
+    }
+
+    @Test
+    void legacySpringRedis_bridgesWhenDataRedisBlank() {
+        StandardEnvironment env = new StandardEnvironment();
+        env.getPropertySources()
+                .addFirst(
+                        new MapPropertySource(
+                                "in",
+                                Map.of(
+                                        "spring.redis.host",
+                                        "10.0.0.1",
+                                        "spring.redis.port",
+                                        "6379",
+                                        "spring.redis.database",
+                                        "2",
+                                        "spring.redis.timeout",
+                                        "5000ms")));
+
+        new AiEnvironmentBridgePostProcessor().postProcessEnvironment(env, new SpringApplication());
+
+        assertEquals("10.0.0.1", env.getProperty("spring.data.redis.host"));
+        assertEquals("6379", env.getProperty("spring.data.redis.port"));
+        assertEquals("2", env.getProperty("spring.data.redis.database"));
+        assertEquals("5000ms", env.getProperty("spring.data.redis.timeout"));
+    }
+
+    @Test
+    void legacyHostPort_singleNode_withoutMode_doesNotClusterBridge() {
+        StandardEnvironment env = new StandardEnvironment();
+        env.getPropertySources()
+                .addFirst(new MapPropertySource("in", Map.of("spring.redis.hostPort", "127.0.0.1:6379")));
+
+        new AiEnvironmentBridgePostProcessor().postProcessEnvironment(env, new SpringApplication());
+
+        assertNull(env.getProperty("spring.data.redis.cluster.nodes[0]"));
+    }
+
+    @Test
     void redisStandaloneMode_ignoresClusterNodes() {
         StandardEnvironment env = new StandardEnvironment();
         env.getPropertySources()

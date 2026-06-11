@@ -32,6 +32,25 @@ class ReminderParseServiceTest {
     }
 
     @Test
+    void createDailyWithChineseHourNine() {
+        ReminderParseResponse r =
+                service.parse(
+                        new ReminderParseRequest(
+                                1,
+                                "CREATE",
+                                "提醒我每天九点签到",
+                                1L,
+                                1L,
+                                "zh-CN",
+                                0,
+                                null));
+        assertEquals("CREATE", r.op());
+        assertEquals("0 0 9 * * *", r.cronExpression());
+        assertEquals("DAILY", r.scheduleType());
+        assertEquals("签到", r.title());
+    }
+
+    @Test
     void createDailyWithoutHour_defaultsToNine() {
         ReminderParseResponse r =
                 service.parse(
@@ -48,6 +67,25 @@ class ReminderParseServiceTest {
         assertEquals("0 0 9 * * *", r.cronExpression());
         assertEquals("DAILY", r.scheduleType());
         assertEquals("签到", r.title());
+    }
+
+    @Test
+    void createDailyEnglishLocale() {
+        ReminderParseResponse r =
+                service.parse(
+                        new ReminderParseRequest(
+                                1,
+                                "CREATE",
+                                "Remind me to drink water every day at 8:30am",
+                                1L,
+                                1L,
+                                "en-US",
+                                0,
+                                null));
+        assertEquals("CREATE", r.op());
+        assertEquals("0 30 8 * * *", r.cronExpression());
+        assertEquals("drink water", r.title());
+        assertEquals("Daily email reminder set for 8:30: drink water", r.userMessage());
     }
 
     @Test

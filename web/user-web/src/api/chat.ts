@@ -214,9 +214,15 @@ export async function getPublicShare(shareCode: string): Promise<{
   title: string;
   messages: ChatHistoryMessage[];
   sharedAt: string;
+  conversationId?: string | null;
 }> {
   const { data } = await http.get(`/open/v1/chat/shares/${encodeURIComponent(shareCode)}`);
-  return data as { title: string; messages: ChatHistoryMessage[]; sharedAt: string };
+  return data as {
+    title: string;
+    messages: ChatHistoryMessage[];
+    sharedAt: string;
+    conversationId?: string | null;
+  };
 }
 
 export interface LlmModelOption {

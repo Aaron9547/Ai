@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import CodeBlock from "./CodeBlock.vue";
 import { buildMarkdownRichBlocks } from "@/utils/parseMarkdownRichBlocks";
+import { rewriteExternalImagesInHtml } from "@/utils/chatExternalImageProxy";
 import { STREAM_CURSOR_HTML } from "@/utils/renderMarkdown";
 
 const props = withDefaults(
@@ -9,23 +10,34 @@ const props = withDefaults(
     source: string;
     streaming?: boolean;
     cursorHtml?: string;
+    /** 外链 Markdown 图片改走服务端代理，避免 CORS / 防盗链导致无法展示或分享长图失败 */
+    proxyExternalImages?: boolean;
   }>(),
   {
     streaming: false,
     cursorHtml: STREAM_CURSOR_HTML,
+    proxyExternalImages: true,
   },
 );
 
-const blocks = computed(() =>
-  buildMarkdownRichBlocks(props.source ?? "", {
+const blocks = computed(() => {
+  const raw = buildMarkdownRichBlocks(props.source ?? "", {
     streaming: props.streaming,
     cursorHtml: props.streaming ? props.cursorHtml : "",
-  }),
-);
+  });
+  if (!props.proxyExternalImages) {
+    return raw;
+  }
+  return raw.map((block) =>
+    block.kind === "html"
+      ? { ...block, html: rewriteExternalImagesInHtml(block.html) }
+      : block,
+  );
+});
 </script>
 
 <template>
-  <div class="markdown-rich">
+  <div class="markdown-rich markdown-rich--bounded">
     <template
       v-for="(block, index) in blocks"
       :key="block.kind === 'code' ? `code-${index}-${block.language}-${block.code.length}` : `html-${index}`"
@@ -71,5 +83,32 @@ const blocks = computed(() =>
   padding: 0;
   background: transparent;
   color: inherit;
+}
+
+/* 分享页与对话气泡共用：Markdown 图片/视频不得撑破容器 */
+.markdown-rich--bounded {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.markdown-rich__html :deep(img),
+.markdown-rich__html :deep(video) {
+  box-sizing: border-box;
+  max-width: 100% !important;
+  width: auto !important;
+  height: auto !important;
+  object-fit: contain;
+}
+
+.markdown-rich__html :deep(img) {
+  display: block;
+  margin: 0.5em 0;
+  border-radius: 8px;
+}
+
+.markdown-rich__html :deep(table) {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
 }
 </style>

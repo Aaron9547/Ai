@@ -362,6 +362,52 @@ html.dark .chat-app .bubble-row.assistant .bubble-inner {
   color: var(--chat-text-body) !important;
 }
 
+/* Markdown 媒体（v-html 注入，须全局选择器；浅/深主题共用） */
+.chat-app .bubble-md .markdown-rich__html img,
+.chat-app .bubble-md .markdown-rich__html video,
+.chat-app .reasoning-md .markdown-rich__html img,
+.chat-app .reasoning-md .markdown-rich__html video,
+.chat-app .wf-body-md .markdown-rich__html img,
+.chat-app .wf-body-md .markdown-rich__html video,
+.chat-app .markdown-rich--bounded .markdown-rich__html img,
+.chat-app .markdown-rich--bounded .markdown-rich__html video {
+  box-sizing: border-box;
+  max-width: 100% !important;
+  width: auto !important;
+  height: auto !important;
+  object-fit: contain;
+}
+
+.chat-app .bubble-md .markdown-rich__html img,
+.chat-app .reasoning-md .markdown-rich__html img,
+.chat-app .wf-body-md .markdown-rich__html img,
+.chat-app .markdown-rich--bounded .markdown-rich__html img {
+  display: block;
+  margin: 0.5em 0;
+  border-radius: 8px;
+}
+
+.chat-app .bubble-md .markdown-rich__html a:has(> img),
+.chat-app .reasoning-md .markdown-rich__html a:has(> img),
+.chat-app .wf-body-md .markdown-rich__html a:has(> img),
+.chat-app .markdown-rich--bounded .markdown-rich__html a:has(> img) {
+  display: block;
+  max-width: 100%;
+}
+
+.chat-app .bubble-inner {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-wrap: anywhere;
+  box-sizing: border-box;
+}
+
+.chat-app .markdown-rich--bounded {
+  min-width: 0;
+  max-width: 100%;
+}
+
 /* Markdown 正文（勿用 :deep，全局样式无效） */
 html.dark .chat-app .bubble-md p,
 html.dark .chat-app .bubble-md li,
