@@ -7,6 +7,8 @@ import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.json.jackson.JacksonJsonpMapper;
 import co.elastic.clients.transport.ElasticsearchTransport;
 import co.elastic.clients.transport.rest_client.RestClientTransport;
+import com.aaron.cloud.common.api.enums.infra.PlatformSettingKey;
+import com.aaron.cloud.common.platform.PlatformSettingApplicationService;
 import com.aaron.cloud.common.config.properties.AiRagProperties;
 import jakarta.annotation.PreDestroy;
 import java.util.ArrayList;
@@ -41,12 +43,13 @@ public class ElasticsearchRagSearchClient {
     private final ElasticsearchClient client;
     private final RestClient lowLevel;
     private final String indexName;
-    private final double minScore;
+    private final PlatformSettingApplicationService platformSettings;
 
-    public ElasticsearchRagSearchClient(AiRagProperties aiRagProperties) {
+    public ElasticsearchRagSearchClient(
+            AiRagProperties aiRagProperties, PlatformSettingApplicationService platformSettings) {
         var es = aiRagProperties.getElasticsearch();
+        this.platformSettings = platformSettings;
         this.indexName = es.getIndexName() == null || es.getIndexName().isBlank() ? "rag_agent_documents" : es.getIndexName();
-        this.minScore = es.getMinScore() > 0d ? es.getMinScore() : 1.0d;
         String effective = ElasticsearchRagHostParser.resolveEffectiveUriString(es);
         if (effective.isEmpty()) {
             throw new IllegalStateException(
@@ -76,7 +79,7 @@ public class ElasticsearchRagSearchClient {
                 indexName,
                 hosts.stream().map(HttpHost::toString).toList(),
                 !user.isEmpty(),
-                minScore);
+                configuredMinScore());
     }
 
     private static String resolveEsUsername(AiRagProperties.Elasticsearch es) {
@@ -160,10 +163,16 @@ public class ElasticsearchRagSearchClient {
         }
     }
 
+    private double configuredMinScore() {
+        double score = platformSettings.getDouble(PlatformSettingKey.RAG_ES_MIN_SCORE);
+        return score > 0d ? score : 1.0d;
+    }
+
     /**
      * 短查询（单词/短语）BM25 分往往低于全局 {@code min-score}，放宽下限以便混合检索在向量未过阈值时仍能关键词兜底。
      */
     private double effectiveMinScore(String query) {
+        double minScore = configuredMinScore();
         if (minScore <= 0d) {
             return 0d;
         }

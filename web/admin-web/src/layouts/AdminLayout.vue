@@ -183,7 +183,10 @@
         </el-sub-menu>
 
         <!-- 7. 跨租户平台治理（创始人） -->
-        <el-sub-menu v-if="isFounder && (menuAllowed('TENANTS') || menuAllowed('MENU_CATALOG'))" index="grp-platform">
+        <el-sub-menu
+          v-if="isFounder && (menuAllowed('TENANTS') || menuAllowed('MENU_CATALOG') || menuAllowed('PLATFORM_SETTINGS'))"
+          index="grp-platform"
+        >
           <template #title>
             <el-icon><OfficeBuilding /></el-icon>
             <span>{{ t("admin.menu.platform") }}</span>
@@ -191,6 +194,10 @@
           <el-menu-item v-if="menuAllowed('TENANTS')" index="/tenant/tenants">
             <el-icon><House /></el-icon>
             <span>{{ t("admin.menu.tenantManage") }}</span>
+          </el-menu-item>
+          <el-menu-item v-if="isFounder && menuAllowed('PLATFORM_SETTINGS')" index="/system/platform-settings">
+            <el-icon><Setting /></el-icon>
+            <span>{{ t("admin.menu.platformSettings") }}</span>
           </el-menu-item>
           <el-menu-item v-if="isFounder && menuAllowed('MENU_CATALOG')" index="/system/menu-items">
             <el-icon><MenuIcon /></el-icon>

@@ -1,6 +1,7 @@
 package com.aaron.cloud.notification.message;
 
 import com.aaron.cloud.common.api.dto.message.MessageDispatchMessage;
+import com.aaron.cloud.common.infra.AiInternalResourceNames;
 import com.aaron.cloud.common.context.TenantContextHolder;
 import com.aaron.cloud.common.context.TenantSnapshot;
 import lombok.RequiredArgsConstructor;
@@ -15,8 +16,8 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 @ConditionalOnProperty(prefix = "ai.rocketmq", name = "enabled", havingValue = "true")
 @RocketMQMessageListener(
-        topic = "${ai.rocketmq.message-topic:ai-message-dispatch}",
-        consumerGroup = "${ai.rocketmq.message-consumer-group:ai-message-consumer}")
+        topic = AiInternalResourceNames.RocketMq.MESSAGE_TOPIC,
+        consumerGroup = AiInternalResourceNames.RocketMq.MESSAGE_CONSUMER_GROUP)
 public class MessageDispatchListener implements RocketMQListener<MessageDispatchMessage> {
 
     private final MessageDispatchService dispatchService;

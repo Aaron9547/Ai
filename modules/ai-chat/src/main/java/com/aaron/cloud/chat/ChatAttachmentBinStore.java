@@ -1,6 +1,7 @@
 package com.aaron.cloud.chat;
 
-import com.aaron.cloud.common.config.properties.AiChatAttachmentProperties;
+import com.aaron.cloud.common.platform.PlatformSettingApplicationService;
+import com.aaron.cloud.common.platform.PlatformSettingEffectivePaths;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,7 +20,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class ChatAttachmentBinStore {
 
-    private final AiChatAttachmentProperties properties;
+    private final PlatformSettingApplicationService platformSettings;
 
     public void persist(long tenantId, long conversationId, long attachmentId, byte[] bytes) throws IOException {
         if (bytes == null || bytes.length == 0) {
@@ -50,7 +51,7 @@ public class ChatAttachmentBinStore {
     }
 
     private Path resolveFile(long tenantId, long conversationId, long attachmentId) {
-        Path base = Path.of(properties.getBinDir()).toAbsolutePath().normalize();
+        Path base = PlatformSettingEffectivePaths.chatAttachmentBinDir(platformSettings);
         return base.resolve(Long.toString(tenantId)).resolve(Long.toString(conversationId)).resolve(Long.toString(attachmentId));
     }
 }

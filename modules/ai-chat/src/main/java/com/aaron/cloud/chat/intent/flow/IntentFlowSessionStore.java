@@ -1,5 +1,6 @@
 package com.aaron.cloud.chat.intent.flow;
 
+import com.aaron.cloud.common.infra.AiInternalResourceNames;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.util.Optional;
@@ -8,7 +9,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -25,8 +25,9 @@ public class IntentFlowSessionStore {
 
     private final ConcurrentHashMap<String, CacheEntry> local = new ConcurrentHashMap<>();
 
-    @Value("${ai.chat.intent-flow.redis-key-prefix:ai:intentFlow:}")
-    private String redisKeyPrefix;
+    private static String redisKeyPrefix() {
+        return AiInternalResourceNames.RedisKeyPrefixes.INTENT_FLOW;
+    }
 
     private static final class CacheEntry {
         final String json;
@@ -39,7 +40,7 @@ public class IntentFlowSessionStore {
     }
 
     private String redisKey(long tenantId, String flowId) {
-        return redisKeyPrefix + tenantId + ":" + flowId;
+        return redisKeyPrefix() + tenantId + ":" + flowId;
     }
 
     private String localKey(long tenantId, String flowId) {

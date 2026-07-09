@@ -1,5 +1,6 @@
 package com.aaron.cloud.common.profile.memory;
 
+import com.aaron.cloud.common.infra.AiInternalResourceNames;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,8 +14,8 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 @ConditionalOnProperty(prefix = "ai.rocketmq", name = "enabled", havingValue = "true")
 @RocketMQMessageListener(
-        topic = "${ai.rocketmq.memory-abstract-topic:ai-memory-abstract-refresh}",
-        consumerGroup = "${ai.rocketmq.memory-abstract-consumer-group:ai-memory-abstract-consumer}")
+        topic = AiInternalResourceNames.RocketMq.MEMORY_ABSTRACT_TOPIC,
+        consumerGroup = AiInternalResourceNames.RocketMq.MEMORY_ABSTRACT_CONSUMER_GROUP)
 public class MemoryAbstractRocketMqListener implements RocketMQListener<String> {
 
     private final ObjectMapper objectMapper;

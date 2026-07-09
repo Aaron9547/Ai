@@ -1,9 +1,10 @@
 package com.aaron.cloud.rag.runtime;
 
+import com.aaron.cloud.common.api.enums.infra.PlatformSettingKey;
 import com.aaron.cloud.common.api.enums.rag.RagRetrievalMode;
 import com.aaron.cloud.common.api.enums.tenant.TenantRuntimeSettingKey;
 import com.aaron.cloud.common.config.properties.AiProvidersProperties;
-import com.aaron.cloud.common.config.properties.AiRagProperties;
+import com.aaron.cloud.common.platform.PlatformSettingApplicationService;
 import com.aaron.cloud.common.rag.RagChunkRepository;
 import com.aaron.cloud.common.tenant.runtime.TenRuntimeSettingRepository;
 import com.aaron.cloud.common.rag.support.RagVectorDimensionSupport;
@@ -18,14 +19,14 @@ import org.springframework.web.server.ResponseStatusException;
 /**
  * 租户 RAG 运行时：向量维数（{@link TenantRuntimeSettingKey#RAG_VECTOR_DIMENSION}）与检索模式（
  * {@link TenantRuntimeSettingKey#RAG_RETRIEVAL_MODE}）。维数未配置时回退 {@code ai.providers.milvus.vector-dimension}；
- * 检索模式未配置时回退 {@code ai.rag.retrieval-mode}。维数一旦写入或租户已有分片则不可再改。
+ * 检索模式未配置时回退平台参数 {@link PlatformSettingKey#RAG_RETRIEVAL_MODE}。维数一旦写入或租户已有分片则不可再改。
  */
 @Service
 @RequiredArgsConstructor
 public class TenantRagRuntimeResolver {
 
     private final AiProvidersProperties aiProvidersProperties;
-    private final AiRagProperties aiRagProperties;
+    private final PlatformSettingApplicationService platformSettings;
     private final TenRuntimeSettingRepository tenRuntimeSettingRepository;
     private final RagChunkRepository ragChunkRepository;
 
@@ -112,7 +113,8 @@ public class TenantRagRuntimeResolver {
     public RagRetrievalMode resolveRetrievalMode(long tenantId) {
         String raw = storedRetrievalModeRaw(tenantId);
         if (raw.isBlank()) {
-            return aiRagProperties.resolvedRetrievalMode();
+            return RagRetrievalMode.fromYaml(
+                    platformSettings.getEffectiveValueText(PlatformSettingKey.RAG_RETRIEVAL_MODE));
         }
         return RagRetrievalMode.fromYaml(raw);
     }

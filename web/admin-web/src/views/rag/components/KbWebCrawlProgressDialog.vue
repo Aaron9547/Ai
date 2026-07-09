@@ -210,8 +210,8 @@ function parseRunId(resultJson: string | null | undefined): number | null {
   }
 }
 
-async function ensureRunDetailLoaded(runId: number) {
-  if (runDetailsByRunId.value.has(runId)) return;
+async function ensureRunDetailLoaded(runId: number, force = false) {
+  if (!force && runDetailsByRunId.value.has(runId)) return;
   loadingRunDetailId.value = runId;
   try {
     const detail = await ragApi.fetchCrawlRun(props.kbId, runId);
@@ -227,6 +227,23 @@ async function ensureRunDetailLoaded(runId: number) {
   }
 }
 
+function isTerminalJobStatus(status: string | null | undefined): boolean {
+  const s = (status || "").toUpperCase();
+  return s === "SUCCEEDED" || s === "FAILED";
+}
+
+async function syncOpenJobDetailAfterRefresh() {
+  if (!jobDetailOpen.value || jobDetailRow.value == null) return;
+  const jobId = jobDetailRow.value.id;
+  const updated = allCrawlJobs.value.find((j) => j.id === jobId);
+  if (!updated) return;
+  jobDetailRow.value = updated;
+  const runId = parseRunId(updated.resultJson);
+  if (runId == null) return;
+  const force = isTerminalJobStatus(updated.status);
+  await ensureRunDetailLoaded(runId, force);
+}
+
 function onJobRowClick(row: JobTaskAdminRow, _col: unknown, event: MouseEvent) {
   const target = event.target as HTMLElement | null;
   if (target?.closest("button, a, .el-button, .el-link")) return;
@@ -238,7 +255,7 @@ function openJobDetail(row: JobTaskAdminRow) {
   jobDetailOpen.value = true;
   const runId = parseRunId(row.resultJson);
   if (runId != null) {
-    void ensureRunDetailLoaded(runId);
+    void ensureRunDetailLoaded(runId, isTerminalJobStatus(row.status));
   }
 }
 
@@ -341,8 +358,10 @@ async function loadSites() {
   sites.value = await ragApi.fetchWebCrawlSites(props.kbId);
 }
 
-async function loadJobs() {
-  loadingJobs.value = true;
+async function loadJobs(silent = false) {
+  if (!silent) {
+    loadingJobs.value = true;
+  }
   try {
     const p = await jobApi.fetchJobTasks({ page: 1, size: 100, ragKbId: props.kbId });
     const ragTypes = new Set(["RAG_SITE_CRAWL", "RAG_INDEX", "RAG_URL_IMPORT", "RAG_FILE_IMPORT"]);
@@ -352,18 +371,26 @@ async function loadJobs() {
       jobsPage.value = maxPage;
     }
   } finally {
-    loadingJobs.value = false;
+    if (!silent) {
+      loadingJobs.value = false;
+    }
   }
 }
 
-async function loadAll() {
-  loading.value = true;
+async function loadAll(silent = false) {
+  if (!silent) {
+    loading.value = true;
+  }
   try {
-    await Promise.all([loadSites(), loadJobs()]);
+    await Promise.all([loadSites(), loadJobs(silent)]);
   } catch {
-    ElMessage.error(t("views.kbMatrix.webCrawlSitesLoadFailed"));
+    if (!silent) {
+      ElMessage.error(t("views.kbMatrix.webCrawlSitesLoadFailed"));
+    }
   } finally {
-    loading.value = false;
+    if (!silent) {
+      loading.value = false;
+    }
   }
 }
 
@@ -378,9 +405,11 @@ function startPolling() {
   stopPolling();
   pollTimer = setInterval(() => {
     if (!visible.value) return;
-    void loadJobs().then(() => {
-      if (!hasActiveJobs()) stopPolling();
-    });
+    void loadJobs(true)
+      .then(() => syncOpenJobDetailAfterRefresh())
+      .then(() => {
+        if (!hasActiveJobs()) stopPolling();
+      });
   }, 5000);
 }
 
@@ -453,18 +482,6 @@ async function runSite(row: RagWebCrawlSiteRow) {
     runningSiteId.value = null;
   }
 }
-
-watch(visible, (isOpen) => {
-  if (isOpen) {
-    activeTab.value = props.defaultTab;
-    jobsPage.value = 1;
-    void loadAll().then(() => {
-      if (hasActiveJobs()) startPolling();
-    });
-  } else {
-    stopPolling();
-  }
-});
 
 onBeforeUnmount(() => stopPolling());
 </script>

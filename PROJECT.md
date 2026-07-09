@@ -384,6 +384,72 @@ flowchart TB
 
 ## 变更记录
 
+### 0.1.385-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **admin-web**：平台系统参数 / 租户运行参数列表「类型」列与筛选下拉不再展示 **`INTEGER`/`BOOLEAN`/`STRING` 裸码**；统一经 **`common.settingValueKind`** 与 **`settingValueKindLabel.ts`** 按 **zh-CN / en-US** 显示（如「整数」「布尔」「字符串」）。
+
+### 0.1.384-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **yml 再收敛（ai-bootstrap / ai-common / ai-identity / ai-chat / ai-rag）**：**`application.yml`** 移除 **`ai.admin.brand-logo`**、**`ai.chat.attachment`**、**`ai.document`**、**`ai.access-party`**、**`ai.rag.retrieval-mode/min-score`**、**`resilience4j`** 等可调项；迁入 **`PlatformSettingKey`**（LOGO 目录、附件落盘、OCR、RAG 检索模式/ES 最低分等）并由消费方读 **`PlatformSettingApplicationService`**。**已建库须手工执行** **`db/mysql/migrate/migrate_0_1_258_21_platform_setting_ops_tunables.sql`**。
+
+### 0.1.383-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **配置分块注释（ai-bootstrap）**：**`application.yml`** 按 Server / Spring / DataSource / Redis / MyBatis / Eureka / Ai 子域 / Actuator / Resilience4j / Logging 增加与 DataSource 同风格的分块注释，便于运维浏览；**无配置项变更**。**无 DB migrate**。
+
+### 0.1.382-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **Windows 控制台中文日志（ai-bootstrap / .vscode）**：**`logging.charset.console`** 改为 **`${LOGGING_CHARSET_CONSOLE:UTF-8}`**（Spring Boot 标准环境变量名）；Windows 本地调试在 **`launch.json`** 使用 **`-Dlogging.charset.console=GBK`** 与 **`LOGGING_CHARSET_CONSOLE=GBK`**。
+
+### 0.1.381-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **单项目部署 Redis（ai-bootstrap）**：**`application.yml`** 由 Sentinel 改为单机 **`spring.data.redis.host/port`** 默认 **`172.16.42.165:6379`**，密码默认 **`Redis@123456`**（与容器 **`--requirepass`** 一致；可用 **`SPRING_DATA_REDIS_PASSWORD`** 覆盖）。
+
+### 0.1.380-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **平台系统参数（ai-common / ai-identity / admin-web / db）**：管理端 **`/system/platform-settings`**（侧栏「平台治理 → 平台系统参数」，仅创始人）；**`GET/PUT /api/v1/admin/platform-settings`** 补 **`AdminHttpMenuRoutes`** 映射与 **`AdminMenuCode.PLATFORM_SETTINGS`**；控制器 **`assertFounderForPlatformSettings`**。**已建库须手工执行** **`db/mysql/migrate/migrate_0_1_258_20_platform_settings_menu.sql`**（若尚未执行 **`migrate_0_1_258_platform_setting.sql`** 亦须先执行）。
+
+### 0.1.379-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **配置收敛（ai-common / ai-bootstrap / ai-identity / 多模块）**：**`application.yml`** 仅保留进程启动与基础设施连接（MySQL、**`spring.data.redis.sentinel`**、Eureka、Provider 选路、RocketMQ NameServer 等）；Redis/MQ **Topic/Queue 固定名**收拢至 **`AiInternalResourceNames`**；可调平台参数（缓存 TTL、轮询间隔、Cron、可观测/RAG 评测/定时任务锁 TTL 等）迁入 **`sys_platform_setting`** + 枚举 **`PlatformSettingKey`**（含中文说明），**`PlatformSettingApplicationService`** 进程内快照约 30 秒刷新；管理端 **`GET/PUT /api/v1/admin/platform-settings`**。**已建库须手工执行** **`db/mysql/migrate/migrate_0_1_258_platform_setting.sql`**。
+
+### 0.1.378-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **计量会话 token 汇总 · REGEXP 语法（ai-common）**：修复 **`GET /open/v1/chat/conversations/{id}/token-total`** 等在 MySQL 8 下 **`MeteringRefJsonSqlSupport.CONVERSATION_ID_EQUALS`** 使用 **`REGEXP … (,|})`** 时 ICU 将 **`}`** 误判为量词语法（error 3688）；改为与 **`jsonLongField`** 一致的 **`SUBSTRING_INDEX`** 数值等值比较。**无 DB migrate**。
+
+### 0.1.377-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **计量会话 token 汇总 · MySQL 排序规则（ai-common）**：修复 **`GET /open/v1/chat/conversations/{id}/token-total`** 等在 MySQL 8 默认 **`utf8mb4_0900_ai_ci`** 连接下查询 **`metering_usage_event.ref_json`** 时 **`REGEXP`/`=` 混用排序规则**（error 1267）；**`MeteringRefJsonSqlSupport`** 对 REGEXP 模式与 **`usageScene`** 比较参数显式 **`COLLATE utf8mb4_unicode_ci`**（与 **`schema_v1.sql`** 列一致）。**无 DB migrate**。
+
+### 0.1.376-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **管理端爬取进度 · 成功数与无感刷新（`web/admin-web` + `ai-rag`）**：任务详情合并 **`result_json.successCount`** 与 **`GET crawl-runs`** 计数，避免运行中缓存的 run 详情把「成功入库」盖成 0；轮询改 **silent** 刷新不再整表 **`v-loading`**；已完成任务打开详情时强制拉最新 run。**`CrawlRunAdminApplicationService`** 解析 **`stats_json`** 时兼容 **`successCount`/`skippedCount`/`failCount`** 别名。**无 DB migrate**。
+
+### 0.1.375-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **管理端 RAG · 单站爬取高级配置表单化（`web/admin-web`）**：知识库网页爬取「更多选项」由 **`extract_config` 裸 JSON 文本框**改为 **`KbSiteExtractConfigFields`** 结构化表单（档位下限、正文选择器、发现策略、礼貌参数等）；**`siteExtractConfigFormModel`** 负责与 **`RagWebCrawlExtractConfig`** 互转。**无 DB migrate**。
+
 ### 0.1.374-SNAPSHOT
 
 > **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**

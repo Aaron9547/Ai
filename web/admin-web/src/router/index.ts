@@ -137,6 +137,11 @@ const router = createRouter({
           component: () => import("../views/system/TenantRuntimeSettingsView.vue"),
         },
         {
+          path: "system/platform-settings",
+          component: () => import("../views/system/PlatformSettingsView.vue"),
+          meta: { founderOnly: true },
+        },
+        {
           path: "system/scheduled-tasks",
           component: () => import("../views/system/ScheduledTasksView.vue"),
         },

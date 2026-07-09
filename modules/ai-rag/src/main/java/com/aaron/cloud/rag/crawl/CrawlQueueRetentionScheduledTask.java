@@ -1,10 +1,12 @@
 package com.aaron.cloud.rag.crawl;
 
+import com.aaron.cloud.common.api.enums.infra.PlatformSettingKey;
+import com.aaron.cloud.common.platform.PlatformSettingApplicationService;
 import com.aaron.cloud.common.rag.CrawlRunRepository;
 import com.aaron.cloud.common.rag.CrawlUrlQueueRepository;
 import com.aaron.cloud.common.rag.entity.CrawlRun;
-import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.aaron.cloud.common.rag.mapper.CrawlRunMapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -21,9 +23,13 @@ public class CrawlQueueRetentionScheduledTask {
     private final CrawlRunMapper crawlRunMapper;
     private final CrawlRunRepository crawlRunRepository;
     private final CrawlUrlQueueRepository crawlUrlQueueRepository;
+    private final PlatformSettingApplicationService platformSettings;
 
-    @Scheduled(cron = "${ai.rag.site-crawl.queue-retention-cron:0 30 3 * * *}")
-    public void purgeOldQueues() {
+    @Scheduled(cron = "0 * * * * *")
+    public void purgeOldQueuesIfDue() {
+        if (!platformSettings.isCronDue(PlatformSettingKey.RAG_SITE_CRAWL_QUEUE_RETENTION_CRON)) {
+            return;
+        }
         LocalDateTime cutoff = LocalDateTime.now().minusDays(30);
         List<CrawlRun> old =
                 crawlRunMapper.selectList(

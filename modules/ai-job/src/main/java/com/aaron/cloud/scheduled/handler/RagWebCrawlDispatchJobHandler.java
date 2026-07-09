@@ -1,7 +1,8 @@
 package com.aaron.cloud.scheduled.handler;
 
 import com.aaron.cloud.common.api.enums.scheduled.TenantScheduledExecutorCode;
-import com.aaron.cloud.common.config.properties.AiRagProperties;
+import com.aaron.cloud.common.api.enums.infra.PlatformSettingKey;
+import com.aaron.cloud.common.platform.PlatformSettingApplicationService;
 import com.aaron.cloud.common.rag.RagWebCrawlSiteRepository;
 import com.aaron.cloud.common.rag.entity.RagWebCrawlSite;
 import com.aaron.cloud.common.redis.RedisDistributedLockService;
@@ -32,7 +33,7 @@ public class RagWebCrawlDispatchJobHandler implements TenantScheduledJobHandler 
     private final RagWebCrawlSiteRepository siteRepository;
     private final RagApplicationService ragApplicationService;
     private final RedisDistributedLockService distributedLockService;
-    private final AiRagProperties aiRagProperties;
+    private final PlatformSettingApplicationService platformSettings;
 
     @Override
     public TenantScheduledExecutorCode executorCode() {
@@ -94,7 +95,7 @@ public class RagWebCrawlDispatchJobHandler implements TenantScheduledJobHandler 
     private boolean triggerSite(RagWebCrawlSite site, TenantScheduledRunContext runContext)
             throws Exception {
         String lockKey = TenantScheduledTaskLockKeys.siteRun(site.getTenantId(), site.getId());
-        long ttlSec = aiRagProperties.getScheduledTasks().getTaskLockTtlSeconds();
+        long ttlSec = platformSettings.getLong(PlatformSettingKey.RAG_SCHEDULED_TASKS_TASK_LOCK_TTL_SECONDS);
         Optional<RedisDistributedLockService.DistributedLockHandle> lock =
                 distributedLockService.tryAcquire(lockKey, Duration.ofSeconds(ttlSec));
         if (lock.isEmpty()) {

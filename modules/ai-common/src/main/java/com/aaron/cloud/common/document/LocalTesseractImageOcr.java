@@ -10,11 +10,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import javax.imageio.ImageIO;
+import com.aaron.cloud.common.api.enums.infra.PlatformSettingKey;
+import com.aaron.cloud.common.platform.PlatformSettingApplicationService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.sourceforge.tess4j.ITesseract;
 import net.sourceforge.tess4j.Tesseract;
 import net.sourceforge.tess4j.TesseractException;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -25,6 +27,7 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class LocalTesseractImageOcr {
 
     /** 短边低于该值时放大，利于表格/小字截图识别。 */
@@ -33,29 +36,23 @@ public class LocalTesseractImageOcr {
     /** 表格/截图常用 PSM：6=块文本，11=稀疏文本，3=全自动。 */
     private static final int[] PAGE_SEG_MODES = {6, 11, 3};
 
-    private final boolean enabled;
-    private final String configuredLanguages;
+    private final PlatformSettingApplicationService platformSettings;
 
     private volatile ITesseract tesseract;
     private volatile String resolvedLanguages;
     private volatile boolean initFailed;
 
-    public LocalTesseractImageOcr(
-            @Value("${com.aaron.cloud.document.local-ocr.enabled:true}") boolean enabled,
-            @Value("${com.aaron.cloud.document.local-ocr.languages:chi_sim+eng}") String configuredLanguages) {
-        this.enabled = enabled;
-        this.configuredLanguages =
-                configuredLanguages == null || configuredLanguages.isBlank()
-                        ? "chi_sim+eng"
-                        : configuredLanguages.trim();
+    public boolean isEnabled() {
+        return platformSettings.getBoolean(PlatformSettingKey.DOCUMENT_LOCAL_OCR_ENABLED);
     }
 
-    public boolean isEnabled() {
-        return enabled;
+    private String configuredLanguages() {
+        String raw = platformSettings.getEffectiveValueText(PlatformSettingKey.DOCUMENT_LOCAL_OCR_LANGUAGES);
+        return raw == null || raw.isBlank() ? "chi_sim+eng" : raw.trim();
     }
 
     public Optional<String> tryExtract(byte[] bytes) {
-        if (!enabled || bytes == null || bytes.length == 0 || initFailed) {
+        if (!isEnabled() || bytes == null || bytes.length == 0 || initFailed) {
             return Optional.empty();
         }
         try {
@@ -125,8 +122,8 @@ public class LocalTesseractImageOcr {
 
     private Optional<String> resolveLanguages(Path dataPath) {
         List<String> candidates = new ArrayList<>();
-        candidates.add(configuredLanguages);
-        if (!"eng".equals(configuredLanguages)) {
+        candidates.add(configuredLanguages());
+        if (!"eng".equals(configuredLanguages())) {
             candidates.add("eng");
         }
         for (String spec : candidates) {

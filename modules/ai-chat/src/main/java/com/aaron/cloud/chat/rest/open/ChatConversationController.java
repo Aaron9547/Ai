@@ -82,6 +82,12 @@ public class ChatConversationController extends OpenV1ControllerBases.Chat {
         chatApplicationService.archiveConversation(id);
     }
 
+    @PostMapping("/conversations/{conversationId}/stream/cancel")
+    public void cancelStream(@PathVariable("conversationId") String conversationId) {
+        long id = chatApplicationService.requireOpenConversationId(conversationId);
+        chatApplicationService.cancelActiveGeneration(id);
+    }
+
     @PostMapping(value = "/conversations/{conversationId}/messages", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter send(
             @PathVariable("conversationId") String conversationId, @Valid @RequestBody ChatSendPayload body) {

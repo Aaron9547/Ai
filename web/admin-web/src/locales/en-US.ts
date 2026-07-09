@@ -59,6 +59,14 @@ export default {
     tenantInfoPending: "Tenant (loading)",
     workspace: "Workspace",
     recognizedWorkspace: "Workspace detected",
+    settingValueKind: {
+      BOOLEAN: "Boolean",
+      INTEGER: "Integer",
+      INT: "Integer",
+      STRING: "String",
+      SELECT: "Select",
+      SECRET_STRING: "Secret",
+    },
   },
   menuCodes: {
     DASHBOARD: "Overview",
@@ -80,6 +88,7 @@ export default {
     SCHEDULED_TASKS: "Scheduled tasks",
     MESSAGE_CENTER: "Messaging",
     MENU_CATALOG: "Admin menus",
+    PLATFORM_SETTINGS: "Platform parameters",
     GATEWAY_API: "API rate limits",
     _unknown: "Unsynced menu (code: {code})",
   },
@@ -300,6 +309,7 @@ This is your scheduled reminder: {actionText}
       platform: "Platform governance",
       tenantManage: "Tenant list",
       menuCatalog: "Admin menus",
+      platformSettings: "Platform parameters",
     },
     titles: {
       "/dashboard": "Overview",
@@ -308,6 +318,7 @@ This is your scheduled reminder: {actionText}
       "/users/knowledge-planet-weekly-feedback": "Knowledge planet weekly feedback",
       "/tenant/tenants": "Tenant list",
       "/system/menu-items": "Admin menus",
+      "/system/platform-settings": "Platform system parameters",
       "/gateway/api-rate-limits": "API rate limits",
       "/gateway/access-parties": "Access parties & grants",
       "/gateway/access-parties/:partyId/grant": "Bind grants",

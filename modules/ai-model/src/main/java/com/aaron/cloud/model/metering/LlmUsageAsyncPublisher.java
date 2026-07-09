@@ -1,13 +1,13 @@
 package com.aaron.cloud.model.metering;
 
 import com.aaron.cloud.common.config.properties.RocketMqAppProperties;
+import com.aaron.cloud.common.infra.AiInternalResourceNames;
 import com.aaron.cloud.common.modelcfg.quota.LlmUsageDigestMessage;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -24,9 +24,6 @@ public class LlmUsageAsyncPublisher {
     private final ObjectProvider<RocketMQTemplate> rocketMQTemplate;
     private final ObjectProvider<StringRedisTemplate> stringRedisTemplate;
     private final RocketMqAppProperties rocketMqApp;
-
-    @Value("${ai.llm-usage.redis-queue-key:ai:queue:llm-usage}")
-    private String redisQueueKey;
 
     public void publish(LlmUsageDigestMessage message) {
         if (message.totalTokens() <= 0) {
@@ -49,7 +46,7 @@ public class LlmUsageAsyncPublisher {
             }
             var redis = stringRedisTemplate.getIfAvailable();
             if (redis != null) {
-                redis.opsForList().rightPush(redisQueueKey, json);
+                redis.opsForList().rightPush(AiInternalResourceNames.RedisQueues.LLM_USAGE, json);
                 return;
             }
             persistenceService.persist(message);

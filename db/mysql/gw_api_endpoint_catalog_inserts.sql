@@ -35,6 +35,7 @@ INSERT IGNORE INTO gw_api_endpoint (path_pattern, http_method, display_name, rem
 ('/open/v1/chat/conversations/*/messages', 'POST', '流式发消息 SSE', NULL, 1, 1070, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/conversations/*/messages/*/feedback', 'POST', '助手消息赞踩', NULL, 1, 1080, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/conversations/*/messages/*/retry', 'POST', '重新生成助手 SSE', NULL, 1, 1090, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/open/v1/chat/conversations/*/stream/cancel', 'POST', 'C端停止流式生成', '用户主动取消', 1, 1095, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/conversations/*/attachments', 'POST', '会话附件上传', 'multipart', 1, 1100, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/conversations/*/attachments/*', 'GET', '会话附件预览下载', 'inline/attachment', 1, 1101, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/open/v1/chat/external-images/proxy', 'GET', '对话外链图片代理', 'C 端 Markdown/分享长图', 1, 1102, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
@@ -261,4 +262,6 @@ INSERT IGNORE INTO gw_api_endpoint (path_pattern, http_method, display_name, rem
 ('/api/v1/admin/prompt-templates/*', 'PUT', '管理端更新提示词模板', NULL, 1, 4382, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/prompt-templates/*', 'DELETE', '管理端删除提示词模板', NULL, 1, 4383, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
 ('/api/v1/admin/prompt-templates/cache-stats', 'GET', '管理端提示词缓存统计', NULL, 1, 4384, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
-('/api/v1/admin/prompt-templates/cache/evict', 'POST', '管理端提示词缓存失效', NULL, 1, 4385, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
+('/api/v1/admin/prompt-templates/cache/evict', 'POST', '管理端提示词缓存失效', NULL, 1, 4385, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/platform-settings', 'GET', '平台系统参数列表', NULL, 1, 4390, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+('/api/v1/admin/platform-settings', 'PUT', '平台系统参数批量更新', NULL, 1, 4391, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));

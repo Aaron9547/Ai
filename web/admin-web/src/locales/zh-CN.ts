@@ -59,6 +59,14 @@ export default {
     tenantInfoPending: "租户（信息未加载）",
     workspace: "工作区",
     recognizedWorkspace: "已识别工作区",
+    settingValueKind: {
+      BOOLEAN: "布尔",
+      INTEGER: "整数",
+      INT: "整数",
+      STRING: "字符串",
+      SELECT: "选项",
+      SECRET_STRING: "密钥",
+    },
   },
   menuCodes: {
     DASHBOARD: "数据概览",
@@ -80,6 +88,7 @@ export default {
     SCHEDULED_TASKS: "定时任务",
     MESSAGE_CENTER: "消息发送",
     MENU_CATALOG: "后台菜单",
+    PLATFORM_SETTINGS: "平台系统参数",
     GATEWAY_API: "API 限流",
     _unknown: "未同步菜单项（码：{code}）",
   },
@@ -299,6 +308,7 @@ export default {
       platform: "平台治理",
       tenantManage: "租户列表",
       menuCatalog: "后台菜单",
+      platformSettings: "平台系统参数",
     },
     titles: {
       "/dashboard": "数据概览",
@@ -307,6 +317,7 @@ export default {
       "/users/knowledge-planet-weekly-feedback": "知识星球周报反馈",
       "/tenant/tenants": "租户列表",
       "/system/menu-items": "后台菜单",
+      "/system/platform-settings": "平台系统参数",
       "/gateway/api-rate-limits": "API 限流",
       "/gateway/access-parties": "接入方与授权",
       "/gateway/access-parties/:partyId/grant": "授权绑定",

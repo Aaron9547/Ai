@@ -4,7 +4,8 @@ import com.aaron.cloud.common.api.ports.ImageTextOcrPort;
 import com.aaron.cloud.common.chat.ChatAttachmentRepository;
 import com.aaron.cloud.common.chat.ChatConversationRepository;
 import com.aaron.cloud.common.chat.entity.ChatAttachment;
-import com.aaron.cloud.common.config.properties.AiChatAttachmentProperties;
+import com.aaron.cloud.common.api.enums.infra.PlatformSettingKey;
+import com.aaron.cloud.common.platform.PlatformSettingApplicationService;
 import com.aaron.cloud.common.context.TenantContextHolder;
 import com.aaron.cloud.common.document.AttachmentOcrTextQuality;
 import com.aaron.cloud.common.document.ExtractedDocumentTexts;
@@ -31,7 +32,7 @@ public class ChatAttachmentUploadService {
     private final ChatAttachmentBinStore attachmentBinStore;
     private final TikaDocumentTextExtractor documentTextExtractor;
     private final ImageTextOcrPort imageTextOcrPort;
-    private final AiChatAttachmentProperties attachmentProperties;
+    private final PlatformSettingApplicationService platformSettings;
 
     public record SaveResult(ChatAttachment attachment, boolean textExtracted, String kind) {}
 
@@ -96,7 +97,7 @@ public class ChatAttachmentUploadService {
      */
     private String enrichImageExtractText(
             long tenantId, byte[] bytes, String mimeType, String fileName, String localText) {
-        if (!attachmentProperties.isVisionOcrFallback()) {
+        if (!platformSettings.getBoolean(PlatformSettingKey.CHAT_ATTACHMENT_VISION_OCR_FALLBACK)) {
             return localText == null ? "" : localText;
         }
         if (!AttachmentOcrTextQuality.needsVisionFallback(localText)) {

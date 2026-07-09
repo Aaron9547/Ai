@@ -34,6 +34,10 @@ public final class ApiV1ControllerBases {
     @RequestMapping(AbstractApiV1Controller.PREFIX + "/admin/tenant-runtime-settings")
     public static abstract class AdminTenantRuntimeSettings extends AbstractApiV1Controller {}
 
+    /** 平台级系统参数（全租户共享；见 {@code sys_platform_setting}） */
+    @RequestMapping(AbstractApiV1Controller.PREFIX + "/admin/platform-settings")
+    public static abstract class AdminPlatformSettings extends AbstractApiV1Controller {}
+
     /** 租户壳：品牌与出站（独立页；与通用 tenant-runtime-settings 分离） */
     @RequestMapping(AbstractApiV1Controller.PREFIX + "/admin/tenant-shell-config")
     public static abstract class AdminTenantShellConfig extends AbstractApiV1Controller {}

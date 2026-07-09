@@ -1,7 +1,7 @@
 package com.aaron.cloud.common.profile.memory;
 
-import com.aaron.cloud.common.config.properties.AiMemoryProperties;
 import com.aaron.cloud.common.config.properties.RocketMqAppProperties;
+import com.aaron.cloud.common.infra.AiInternalResourceNames;
 import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
@@ -22,7 +22,6 @@ public class MemoryAbstractAsyncPublisher {
 
     private final ObjectMapper objectMapper;
     private final RocketMqAppProperties rocketMqApp;
-    private final AiMemoryProperties aiMemoryProperties;
     private final TenantRuntimeSettingApplicationService tenantRuntimeSettingApplicationService;
     private final ObjectProvider<RocketMQTemplate> rocketMQTemplate;
     private final ObjectProvider<StringRedisTemplate> stringRedisTemplate;
@@ -54,7 +53,7 @@ public class MemoryAbstractAsyncPublisher {
             }
             var redis = stringRedisTemplate.getIfAvailable();
             if (redis != null) {
-                redis.opsForList().rightPush(aiMemoryProperties.getAbstractRedisQueueKey(), json);
+                redis.opsForList().rightPush(AiInternalResourceNames.RedisQueues.MEMORY_ABSTRACT, json);
                 return;
             }
             if (memPol.abstractSyncFallback()) {

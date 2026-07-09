@@ -50,6 +50,13 @@ class AdminHttpMenuRoutesTest {
     }
 
     @Test
+    void platformSettingsPathsRequirePlatformSettingsMenu() {
+        assertEquals(
+                AdminMenuCode.PLATFORM_SETTINGS,
+                AdminHttpMenuRoutes.resolve("/api/v1/admin/platform-settings"));
+    }
+
+    @Test
     void unknownAdminPathReturnsNull() {
         assertNull(AdminHttpMenuRoutes.resolve("/api/v1/admin/unknown-resource"));
     }

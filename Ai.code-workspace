@@ -8,6 +8,8 @@
 		"java.configuration.updateBuildConfiguration": "automatic",
 		"terminal.integrated.env.windows": {
 			"PATH": "C:\\Program Files\\nodejs;C:\\Program Files (x86)\\nodejs;${env:PATH}"
-		}
+		},
+		"java.compile.nullAnalysis.mode": "automatic",
+		"java.debug.settings.onBuildFailureProceed": true
 	}
 }

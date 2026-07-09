@@ -396,6 +396,34 @@ function failureLinesFromMap(map: Record<string, number>, t: ComposerTranslation
     .map(([code, count]) => ({ label: humanizeCrawlFailCode(code, t), count }));
 }
 
+type CrawlStatTriplet = { ok: number; skipped: number; fail: number };
+
+function crawlStatSum(t: CrawlStatTriplet): number {
+  return t.ok + t.skipped + t.fail;
+}
+
+/**
+ * 合并 job.result_json 计数与 GET crawl-runs 详情。
+ * 运行中缓存的 run 详情常为 0，不得覆盖已完成的 successCount。
+ */
+export function mergeSiteCrawlStatCounts(
+  fromResult: CrawlStatTriplet,
+  fromRunDetail: CrawlStatTriplet | null | undefined,
+): CrawlStatTriplet {
+  if (!fromRunDetail) {
+    return fromResult;
+  }
+  const resultSum = crawlStatSum(fromResult);
+  const detailSum = crawlStatSum(fromRunDetail);
+  if (detailSum > 0 && detailSum >= resultSum) {
+    return fromRunDetail;
+  }
+  if (resultSum > 0) {
+    return fromResult;
+  }
+  return fromRunDetail;
+}
+
 function buildHeadline(
   ok: number,
   skipped: number,
@@ -465,14 +493,22 @@ export function buildSiteCrawlOutcomeView(
     return null;
   }
 
-  let ok = typeof o.successCount === "number" ? o.successCount : 0;
-  let skipped = typeof o.skippedCount === "number" ? o.skippedCount : 0;
-  let fail = typeof o.failCount === "number" ? o.failCount : 0;
-  if (runDetail) {
-    if (typeof runDetail.ok === "number") ok = runDetail.ok;
-    if (typeof runDetail.skipped === "number") skipped = runDetail.skipped;
-    if (typeof runDetail.fail === "number") fail = runDetail.fail;
-  }
+  const fromResult: CrawlStatTriplet = {
+    ok: typeof o.successCount === "number" ? o.successCount : 0,
+    skipped: typeof o.skippedCount === "number" ? o.skippedCount : 0,
+    fail: typeof o.failCount === "number" ? o.failCount : 0,
+  };
+  const fromRunDetail: CrawlStatTriplet | null = runDetail
+    ? {
+        ok: typeof runDetail.ok === "number" ? runDetail.ok : 0,
+        skipped: typeof runDetail.skipped === "number" ? runDetail.skipped : 0,
+        fail: typeof runDetail.fail === "number" ? runDetail.fail : 0,
+      }
+    : null;
+  const merged = mergeSiteCrawlStatCounts(fromResult, fromRunDetail);
+  const ok = merged.ok;
+  const skipped = merged.skipped;
+  const fail = merged.fail;
 
   const summary = typeof o.summary === "string" ? o.summary : undefined;
   const error = typeof o.error === "string" ? o.error : undefined;

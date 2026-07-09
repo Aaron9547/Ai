@@ -14,7 +14,8 @@ import com.aaron.cloud.common.modelcfg.entity.SysLlmModel;
 import com.aaron.cloud.common.observability.ObservabilityAdminDisplaySupport;
 import com.aaron.cloud.common.observability.ObservabilityEventSink;
 import com.aaron.cloud.common.rag.RagChunkRepository;
-import com.aaron.cloud.common.rag.RagQualityAssessmentProperties;
+import com.aaron.cloud.common.api.enums.infra.PlatformSettingKey;
+import com.aaron.cloud.common.platform.PlatformSettingApplicationService;
 import com.aaron.cloud.common.rag.RagQualityAssessmentRepository;
 import com.aaron.cloud.common.rag.entity.RagChunk;
 import com.aaron.cloud.common.rag.entity.RagQualityAssessment;
@@ -70,7 +71,7 @@ public class RagQualityAssessmentService {
             Output JSON only: {"score":0.0-1.0,"unsupportedClaims":["…"],"reason":"brief reason"}
             """;
 
-    private final RagQualityAssessmentProperties properties;
+    private final PlatformSettingApplicationService platformSettings;
     private final RagQualityAssessmentRepository repository;
     private final RagQueryBridgeService ragQueryBridgeService;
     private final RagChunkRepository ragChunkRepository;
@@ -83,7 +84,7 @@ public class RagQualityAssessmentService {
     private final Executor ragQualityExecutor;
 
     public RagQualityAssessmentService(
-            RagQualityAssessmentProperties properties,
+            PlatformSettingApplicationService platformSettings,
             RagQualityAssessmentRepository repository,
             RagQueryBridgeService ragQueryBridgeService,
             RagChunkRepository ragChunkRepository,
@@ -94,7 +95,7 @@ public class RagQualityAssessmentService {
             RagQualityLlmJudge ragQualityLlmJudge,
             ObjectMapper objectMapper,
             @Qualifier("ragQualityExecutor") Executor ragQualityExecutor) {
-        this.properties = properties;
+        this.platformSettings = platformSettings;
         this.repository = repository;
         this.ragQueryBridgeService = ragQueryBridgeService;
         this.ragChunkRepository = ragChunkRepository;
@@ -108,7 +109,7 @@ public class RagQualityAssessmentService {
     }
 
     public RagQualityAssessmentView submit(RagQualityAssessmentSubmitRequest req, long adminUserId, Locale locale) {
-        if (!properties.isEnabled()) {
+        if (!platformSettings.getBoolean(PlatformSettingKey.RAG_QA_ENABLED)) {
             throw new IllegalStateException("RAG_QA_DISABLED");
         }
         long tenantId = TenantContextHolder.require().getTenantId();
@@ -183,7 +184,7 @@ public class RagQualityAssessmentService {
             result.set("recall", recall.node());
             row.setRecallHitRate(recall.rate());
 
-            if (properties.isJudgeEnabled()
+            if (platformSettings.getBoolean(PlatformSettingKey.RAG_QA_JUDGE_ENABLED)
                     && row.getScope() == RagQualityAssessmentScope.MESSAGE_TURN
                     && row.getAssistantAnswer() != null
                     && !row.getAssistantAnswer().isBlank()
@@ -243,7 +244,7 @@ public class RagQualityAssessmentService {
             empty.put("citationRecallRate", 0);
             return new RecallOutcome(BigDecimal.ZERO, empty);
         }
-        int topK = Math.max(1, properties.getTopK());
+        int topK = Math.max(1, platformSettings.getInt(PlatformSettingKey.RAG_QA_TOP_K));
         Set<Long> targetChunks = new HashSet<>();
         if (row.getScope() == RagQualityAssessmentScope.CHUNK_QUERY && row.getChunkId() != null) {
             targetChunks.add(row.getChunkId());

@@ -1,10 +1,12 @@
 package com.aaron.cloud.prompt;
 
+import com.aaron.cloud.common.api.enums.infra.PlatformSettingKey;
+import com.aaron.cloud.common.infra.AiInternalResourceNames;
+import com.aaron.cloud.common.platform.PlatformSettingApplicationService;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicLong;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
@@ -16,9 +18,7 @@ import org.springframework.stereotype.Component;
 public class PromptTemplateRedisCache {
 
     private final StringRedisTemplate redis;
-
-    @Value("${ai.prompt-template.cache-ttl-seconds:600}")
-    private long cacheTtlSeconds;
+    private final PlatformSettingApplicationService platformSettings;
 
     private final AtomicLong hits = new AtomicLong();
     private final AtomicLong misses = new AtomicLong();
@@ -26,7 +26,12 @@ public class PromptTemplateRedisCache {
     public record CacheStats(long approximateKeyCount, long hits, long misses) {}
 
     private static String cacheKey(long tenantId, String promptCode, String locale) {
-        return "ai:prompt:" + tenantId + ":" + promptCode + ":" + locale;
+        return AiInternalResourceNames.RedisKeyPrefixes.PROMPT_TEMPLATE
+                + tenantId
+                + ":"
+                + promptCode
+                + ":"
+                + locale;
     }
 
     public String getOrNull(long tenantId, String promptCode, String locale) {
@@ -40,7 +45,10 @@ public class PromptTemplateRedisCache {
 
     public void put(long tenantId, String promptCode, String locale, String content) {
         try {
-            long ttl = Math.max(30L, cacheTtlSeconds);
+            long ttl =
+                    Math.max(
+                            30L,
+                            platformSettings.getLong(PlatformSettingKey.PROMPT_TEMPLATE_CACHE_TTL_SECONDS));
             redis.opsForValue().set(cacheKey(tenantId, promptCode, locale), content, Duration.ofSeconds(ttl));
         } catch (Exception e) {
             log.warn("prompt template redis put failed tenant={} code={}", tenantId, promptCode, e);
@@ -63,7 +71,7 @@ public class PromptTemplateRedisCache {
 
     public void evictAll() {
         try {
-            var keys = redis.keys("ai:prompt:*");
+            var keys = redis.keys(AiInternalResourceNames.RedisKeyPrefixes.PROMPT_TEMPLATE + "*");
             if (keys != null && !keys.isEmpty()) {
                 redis.delete(keys);
             }
@@ -83,7 +91,7 @@ public class PromptTemplateRedisCache {
     public CacheStats stats() {
         long keyCount = 0;
         try {
-            var keys = redis.keys("ai:prompt:*");
+            var keys = redis.keys(AiInternalResourceNames.RedisKeyPrefixes.PROMPT_TEMPLATE + "*");
             keyCount = keys == null ? 0 : keys.size();
         } catch (Exception e) {
             log.warn("prompt template redis stats failed", e);

@@ -28,8 +28,12 @@
               @change="onKindChange"
             >
               <el-option :label="t('views.runtime.filterKindAll')" value="" />
-              <el-option :label="t('views.runtime.filterKindString')" value="STRING" />
-              <el-option :label="t('views.runtime.filterKindBoolean')" value="BOOLEAN" />
+              <el-option
+                v-for="k in runtimeValueKinds"
+                :key="k"
+                :label="formatSettingValueKindLabel(t, k)"
+                :value="k"
+              />
             </el-select>
             <el-button type="primary" plain :loading="loading" @click="runQuery">{{ t("views.runtime.query") }}</el-button>
             <el-button :loading="loading" @click="reload">{{ t("views.runtime.reload") }}</el-button>
@@ -41,7 +45,9 @@
         <el-table-column prop="key" :label="t('views.runtime.colKey')" width="220" show-overflow-tooltip />
         <el-table-column prop="valueKind" :label="t('views.runtime.colKind')" width="104" align="center">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.valueKind === 'BOOLEAN' ? 'success' : 'info'">{{ row.valueKind }}</el-tag>
+            <el-tag size="small" :type="settingValueKindTagType(row.valueKind)">{{
+              formatSettingValueKindLabel(t, row.valueKind)
+            }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column :label="t('views.runtime.colValue')" min-width="260">
@@ -137,8 +143,15 @@ import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import * as api from "@/api/tenantRuntimeSettings";
 import { apiRequestErrorMessage } from "@/utils/apiRequestErrorMessage";
+import {
+  formatSettingValueKindLabel,
+  settingValueKindTagType,
+  TENANT_RUNTIME_SETTING_VALUE_KINDS,
+} from "@/utils/settingValueKindLabel";
 
 const { t } = useI18n();
+
+const runtimeValueKinds = TENANT_RUNTIME_SETTING_VALUE_KINDS;
 
 const rows = ref<api.TenantRuntimeSettingRow[]>([]);
 const loading = ref(false);

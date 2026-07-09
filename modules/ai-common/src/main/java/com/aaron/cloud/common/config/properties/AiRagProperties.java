@@ -9,10 +9,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class AiRagProperties {
 
     /**
-     * 取值见 {@link com.aaron.cloud.common.api.enums.RagRetrievalMode}（yaml：{@code milvus} /
-     * {@code milvus_es_hybrid}）。
+     * 取值见 {@link com.aaron.cloud.common.api.enums.RagRetrievalMode}；进程默认见平台参数
+     * {@link com.aaron.cloud.common.api.enums.infra.PlatformSettingKey#RAG_RETRIEVAL_MODE}。
      */
-    private String retrievalMode = "milvus";
+    private String retrievalMode = "milvus_es_hybrid";
 
     private final Elasticsearch elasticsearch = new Elasticsearch();
 
@@ -44,8 +44,8 @@ public class AiRagProperties {
         /** 与对端默认 {@code elasticsearch.index-name} 一致（rag_agent_documents）。 */
         private String indexName = "rag_agent_documents";
         /**
-         * 混合检索 ES 分支 BM25 最低分（{@code min_score}）；低于此分的命中丢弃。默认 {@code 1.0}，环境变量
-         * {@code AI_RAG_ES_MIN_SCORE}。
+         * 混合检索 ES 分支 BM25 最低分；生效值见平台参数
+         * {@link com.aaron.cloud.common.api.enums.infra.PlatformSettingKey#RAG_ES_MIN_SCORE}。
          */
         private double minScore = 1.0d;
         /**

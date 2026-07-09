@@ -51,7 +51,7 @@ export default defineConfig({
      * 花生壳 / 自定义域穿透：Host 为域名（非纯 IP）时 Vite 6 会 403。以 `.` 开头表示该后缀及子域。
      * 追加域名：`VITE_ADDITIONAL_ALLOWED_HOSTS` 或 `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS`；本地全放行：`VITE_ALLOWED_HOSTS_ALL=true`（勿提交）。
      */
-    allowedHosts,
+    allowedHosts: "all", // 覆盖原有变量，全部放行
     port: 5173,
     proxy: {
       "/api": {
@@ -65,6 +65,6 @@ export default defineConfig({
     },
   },
   preview: {
-    allowedHosts,
+    allowedHosts: "all", // 覆盖原有变量，全部放行
   },
 });

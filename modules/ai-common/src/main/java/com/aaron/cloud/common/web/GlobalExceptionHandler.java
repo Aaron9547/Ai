@@ -257,6 +257,22 @@ public class GlobalExceptionHandler {
                                 .build());
     }
 
+    @ExceptionHandler(IOException.class)
+    public void clientIoDisconnect(IOException ex, HttpServletResponse response) {
+        if (response.isCommitted()) {
+            log.debug(
+                    "client io disconnect http=\"{}\" message={}",
+                    RequestLogSupport.currentRequestLine(),
+                    ex.getMessage());
+            return;
+        }
+        log.warn(
+                "io exception http=\"{}\" message={}",
+                RequestLogSupport.currentRequestLine(),
+                ex.getMessage(),
+                ex);
+    }
+
     /**
      * SSE 等异步请求在客户端主动断开时，容器会通知 {@code AsyncRequestNotUsableException}；属预期行为，勿记 ERROR。
      */

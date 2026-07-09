@@ -11,7 +11,7 @@ class ChatSseSendGateTest {
     void trySend_skipsWhenGateClosed() {
         SseEmitter emitter = new SseEmitter(60_000L);
         ChatSseSendGate gate = new ChatSseSendGate(emitter);
-        gate.markClosed();
+        gate.markSseClosed();
         assertFalse(gate.trySend(SseEmitter.event().data("x"), null));
         assertFalse(gate.isOpen());
     }

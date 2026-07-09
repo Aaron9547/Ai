@@ -1,5 +1,7 @@
 package com.aaron.cloud.common.observability;
 
+import com.aaron.cloud.common.api.enums.infra.PlatformSettingKey;
+import com.aaron.cloud.common.platform.PlatformSettingApplicationService;
 import com.aaron.cloud.common.api.dto.RagCitationHit;
 import com.aaron.cloud.common.api.dto.mcp.McpToolInvokeResult;
 import com.aaron.cloud.common.api.enums.observability.McpTraceSourceScene;
@@ -26,7 +28,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class ObservabilityEventSink {
 
-    private final ObservabilityProperties properties;
+    private final PlatformSettingApplicationService platformSettings;
     private final ObsMcpTraceEventRepository mcpTraceEventRepository;
     private final ObsRagHitEventRepository ragHitEventRepository;
     private final ObjectMapper objectMapper;
@@ -34,12 +36,12 @@ public class ObservabilityEventSink {
     private final AtomicLong droppedEvents = new AtomicLong();
 
     public ObservabilityEventSink(
-            ObservabilityProperties properties,
+            PlatformSettingApplicationService platformSettings,
             ObsMcpTraceEventRepository mcpTraceEventRepository,
             ObsRagHitEventRepository ragHitEventRepository,
             ObjectMapper objectMapper,
             @Qualifier("observabilityExecutor") Executor observabilityExecutor) {
-        this.properties = properties;
+        this.platformSettings = platformSettings;
         this.mcpTraceEventRepository = mcpTraceEventRepository;
         this.ragHitEventRepository = ragHitEventRepository;
         this.objectMapper = objectMapper;
@@ -56,7 +58,7 @@ public class ObservabilityEventSink {
             String errorCode,
             long latencyMs,
             ObservabilityTraceContext.Snapshot ctx) {
-        if (!properties.isEnabled()) {
+        if (!platformSettings.getBoolean(PlatformSettingKey.OBSERVABILITY_ENABLED)) {
             return;
         }
         submit(() -> persistMcpTrace(tenantId, qualifiedName, serverId, arguments, result, success, errorCode, latencyMs, ctx));
@@ -67,14 +69,17 @@ public class ObservabilityEventSink {
             List<RagCitationHit> hits,
             RagRetrievalMode mode,
             ObservabilityTraceContext.Snapshot ctx) {
-        if (!properties.isEnabled() || hits == null || hits.isEmpty() || ctx == null) {
+        if (!platformSettings.getBoolean(PlatformSettingKey.OBSERVABILITY_ENABLED)
+                || hits == null
+                || hits.isEmpty()
+                || ctx == null) {
             return;
         }
         submit(() -> persistRagHits(tenantId, hits, mode, ctx));
     }
 
     public void backfillAssistantMessageId(long conversationId, long userMessageId, long assistantMessageId) {
-        if (!properties.isEnabled()) {
+        if (!platformSettings.getBoolean(PlatformSettingKey.OBSERVABILITY_ENABLED)) {
             return;
         }
         submit(() -> {

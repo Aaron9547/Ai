@@ -169,12 +169,18 @@ public class CrawlRunAdminApplicationService {
             }
             if (root.has("ok")) {
                 ok = root.get("ok").asInt(0);
+            } else if (root.has("successCount")) {
+                ok = root.get("successCount").asInt(0);
             }
             if (root.has("skipped")) {
                 skipped = root.get("skipped").asInt(0);
+            } else if (root.has("skippedCount")) {
+                skipped = root.get("skippedCount").asInt(0);
             }
             if (root.has("fail")) {
                 fail = root.get("fail").asInt(0);
+            } else if (root.has("failCount")) {
+                fail = root.get("failCount").asInt(0);
             }
         } catch (Exception ignored) {
             /* 展示层容错 */

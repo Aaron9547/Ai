@@ -1,9 +1,9 @@
 package com.aaron.cloud.gateway.observability;
 
+import com.aaron.cloud.common.api.enums.infra.PlatformSettingKey;
 import com.aaron.cloud.common.observability.ObsMcpTraceEventRepository;
 import com.aaron.cloud.common.observability.ObsRagHitEventRepository;
-import com.aaron.cloud.common.observability.ObservabilityProperties;
-import com.aaron.cloud.common.rag.RagQualityAssessmentProperties;
+import com.aaron.cloud.common.platform.PlatformSettingApplicationService;
 import com.aaron.cloud.common.rag.RagQualityAssessmentRepository;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
@@ -17,19 +17,23 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class ObservabilityRetentionScheduledTask {
 
-    private final ObservabilityProperties observabilityProperties;
-    private final RagQualityAssessmentProperties ragQualityAssessmentProperties;
+    private final PlatformSettingApplicationService platformSettings;
     private final ObsMcpTraceEventRepository mcpTraceEventRepository;
     private final ObsRagHitEventRepository ragHitEventRepository;
     private final RagQualityAssessmentRepository ragQualityAssessmentRepository;
 
-    @Scheduled(cron = "${ai.observability.retention-cron:0 15 4 * * *}")
-    public void purgeObsEvents() {
-        if (!observabilityProperties.isEnabled()) {
+    @Scheduled(cron = "0 * * * * *")
+    public void purgeObsEventsIfDue() {
+        if (!platformSettings.isCronDue(PlatformSettingKey.OBSERVABILITY_RETENTION_CRON)) {
             return;
         }
-        LocalDateTime cutoff = LocalDateTime.now().minusDays(observabilityProperties.getRetentionDays());
-        int batch = Math.max(100, observabilityProperties.getPurgeBatchSize());
+        if (!platformSettings.getBoolean(PlatformSettingKey.OBSERVABILITY_ENABLED)) {
+            return;
+        }
+        LocalDateTime cutoff =
+                LocalDateTime.now()
+                        .minusDays(platformSettings.getInt(PlatformSettingKey.OBSERVABILITY_RETENTION_DAYS));
+        int batch = Math.max(100, platformSettings.getInt(PlatformSettingKey.OBSERVABILITY_PURGE_BATCH_SIZE));
         int mcp = purgeLoop(() -> mcpTraceEventRepository.deleteOlderThan(cutoff, batch));
         int rag = purgeLoop(() -> ragHitEventRepository.deleteOlderThan(cutoff, batch));
         if (mcp > 0 || rag > 0) {
@@ -37,12 +41,16 @@ public class ObservabilityRetentionScheduledTask {
         }
     }
 
-    @Scheduled(cron = "${ai.rag.quality-assessment.retention-cron:0 45 4 * * *}")
-    public void purgeQualityReports() {
-        if (!ragQualityAssessmentProperties.isEnabled()) {
+    @Scheduled(cron = "0 * * * * *")
+    public void purgeQualityReportsIfDue() {
+        if (!platformSettings.isCronDue(PlatformSettingKey.RAG_QA_RETENTION_CRON)) {
             return;
         }
-        LocalDateTime cutoff = LocalDateTime.now().minusDays(ragQualityAssessmentProperties.getRetentionDays());
+        if (!platformSettings.getBoolean(PlatformSettingKey.RAG_QA_ENABLED)) {
+            return;
+        }
+        LocalDateTime cutoff =
+                LocalDateTime.now().minusDays(platformSettings.getInt(PlatformSettingKey.RAG_QA_RETENTION_DAYS));
         int batch = 5000;
         int n = purgeLoop(() -> ragQualityAssessmentRepository.deleteOlderThan(cutoff, batch));
         if (n > 0) {

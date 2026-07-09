@@ -10,7 +10,8 @@ import static org.mockito.Mockito.when;
 import com.aaron.cloud.common.api.enums.rag.RagRetrievalMode;
 import com.aaron.cloud.common.api.enums.tenant.TenantRuntimeSettingKey;
 import com.aaron.cloud.common.config.properties.AiProvidersProperties;
-import com.aaron.cloud.common.config.properties.AiRagProperties;
+import com.aaron.cloud.common.api.enums.infra.PlatformSettingKey;
+import com.aaron.cloud.common.platform.PlatformSettingApplicationService;
 import com.aaron.cloud.common.rag.RagChunkRepository;
 import com.aaron.cloud.common.tenant.runtime.TenRuntimeSettingRepository;
 import com.aaron.cloud.common.tenant.runtime.entity.TenRuntimeSetting;
@@ -22,7 +23,7 @@ import org.springframework.web.server.ResponseStatusException;
 class TenantRagRuntimeResolverTest {
 
     private AiProvidersProperties providersProperties;
-    private AiRagProperties ragProperties;
+    private PlatformSettingApplicationService platformSettings;
     private TenRuntimeSettingRepository settingRepository;
     private RagChunkRepository ragChunkRepository;
     private TenantRagRuntimeResolver resolver;
@@ -31,13 +32,14 @@ class TenantRagRuntimeResolverTest {
     void setUp() {
         providersProperties = new AiProvidersProperties();
         providersProperties.getMilvus().setVectorDimension(2048);
-        ragProperties = new AiRagProperties();
-        ragProperties.setRetrievalMode("milvus_es_hybrid");
+        platformSettings = mock(PlatformSettingApplicationService.class);
+        when(platformSettings.getEffectiveValueText(PlatformSettingKey.RAG_RETRIEVAL_MODE))
+                .thenReturn("milvus_es_hybrid");
         settingRepository = mock(TenRuntimeSettingRepository.class);
         ragChunkRepository = mock(RagChunkRepository.class);
         resolver =
                 new TenantRagRuntimeResolver(
-                        providersProperties, ragProperties, settingRepository, ragChunkRepository);
+                        providersProperties, platformSettings, settingRepository, ragChunkRepository);
         when(ragChunkRepository.tenantHasAnyChunks(any(Long.class))).thenReturn(false);
     }
 

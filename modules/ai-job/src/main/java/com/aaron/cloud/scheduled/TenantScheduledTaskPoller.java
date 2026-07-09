@@ -1,18 +1,17 @@
 package com.aaron.cloud.scheduled;
 
-import com.aaron.cloud.common.context.TenantSnapshot;
+import com.aaron.cloud.common.api.enums.infra.PlatformSettingKey;
 import com.aaron.cloud.common.api.enums.scheduled.ScheduledRunTrigger;
-import com.aaron.cloud.common.config.properties.AiRagProperties;
+import com.aaron.cloud.common.platform.PlatformSettingApplicationService;
 import com.aaron.cloud.common.redis.RedisDistributedLockService;
 import com.aaron.cloud.common.scheduled.TenantScheduledTaskRepository;
 import com.aaron.cloud.common.scheduled.entity.TenantScheduledTask;
 import com.aaron.cloud.common.time.BeijingTime;
+import com.aaron.cloud.scheduled.run.TenantScheduledRunOrchestrator;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
-
-import com.aaron.cloud.scheduled.run.TenantScheduledRunOrchestrator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -27,14 +26,17 @@ public class TenantScheduledTaskPoller {
     private final TenantScheduledTaskRepository taskRepository;
     private final TenantScheduledRunOrchestrator runOrchestrator;
     private final RedisDistributedLockService distributedLockService;
-    private final AiRagProperties aiRagProperties;
+    private final PlatformSettingApplicationService platformSettings;
 
-    @Scheduled(cron = "${ai.rag.scheduled-tasks.poll-cron:0 * * * * *}")
-    public void pollDueTasks() {
-        if (!aiRagProperties.getScheduledTasks().isEnabled()) {
+    @Scheduled(cron = "0 * * * * *")
+    public void pollDueTasksIfDue() {
+        if (!platformSettings.isCronDue(PlatformSettingKey.RAG_SCHEDULED_TASKS_POLL_CRON)) {
             return;
         }
-        long pollerTtlSec = aiRagProperties.getScheduledTasks().getPollerLockTtlSeconds();
+        if (!platformSettings.getBoolean(PlatformSettingKey.RAG_SCHEDULED_TASKS_ENABLED)) {
+            return;
+        }
+        long pollerTtlSec = platformSettings.getLong(PlatformSettingKey.RAG_SCHEDULED_TASKS_POLLER_LOCK_TTL_SECONDS);
         Optional<RedisDistributedLockService.DistributedLockHandle> pollerLock =
                 distributedLockService.tryAcquire(TenantScheduledTaskLockKeys.POLLER_TICK, Duration.ofSeconds(pollerTtlSec));
         if (pollerLock.isEmpty()) {

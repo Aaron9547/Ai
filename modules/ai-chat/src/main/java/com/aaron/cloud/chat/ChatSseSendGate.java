@@ -4,36 +4,32 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-/** SSE 发送门闩：客户端断开或 {@link SseEmitter#complete()} 后跳过后续 send，避免刷屏 WARN。 */
+/**
+ * SSE 发送门闩：客户端断开或 {@link SseEmitter#complete()} 后跳过后续 send，避免刷屏 WARN。
+ *
+ * <p>不中断模型上游；用户主动取消经 {@link ChatStreamCancelRegistry} 单独置位。
+ */
 @Slf4j
 public final class ChatSseSendGate {
 
     private final SseEmitter emitter;
     private final AtomicBoolean open = new AtomicBoolean(true);
-    private final AtomicBoolean cancelUpstream;
 
     public ChatSseSendGate(SseEmitter emitter) {
-        this(emitter, null);
-    }
-
-    public ChatSseSendGate(SseEmitter emitter, AtomicBoolean cancelUpstream) {
         this.emitter = emitter;
-        this.cancelUpstream = cancelUpstream;
-        Runnable close = this::markClosed;
-        emitter.onCompletion(close);
-        emitter.onTimeout(close);
-        emitter.onError(e -> markClosed());
+        Runnable closeSseOnly = this::markSseClosed;
+        emitter.onCompletion(closeSseOnly);
+        emitter.onTimeout(closeSseOnly);
+        emitter.onError(e -> markSseClosed());
     }
 
     public boolean isOpen() {
         return open.get();
     }
 
-    public void markClosed() {
+    /** 客户端断连 / complete：仅关闭 SSE 推送，不取消模型生成。 */
+    public void markSseClosed() {
         open.set(false);
-        if (cancelUpstream != null) {
-            cancelUpstream.set(true);
-        }
     }
 
     /**
@@ -47,10 +43,10 @@ public final class ChatSseSendGate {
             emitter.send(event);
             return true;
         } catch (IllegalStateException e) {
-            markClosed();
+            markSseClosed();
             return false;
         } catch (Exception e) {
-            markClosed();
+            markSseClosed();
             if (logContext != null && !logContext.isBlank()) {
                 log.warn("[对话] SSE 推送{}失败", logContext, e);
             }
@@ -59,7 +55,7 @@ public final class ChatSseSendGate {
     }
 
     public void complete() {
-        markClosed();
+        markSseClosed();
         try {
             emitter.complete();
         } catch (IllegalStateException ignored) {
@@ -68,7 +64,7 @@ public final class ChatSseSendGate {
     }
 
     public void completeWithError(Throwable err) {
-        markClosed();
+        markSseClosed();
         try {
             emitter.completeWithError(err);
         } catch (IllegalStateException ignored) {

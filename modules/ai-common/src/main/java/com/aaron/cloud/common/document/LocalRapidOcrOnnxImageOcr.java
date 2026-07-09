@@ -1,5 +1,7 @@
 package com.aaron.cloud.common.document;
 
+import com.aaron.cloud.common.api.enums.infra.PlatformSettingKey;
+import com.aaron.cloud.common.platform.PlatformSettingApplicationService;
 import com.benjaminwan.ocrlibrary.OcrResult;
 import io.github.mymonstercat.Model;
 import io.github.mymonstercat.ocr.InferenceEngine;
@@ -9,8 +11,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -20,27 +22,25 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class LocalRapidOcrOnnxImageOcr {
 
-    private final boolean enabled;
-    private final String modelCode;
+    private final PlatformSettingApplicationService platformSettings;
 
     private volatile InferenceEngine engine;
     private volatile boolean initFailed;
 
-    public LocalRapidOcrOnnxImageOcr(
-            @Value("${com.aaron.cloud.document.local-ocr.rapid.enabled:true}") boolean enabled,
-            @Value("${com.aaron.cloud.document.local-ocr.rapid.model:ONNX_PPOCR_V3}") String modelCode) {
-        this.enabled = enabled;
-        this.modelCode = modelCode == null || modelCode.isBlank() ? "ONNX_PPOCR_V3" : modelCode.trim();
+    public boolean isEnabled() {
+        return platformSettings.getBoolean(PlatformSettingKey.DOCUMENT_LOCAL_OCR_RAPID_ENABLED);
     }
 
-    public boolean isEnabled() {
-        return enabled;
+    private String modelCode() {
+        String raw = platformSettings.getEffectiveValueText(PlatformSettingKey.DOCUMENT_LOCAL_OCR_RAPID_MODEL);
+        return raw == null || raw.isBlank() ? "ONNX_PPOCR_V3" : raw.trim();
     }
 
     public Optional<String> tryExtract(byte[] bytes) {
-        if (!enabled || bytes == null || bytes.length == 0 || initFailed) {
+        if (!isEnabled() || bytes == null || bytes.length == 0 || initFailed) {
             return Optional.empty();
         }
         synchronized (this) {
@@ -94,7 +94,7 @@ public class LocalRapidOcrOnnxImageOcr {
             return engine;
         }
         try {
-            Model model = resolveModel(modelCode);
+            Model model = resolveModel(modelCode());
             engine = InferenceEngine.getInstance(model);
             log.info("[本地RapidOCR] 已启用：model={}", model);
             return engine;

@@ -18,6 +18,7 @@ const FALLBACK_PATH_ORDER = [
   "/audit/observability",
   "/billing/metering",
   "/system/runtime-settings",
+  "/system/platform-settings",
   "/system/tenant-shell-config",
   "/system/scheduled-tasks",
   "/system/message-channels",
@@ -36,6 +37,7 @@ export function requiredMenuForAdminPath(path: string): AdminRouteRequirement | 
   if (p.startsWith("/users")) return "USERS";
   if (p.startsWith("/tenant/tenants")) return "FOUNDER_ONLY";
   if (p.startsWith("/system/menu-items")) return "FOUNDER_ONLY";
+  if (p.startsWith("/system/platform-settings")) return "FOUNDER_ONLY";
   if (p.startsWith("/gateway/api-rate-limits") || p.startsWith("/gateway/cors-origins") || p.startsWith("/gateway/access-parties")) return "GATEWAY_API";
   if (p.startsWith("/gateway/access-logs")) return "ACCESS_LOGS";
   if (p.startsWith("/audit/observability")) return "OBSERVABILITY";

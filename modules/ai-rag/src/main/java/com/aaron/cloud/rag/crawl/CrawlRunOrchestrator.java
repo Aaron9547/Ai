@@ -3,7 +3,8 @@ package com.aaron.cloud.rag.crawl;
 import com.aaron.cloud.common.api.enums.rag.CrawlQueueRole;
 import com.aaron.cloud.common.api.enums.rag.CrawlQueueStatus;
 import com.aaron.cloud.common.api.enums.rag.RagWebCrawlSyncMode;
-import com.aaron.cloud.common.config.properties.AiRagProperties;
+import com.aaron.cloud.common.api.enums.infra.PlatformSettingKey;
+import com.aaron.cloud.common.platform.PlatformSettingApplicationService;
 import com.aaron.cloud.common.rag.CrawlRunRepository;
 import com.aaron.cloud.common.rag.CrawlUrlQueueRepository;
 import com.aaron.cloud.common.rag.LnkRagKbDocumentRepository;
@@ -72,7 +73,7 @@ public class CrawlRunOrchestrator {
     private final RagDocumentChunkPurgeService ragDocumentChunkPurgeService;
     private final RagWebCrawlExtractConfigSupport extractConfigSupport;
     private final RedisDistributedLockService distributedLockService;
-    private final AiRagProperties aiRagProperties;
+    private final PlatformSettingApplicationService platformSettings;
     private final ObjectMapper objectMapper;
     @Qualifier(CrawlRunExecutorConfig.CRAWL_RUN_EXECUTOR)
     private final Executor crawlRunExecutor;
@@ -110,7 +111,8 @@ public class CrawlRunOrchestrator {
                 siteId != null
                         ? TenantScheduledTaskLockKeys.siteRun(tenantId, siteId)
                         : TenantScheduledTaskLockKeys.siteOneShot(tenantId, baseUrl, categoryId);
-        Duration lockTtl = Duration.ofSeconds(aiRagProperties.getSiteCrawl().getCrawlLockTtlSeconds());
+        Duration lockTtl =
+                Duration.ofSeconds(platformSettings.getLong(PlatformSettingKey.RAG_SITE_CRAWL_LOCK_TTL_SECONDS));
         Optional<RedisDistributedLockService.DistributedLockHandle> lock =
                 distributedLockService.tryAcquire(lockKey, lockTtl);
         if (lock.isEmpty()) {

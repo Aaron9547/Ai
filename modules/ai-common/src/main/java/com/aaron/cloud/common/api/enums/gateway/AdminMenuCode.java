@@ -44,7 +44,9 @@ public enum AdminMenuCode {
     /** 链路追踪与 RAG 可观测（MCP 跟踪 / 命中链路 / 质量报告） */
     OBSERVABILITY("OBSERVABILITY"),
     /** 接口清单与按路径的限流策略 */
-    GATEWAY_API("GATEWAY_API");
+    GATEWAY_API("GATEWAY_API"),
+    /** 平台级系统参数（{@code sys_platform_setting}；全租户共享，仅创始人可改） */
+    PLATFORM_SETTINGS("PLATFORM_SETTINGS");
 
     private final String code;
 

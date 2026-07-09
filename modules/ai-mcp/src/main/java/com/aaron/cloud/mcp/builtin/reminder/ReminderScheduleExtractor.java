@@ -211,7 +211,8 @@ public final class ReminderScheduleExtractor {
                 t.replaceAll(
                         "(?i)remind\\s+me\\s+to\\s+|remind\\s+me\\s+that\\s+|remind\\s+me\\s+"
                                 + "|set\\s+a\\s+reminder\\s+to\\s+|set\\s+reminder\\s+(?:for|to)\\s+"
-                                + "|please\\s+remind\\s+me\\s+(?:to\\s+)?");
+                                + "|please\\s+remind\\s+me\\s+(?:to\\s+)?",
+                        "");
         t = t.replaceAll("提醒我|请提醒|帮我提醒|帮我|请|定时提醒|邮件提醒|提醒我一下", "");
         t = t.replaceAll("(?i)every\\s+day\\s+at|each\\s+day\\s+at|daily\\s+at|every\\s+morning\\s+at|every\\s+evening\\s+at", "");
         t =

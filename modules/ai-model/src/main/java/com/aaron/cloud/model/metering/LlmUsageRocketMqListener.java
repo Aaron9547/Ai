@@ -1,5 +1,6 @@
 package com.aaron.cloud.model.metering;
 
+import com.aaron.cloud.common.infra.AiInternalResourceNames;
 import com.aaron.cloud.common.modelcfg.quota.LlmUsageDigestMessage;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -14,8 +15,8 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 @ConditionalOnProperty(prefix = "ai.rocketmq", name = "enabled", havingValue = "true")
 @RocketMQMessageListener(
-        topic = "${ai.rocketmq.llm-usage-topic:ai-llm-usage}",
-        consumerGroup = "${ai.rocketmq.llm-usage-consumer-group:ai-llm-usage-consumer}")
+        topic = AiInternalResourceNames.RocketMq.LLM_USAGE_TOPIC,
+        consumerGroup = AiInternalResourceNames.RocketMq.LLM_USAGE_CONSUMER_GROUP)
 public class LlmUsageRocketMqListener implements RocketMQListener<String> {
 
     private final ObjectMapper objectMapper;

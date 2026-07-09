@@ -143,6 +143,18 @@ public class ChatApplicationService {
     private final ChatMcpToolCallingSupport chatMcpToolCallingSupport;
     private final ObservabilityEventSink observabilityEventSink;
     private final RagRetrievalQueryPlanner ragRetrievalQueryPlanner;
+    private final ChatStreamCancelRegistry chatStreamCancelRegistry;
+
+    /** C 端「停止生成」：仅用户主动取消时中断上游；SSE 断连不影响落库。 */
+    public void cancelActiveGeneration(long conversationId) {
+        var snap = TenantContextHolder.require();
+        var conv =
+                conversationRepository
+                        .findById(conversationId, snap.getTenantId())
+                        .orElseThrow(() -> new IllegalArgumentException("conversation not found"));
+        assertConversationAccess(conv);
+        chatStreamCancelRegistry.requestCancel(snap.getTenantId(), conversationId);
+    }
 
     public ChatConversation createConversation(String title) {
         var snap = TenantContextHolder.require();
@@ -919,10 +931,11 @@ public class ChatApplicationService {
             modelReq.setStreamUsageConsumer(usageRef::set);
         }
 
-        AtomicBoolean streamCancelled = new AtomicBoolean(false);
-        modelReq.setStreamCancelled(streamCancelled);
+        AtomicBoolean generationCancelRequested =
+                chatStreamCancelRegistry.register(snap.getTenantId(), conversationId);
+        modelReq.setStreamCancelled(generationCancelRequested);
         SseEmitter emitter = new SseEmitter(300_000L);
-        ChatSseSendGate sseGate = new ChatSseSendGate(emitter, streamCancelled);
+        ChatSseSendGate sseGate = new ChatSseSendGate(emitter);
         StringBuilder assistantBuf = new StringBuilder();
         StringBuilder reasoningBuf = new StringBuilder();
         AtomicInteger seq = new AtomicInteger(0);
@@ -932,13 +945,13 @@ public class ChatApplicationService {
         if (Boolean.TRUE.equals(modelReq.getThinkingEnabled())) {
             modelReq.setReasoningTokenConsumer(
                     t -> {
-                        if (streamCancelled.get()) {
+                        if (generationCancelRequested.get()) {
                             return;
                         }
                         ChatReasoningStreamGuard.Verdict verdict = reasoningGuard.appendDelta(t);
                         if (verdict != ChatReasoningStreamGuard.Verdict.CONTINUE) {
                             reasoningAbortVerdict.set(verdict);
-                            streamCancelled.set(true);
+                            generationCancelRequested.set(true);
                             log.warn(
                                     "[对话] 思考流中止：{}，已累积 {} 字；租户 {}，会话 {}",
                                     verdict,
@@ -948,13 +961,11 @@ public class ChatApplicationService {
                             return;
                         }
                         reasoningBuf.append(t);
-                        if (!sseGate.trySend(
+                        sseGate.trySend(
                                 SseEmitter.event()
                                         .data(sseChunk("reasoning", t))
                                         .id(String.valueOf(seq.incrementAndGet())),
-                                null)) {
-                            streamCancelled.set(true);
-                        }
+                                null);
                     });
         }
 
@@ -1053,17 +1064,15 @@ public class ChatApplicationService {
                                             payload.getMcpServerIds(),
                                             modelReq,
                                             token -> {
-                                                if (streamCancelled.get()) {
+                                                if (generationCancelRequested.get()) {
                                                     return;
                                                 }
                                                 assistantBuf.append(token);
-                                                if (!sseGate.trySend(
+                                                sseGate.trySend(
                                                         SseEmitter.event()
                                                                 .data(sseChunk("content", token))
                                                                 .id(String.valueOf(seq.incrementAndGet())),
-                                                        "回答片段")) {
-                                                    streamCancelled.set(true);
-                                                }
+                                                        "回答片段");
                                             },
                                             (status, toolName) ->
                                                     sendSseMcpToolStatus(sseGate, seq, status, toolName));
@@ -1080,17 +1089,15 @@ public class ChatApplicationService {
                             modelInvokePort.streamCompletion(
                                     modelReq,
                                     token -> {
-                                        if (streamCancelled.get()) {
+                                        if (generationCancelRequested.get()) {
                                             return;
                                         }
                                         assistantBuf.append(token);
-                                        if (!sseGate.trySend(
+                                        sseGate.trySend(
                                                 SseEmitter.event()
                                                         .data(sseChunk("content", token))
                                                         .id(String.valueOf(seq.incrementAndGet())),
-                                                "回答片段")) {
-                                            streamCancelled.set(true);
-                                        }
+                                                "回答片段");
                                     });
                         }
                         if (assistantBuf.isEmpty() && reasoningAbortVerdict.get() != null) {
@@ -1167,7 +1174,7 @@ public class ChatApplicationService {
                                         userQForFollowUp,
                                         assistantBuf.toString(),
                                         3);
-                        sendSseFollowUpPrompts(emitter, seq, followUpForSse);
+                        sendSseFollowUpPrompts(sseGate, seq, followUpForSse);
                         int conversationTotal =
                                 conversationTokenTotalFromMetering(snap.getTenantId(), conversationId);
                         int turnTotal = computeTurnTokenDelta(snap.getTenantId(), conversationId, meteringBaseline);
@@ -1289,6 +1296,8 @@ public class ChatApplicationService {
                         }
                         sseGate.complete();
                     } finally {
+                        chatStreamCancelRegistry.unregister(
+                                snap.getTenantId(), conversationId, generationCancelRequested);
                         ObservabilityTraceContext.clear();
                         TenantContextHolder.clear();
                     }
@@ -1500,6 +1509,7 @@ public class ChatApplicationService {
             ChatSendPayload payload,
             ChatInputGuardService.InputGuardOutcome outcome) {
         SseEmitter emitter = new SseEmitter(120_000L);
+        ChatSseSendGate sseGate = new ChatSseSendGate(emitter);
         String template = chatInputGuardService.blockedReplyTemplate(snap.getTenantId());
         AtomicInteger seq = new AtomicInteger(0);
         Runnable run =
@@ -1562,7 +1572,7 @@ public class ChatApplicationService {
                                         blockedUserQ,
                                         template,
                                         3);
-                        sendSseFollowUpPrompts(emitter, seq, blockedFollowUp);
+                        sendSseFollowUpPrompts(sseGate, seq, blockedFollowUp);
                         int conversationTotal =
                                 conversationTokenTotalFromMetering(snap.getTenantId(), conversationId);
                         int turnTotal = computeTurnTokenDelta(snap.getTenantId(), conversationId, meteringBaseline);
@@ -1839,7 +1849,7 @@ public class ChatApplicationService {
     }
 
     private void sendSseFollowUpPrompts(
-            SseEmitter emitter, AtomicInteger seq, ChatStarterPromptDtos.StarterPromptListView view) {
+            ChatSseSendGate sseGate, AtomicInteger seq, ChatStarterPromptDtos.StarterPromptListView view) {
         if (view == null || view.items() == null || view.items().isEmpty()) {
             return;
         }
@@ -1860,10 +1870,11 @@ public class ChatApplicationService {
             if (items.isEmpty()) {
                 return;
             }
-            emitter.send(
+            sseGate.trySend(
                     SseEmitter.event()
                             .data(sseChunk("followUpPrompts", objectMapper.writeValueAsString(root)))
-                            .id(String.valueOf(seq.incrementAndGet())));
+                            .id(String.valueOf(seq.incrementAndGet())),
+                    "猜你想问");
         } catch (Exception ex) {
             log.warn("[对话] SSE 推送猜你想问帧失败，序号 {}", seq.get(), ex);
         }

@@ -3,7 +3,8 @@ package com.aaron.cloud.scheduled.run;
 import com.aaron.cloud.common.api.enums.scheduled.ScheduledRunStatus;
 import com.aaron.cloud.common.api.enums.scheduled.ScheduledRunTrigger;
 import com.aaron.cloud.common.api.enums.scheduled.TenantScheduledExecutorCode;
-import com.aaron.cloud.common.config.properties.AiRagProperties;
+import com.aaron.cloud.common.api.enums.infra.PlatformSettingKey;
+import com.aaron.cloud.common.platform.PlatformSettingApplicationService;
 import com.aaron.cloud.common.context.TenantContextHolder;
 import com.aaron.cloud.common.context.TenantSnapshot;
 import com.aaron.cloud.common.redis.RedisDistributedLockService;
@@ -43,7 +44,7 @@ public class TenantScheduledRunOrchestrator {
     private final TenantScheduledRunRepository runRepository;
     private final TenantScheduledTaskExecutor taskExecutor;
     private final RedisDistributedLockService distributedLockService;
-    private final AiRagProperties aiRagProperties;
+    private final PlatformSettingApplicationService platformSettings;
     private final ObjectMapper objectMapper;
 
     public ScheduledRunTriggerResult trigger(long registrationId, ScheduledRunTrigger trigger) {
@@ -115,7 +116,7 @@ public class TenantScheduledRunOrchestrator {
 
         String lockKey =
                 TenantScheduledTaskLockKeys.registrationRun(tenantId, registration.getId());
-        long ttlSec = aiRagProperties.getScheduledTasks().getTaskLockTtlSeconds();
+        long ttlSec = platformSettings.getLong(PlatformSettingKey.RAG_SCHEDULED_TASKS_TASK_LOCK_TTL_SECONDS);
         Optional<RedisDistributedLockService.DistributedLockHandle> lock =
                 distributedLockService.tryAcquire(lockKey, Duration.ofSeconds(ttlSec));
         if (lock.isEmpty()) {

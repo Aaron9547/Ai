@@ -328,16 +328,10 @@
               </template>
               <el-switch v-model="crawlForm.filterCrawled" />
             </el-form-item>
-            <el-form-item class="crawl-intro-form-item" :label-width="0">
-              <el-collapse>
-                <el-collapse-item :title="t('views.kbMatrix.siteExtractAdvanced')" name="extract">
-                  <p class="field-hint">{{ t("views.kbMatrix.siteExtractAdvancedHint") }}</p>
-                  <el-input
-                    v-model="crawlForm.extractConfigJson"
-                    type="textarea"
-                    :rows="6"
-                    placeholder='{"presetLock":"CONSERVATIVE","discovery":{"maxDepth":2}}'
-                  />
+            <el-form-item class="crawl-intro-form-item crawl-more-options" :label-width="0">
+              <el-collapse class="crawl-more-collapse">
+                <el-collapse-item :title="t('views.kbMatrix.crawlMoreOptions')" name="extract">
+                  <KbSiteExtractConfigFields v-model="crawlForm.extractConfig" />
                 </el-collapse-item>
               </el-collapse>
             </el-form-item>
@@ -627,6 +621,12 @@ import { UploadFilled } from "@element-plus/icons-vue";
 import KbChunkPreviewDialog from "./KbChunkPreviewDialog.vue";
 import KbCrawlModePicker from "./KbCrawlModePicker.vue";
 import KbFormLabelTip from "./KbFormLabelTip.vue";
+import KbSiteExtractConfigFields from "./KbSiteExtractConfigFields.vue";
+import {
+  parseSiteExtractConfigForm,
+  serializeSiteExtractConfigForm,
+  SITE_EXTRACT_CONFIG_DEFAULT,
+} from "@/views/rag/siteExtractConfigFormModel";
 import KbWebCrawlProgressDialog from "./KbWebCrawlProgressDialog.vue";
 import type { RagWebCrawlSiteRow } from "../../../api/ragAdmin";
 import { ElMessage, ElMessageBox } from "element-plus";
@@ -805,7 +805,7 @@ const crawlForm = reactive({
   filterCrawled: true,
   runNow: true,
   autoRepeat: false,
-  extractConfigJson: "",
+  extractConfig: { ...SITE_EXTRACT_CONFIG_DEFAULT },
 });
 const crawlSchedulePresets = ref<{ code: string; label: string }[]>([]);
 const tenantCrawlPolicySummary = ref("");
@@ -1258,10 +1258,7 @@ function applyRecurringSiteToForm(row: RagWebCrawlSiteRow) {
   crawlForm.runNow = false;
   if (row.chunkStrategy != null) ingestChunkStrategy.value = row.chunkStrategy;
   if (row.categoryId != null) ingestCategoryId.value = row.categoryId;
-  crawlForm.extractConfigJson =
-    row.extractConfig && Object.keys(row.extractConfig).length > 0
-      ? JSON.stringify(row.extractConfig, null, 2)
-      : "";
+  Object.assign(crawlForm.extractConfig, parseSiteExtractConfigForm(row.extractConfig));
 }
 
 function resetRecurringSiteForm() {
@@ -1274,7 +1271,7 @@ function resetRecurringSiteForm() {
   crawlForm.filterCrawled = true;
   crawlForm.runNow = true;
   crawlForm.autoRepeat = false;
-  crawlForm.extractConfigJson = "";
+  Object.assign(crawlForm.extractConfig, SITE_EXTRACT_CONFIG_DEFAULT);
 }
 
 function onRecurringSitePick(siteId: number | null) {
@@ -1378,14 +1375,9 @@ async function submitIngest() {
           chunkStrategy: cs,
           categoryId: catId,
         };
-        const rawJson = crawlForm.extractConfigJson.trim();
-        if (rawJson) {
-          try {
-            body.extractConfig = JSON.parse(rawJson) as ragApi.RagWebCrawlExtractConfig;
-          } catch {
-            ElMessage.warning(t("views.kbMatrix.siteExtractJsonInvalid"));
-            return;
-          }
+        const extractConfig = serializeSiteExtractConfigForm(crawlForm.extractConfig);
+        if (extractConfig) {
+          body.extractConfig = extractConfig;
         }
         let siteId = crawlForm.siteId;
         if (siteId != null) {
@@ -1548,6 +1540,41 @@ watch(
   min-height: 0;
   display: block;
   align-items: stretch;
+}
+
+.crawl-more-collapse {
+  width: 100%;
+  border: none;
+}
+
+.crawl-more-collapse :deep(.el-collapse-item__header) {
+  height: auto;
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: var(--el-border-radius-base);
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-lighter);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--el-text-color-regular);
+  line-height: 1.45;
+}
+
+.crawl-more-collapse :deep(.el-collapse-item__wrap) {
+  border: none;
+}
+
+.crawl-more-collapse :deep(.el-collapse-item__content) {
+  padding: 12px 4px 4px;
+}
+
+.crawl-more-options :deep(.kb-site-extract-fields .el-form-item) {
+  margin-bottom: 14px;
+}
+
+.crawl-more-options :deep(.kb-site-extract-fields .el-form-item__label) {
+  align-self: flex-start;
+  padding-top: 6px;
 }
 
 .tenant-crawl-preset-hint {

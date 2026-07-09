@@ -1,25 +1,21 @@
 package com.aaron.cloud.identity.open;
 
+import com.aaron.cloud.common.api.enums.infra.PlatformSettingKey;
 import com.aaron.cloud.common.api.enums.tenant.TenantRuntimeSettingKey;
+import com.aaron.cloud.common.platform.PlatformSettingApplicationService;
 import com.aaron.cloud.common.tenant.runtime.TenantRuntimeSettingApplicationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-/** 按租户解析注册验证码发送配置（{@code AUTH_REGISTER_VERIFICATION_JSON} + yml 进程默认）。 */
+/** 按租户解析注册验证码发送配置（{@code AUTH_REGISTER_VERIFICATION_JSON} + 平台参数默认）。 */
 @Component
 @RequiredArgsConstructor
 public class TenantAuthRegisterVerificationResolver {
 
     private final TenantRuntimeSettingApplicationService tenantRuntimeSettingApplicationService;
+    private final PlatformSettingApplicationService platformSettings;
     private final ObjectMapper objectMapper;
-
-    @Value("${ai.auth.email.code-ttl-seconds:600}")
-    private long defaultCodeTtlSeconds;
-
-    @Value("${ai.auth.email.send-cooldown-seconds:60}")
-    private long defaultSendCooldownSeconds;
 
     public AuthRegisterVerificationConfig resolve(long tenantId) {
         String raw =
@@ -27,10 +23,11 @@ public class TenantAuthRegisterVerificationResolver {
                         tenantId, TenantRuntimeSettingKey.AUTH_REGISTER_VERIFICATION_JSON);
         AuthRegisterVerificationConfig cfg = parseOrDefault(raw);
         if (cfg.getCodeTtlSeconds() <= 0) {
-            cfg.setCodeTtlSeconds((int) defaultCodeTtlSeconds);
+            cfg.setCodeTtlSeconds(platformSettings.getInt(PlatformSettingKey.AUTH_EMAIL_CODE_TTL_SECONDS));
         }
         if (cfg.getSendCooldownSeconds() <= 0) {
-            cfg.setSendCooldownSeconds((int) defaultSendCooldownSeconds);
+            cfg.setSendCooldownSeconds(
+                    platformSettings.getInt(PlatformSettingKey.AUTH_EMAIL_SEND_COOLDOWN_SECONDS));
         }
         if (cfg.getCodeLength() < 4 || cfg.getCodeLength() > 8) {
             cfg.setCodeLength(6);

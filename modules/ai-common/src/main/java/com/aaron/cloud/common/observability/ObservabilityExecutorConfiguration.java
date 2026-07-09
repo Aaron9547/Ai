@@ -1,20 +1,20 @@
 package com.aaron.cloud.common.observability;
 
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import com.aaron.cloud.common.api.enums.infra.PlatformSettingKey;
+import com.aaron.cloud.common.platform.PlatformSettingApplicationService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 @Configuration
-@EnableConfigurationProperties({ObservabilityProperties.class, com.aaron.cloud.common.rag.RagQualityAssessmentProperties.class})
 public class ObservabilityExecutorConfiguration {
 
     @Bean(name = "observabilityExecutor")
-    public ThreadPoolTaskExecutor observabilityExecutor(ObservabilityProperties properties) {
+    public ThreadPoolTaskExecutor observabilityExecutor(PlatformSettingApplicationService platformSettings) {
         ThreadPoolTaskExecutor ex = new ThreadPoolTaskExecutor();
         ex.setCorePoolSize(2);
         ex.setMaxPoolSize(4);
-        ex.setQueueCapacity(Math.max(64, properties.getQueueCapacity()));
+        ex.setQueueCapacity(Math.max(64, platformSettings.getInt(PlatformSettingKey.OBSERVABILITY_QUEUE_CAPACITY)));
         ex.setThreadNamePrefix("obs-sink-");
         ex.setWaitForTasksToCompleteOnShutdown(false);
         ex.initialize();

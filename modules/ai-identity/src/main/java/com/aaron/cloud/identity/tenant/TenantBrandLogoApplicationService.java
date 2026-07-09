@@ -1,6 +1,7 @@
 package com.aaron.cloud.identity.tenant;
 
-import com.aaron.cloud.common.config.properties.AiAdminBrandLogoProperties;
+import com.aaron.cloud.common.platform.PlatformSettingApplicationService;
+import com.aaron.cloud.common.platform.PlatformSettingEffectivePaths;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -27,7 +28,7 @@ public class TenantBrandLogoApplicationService {
             Pattern.compile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(png|jpg|jpeg|gif|webp)$",
                     Pattern.CASE_INSENSITIVE);
 
-    private final AiAdminBrandLogoProperties properties;
+    private final PlatformSettingApplicationService platformSettings;
 
     public String store(MultipartFile file, String tenantCode) throws Exception {
         if (file == null || file.isEmpty()) {
@@ -38,7 +39,7 @@ public class TenantBrandLogoApplicationService {
         }
         String code = sanitizeTenantCode(tenantCode);
         String ext = extensionOf(file.getOriginalFilename(), file.getContentType());
-        Path root = properties.resolvedStorageDir();
+        Path root = PlatformSettingEffectivePaths.adminBrandLogoStorageDir(platformSettings);
         Path dir = root.resolve(code);
         Files.createDirectories(dir);
         String fileName = UUID.randomUUID() + "." + ext;
@@ -58,7 +59,7 @@ public class TenantBrandLogoApplicationService {
         }
         fileName = fileName.toLowerCase(Locale.ROOT);
         String code = sanitizeTenantCode(tenantCode);
-        Path root = properties.resolvedStorageDir();
+        Path root = PlatformSettingEffectivePaths.adminBrandLogoStorageDir(platformSettings);
         Path target = root.resolve(code).resolve(fileName).normalize();
         if (!target.startsWith(root) || !Files.isRegularFile(target)) {
             return Optional.empty();

@@ -81,6 +81,9 @@ public final class AdminHttpMenuRoutes {
                 || uri.startsWith("/api/v1/admin/tenant-runtime-settings")) {
             return AdminMenuCode.SYSTEM_SETTINGS;
         }
+        if (uri.startsWith("/api/v1/admin/platform-settings")) {
+            return AdminMenuCode.PLATFORM_SETTINGS;
+        }
         if (uri.startsWith("/api/v1/admin/menu-items")) {
             return AdminMenuCode.MENU_CATALOG;
         }

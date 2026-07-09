@@ -59,7 +59,7 @@
 
 ### 0.1.258 迁移执行顺序（`pom` 补丁位 258）
 
-同补丁下多个脚本文件名以 **`migrate_0_1_258_NN_*`** 编号（**`NN` 01～14**）；在资源管理器中**按文件名排序即推荐执行顺序**。已执行过的可跳过；**`11`** 为历史可选。
+同补丁下多个脚本文件名以 **`migrate_0_1_258_NN_*`** 编号（**`NN` 01～21**）；在资源管理器中**按文件名排序即推荐执行顺序**。已执行过的可跳过；**`11`** 为历史可选。
 
 | NN | 文件 | 说明 |
 |----|------|------|
@@ -83,5 +83,8 @@
 | 16 | **`migrate_0_1_258_16_obs_trace_and_rag_quality.sql`** | **`obs_mcp_trace_event`** / **`obs_rag_hit_event`** / **`rag_quality_assessment`**（MCP 跟踪、RAG 命中链路、手动质量评测） |
 | 17 | **`migrate_0_1_258_17_rag_retrieval_tuning.sql`** | RAG 问句改写提示词种子 + **`/api/v1/admin/rag-ltr/*`** 网关目录 |
 | 18 | **`migrate_0_1_258_18_web_search_model_ids_json.sql`** | 联网模型多选列表 **`WEB_SEARCH_GROUNDING_MODEL_IDS_JSON`** 回填 |
+| 19 | **`migrate_0_1_258_platform_setting.sql`** | **`sys_platform_setting`** 平台系统参数表 + 默认种子 |
+| 20 | **`migrate_0_1_258_20_platform_settings_menu.sql`** | **`PLATFORM_SETTINGS`** 管理端菜单项 + 租户/用户菜单授权种子 |
+| 21 | **`migrate_0_1_258_21_platform_setting_ops_tunables.sql`** | 平台参数扩展：LOGO/附件/OCR/RAG 调优项 |
 
 - **`migrate_0_1_258_web_search_query_rewrite.sql`** 等**无编号旧文件名**已重命名为上表；文档引用以 **`_NN_`** 为准。

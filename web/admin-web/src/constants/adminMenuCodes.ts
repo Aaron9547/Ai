@@ -24,6 +24,7 @@ export const ALL_ADMIN_MENU_CODES = [
   "SCHEDULED_TASKS",
   "MESSAGE_CENTER",
   "MENU_CATALOG",
+  "PLATFORM_SETTINGS",
   "GATEWAY_API",
 ] as const;
 
@@ -49,7 +50,7 @@ export const ADMIN_MENU_TENANT_GROUPS: readonly AdminMenuTenantGroupSpec[] = [
     titleI18nKey: "views.tenants.menuGroups.tenantCapabilities",
     codes: ["SYSTEM_SETTINGS", "SCHEDULED_TASKS", "MESSAGE_CENTER", "FILE_OBJECTS", "NOTIFICATIONS", "EVAL_RUNS"],
   },
-  { titleI18nKey: "views.tenants.menuGroups.platform", codes: ["TENANTS", "MENU_CATALOG"] },
+  { titleI18nKey: "views.tenants.menuGroups.platform", codes: ["TENANTS", "MENU_CATALOG", "PLATFORM_SETTINGS"] },
 ] as const;
 
 export const ADMIN_MENU_LABELS: Record<string, string> = {
@@ -74,6 +75,7 @@ export const ADMIN_MENU_LABELS: Record<string, string> = {
   SCHEDULED_TASKS: "定时任务",
   MESSAGE_CENTER: "消息发送",
   MENU_CATALOG: "后台菜单",
+  PLATFORM_SETTINGS: "平台系统参数",
   GATEWAY_API: "API 限流",
 };
 
