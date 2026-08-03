@@ -1,0 +1,87 @@
+# 在 GitHub 云端编译并推送后端镜像到阿里云 ACR（开发者本机无需 JDK 25 / Docker 构建）
+#
+# 使用前在仓库 Settings → Secrets and variables → Actions 配置：
+#   ACR_USERNAME  阿里云容器镜像服务登录用户名
+#   ACR_PASSWORD  阿里云容器镜像服务登录密码（或固定令牌）
+#
+# 手动触发：Actions → Build backend Docker image → Run workflow
+# 自动触发：推送到 main/master 分支，或打 v* 标签（如 v0.1.258）
+
+name: Build backend Docker image
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+
+env:
+  REGISTRY: registry.cn-guangzhou.aliyuncs.com
+  IMAGE_NAME: liangchulong/ai-backend
+  JAVA_VERSION: '25'
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Resolve Maven project version
+        id: pom
+        run: |
+          VERSION="$(./mvnw -q -DforceStdout help:evaluate -Dexpression=project.version)"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Maven version: ${VERSION}"
+
+      - name: Maven package (ai-bootstrap)
+        run: |
+          ./mvnw clean package \
+            -pl modules/ai-bootstrap -am \
+            -Dmaven.test.skip=true \
+            -B
+
+      - name: Log in to Aliyun ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Docker meta (tags)
+        id: meta
+        run: |
+          POM_VERSION="${{ steps.pom.outputs.version }}"
+          SHA_SHORT="${GITHUB_SHA::7}"
+          TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${POM_VERSION}"
+          TAGS="${TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${SHA_SHORT}"
+          if [[ "${GITHUB_REF}" == "refs/heads/main" || "${GITHUB_REF}" == "refs/heads/master" ]]; then
+            TAGS="${TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          fi
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            RELEASE_TAG="${GITHUB_REF#refs/tags/}"
+            TAGS="${TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${RELEASE_TAG}"
+            TAGS="${TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${RELEASE_TAG#v}"
+          fi
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+          echo "Will push: ${TAGS}"
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: modules/ai-bootstrap/target/docker
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}

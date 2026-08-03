@@ -384,6 +384,12 @@ flowchart TB
 
 ## 变更记录
 
+### 0.1.386-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **ai-bootstrap / 根 `pom.xml`**：新增 **`Dockerfile`**、**`maven-antrun-plugin`**（`package` 阶段复制 JAR 至 **`target/docker/`**）与 **`exec-maven-plugin`** 调用本机 **`docker build` / `docker push`**（替代 fabric8，避免 Windows 上传 ~400MB fat-jar 时 **`Premature end of chunk`**）。镜像 **`registry.cn-guangzhou.aliyuncs.com/liangchulong/ai-backend:${project.version}`**。命令：**`mvn clean package exec:exec@docker-build "-Dmaven.test.skip=true" -pl modules/ai-bootstrap -am`**；推送加 **`exec:exec@docker-push`**，或 **`scripts/docker-build-push.ps1 -PushImage`**。
+
 ### 0.1.385-SNAPSHOT
 
 > **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
