@@ -13,7 +13,7 @@
 
 ## 运行时配置
 
-**进程启动、环境变量与中间件接入**仍以 **`modules/ai-bootstrap/src/main/resources/application.yml`** 及键旁注释为协作真源（与 **`AiEnvironmentBridgePostProcessor`** 的派生键关系见该类 Javadoc）。**按租户动态可调、不要求随应用重启才生效的参数**（如 **`WEB_SEARCH_GROUNDING_*`**、开放注册、出差报销 Coze、记忆嵌入模型 id 等）权威存储为 **`ten_runtime_setting`**（枚举 **`TenantRuntimeSettingKey`**）；**yml 与运行参数表的分层原则**见仓库根目录 **`.cursorrules` §3.8**。**Redis** 无 `ai.redis.enabled` 之类总闸：须配置 **`spring.data.redis.*`** 并成功建连，否则应用启动失败。本文档不重复展开全表。
+**进程启动、环境变量与中间件接入**仍以 **`src/main/resources/application.yml`** 及键旁注释为协作真源（与 **`AiEnvironmentBridgePostProcessor`** 的派生键关系见该类 Javadoc）。**按租户动态可调、不要求随应用重启才生效的参数**（如 **`WEB_SEARCH_GROUNDING_*`**、开放注册、出差报销 Coze、记忆嵌入模型 id 等）权威存储为 **`ten_runtime_setting`**（枚举 **`TenantRuntimeSettingKey`**）；**yml 与运行参数表的分层原则**见仓库根目录 **`.cursorrules` §3.8**。**Redis** 无 `ai.redis.enabled` 之类总闸：须配置 **`spring.data.redis.*`** 并成功建连，否则应用启动失败。本文档不重复展开全表。
 
 ---
 
@@ -384,11 +384,17 @@ flowchart TB
 
 ## 变更记录
 
+### 0.1.387-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **工程骨架**：将 Maven 多模块（`modules/ai-*` ×14）合并为**根目录单一可执行工程**（`packaging=jar`）；源码与资源落在 **`src/main/java`**、**`src/main/resources`**（含 **`application.yml`**、**`AiApplication`**）；**`Dockerfile`** 迁至仓库根；删除 **`modules/`** 与根目录 JVM 崩溃/replay 日志。逻辑包域（`common`/`chat`/`rag`/…）不变。构建：**`./mvnw -DskipTests package`**；Docker：**`./mvnw clean package exec:exec@docker-build -Dmaven.test.skip=true`**（context **`target/docker`**）或 **`scripts/docker-build-push.ps1`**。同步 **`.cursorrules` §0.2**、**CI**、编码扫描工具路径。**无 DB migrate**。
+
 ### 0.1.386-SNAPSHOT
 
 > **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
 
-- **ai-bootstrap / 根 `pom.xml`**：新增 **`Dockerfile`**、**`maven-antrun-plugin`**（`package` 阶段复制 JAR 至 **`target/docker/`**）与 **`exec-maven-plugin`** 调用本机 **`docker build` / `docker push`**（替代 fabric8，避免 Windows 上传 ~400MB fat-jar 时 **`Premature end of chunk`**）。镜像 **`registry.cn-guangzhou.aliyuncs.com/liangchulong/ai-backend:${project.version}`**。命令：**`mvn clean package exec:exec@docker-build "-Dmaven.test.skip=true" -pl modules/ai-bootstrap -am`**；推送加 **`exec:exec@docker-push`**，或 **`scripts/docker-build-push.ps1 -PushImage`**。
+- **ai-bootstrap / 根 `pom.xml`**：新增 **`Dockerfile`**、**`maven-antrun-plugin`**（`package` 阶段复制 JAR 至 **`target/docker/`**）与 **`exec-maven-plugin`** 调用本机 **`docker build` / `docker push`**（替代 fabric8，避免 Windows 上传 ~400MB fat-jar 时 **`Premature end of chunk`**）。镜像 **`registry.cn-guangzhou.aliyuncs.com/liangchulong/ai-backend:${project.version}`**。命令：**`mvn clean package exec:exec@docker-build "-Dmaven.test.skip=true"`**（单模块根工程）；推送加 **`exec:exec@docker-push`**，或 **`scripts/docker-build-push.ps1 -PushImage`**。
 
 ### 0.1.385-SNAPSHOT
 

@@ -21,11 +21,11 @@
 
 以下任一路径有改动（**含未跟踪新文件**）即触发：
 
-- **`modules/**/src/main/java/**`**、**`modules/**/src/test/java/**`**（Maven 子模块源码；历史单模块路径 **`src/main/java/**`** 若仍存在亦触发）
+- **`src/main/java/**`**、**`src/test/java/**`**（单模块后端源码）
 - **`web/user-web/**`**、**`web/admin-web/**`**
 - **`db/mysql/**`**（含 **`schema_v1.sql`**、**`migrate/migrate_*.sql`**、**`gw_api_endpoint_catalog_inserts.sql`**）
-- **`pom.xml`**（含根 parent 与 **`modules/*/pom.xml`** 的 **`<version>`** 与生产依赖）
-- **`modules/ai-bootstrap/src/main/resources/application*.yml`**（及等价 **`bootstrap*.yml`**）
+- **`pom.xml`**（**`<version>`** 与生产依赖）
+- **`src/main/resources/application*.yml`**（及等价 **`bootstrap*.yml`**）
 
 **未触及**上列、仅改 **`.cursorrules` / `PROJECT.md` / 其它说明性 `.md`**：按 **§0.4「仅文档」**处理，**不 bump**（可在当前 **`###`** 下记「文档修订」）。
 
@@ -86,7 +86,7 @@
 | **Agent / 脚本** | **禁止** PowerShell **`Out-File`**、**`>`** 重定向或管道生成/覆盖源码；从 Git 取内容用 **`git restore`** 或 **`python tools/restore_utf8_from_git.py`**。 |
 | **修复乱码** | **`python tools/check_text_encoding.py --write-report`** → 恢复中文基线 + 回放逻辑 diff；**禁止**常规使用 **`tools/_deprecated_fix_truncated_strings.py`**。 |
 | **门禁** | **`python tools/check_text_encoding.py`** 或 **`.\scripts\check-encoding.ps1`** 须 **0**；已接入 **`check-project-changelog.ps1`** 与 **pre-commit**。 |
-| **BOM** | 执行 **`python tools/strip_java_bom.py`**（扫描 **`modules/`、`web/`、`db/mysql/`、`tools/`、`scripts/`** 文本后缀）。 |
+| **BOM** | 执行 **`python tools/strip_java_bom.py`**（扫描 **`src/`、`web/`、`db/mysql/`、`tools/`、`scripts/`** 文本后缀）。 |
 
 ### 0.7 与其它章节的关系
 
@@ -341,7 +341,7 @@
 - 跨域协作依赖 **`common.api`** 内端口接口（如 `RagQueryPort`、`ModelInvokePort`）；各域若需对外暴露客户端契约，DTO 仍归 **`common.api`**。
 - **实现类命名**：提供方模块对外编排统一为 **`XxxApplicationService`** 命名风格的应用服务；消费方编写 **`LocalXxxAdapter`**（`@Service`，委托注入的提供方 Bean）与 **`RemoteXxxClient`**（`@FeignClient` 接口 + 配置类，路径与 OpenAPI 一致）。
 - **部署形态由配置锁定**（本项目约定，非多种方案并列）：
-  - **`ai.remoting.mode=local`**（**默认**，单进程 **`ai-bootstrap`** 聚合全部模块）：仅注册 **`Local*Adapter`**，**不启用**对外 Feign 远程 Bean；进程内直接 `@Autowired` 提供方服务。
+  - **`ai.remoting.mode=local`**（**默认**，单进程根工程聚合全部包域）：仅注册 **`Local*Adapter`**，**不启用**对外 Feign 远程 Bean；进程内直接 `@Autowired` 提供方服务。
   - **`ai.remoting.mode=remote`**（各模块独立进程部署）：仅注册 **Feign 形式的 `Remote*Client`**；**Eureka Server** 必须可达；**禁止**与 `local` 模式在同一运行实例中同时注册两套端口实现（使用 `@ConditionalOnProperty(prefix = "ai.remoting", name = "mode", havingValue = "remote")` 与 `havingValue = "local"` 互斥装配）。
 
 #### 4.3.3 出站上下文（Feign）
@@ -400,7 +400,7 @@
 
 ### 5.12 接口访问日志（HTTP Access Log）
 - **定义**：每个对外 **REST** 请求一条结构化记录（至少：时间、`method`、`path` 模板化、**status**、**durationMs**、`tenantId`、`userId` 或 **`deviceId`**、客户端 IP、`traceId`/`requestId`、**user-agent**）；**不存**完整 request/response body；**query** 与 header 中敏感键须脱敏或丢弃。
-- **采集边界（与 `ai.remoting.mode` 一致）**：**`local`（聚合）**：在 **`gateway`** 或 **`ai-bootstrap` 全局 Filter** 统一采集南北向 HTTP 即可。**`remote`（多进程）**：**每个**对外暴露 HTTP 的可部署单元（含 **`ai-chat`、`ai-rag`** 等）**均须在进程入口**挂载等价 Filter 并写入 **`common.accesslog`**，**禁止**假设仅边缘 **`ai-gateway`** 可见全部业务流量（东西向 Feign 可不记 accesslog，以南北向为准）。
+- **采集边界（与 `ai.remoting.mode` 一致）**：**`local`（聚合）**：在 **`gateway`** 或进程入口全局 Filter 统一采集南北向 HTTP 即可。**`remote`（多进程）**：**每个**对外暴露 HTTP 的可部署单元（含 **`ai-chat`、`ai-rag`** 等）**均须在进程入口**挂载等价 Filter 并写入 **`common.accesslog`**，**禁止**假设仅边缘 **`ai-gateway`** 可见全部业务流量（东西向 Feign 可不记 accesslog，以南北向为准）。
 - **实现**：持久化经 **`common.accesslog`**；高 QPS 路径可经 **RocketMQ** 异步落库或批量 flush；**失败须可告警**。
 - **保留与成本**：须配置**保留天数**、归档/冷存策略；极端流量路径允许**采样**（须在配置中显式开启并记录采样率），默认全量。
 - **查询**：**`web/admin-web`** 可提供 **`accesslog` 子路由**（挂在 **`gateway`** 分块或独立只读菜单），仅管理员且带审计；与 **`common.audit`** 的「谁在何时改了什么」**分开展示**。

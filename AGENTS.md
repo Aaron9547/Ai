@@ -10,11 +10,11 @@
 4. **大改可选**：`PROJECT.md` 功能模块索引 `##` + `.cursorrules` §1.5 一行。
 5. **完成前**：`.\scripts\check-project-changelog.ps1 -IncludeUntracked` → 退出码 **0**。
 
-**触发路径**（见 §0.2）：`modules/ai-*/src/main/java`、`modules/ai-*/src/test/java`、`web/user-web`、`web/admin-web`、`db/mysql`、`pom.xml`、`modules/ai-bootstrap/src/main/resources/application*.yml`。
+**触发路径**（见 §0.2）：`src/main/java`、`src/test/java`、`web/user-web`、`web/admin-web`、`db/mysql`、`pom.xml`、`src/main/resources/application*.yml`。
 
 ## 当前开发线
 
-- **变更记录顶节**：**`### 0.1.386-SNAPSHOT`**（见 **`PROJECT.md`**）
+- **变更记录顶节**：**`### 0.1.387-SNAPSHOT`**（见 **`PROJECT.md`**）
 - **构件（Maven）**：**`pom.xml` `0.1.258-SNAPSHOT`**（migrate **`{patch}`** 仍以 pom 为准）
 
 ## 源码编码（UTF-8）— 全项目硬约束

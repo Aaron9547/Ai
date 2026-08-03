@@ -4,7 +4,7 @@
 
 | 项 | 说明 |
 |----|------|
-| **当前构件版本** | `0.1.229-SNAPSHOT`（与 `pom.xml` `<version>` 一致） |
+| **当前构件版本** | `0.1.258-SNAPSHOT`（与 `pom.xml` `<version>` 一致） |
 | **产品说明与演进** | 根目录 [`PROJECT.md`](PROJECT.md)（含「变更记录」与功能专节） |
 | **编码与架构硬约束** | 根目录 [`.cursorrules`](.cursorrules)（协作真源） |
 | **数据库基线** | [`db/mysql/schema_v1.sql`](db/mysql/schema_v1.sql)；执行说明见 [`db/mysql/README.md`](db/mysql/README.md) |

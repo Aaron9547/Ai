@@ -14,26 +14,9 @@
     <groupId>com.aaron.cloud</groupId>
     <artifactId>Ai</artifactId>
     <version>0.1.258-SNAPSHOT</version>
-    <packaging>pom</packaging>
+    <packaging>jar</packaging>
     <name>Ai</name>
     <description>Ai platform (multi-tenant AI middleware)</description>
-
-    <modules>
-        <module>modules/ai-common</module>
-        <module>modules/ai-remoting</module>
-        <module>modules/ai-gateway</module>
-        <module>modules/ai-identity</module>
-        <module>modules/ai-model</module>
-        <module>modules/ai-file</module>
-        <module>modules/ai-rag</module>
-        <module>modules/ai-job</module>
-        <module>modules/ai-chat</module>
-        <module>modules/ai-mcp</module>
-        <module>modules/ai-notification</module>
-        <module>modules/ai-prompt</module>
-        <module>modules/ai-eval</module>
-        <module>modules/ai-bootstrap</module>
-    </modules>
 
     <properties>
         <java.version>25</java.version>
@@ -51,6 +34,7 @@
         <docker.image.registry>registry.cn-guangzhou.aliyuncs.com/liangchulong</docker.image.registry>
         <docker.image.name>ai-backend</docker.image.name>
         <docker.image.tag>${project.version}</docker.image.tag>
+        <docker.image.ref>${docker.image.registry}/${docker.image.name}:${docker.image.tag}</docker.image.ref>
         <docker.exec.skip>true</docker.exec.skip>
         <exec-maven-plugin.version>3.5.0</exec-maven-plugin.version>
         <rapidocr.version>0.0.7</rapidocr.version>
@@ -73,76 +57,6 @@
                 <version>${mcp-sdk.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
-            </dependency>
-            <dependency>
-                <groupId>com.aaron.cloud</groupId>
-                <artifactId>ai-common</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.aaron.cloud</groupId>
-                <artifactId>ai-remoting</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.aaron.cloud</groupId>
-                <artifactId>ai-gateway</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.aaron.cloud</groupId>
-                <artifactId>ai-identity</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.aaron.cloud</groupId>
-                <artifactId>ai-model</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.aaron.cloud</groupId>
-                <artifactId>ai-file</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.aaron.cloud</groupId>
-                <artifactId>ai-rag</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.aaron.cloud</groupId>
-                <artifactId>ai-job</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.aaron.cloud</groupId>
-                <artifactId>ai-chat</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.aaron.cloud</groupId>
-                <artifactId>ai-mcp</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.aaron.cloud</groupId>
-                <artifactId>ai-notification</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.aaron.cloud</groupId>
-                <artifactId>ai-prompt</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.aaron.cloud</groupId>
-                <artifactId>ai-eval</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.aaron.cloud</groupId>
-                <artifactId>ai-bootstrap</artifactId>
-                <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.baomidou</groupId>
@@ -237,16 +151,6 @@
             <dependency>
                 <groupId>io.github.mymonstercat</groupId>
                 <artifactId>rapidocr</artifactId>
-                <version>0.0.7</version>
-            </dependency>
-            <dependency>
-                <groupId>io.github.mymonstercat</groupId>
-                <artifactId>rapidocr-onnx-platform</artifactId>
-                <version>0.0.7</version>
-            </dependency>
-            <dependency>
-                <groupId>io.github.mymonstercat</groupId>
-                <artifactId>rapidocr</artifactId>
                 <version>${rapidocr.version}</version>
             </dependency>
             <dependency>
@@ -287,58 +191,221 @@
         </dependencies>
     </dependencyManagement>
 
+    <dependencies>
+        <!-- Web / Security / Redis -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
+        <!-- Spring Cloud -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-openfeign</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-circuitbreaker</artifactId>
+        </dependency>
+
+        <!-- Persistence -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-jsqlparser</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.github.yulichang</groupId>
+            <artifactId>mybatis-plus-join-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Messaging / API docs -->
+        <dependency>
+            <groupId>org.apache.rocketmq</groupId>
+            <artifactId>rocketmq-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        </dependency>
+
+        <!-- Infra SDKs -->
+        <dependency>
+            <groupId>io.milvus</groupId>
+            <artifactId>milvus-sdk-java</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>co.elastic.clients</groupId>
+            <artifactId>elasticsearch-java</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.minio</groupId>
+            <artifactId>minio</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.modelcontextprotocol.sdk</groupId>
+            <artifactId>mcp-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.modelcontextprotocol.sdk</groupId>
+            <artifactId>mcp-json-jackson2</artifactId>
+        </dependency>
+
+        <!-- SMS -->
+        <dependency>
+            <groupId>com.aliyun</groupId>
+            <artifactId>dysmsapi20170525</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.tencentcloudapi</groupId>
+            <artifactId>tencentcloud-sdk-java-common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.tencentcloudapi</groupId>
+            <artifactId>tencentcloud-sdk-java-sms</artifactId>
+        </dependency>
+
+        <!-- Document / OCR / crawl -->
+        <dependency>
+            <groupId>org.lionsoul</groupId>
+            <artifactId>ip2region</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.tika</groupId>
+            <artifactId>tika-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.tika</groupId>
+            <artifactId>tika-parsers-standard-package</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>fontbox</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>net.sourceforge.tess4j</groupId>
+            <artifactId>tess4j</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.mymonstercat</groupId>
+            <artifactId>rapidocr</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.mymonstercat</groupId>
+            <artifactId>rapidocr-onnx-platform</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>commons-io</groupId>
+            <artifactId>commons-io</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.jsoup</groupId>
+            <artifactId>jsoup</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.microsoft.playwright</groupId>
+            <artifactId>playwright</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>net.dankito.readability4j</groupId>
+            <artifactId>readability4j</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Test -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
     <build>
-        <pluginManagement>
-            <plugins>
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-compiler-plugin</artifactId>
-                    <version>3.11.0</version>
-                    <configuration>
-                        <release>${java.version}</release>
-                        <enablePreview>false</enablePreview>
-                        <parameters>true</parameters>
-                        <annotationProcessorPaths>
-                            <path>
-                                <groupId>org.projectlombok</groupId>
-                                <artifactId>lombok</artifactId>
-                                <version>${lombok.version}</version>
-                            </path>
-                        </annotationProcessorPaths>
-                    </configuration>
-                </plugin>
-                <plugin>
-                    <groupId>org.springframework.boot</groupId>
-                    <artifactId>spring-boot-maven-plugin</artifactId>
-                </plugin>
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-enforcer-plugin</artifactId>
-                    <version>3.5.0</version>
-                </plugin>
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-antrun-plugin</artifactId>
-                    <version>3.1.0</version>
-                </plugin>
-                <plugin>
-                    <groupId>org.codehaus.mojo</groupId>
-                    <artifactId>exec-maven-plugin</artifactId>
-                    <version>${exec-maven-plugin.version}</version>
-                    <configuration>
-                        <skip>${docker.exec.skip}</skip>
-                    </configuration>
-                </plugin>
-            </plugins>
-        </pluginManagement>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+                <configuration>
+                    <release>${java.version}</release>
+                    <enablePreview>false</enablePreview>
+                    <parameters>true</parameters>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.5.0</version>
                 <executions>
                     <execution>
                         <id>enforce-jdk-and-maven</id>
@@ -363,26 +430,71 @@
                 </executions>
             </plugin>
             <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>com.aaron.cloud.AiApplication</mainClass>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>prepare-docker-context</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <mkdir dir="${project.build.directory}/docker"/>
+                                <copy file="${project.build.directory}/${project.build.finalName}.jar"
+                                      tofile="${project.build.directory}/docker/app.jar"
+                                      overwrite="true"/>
+                                <copy file="${project.basedir}/Dockerfile"
+                                      tofile="${project.build.directory}/docker/Dockerfile"
+                                      overwrite="true"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- 大体积 fat-jar（~400MB）在 Windows 上走 fabric8 HTTP 上传易触发 chunk 错误；改用本机 docker CLI -->
+            <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
+                <version>${exec-maven-plugin.version}</version>
                 <executions>
                     <execution>
                         <id>docker-build</id>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
                         <configuration>
                             <skip>${docker.exec.skip}</skip>
                             <executable>docker</executable>
+                            <workingDirectory>${project.build.directory}/docker</workingDirectory>
                             <arguments>
-                                <argument>version</argument>
+                                <argument>build</argument>
+                                <argument>-t</argument>
+                                <argument>${docker.image.ref}</argument>
+                                <argument>.</argument>
                             </arguments>
                         </configuration>
                     </execution>
                     <execution>
                         <id>docker-push</id>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
                         <configuration>
                             <skip>${docker.exec.skip}</skip>
                             <executable>docker</executable>
                             <arguments>
-                                <argument>version</argument>
+                                <argument>push</argument>
+                                <argument>${docker.image.ref}</argument>
                             </arguments>
                         </configuration>
                     </execution>

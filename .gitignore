@@ -15,6 +15,7 @@ buildNumber.properties
 # JVM 崩溃转储与日志
 hs_err_pid*
 replay_pid*
+tree-out.txt
 *.log
 logs/
 

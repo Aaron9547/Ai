@@ -12,11 +12,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 GLOBS = [
-    "modules/**/src/main/java/**/*.java",
-    "modules/**/src/test/java/**/*.java",
-    "modules/**/src/main/resources/**/*.properties",
-    "modules/**/src/main/resources/**/*.yml",
-    "modules/**/src/main/resources/**/*.yaml",
+    "src/main/java/**/*.java",
+    "src/test/java/**/*.java",
+    "src/main/resources/**/*.properties",
+    "src/main/resources/**/*.yml",
+    "src/main/resources/**/*.yaml",
     "web/**/src/**/*.ts",
     "web/**/src/**/*.vue",
     "web/**/src/**/locales/**/*.ts",
@@ -78,7 +78,7 @@ def iter_files(module_filter: str | None) -> list[Path]:
             if not p.is_file():
                 continue
             rel = p.relative_to(ROOT).as_posix()
-            if module_filter and f"modules/{module_filter}/" not in rel:
+            if module_filter and f"src/{module_filter}/" not in rel and f"/{module_filter}/" not in rel:
                 continue
             out.append(p)
     return sorted(set(out))
@@ -135,7 +135,7 @@ def classify_changed_java() -> dict[str, str]:
     """CORRUPT | TRUNCATED | OK for paths changed vs HEAD."""
     try:
         proc = subprocess.run(
-            ["git", "diff", "--name-only", "HEAD", "--", "modules"],
+            ["git", "diff", "--name-only", "HEAD", "--", "src"],
             cwd=ROOT,
             capture_output=True,
             check=True,
@@ -181,7 +181,7 @@ def read_text_from_str(text: str) -> tuple[str, list[Issue]]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Check UTF-8 text encoding in Ai repo")
-    parser.add_argument("--module", help="Only scan modules/ai-xxx")
+    parser.add_argument("--module", help="Only scan paths containing this segment (e.g. main/java or chat)")
     parser.add_argument("--report", type=Path, default=ROOT / "tools" / "encoding-report.txt")
     parser.add_argument("--write-report", action="store_true")
     args = parser.parse_args()
@@ -202,7 +202,16 @@ def main() -> int:
         for r in reports:
             rel = r.path.relative_to(ROOT).as_posix()
             mod = "other"
-            if rel.startswith("modules/"):
+            if rel.startswith("src/"):
+                # e.g. src/main/java/com/aaron/cloud/chat/... -> chat (or common)
+                parts = rel.split("/")
+                if "com" in parts and "aaron" in parts and "cloud" in parts:
+                    i = parts.index("cloud")
+                    if i + 1 < len(parts):
+                        mod = parts[i + 1]
+                else:
+                    mod = "src"
+            elif rel.startswith("web/"):
                 mod = rel.split("/")[1]
             by_mod.setdefault(mod, []).append(r)
         for mod in sorted(by_mod):

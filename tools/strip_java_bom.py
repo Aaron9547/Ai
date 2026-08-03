@@ -1,4 +1,4 @@
-"""Remove UTF-8 BOM (EF BB BF) from text sources under modules/, web/, db/mysql/, tools/, scripts/. Idempotent."""
+"""Remove UTF-8 BOM (EF BB BF) from text sources under src/, web/, db/mysql/, tools/, scripts/. Idempotent."""
 from __future__ import annotations
 
 import sys
@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BOM = b"\xef\xbb\xbf"
 
 SCAN_ROOTS = (
-    ROOT / "modules",
+    ROOT / "src",
     ROOT / "web",
     ROOT / "db" / "mysql",
     ROOT / "tools",

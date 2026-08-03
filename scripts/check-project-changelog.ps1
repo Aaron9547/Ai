@@ -17,7 +17,7 @@ Set-Location $repoRoot
 $prefixes = @(
     'src/main/java/',
     'src/test/java/',
-    'modules/',
+    'src/main/resources/',
     'web/user-web/',
     'web/admin-web/',
     'db/mysql/',

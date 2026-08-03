@@ -33,15 +33,15 @@ TRUNCATION_FIXES: list[tuple[str, str]] = [
 ]
 
 DEFAULT_PATHS = [
-    "modules/ai-identity/src/main/java/com/aaron/cloud/identity/tenant/TenantMemberRoleApplicationService.java",
-    "modules/ai-common/src/main/java/com/aaron/cloud/common/profile/UserProfileApplicationService.java",
-    "modules/ai-common/src/main/java/com/aaron/cloud/common/profile/UserMemoryApplicationService.java",
-    "modules/ai-chat/src/main/java/com/aaron/cloud/chat/intent/TravelReimbursementIntentRunner.java",
-    "modules/ai-chat/src/main/java/com/aaron/cloud/chat/GuardrailSensitiveTermAdminService.java",
-    "modules/ai-chat/src/main/java/com/aaron/cloud/chat/intent/ChatIntentStreamRouter.java",
-    "modules/ai-gateway/src/main/java/com/aaron/cloud/gateway/GatewayRateLimitApplicationService.java",
-    "modules/ai-job/src/main/java/com/aaron/cloud/scheduled/TenantScheduledTaskPoller.java",
-    "modules/ai-job/src/main/java/com/aaron/cloud/scheduled/run/TenantScheduledRunOrchestrator.java",
+    "src/main/java/com/aaron/cloud/identity/tenant/TenantMemberRoleApplicationService.java",
+    "src/main/java/com/aaron/cloud/common/profile/UserProfileApplicationService.java",
+    "src/main/java/com/aaron/cloud/common/profile/UserMemoryApplicationService.java",
+    "src/main/java/com/aaron/cloud/chat/intent/TravelReimbursementIntentRunner.java",
+    "src/main/java/com/aaron/cloud/chat/GuardrailSensitiveTermAdminService.java",
+    "src/main/java/com/aaron/cloud/chat/intent/ChatIntentStreamRouter.java",
+    "src/main/java/com/aaron/cloud/gateway/GatewayRateLimitApplicationService.java",
+    "src/main/java/com/aaron/cloud/scheduled/TenantScheduledTaskPoller.java",
+    "src/main/java/com/aaron/cloud/scheduled/run/TenantScheduledRunOrchestrator.java",
 ]
 
 

@@ -27,8 +27,7 @@ Docker 引擎不可用。请先启动 Docker Desktop，待托盘图标就绪后�
 }
 
 $mvnArgs = @(
-    'clean', 'package',
-    '-pl', 'modules/ai-bootstrap', '-am'
+    'clean', 'package'
 )
 if ($SkipTests) {
     $mvnArgs += '-Dmaven.test.skip=true'
