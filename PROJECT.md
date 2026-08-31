@@ -384,6 +384,12 @@ flowchart TB
 
 ## 变更记录
 
+### 0.1.391-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **deploy**：对齐 **super-agent** 分层——**`deploy/infra/docker-compose.yml` + `compose.env`**（MySQL/Redis/MinIO/Milvus/ES/RocketMQ，网络 **`ai-infra`**，自动 **`schema_v1.sql` + gw 目录**）；**`deploy/docker-compose.yml` + `compose.env`** 仅应用三镜像并 **`external: ai-infra`**；新增 **`docker/mysql/init`**、**`docker/rocketmq`**；**`install.sh`** 一键 infra → 本地 build → up。
+
 ### 0.1.390-SNAPSHOT
 
 > **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**

@@ -6,10 +6,10 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-if [[ -f deploy/.env ]]; then
+if [[ -f deploy/compose.env ]]; then
   set -a
   # shellcheck disable=SC1091
-  source deploy/.env
+  source deploy/compose.env
   set +a
 fi
 

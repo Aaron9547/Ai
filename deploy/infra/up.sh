@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Pull app images and start (infra must be running)
+# Start infrastructure only
 set -euo pipefail
 cd "$(dirname "$0")"
-docker compose pull
 docker compose up -d
 docker compose ps

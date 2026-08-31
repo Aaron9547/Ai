@@ -17,8 +17,8 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $repoRoot
 
-if (Test-Path 'deploy\.env') {
-    Get-Content 'deploy\.env' | ForEach-Object {
+if (Test-Path 'deploy\compose.env') {
+    Get-Content 'deploy\compose.env' | ForEach-Object {
         if ($_ -match '^\s*([^#=]+)=(.*)$') {
             $k = $Matches[1].Trim()
             $v = $Matches[2].Trim()

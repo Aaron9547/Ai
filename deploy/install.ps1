@@ -1,17 +1,17 @@
-# Server one-shot: build images + docker compose up (Windows)
+# Full deploy: infra + build images + app stack
 $ErrorActionPreference = 'Stop'
-Set-Location $PSScriptRoot
+$deployDir = $PSScriptRoot
+$repoRoot = Split-Path -Parent $deployDir
 
-if (-not (Test-Path '.env')) {
-    Copy-Item '.env.example' '.env'
-    Write-Host 'Created deploy/.env — edit cluster endpoints, then run again.' -ForegroundColor Yellow
-    exit 1
-}
+Write-Host '=== Infrastructure (deploy/infra) ===' -ForegroundColor Cyan
+Set-Location (Join-Path $deployDir 'infra')
+docker compose up -d
 
-Write-Host '=== Build images (local) ===' -ForegroundColor Cyan
-& (Join-Path $PSScriptRoot '..\scripts\docker-build-images.ps1')
+Write-Host '=== Build application images ===' -ForegroundColor Cyan
+& (Join-Path $repoRoot 'scripts\docker-build-images.ps1')
 
-Write-Host '=== Start stack ===' -ForegroundColor Cyan
+Write-Host '=== Application stack (deploy) ===' -ForegroundColor Cyan
+Set-Location $deployDir
 docker compose up -d
 
 Write-Host ''

@@ -30,8 +30,8 @@ $mvnArgs = @(
     'clean', 'package', '-Dmaven.test.skip=true', '-Ddocker.exec.skip=false'
 )
 $prefix = 'ai-platform'
-if (Test-Path 'deploy\.env') {
-    $line = Select-String -Path 'deploy\.env' -Pattern '^IMAGE_PREFIX=' | Select-Object -First 1
+if (Test-Path 'deploy\compose.env') {
+    $line = Select-String -Path 'deploy\compose.env' -Pattern '^IMAGE_PREFIX=' | Select-Object -First 1
     if ($line) { $prefix = ($line.Line -replace '^IMAGE_PREFIX=', '').Trim() }
 }
 $mvnArgs += "-Ddocker.image.registry=$prefix"
@@ -40,8 +40,8 @@ $mvnArgs += 'exec:exec@docker-build'
 if ($PushImage) {
     $mvnArgs += 'exec:exec@docker-push'
     $prefix = 'ai-platform'
-    if (Test-Path 'deploy\.env') {
-        $line = Select-String -Path 'deploy\.env' -Pattern '^IMAGE_PREFIX=' | Select-Object -First 1
+    if (Test-Path 'deploy\compose.env') {
+        $line = Select-String -Path 'deploy\compose.env' -Pattern '^IMAGE_PREFIX=' | Select-Object -First 1
         if ($line) { $prefix = ($line.Line -replace '^IMAGE_PREFIX=', '').Trim() }
     }
     Write-Host "Will push to ${prefix}/ai-backend (docker login required)." -ForegroundColor Cyan

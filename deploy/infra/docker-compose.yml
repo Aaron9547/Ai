@@ -1,0 +1,226 @@
+# Ai 基础设施：MySQL / Redis / MinIO / Milvus / Elasticsearch / RocketMQ
+#
+# 启动：cd deploy/infra && docker compose up -d
+# 应用层：cd deploy && ./install.sh
+#
+# 共享网络：ai-infra（应用 compose 通过 external network 接入）
+
+name: ai-infra
+
+x-infra-env: &infra-env
+  env_file:
+    - compose.env
+
+services:
+  mysql:
+    <<: *infra-env
+    image: mysql:8.0.43
+    container_name: ai-infra-mysql
+    restart: unless-stopped
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-Root@123456}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ai}
+      TZ: Asia/Shanghai
+    volumes:
+      - ${MYSQL_DATA_DIR:-/vol1/1000/docker-data/mysql}:/var/lib/mysql
+      - ../../docker/mysql/init:/docker-entrypoint-initdb.d:ro
+      - ../../db/mysql/schema_v1.sql:/schema/schema_v1.sql:ro
+      - ../../db/mysql/gw_api_endpoint_catalog_inserts.sql:/schema/gw_catalog.sql:ro
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -uroot -p"$$MYSQL_ROOT_PASSWORD" || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    networks:
+      - infra
+
+  redis:
+    <<: *infra-env
+    image: redis:latest
+    container_name: ai-infra-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - ${REDIS_DATA_DIR:-/vol1/1000/docker-data/redis}:/data
+    command: >
+      sh -c 'redis-server --requirepass "$$SPRING_DATA_REDIS_PASSWORD" --appendonly yes'
+    healthcheck:
+      test: ['CMD-SHELL', 'redis-cli -a "$$SPRING_DATA_REDIS_PASSWORD" ping | grep -q PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 8
+    networks:
+      - infra
+
+  minio:
+    <<: *infra-env
+    image: minio/minio:latest
+    container_name: ai-infra-minio
+    restart: unless-stopped
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      TZ: Asia/Shanghai
+    command: server /data --console-address ":9001"
+    volumes:
+      - ${MINIO_DATA_DIR:-/vol1/1000/docker-data/minio}:/data
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - infra
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.18
+    container_name: ai-infra-etcd
+    restart: unless-stopped
+    environment:
+      ETCD_AUTO_COMPACTION_MODE: revision
+      ETCD_AUTO_COMPACTION_RETENTION: "1000"
+      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+      ETCD_SNAPSHOT_COUNT: "50000"
+    volumes:
+      - ${ETCD_DATA_DIR:-../../volumes/etcd}:/etcd
+    command: etcd -advertise-client-urls=http://etcd:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    healthcheck:
+      test: ['CMD', 'etcdctl', 'endpoint', 'health']
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - infra
+
+  milvus:
+    image: milvusdb/milvus:v2.4.15
+    container_name: ai-infra-milvus
+    restart: unless-stopped
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+      MINIO_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${MILVUS_PORT:-19530}:19530"
+      - "9091:9091"
+    volumes:
+      - ${MILVUS_DATA_DIR:-../../volumes/milvus}:/var/lib/milvus
+    depends_on:
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9091/healthz']
+      interval: 30s
+      timeout: 20s
+      retries: 5
+      start_period: 90s
+    networks:
+      - infra
+
+  elasticsearch:
+    image: elasticsearch:8.15.3
+    container_name: ai-infra-elasticsearch
+    restart: unless-stopped
+    ports:
+      - "${ES_HTTP_PORT:-9200}:9200"
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      xpack.security.http.ssl.enabled: "false"
+      ES_JAVA_OPTS: ${ES_JAVA_OPTS:--Xms512m -Xmx512m}
+      TZ: Asia/Shanghai
+    volumes:
+      - ${ES_DATA_DIR:-ai_elasticsearch_data}:/usr/share/elasticsearch/data
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fsS http://127.0.0.1:9200 || exit 1']
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+    networks:
+      - infra
+
+  rocketmq-namesrv:
+    image: apache/rocketmq:5.3.2
+    container_name: ai-infra-rocketmq-namesrv
+    restart: unless-stopped
+    ports:
+      - "${ROCKETMQ_NAMESRV_PORT:-9876}:9876"
+    environment:
+      JAVA_OPT_EXT: "-Xms256m -Xmx256m -XX:MaxDirectMemorySize=128m"
+    command: sh mqnamesrv
+    volumes:
+      - ai_rocketmq_namesrv_logs:/home/rocketmq/logs
+    healthcheck:
+      test: ['CMD-SHELL', 'bash -c "echo > /dev/tcp/127.0.0.1/9876"']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - infra
+
+  rocketmq-broker:
+    image: apache/rocketmq:5.3.2
+    container_name: ai-infra-rocketmq-broker
+    restart: unless-stopped
+    user: root
+    depends_on:
+      rocketmq-namesrv:
+        condition: service_healthy
+    ports:
+      - "10909:10909"
+      - "10911:10911"
+      - "10912:10912"
+    environment:
+      NAMESRV_ADDR: rocketmq-namesrv:9876
+      BROKER_CONF: /etc/rocketmq/broker.conf
+      JAVA_OPT_EXT: "-Xms256m -Xmx512m -Xmn128m -XX:MaxDirectMemorySize=256m"
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    volumes:
+      - ../../docker/rocketmq/broker-entrypoint.sh:/entrypoint.sh:ro
+      - ../../docker/rocketmq/broker.conf:/etc/rocketmq/broker.conf:ro
+      - ai_rocketmq_broker_logs:/home/rocketmq/logs
+      - ai_rocketmq_broker_store:/home/rocketmq/store
+    healthcheck:
+      test: ['CMD-SHELL', 'cd "$(ls -d /home/rocketmq/rocketmq-* /opt/rocketmq-* 2>/dev/null | head -1)/bin" && ./mqadmin clusterList -n rocketmq-namesrv:9876 | grep -q broker-a']
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 60s
+    networks:
+      - infra
+
+volumes:
+  ai_elasticsearch_data:
+  ai_rocketmq_namesrv_logs:
+  ai_rocketmq_broker_logs:
+  ai_rocketmq_broker_store:
+
+networks:
+  infra:
+    name: ai-infra
+    driver: bridge
