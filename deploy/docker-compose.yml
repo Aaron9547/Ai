@@ -1,6 +1,5 @@
-# Ai 应用编排（backend + user-web + admin-web）
-#
-# 前置：cd deploy/infra && docker compose up -d
+# Ai 应用：backend + user-web + admin-web
+# 前置：super-agent（或等价）基础设施已启动，网络 super-agent-infra 已存在
 # 构建并启动：cd deploy && ./install.sh
 
 name: ai-platform
@@ -28,7 +27,7 @@ services:
       AI_ROCKETMQ_ENABLED: "${AI_ROCKETMQ_ENABLED:-false}"
       ROCKETMQ_NAME_SRV: ${ROCKETMQ_NAME_SRV:-rocketmq-namesrv:9876}
       ROCKETMQ_PRODUCER_GROUP: ${ROCKETMQ_PRODUCER_GROUP:-ai-producer}
-      AI_REMOTING_MODE: ${AI_REMOTING_MODE:-local}
+      AI_REMOTING_MODE: local
       AI_MILVUS_HOST: ${AI_MILVUS_HOST}
       AI_MILVUS_PORT: ${AI_MILVUS_PORT:-19530}
       AI_MILVUS_TOKEN: ${AI_MILVUS_TOKEN:-}
@@ -58,8 +57,6 @@ services:
     image: ${IMAGE_PREFIX:-ai-platform}/ai-user-web:${IMAGE_TAG:-0.1.258-SNAPSHOT}
     container_name: ai-user-web
     restart: unless-stopped
-    env_file:
-      - compose.env
     ports:
       - "${USER_WEB_PORT:-5173}:80"
     depends_on:
@@ -72,8 +69,6 @@ services:
     image: ${IMAGE_PREFIX:-ai-platform}/ai-admin-web:${IMAGE_TAG:-0.1.258-SNAPSHOT}
     container_name: ai-admin-web
     restart: unless-stopped
-    env_file:
-      - compose.env
     ports:
       - "${ADMIN_WEB_PORT:-5174}:80"
     depends_on:
@@ -85,4 +80,4 @@ services:
 networks:
   infra:
     external: true
-    name: ai-infra
+    name: ${COMPOSE_NETWORK_NAME:-super-agent-infra}

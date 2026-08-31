@@ -384,6 +384,12 @@ flowchart TB
 
 ## 变更记录
 
+### 0.1.392-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **deploy**：移除自建 **`deploy/infra`**；仅保留 **`deploy/docker-compose.yml`**（**backend + user-web + admin-web**），接入已有 **`super-agent-infra`** 网络及 **mysql/redis/minio/milvus/elasticsearch/rocketmq** 服务名；**`install.sh`** 仅本地 build + up。
+
 ### 0.1.391-SNAPSHOT
 
 > **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**

@@ -1,16 +1,12 @@
-# Full deploy: infra + build images + app stack
+# Build images + start backend + frontends (infra must be running)
 $ErrorActionPreference = 'Stop'
 $deployDir = $PSScriptRoot
 $repoRoot = Split-Path -Parent $deployDir
 
-Write-Host '=== Infrastructure (deploy/infra) ===' -ForegroundColor Cyan
-Set-Location (Join-Path $deployDir 'infra')
-docker compose up -d
-
-Write-Host '=== Build application images ===' -ForegroundColor Cyan
+Write-Host '=== Build images ===' -ForegroundColor Cyan
 & (Join-Path $repoRoot 'scripts\docker-build-images.ps1')
 
-Write-Host '=== Application stack (deploy) ===' -ForegroundColor Cyan
+Write-Host '=== Start backend + frontends ===' -ForegroundColor Cyan
 Set-Location $deployDir
 docker compose up -d
 
