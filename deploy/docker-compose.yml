@@ -1,0 +1,88 @@
+# Ai platform: Elasticsearch (compose) + app images (local or remote registry)
+# Cluster MySQL / Redis / Milvus / MinIO via deploy/.env
+# Local build: ./install.sh  |  Remote images: ./up.sh
+
+name: ai-platform
+
+services:
+  elasticsearch:
+    image: ${ELASTICSEARCH_IMAGE:-docker.elastic.co/elasticsearch/elasticsearch:8.13.3}
+    container_name: ai-elasticsearch
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "${ES_XPACK_SECURITY_ENABLED:-false}"
+      ES_JAVA_OPTS: ${ES_JAVA_OPTS:--Xms512m -Xmx512m}
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9200 >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+
+  backend:
+    image: ${IMAGE_PREFIX:-ai-platform}/ai-backend:${IMAGE_TAG:-0.1.258-SNAPSHOT}
+    container_name: ai-backend
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: "8080"
+      MYSQL_URL: ${MYSQL_URL}
+      MYSQL_USERNAME: ${MYSQL_USERNAME}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      SPRING_DATA_REDIS_HOST: ${SPRING_DATA_REDIS_HOST}
+      SPRING_DATA_REDIS_PORT: ${SPRING_DATA_REDIS_PORT:-6379}
+      SPRING_DATA_REDIS_PASSWORD: ${SPRING_DATA_REDIS_PASSWORD:-}
+      SPRING_DATA_REDIS_DATABASE: ${SPRING_DATA_REDIS_DATABASE:-0}
+      AI_DISCOVERY_ENABLED: "${AI_DISCOVERY_ENABLED:-false}"
+      AI_ROCKETMQ_ENABLED: "${AI_ROCKETMQ_ENABLED:-false}"
+      AI_REMOTING_MODE: local
+      AI_MILVUS_HOST: ${AI_MILVUS_HOST}
+      AI_MILVUS_PORT: ${AI_MILVUS_PORT:-19530}
+      AI_MILVUS_TOKEN: ${AI_MILVUS_TOKEN:-}
+      AI_MILVUS_SECURE: "${AI_MILVUS_SECURE:-false}"
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      AI_RAG_ES_ENABLED: "true"
+      AI_RAG_ES_HOST_PORTS: ${AI_RAG_ES_HOST_PORTS:-elasticsearch:9200}
+      AI_RAG_ES_CLUSTER_NAME: ${AI_RAG_ES_CLUSTER_NAME:-es-ai}
+      AI_RAG_ES_USERNAME: ${AI_RAG_ES_USERNAME:-}
+      AI_RAG_ES_PASSWORD: ${AI_RAG_ES_PASSWORD:-}
+      AI_AUTH_JWT_LOCAL_SECRET: ${AI_AUTH_JWT_LOCAL_SECRET}
+      AI_LLM_MODEL_KEY_SECRET: ${AI_LLM_MODEL_KEY_SECRET:-}
+      AI_DEFAULT_TENANT_ID: ${AI_DEFAULT_TENANT_ID:-1}
+      JAVA_OPTS: ${JAVA_OPTS:--XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0}
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/actuator/health >/dev/null || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 15
+      start_period: 180s
+
+  user-web:
+    image: ${IMAGE_PREFIX:-ai-platform}/ai-user-web:${IMAGE_TAG:-0.1.258-SNAPSHOT}
+    container_name: ai-user-web
+    restart: unless-stopped
+    ports:
+      - "${USER_WEB_PORT:-5173}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  admin-web:
+    image: ${IMAGE_PREFIX:-ai-platform}/ai-admin-web:${IMAGE_TAG:-0.1.258-SNAPSHOT}
+    container_name: ai-admin-web
+    restart: unless-stopped
+    ports:
+      - "${ADMIN_WEB_PORT:-5174}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  es_data:

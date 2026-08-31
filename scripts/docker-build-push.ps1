@@ -27,16 +27,24 @@ Docker 引擎不可用。请先启动 Docker Desktop，待托盘图标就绪后�
 }
 
 $mvnArgs = @(
-    'clean', 'package'
+    'clean', 'package', '-Dmaven.test.skip=true', '-Ddocker.exec.skip=false'
 )
-if ($SkipTests) {
-    $mvnArgs += '-Dmaven.test.skip=true'
+$prefix = 'ai-platform'
+if (Test-Path 'deploy\.env') {
+    $line = Select-String -Path 'deploy\.env' -Pattern '^IMAGE_PREFIX=' | Select-Object -First 1
+    if ($line) { $prefix = ($line.Line -replace '^IMAGE_PREFIX=', '').Trim() }
 }
+$mvnArgs += "-Ddocker.image.registry=$prefix"
 $mvnArgs += 'exec:exec@docker-build'
 
 if ($PushImage) {
     $mvnArgs += 'exec:exec@docker-push'
-    Write-Host '将构建并推送至 registry.cn-guangzhou.aliyuncs.com/liangchulong/ai-backend（须已 docker login）' -ForegroundColor Cyan
+    $prefix = 'ai-platform'
+    if (Test-Path 'deploy\.env') {
+        $line = Select-String -Path 'deploy\.env' -Pattern '^IMAGE_PREFIX=' | Select-Object -First 1
+        if ($line) { $prefix = ($line.Line -replace '^IMAGE_PREFIX=', '').Trim() }
+    }
+    Write-Host "Will push to ${prefix}/ai-backend (docker login required)." -ForegroundColor Cyan
 }
 
 Write-Host "JAVA_HOME=$env:JAVA_HOME"

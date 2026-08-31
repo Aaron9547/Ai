@@ -31,7 +31,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <archunit.version>1.4.2</archunit.version>
         <ip2region.version>2.7.0</ip2region.version>
-        <docker.image.registry>registry.cn-guangzhou.aliyuncs.com/liangchulong</docker.image.registry>
+        <docker.image.registry>ai-platform</docker.image.registry>
         <docker.image.name>ai-backend</docker.image.name>
         <docker.image.tag>${project.version}</docker.image.tag>
         <docker.image.ref>${docker.image.registry}/${docker.image.name}:${docker.image.tag}</docker.image.ref>

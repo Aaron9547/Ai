@@ -384,6 +384,24 @@ flowchart TB
 
 ## 变更记录
 
+### 0.1.390-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **deploy / Docker**：默认本地镜像名 **`IMAGE_PREFIX=ai-platform`**（**`${IMAGE_PREFIX}/ai-backend|ai-user-web|ai-admin-web:${IMAGE_TAG}`**），不再强制阿里云仓库；**`deploy/install.sh`/`install.ps1`** 在服务器 **git clone 后本地构建并 `docker compose up`**；**`scripts/docker-build-images.sh`/`ps1`**；**`pom.xml`** 默认 **`docker.image.registry=ai-platform`**。
+
+### 0.1.389-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **deploy**：**`deploy/docker-compose.yml`** 改为仅编排 **Elasticsearch + ai-backend + ai-user-web + ai-admin-web**；**MySQL / Redis / Milvus / MinIO** 改由 **`.env`** 指向集群已有实例；**`deploy/.env.example`** 补充集群连接项；**`up.ps1`/`up.sh`** 仅需 **`deploy/`** 目录即可 **`docker compose up`**（库表仍须对集群 MySQL 手工执行 **`schema_v1.sql`**）。
+
+### 0.1.388-SNAPSHOT
+
+> **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
+
+- **Docker 交付**：前后端分离镜像 **`ai-backend`**、**`ai-user-web`**、**`ai-admin-web`**（仓库 **`registry.cn-guangzhou.aliyuncs.com/liangchulong`**，标签与 **`pom.xml`** 一致）；**`web/user-web`/`admin-web` Dockerfile + nginx 反代 `/api`/`/open`**；**`deploy/docker-compose.yml`** 一键编排 MySQL（自动 **`schema_v1.sql`** 初始化）、Redis、Elasticsearch、Milvus 栈、后端与双前端；**`deploy/up.ps1`/`up.sh`**、**`scripts/docker-build-push-all.ps1`**。**无 DB migrate**（新库由 compose 首次挂载 init 脚本）。
+
 ### 0.1.387-SNAPSHOT
 
 > **构件版本**（`pom.xml`，本交付未 bump）：**`0.1.258-SNAPSHOT`**
